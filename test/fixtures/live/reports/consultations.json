@@ -1,0 +1,215 @@
+{
+ "path": "/api/reports/consultations",
+ "query": {
+  "range": "30_days"
+ },
+ "data": {
+  "totals": {
+   "consultations": 10,
+   "avgMin": 11,
+   "feesBilled": 5500
+  },
+  "items": [
+   {
+    "appointmentId": "6ac8bbd08adea6a429a73397",
+    "date": "2026-10-08T18:30:00.000Z",
+    "startAt": "2026-10-09T03:32:00.000Z",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731be",
+     "name": "Aisha Khan",
+     "age": 34,
+     "gender": "female"
+    },
+    "visitType": "follow_up",
+    "mode": "in_clinic",
+    "location": "Salt Lake",
+    "diagnoses": [],
+    "durationMin": 9,
+    "fee": 600,
+    "feeStatus": "paid"
+   },
+   {
+    "appointmentId": "6ac8bbd08adea6a429a73390",
+    "date": "2026-10-08T18:30:00.000Z",
+    "startAt": "2026-10-09T03:02:00.000Z",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731e5",
+     "name": "Amit Pal",
+     "age": 42,
+     "gender": "male"
+    },
+    "visitType": "follow_up",
+    "mode": "in_clinic",
+    "location": "Salt Lake",
+    "diagnoses": [],
+    "durationMin": 9,
+    "fee": 600,
+    "feeStatus": "paid"
+   },
+   {
+    "appointmentId": "6ac8bbd08adea6a429a73365",
+    "date": "2026-10-06T18:30:00.000Z",
+    "startAt": "2026-10-07T12:50:00.000Z",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731b7",
+     "name": "Rahul Das",
+     "age": 45,
+     "gender": "male"
+    },
+    "visitType": "report_review",
+    "mode": "in_clinic",
+    "location": "New Town",
+    "diagnoses": [
+     "Essential hypertension"
+    ],
+    "durationMin": 11,
+    "fee": 0,
+    "feeStatus": "free"
+   },
+   {
+    "appointmentId": "6ac8bbd08adea6a429a7333f",
+    "date": "2026-10-05T18:30:00.000Z",
+    "startAt": "2026-10-06T04:15:00.000Z",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731e5",
+     "name": "Amit Pal",
+     "age": 42,
+     "gender": "male"
+    },
+    "visitType": "follow_up",
+    "mode": "video",
+    "location": "New Town",
+    "diagnoses": [
+     "Type 2 diabetes mellitus"
+    ],
+    "durationMin": 12,
+    "fee": 500,
+    "feeStatus": "paid"
+   },
+   {
+    "appointmentId": "6ac8bbd08adea6a429a73317",
+    "date": "2026-10-02T18:30:00.000Z",
+    "startAt": "2026-10-03T05:00:00.000Z",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731be",
+     "name": "Aisha Khan",
+     "age": 34,
+     "gender": "female"
+    },
+    "visitType": "new",
+    "mode": "in_clinic",
+    "location": "Salt Lake",
+    "diagnoses": [
+     "Iron deficiency anaemia",
+     "Type 2 diabetes mellitus"
+    ],
+    "durationMin": 10,
+    "fee": 600,
+    "feeStatus": "pending"
+   },
+   {
+    "appointmentId": "6ac8bbd08adea6a429a7321e",
+    "date": "2026-09-28T18:30:00.000Z",
+    "startAt": "2026-09-29T03:34:00.000Z",
+    "patient": {
+     "id": "6ac8bbcee42c9f0836e9857c",
+     "name": "Priya Sharma",
+     "age": 29,
+     "gender": "female"
+    },
+    "visitType": "follow_up",
+    "mode": "in_clinic",
+    "location": "Salt Lake",
+    "diagnoses": [
+     "Type 2 diabetes mellitus",
+     "Polycystic ovary syndrome"
+    ],
+    "durationMin": 9,
+    "fee": 600,
+    "feeStatus": "paid"
+   },
+   {
+    "appointmentId": "6ac8bbd08adea6a429a732c6",
+    "date": "2026-09-26T18:30:00.000Z",
+    "startAt": "2026-09-27T11:45:00.000Z",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731c5",
+     "name": "Moumita Roy",
+     "age": 52,
+     "gender": "female"
+    },
+    "visitType": "new",
+    "mode": "in_clinic",
+    "location": "Salt Lake",
+    "diagnoses": [
+     "Coronary artery disease",
+     "Dyslipidaemia"
+    ],
+    "durationMin": 11,
+    "fee": 800,
+    "feeStatus": "paid"
+   },
+   {
+    "appointmentId": "6ac8bbd08adea6a429a7329f",
+    "date": "2026-09-23T18:30:00.000Z",
+    "startAt": "2026-09-24T05:30:00.000Z",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731d6",
+     "name": "Farhana Islam",
+     "age": 38,
+     "gender": "female"
+    },
+    "visitType": "new",
+    "mode": "in_clinic",
+    "location": "Salt Lake",
+    "diagnoses": [
+     "Hypothyroidism"
+    ],
+    "durationMin": 9,
+    "fee": 600,
+    "feeStatus": "paid"
+   },
+   {
+    "appointmentId": "6ac8bbd08adea6a429a73273",
+    "date": "2026-09-20T18:30:00.000Z",
+    "startAt": "2026-09-21T04:30:00.000Z",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731dd",
+     "name": "Debasish Bose",
+     "age": 57,
+     "gender": "male"
+    },
+    "visitType": "follow_up",
+    "mode": "in_clinic",
+    "location": "Salt Lake",
+    "diagnoses": [
+     "Type 2 diabetes mellitus",
+     "Essential hypertension"
+    ],
+    "durationMin": 12,
+    "fee": 600,
+    "feeStatus": "pending"
+   },
+   {
+    "appointmentId": "6ac8bbd08adea6a429a7324d",
+    "date": "2026-09-14T18:30:00.000Z",
+    "startAt": "2026-09-15T04:00:00.000Z",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731b7",
+     "name": "Rahul Das",
+     "age": 45,
+     "gender": "male"
+    },
+    "visitType": "follow_up",
+    "mode": "in_clinic",
+    "location": "Salt Lake",
+    "diagnoses": [
+     "Essential hypertension"
+    ],
+    "durationMin": 13,
+    "fee": 600,
+    "feeStatus": "paid"
+   }
+  ]
+ }
+}

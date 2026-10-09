@@ -1,0 +1,86 @@
+{
+ "path": "/api/reports/fees",
+ "query": {
+  "range": "30_days"
+ },
+ "data": {
+  "billed": 5500,
+  "collected": 4300,
+  "pendingAmount": 3600,
+  "freeVisits": 1,
+  "billedByLocation": [
+   {
+    "key": "Salt Lake",
+    "amount": 5000
+   },
+   {
+    "key": "New Town",
+    "amount": 500
+   }
+  ],
+  "collectedByMethod": [
+   {
+    "key": "upi",
+    "amount": 2900
+   },
+   {
+    "key": "cash",
+    "amount": 600
+   },
+   {
+    "key": "card",
+    "amount": 800
+   }
+  ],
+  "pending": [
+   {
+    "id": "6ac8bbd08adea6a429a73275",
+    "patient": "Debasish Bose",
+    "date": "2026-09-21T04:30:00.000Z",
+    "location": "Salt Lake",
+    "mode": "in_clinic",
+    "amount": 600
+   },
+   {
+    "id": "6ac8bbd08adea6a429a73319",
+    "patient": "Aisha Khan",
+    "date": "2026-10-03T05:00:00.000Z",
+    "location": "Salt Lake",
+    "mode": "in_clinic",
+    "amount": 600
+   },
+   {
+    "id": "6ac8bbd08adea6a429a733a0",
+    "patient": "Rahul Das",
+    "date": "2026-10-09T04:00:00.000Z",
+    "location": "Salt Lake",
+    "mode": "in_clinic",
+    "amount": 600
+   },
+   {
+    "id": "6ac8bbd08adea6a429a733a9",
+    "patient": "Debasish Bose",
+    "date": "2026-10-09T04:30:00.000Z",
+    "location": "Salt Lake",
+    "mode": "in_clinic",
+    "amount": 600
+   },
+   {
+    "id": "6ac8bbd08adea6a429a733b7",
+    "patient": "Sujit Mondal",
+    "date": "2026-10-09T05:30:00.000Z",
+    "location": "Salt Lake",
+    "mode": "in_clinic",
+    "amount": 600
+   },
+   {
+    "id": "6ac8bbd08adea6a429a733be",
+    "patient": "Moumita Roy",
+    "date": "2026-10-09T06:00:00.000Z",
+    "location": "Salt Lake",
+    "mode": "in_clinic",
+    "amount": 600
+   }
+  ]
+ }
+}

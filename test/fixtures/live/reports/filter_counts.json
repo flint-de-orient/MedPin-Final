@@ -1,0 +1,53 @@
+{
+ "path": "/api/reports/filter-counts",
+ "query": {
+  "range": "30_days"
+ },
+ "data": {
+  "matching": 10,
+  "location": [
+   {
+    "key": "6ac8bbcee42c9f0836e98563",
+    "count": 8
+   },
+   {
+    "key": "6ac8bbd08adea6a429a73189",
+    "count": 2
+   }
+  ],
+  "visitType": [
+   {
+    "key": "follow_up",
+    "count": 6
+   },
+   {
+    "key": "new",
+    "count": 3
+   },
+   {
+    "key": "report_review",
+    "count": 1
+   }
+  ],
+  "mode": [
+   {
+    "key": "in_clinic",
+    "count": 9
+   },
+   {
+    "key": "video",
+    "count": 1
+   }
+  ],
+  "ageGroup": [
+   {
+    "key": "41_60",
+    "count": 6
+   },
+   {
+    "key": "18_40",
+    "count": 4
+   }
+  ]
+ }
+}

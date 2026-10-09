@@ -1,0 +1,45 @@
+{
+ "path": "/api/referrals",
+ "query": {
+  "direction": "received"
+ },
+ "data": {
+  "counts": {
+   "sent": 2,
+   "received": 1,
+   "sentSeen": 1,
+   "sentAwaiting": 1,
+   "receivedSeen": 1,
+   "receivedAwaiting": 0
+  },
+  "bySpecialty": [
+   {
+    "specialty": "Gynaecology",
+    "count": 1
+   }
+  ],
+  "items": [
+   {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "patientId": {
+     "name": "Moumita Roy",
+     "ageYears": 52,
+     "ageRecordedAt": "2026-10-09T10:02:56.165Z",
+     "gender": "female",
+     "id": "6ac8bbd08adea6a429a731c5"
+    },
+    "doctorId": "6ac8bbd08adea6a429a73197",
+    "direction": "received",
+    "counterpartName": "Dr. Nandita Gupta",
+    "specialty": "Gynaecology",
+    "reason": "Palpitations",
+    "referredAt": "2026-09-24T18:30:00.000Z",
+    "status": "seen",
+    "seenAt": "2026-09-26T18:30:00.000Z",
+    "createdAt": "2026-10-09T10:02:57.036Z",
+    "updatedAt": "2026-10-09T10:02:57.036Z",
+    "id": "6ac8bbd18adea6a429a73456"
+   }
+  ]
+ }
+}

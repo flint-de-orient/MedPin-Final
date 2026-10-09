@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d3.dart';
 
 /// Design: Report-Prescriptions.dc.html — "Report · Prescription register".
+/// Live data: GET /api/reports/prescriptions (range, q).
 class ReportPrescriptionsScreen extends StatefulWidget {
   const ReportPrescriptionsScreen({super.key});
 
@@ -51,9 +57,33 @@ const _rxMore = [
   _Rx('Lipika Saha', '28 Sep', 'Ferrous sulphate 200 mg · Folic acid 5 mg', 'Rx 0273 · No tests'),
 ];
 
-class _ReportPrescriptionsScreenState extends State<ReportPrescriptionsScreen> {
+class _ReportPrescriptionsScreenState extends State<ReportPrescriptionsScreen> with LiveData, D3FilterState {
   String _q = '';
   bool _more = false;
+
+  /// Live: rows shown before "Show more prescriptions" (grows by 10).
+  int _limit = 5;
+  Timer? _debounce;
+
+  @override
+  Future<Object?> fetch() async {
+    final f = await loadFilters();
+    final q = _q.trim();
+    return await Api.I.get('/api/reports/prescriptions', query: {...f.query, if (q.isNotEmpty) 'q': q});
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _search(String s) {
+    setState(() => _q = s);
+    if (!isLive) return;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () => reload(quiet: true));
+  }
 
   bool _hit(_Rx r, String q) =>
       q.isEmpty ||
@@ -61,19 +91,87 @@ class _ReportPrescriptionsScreenState extends State<ReportPrescriptionsScreen> {
       r.meds.toLowerCase().contains(q) ||
       r.ref.toLowerCase().contains(q);
 
+  /// Count bars, scaled to the most frequent one (as the design: 88 → full).
+  static List<D3BarRow> _bars(List<Map<String, dynamic>> rows, int max) {
+    final top = rows.isEmpty ? 1 : rows.first.numOr('count', 1);
+    return [
+      for (final r in rows.take(max))
+        D3BarRow(r.str('key'), F.count(r.numOr('count')), top == 0 ? 0 : r.numOr('count') / top),
+    ];
+  }
+
+  _Rx _rxOf(Map<String, dynamic> p) {
+    final at = d3Day(p['issuedAt']);
+    final meds = [for (final m in (p['medicines'] as List? ?? const [])) '$m'];
+    final tests = [for (final t in (p['tests'] as List? ?? const [])) '$t'];
+    return _Rx(
+      p.str('patient', 'Patient'),
+      at == null ? '' : F.dayMonth(at),
+      meds.isEmpty ? 'No medicines' : meds.join(' · '),
+      'Rx ${p.str('rxNumber')} · ${tests.isEmpty ? 'No tests' : tests.join(', ')}',
+    );
+  }
+
+  Widget _liveBody() {
+    final d = data!;
+    final t = d.obj('totals');
+    final q = _q.trim();
+    final items = d.list('items');
+    final shown = q.isNotEmpty ? items : items.take(_limit).toList();
+    final meds = _bars(d.list('topMedicines'), 5);
+    final tests = _bars(d.list('topTests'), 5);
+    return VGap(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 23),
+      gap: 12,
+      children: [
+        D3StatTiles([
+          (F.count(t.numOr('prescriptions')), 'Prescriptions', MP.ink),
+          (F.count(t.numOr('medicines')), 'Medicines', MP.ink),
+          (F.count(t.numOr('labTests')), 'Lab tests', MP.ink),
+        ]),
+        if (meds.isNotEmpty) D3BarCard(title: 'Most prescribed medicines', note: 'Prescriptions', rows: meds),
+        if (tests.isNotEmpty) D3BarCard(title: 'Most ordered tests', note: 'Orders', rows: tests),
+        const D3SectionHead('All prescriptions', trailing: 'Newest first'),
+        if (shown.isNotEmpty)
+          D3ListCard(children: [for (final p in shown) _row(_rxOf(p), p)])
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              q.isEmpty ? 'No prescriptions in this period' : 'No prescriptions match “$q”',
+              textAlign: TextAlign.center,
+              style: tx(15, c: MP.ink2),
+            ),
+          ),
+        if (q.isEmpty && items.length > _limit)
+          D3ShowMore('Show more prescriptions', onTap: () => setState(() => _limit += 10)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    final live = isLive;
     final q = _q.trim().toLowerCase();
     final rows = [..._rx, if (_more || q.isNotEmpty) ..._rxMore].where((r) => _hit(r, q)).toList();
+    final total = data?.obj('totals').numOr('prescriptions') ?? 0;
     return MpPage(
       header: D3ReportHeader(
         title: 'Prescription register',
-        subtitle: '271 prescriptions · 1 – 30 Sep',
+        subtitle: !live
+            ? '271 prescriptions · 1 – 30 Sep'
+            : (data == null ? filters.label : '${d3Plural(total, 'prescription')} · ${filters.label}'),
         searchHint: 'Search patient, medicine or Rx number',
-        onSearch: (s) => setState(() => _q = s),
+        onSearch: _search,
+        rangeLabel: live ? filters.label : '1 – 30 Sep',
+        locationLabel: live ? filters.locationLabel : 'All locations',
+        onFilters: live ? pickFilters : null,
       ),
-      bottom: const D3DownloadBar('Download register'),
-      body: VGap(
+      bottom: live
+          ? D3DownloadBar('Download register', reportType: 'prescriptions', filters: filters)
+          : const D3DownloadBar('Download register'),
+      body: placeholder ?? (data != null ? _liveBody() : VGap(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 23),
         gap: 12,
         children: [
@@ -98,21 +196,30 @@ class _ReportPrescriptionsScreenState extends State<ReportPrescriptionsScreen> {
             ),
           if (!_more && q.isEmpty) D3ShowMore('Show more prescriptions', onTap: () => setState(() => _more = true)),
         ],
-      ),
+      )),
     );
   }
 
-  Widget _row(_Rx r) => D3RegisterRow(
-    name: r.name,
-    trailing: Text(r.date, style: tx(13, w: w500, c: MP.ink3)),
-    detail: r.meds,
-    footer: Row(
-      children: [
-        Expanded(child: Text(r.ref, style: tx(13, c: MP.ink3))),
-        const SizedBox(width: 8),
-        D3TextLink('View', onTap: () => Nav.go(context, 'PP-Prescriptions')),
-      ],
-    ),
-    onTap: () => Nav.go(context, 'PP-Summary'),
-  );
+  Widget _row(_Rx r, [Map<String, dynamic>? p]) {
+    // Live: the prescription (and its patient, when the API sends one).
+    final args = p == null
+        ? null
+        : {
+          'prescriptionId': p['id'],
+          if (p['patientId'] != null) 'patientId': p['patientId'],
+        };
+    return D3RegisterRow(
+      name: r.name,
+      trailing: Text(r.date, style: tx(13, w: w500, c: MP.ink3)),
+      detail: r.meds,
+      footer: Row(
+        children: [
+          Expanded(child: Text(r.ref, style: tx(13, c: MP.ink3))),
+          const SizedBox(width: 8),
+          D3TextLink('View', onTap: () => Nav.go(context, 'PP-Prescriptions', args: args)),
+        ],
+      ),
+      onTap: () => Nav.go(context, 'PP-Summary', args: args),
+    );
+  }
 }
