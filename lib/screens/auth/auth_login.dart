@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../app/splash.dart' show kLogoHeroTag;
 import '../../data/api.dart';
 import '../../data/config.dart';
+import '../../data/firebase_phone.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'auth_register.dart';
@@ -45,7 +46,12 @@ class _AuthLoginScreenState extends State<AuthLoginScreen> {
         ..pendingPhone = digits
         ..pendingMaskedPhone = res['maskedPhone'] as String?
         ..pendingResendIn = (res['resendInSec'] as num?)?.toInt() ?? 30
-        ..pendingDevCode = res['devCode'] as String?;
+        ..pendingDevCode = res['devCode'] as String?
+        ..pendingMethod = res['method'] == 'firebase' ? 'firebase' : 'server';
+      if (s.pendingMethod == 'firebase') {
+        // Firebase texts the code; Android may also read it and sign in by itself.
+        await FirebasePhone.I.sendCode(digits, onAutoVerified: _signedInAutomatically);
+      }
       if (!context.mounted) return;
       if (s.pendingDevCode != null) toast(context, 'Test code: ${s.pendingDevCode}');
       Nav.go(context, 'Auth-OTP');
@@ -54,6 +60,12 @@ class _AuthLoginScreenState extends State<AuthLoginScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  static Future<void> _signedInAutomatically(Map<String, dynamic> body) async {
+    await Session.I.signIn(body);
+    final ctx = Nav.key.currentContext;
+    if (ctx != null && ctx.mounted) Nav.reset(ctx, Session.I.landing);
   }
 
   void _register(BuildContext context) {

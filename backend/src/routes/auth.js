@@ -6,6 +6,7 @@ const { requireAuth } = require('../middleware/auth');
 const { badRequest, unauthorized, conflict, notFound, normalizePhone, maskPhone, forbidden } = require('../lib/http');
 const { hmac, randomDigits, randomToken, sha256, signAccess, ttlMs, safeEqual } = require('../lib/security');
 const { sendOtp } = require('../services/sms');
+const { verifyIdToken } = require('../services/firebase');
 
 const r = Router();
 const OTP_TTL_MS = 5 * 60 * 1000;
@@ -21,7 +22,8 @@ async function issueOtp(phone, purpose) {
   }
   const code = randomDigits(6);
   await M.OtpRequest.create({ phone, purpose, codeHash: hmac(`${phone}:${code}`), expiresAt: new Date(Date.now() + OTP_TTL_MS) });
-  const testNumber = env.devOtpPhones.includes(phone);
+  // Dev sign-in (SMS_PROVIDER=dev, never in production): every number gets its code back.
+  const testNumber = env.devOtpPhones.includes(phone) || env.smsProvider === 'dev';
   if (testNumber) console.log(`[sms:test-number] OTP for +91 ${phone}: ${code}`);
   else await sendOtp(phone, code, purpose);
   return { sent: true, maskedPhone: maskPhone(phone), resendInSec: RESEND_AFTER_S, ...(env.exposeDevOtp || testNumber ? { devCode: code } : {}) };
@@ -77,12 +79,15 @@ async function accountSummary(user) {
 
 r.post('/otp/request', async (req, res) => {
   const phone = normalizePhone(req.body.phone);
-  res.json(await issueOtp(phone, 'login'));
+  // With Firebase, the app sends the SMS itself (test numbers still get a dev code here).
+  if (env.smsProvider === 'firebase' && !env.devOtpPhones.includes(phone)) {
+    return res.json({ sent: false, method: 'firebase', maskedPhone: maskPhone(phone), resendInSec: RESEND_AFTER_S });
+  }
+  return res.json({ method: 'server', ...(await issueOtp(phone, 'login')) });
 });
 
-r.post('/otp/verify', async (req, res) => {
-  const phone = normalizePhone(req.body.phone);
-  await checkOtp(phone, 'login', req.body.code);
+/** Signs in a verified phone number: finds or creates the account, links a clinic's patient record. */
+async function completeLogin(phone, req) {
   let user = await M.User.findOne({ phone });
   if (!user) user = await M.User.create({ phone, phoneVerifiedAt: new Date() });
   if (user.disabledAt) throw forbidden('This account is disabled');
@@ -98,7 +103,27 @@ r.post('/otp/verify', async (req, res) => {
     await M.Conversation.updateMany({ patientId: patient._id, 'participants.userId': { $ne: user._id } }, { $push: { participants: { userId: user._id, role: 'patient' } } });
     if (!user.name) await M.User.updateOne({ _id: user._id }, { name: patient.name });
   }
-  res.json({ ...(await createSession(user, req)), ...(await accountSummary(user)) });
+  return { ...(await createSession(user, req)), ...(await accountSummary(user)) };
+}
+
+r.post('/otp/verify', async (req, res) => {
+  const phone = normalizePhone(req.body.phone);
+  await checkOtp(phone, 'login', req.body.code);
+  res.json(await completeLogin(phone, req));
+});
+
+// Firebase Phone Auth: the app verified the code with Firebase and sends its ID token.
+r.post('/firebase', async (req, res) => {
+  if (env.smsProvider !== 'firebase') throw badRequest('Firebase sign-in is not enabled', 'FIREBASE_DISABLED');
+  let payload;
+  try {
+    payload = await verifyIdToken(String(req.body.idToken || ''));
+  } catch (err) {
+    throw unauthorized(`Couldn't verify your sign-in (${err.message}). Please try again.`, 'FIREBASE_TOKEN_INVALID');
+  }
+  if (!payload.phone_number) throw badRequest('This sign-in has no phone number', 'NO_PHONE');
+  const phone = normalizePhone(payload.phone_number);
+  res.json(await completeLogin(phone, req));
 });
 
 r.post('/refresh', async (req, res) => {

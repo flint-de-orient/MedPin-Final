@@ -35,6 +35,9 @@ class ScreenSpec {
 class Nav {
   Nav._();
 
+  /// The app's root navigator (for navigation that outlives a screen).
+  static final key = GlobalKey<NavigatorState>();
+
   /// Filled at startup from app/registry.dart.
   static Map<String, ScreenSpec> registry = {};
 

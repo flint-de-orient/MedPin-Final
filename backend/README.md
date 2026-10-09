@@ -34,15 +34,15 @@ your `medpin` data is not touched.
 
 ### Signing in without SMS
 
-Outside production, the numbers in `DEV_OTP_PHONES` (default: the three demo
-accounts below) never get an SMS: `POST /api/auth/otp/request` returns their
+Outside production, the numbers in `DEV_OTP_PHONES` (default: the front desk and
+patient demo accounts below) never get an SMS: `POST /api/auth/otp/request` returns their
 code as `devCode`, and the app shows it as "Test code: …". Every other number
 gets a real SMS through MSG91 (or, with no MSG91 key, the code is returned too).
 Demo accounts from `db:seed`:
 
 | Phone | Who | Lands on |
 | --- | --- | --- |
-| 9830041275 | Dr. Arjun Sen, owner of City Care Clinic | Doctor-Dashboard |
+| 9330414463 | Dr. Arjun Sen, owner of City Care Clinic (real SMS) | Doctor-Dashboard |
 | 9876518210 | Tania Ghosh, front desk | Staff-Today |
 | 9876543210 | Priya Sharma, patient | Main (patient home) |
 

@@ -117,7 +117,7 @@ async function seedDemo() {
     return;
   }
   const now = new Date();
-  const doctor = await M.User.create({ phone: '9830041275', phoneVerifiedAt: now, name: 'Dr. Arjun Sen' });
+  const doctor = await M.User.create({ phone: '9330414463', phoneVerifiedAt: now, name: 'Dr. Arjun Sen' });
   const desk = await M.User.create({ phone: '9876518210', phoneVerifiedAt: now, name: 'Tania Ghosh' });
   const patientUser = await M.User.create({ phone: '9876543210', phoneVerifiedAt: now, name: 'Priya Sharma' });
 

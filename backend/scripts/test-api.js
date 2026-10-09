@@ -12,6 +12,8 @@ env.msg91.authKey = '';
 env.exposeDevOtp = true;
 // …and never call a real AI provider (see scripts/test-ai.js for that).
 env.ai.provider = 'off';
+env.smsProvider = 'msg91'; // server-issued codes (Firebase sign-in is checked separately below)
+env.firebase.projectId = 'medpin-test';
 const { connect, disconnect, mongoose } = require('../src/db');
 const M = require('../src/models');
 const { createApp } = require('../src/app');
@@ -101,6 +103,16 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(h.db, 'connected');
     assert.equal((await api()('GET', '/api/practice')).status, 401);
     assert.equal((await api()('POST', '/api/auth/otp/request', { phone: '12345' })).status, 400);
+    // Firebase sign-in: disabled in this mode, and forged tokens never pass.
+    assert.equal((await api()('POST', '/api/auth/firebase', { idToken: 'x' })).status, 400);
+    env.smsProvider = 'firebase';
+    const fb = ok(await api()('POST', '/api/auth/otp/request', { phone: '9811100001' }));
+    assert.equal(fb.method, 'firebase');
+    assert.equal(fb.devCode, undefined, 'no server code when Firebase sends the SMS');
+    const jwt = require('jsonwebtoken');
+    const forged = jwt.sign({ phone_number: '+919811100001', sub: 'x' }, 'not-google', { algorithm: 'HS256', header: { kid: 'fake' } });
+    assert.equal((await api()('POST', '/api/auth/firebase', { idToken: forged })).status, 401);
+    env.smsProvider = 'msg91';
   });
 
   await step('doctor signs in with OTP and creates a practice', async () => {

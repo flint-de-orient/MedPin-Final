@@ -19,6 +19,8 @@ async function sendOtp(phone, code, purpose = 'login') {
     headers: { authkey: env.msg91.authKey, 'content-type': 'application/json' },
   });
   const body = await res.json().catch(() => ({}));
+  // MSG91 answers 'success' when it accepts the request; delivery is shown in its dashboard logs.
+  console.log(`[sms:msg91] +91 ${phone.slice(0, 2)}••••${phone.slice(-2)} → ${res.status} ${JSON.stringify(body)}`);
   if (!res.ok || body.type === 'error') throw new Error(`MSG91: ${body.message || res.status}`);
   return { provider: 'msg91' };
 }

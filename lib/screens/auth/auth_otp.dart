@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
 import '../../data/config.dart';
+import '../../data/firebase_phone.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 
@@ -60,8 +61,12 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
     final phone = Session.I.pendingPhone;
     if (!AppMode.preview && phone != null) {
       try {
-        final res = await Api.I.post('/api/auth/otp/request', {'phone': phone}) as Map;
-        Session.I.pendingDevCode = res['devCode'] as String?;
+        if (Session.I.pendingMethod == 'firebase') {
+          await FirebasePhone.I.sendCode(phone, resend: true);
+        } else {
+          final res = await Api.I.post('/api/auth/otp/request', {'phone': phone}) as Map;
+          Session.I.pendingDevCode = res['devCode'] as String?;
+        }
       } on ApiException catch (e) {
         if (mounted) toast(context, e.message);
         return;
@@ -95,8 +100,10 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final res = await Api.I.post('/api/auth/otp/verify', {'phone': phone, 'code': _code.text}) as Map;
-      await Session.I.signIn(res.cast<String, dynamic>());
+      final res = Session.I.pendingMethod == 'firebase'
+          ? await FirebasePhone.I.verify(_code.text)
+          : ((await Api.I.post('/api/auth/otp/verify', {'phone': phone, 'code': _code.text}) as Map).cast<String, dynamic>());
+      await Session.I.signIn(res);
       if (mounted) Nav.reset(context, Session.I.landing);
     } on ApiException catch (e) {
       if (!mounted) return;

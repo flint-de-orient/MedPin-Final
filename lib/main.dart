@@ -5,10 +5,12 @@ import 'app/registry.dart';
 import 'app/splash.dart';
 import 'core/nav.dart';
 import 'core/tokens.dart';
+import 'data/firebase_phone.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   Nav.registry = screenRegistry;
+  FirebasePhone.I.init(); // SMS sign-in on Android; ready long before the Login screen
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
@@ -27,6 +29,7 @@ class MedPinApp extends StatelessWidget {
       title: 'MedPin',
       debugShowCheckedModeBanner: false,
       theme: medpinTheme(),
+      navigatorKey: Nav.key,
       home: const SplashScreen(),
       onGenerateRoute: (settings) {
         final s = Nav.spec(settings.name ?? '');

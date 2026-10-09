@@ -45,7 +45,7 @@ function createApp() {
       ok: db,
       db: db ? 'connected' : 'disconnected',
       services: {
-        sms: env.msg91.authKey ? 'msg91' : 'dev (code shown in the API response)',
+        sms: env.smsProvider === 'dev' ? 'dev (code shown in the app, no SMS)' : env.smsProvider === 'firebase' ? `firebase (project ${env.firebase.projectId || 'not set'})` : env.msg91.authKey ? 'msg91' : 'dev (code shown in the API response)',
         storage: storage.useS3 ? 's3' : 'local ./uploads',
         ai: ai.enabled() ? `${ai.provider()} · ${ai.modelName()}` : 'off (set GEMINI_API_KEY or ANTHROPIC_API_KEY)',
         push: env.fcm.projectId ? 'fcm' : 'dev log',

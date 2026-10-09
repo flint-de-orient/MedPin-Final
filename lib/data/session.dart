@@ -50,6 +50,9 @@ class Session extends ChangeNotifier {
   String? pendingMaskedPhone;
   int pendingResendIn = 30;
 
+  /// 'firebase' when Firebase texts the code, 'server' when the backend does.
+  String pendingMethod = 'server';
+
   /// Code returned by the API for test numbers / dev mode (never in production).
   String? pendingDevCode;
 

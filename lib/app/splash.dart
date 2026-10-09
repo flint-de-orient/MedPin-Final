@@ -18,6 +18,7 @@ const _wordmark = 'assets/images/splash_wordmark.png';
 const _markDark = 'assets/images/splash_mark_dark.png';
 const _markHeart = 'assets/images/splash_mark_heart.png';
 const _markFlow = 'assets/images/splash_mark_flow.png';
+const _revealShader = 'shaders/mark_reveal.frag';
 
 // Geometry of medpin_logo.png (1646×609) that the splash assets were cut from.
 const _logoW = 1646.0, _logoH = 609.0;
@@ -63,6 +64,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   ]);
 
   ui.Image? _dark, _heart, _flow;
+
+  /// GPU reveal (same on Impeller and Skia); null → the blend-mode fallback.
+  ui.FragmentProgram? _reveal;
   bool _left = false;
   Timer? _fallback;
 
@@ -94,8 +98,15 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         precacheImage(const AssetImage(_logo), context),
         precacheImage(const AssetImage(_wordmark), context),
       ]);
+      ui.FragmentProgram? reveal;
+      try {
+        reveal = await ui.FragmentProgram.fromAsset(_revealShader);
+      } catch (e) {
+        debugPrint('Splash shader unavailable, using fallback: $e');
+      }
       if (!mounted) return;
       setState(() {
+        _reveal = reveal;
         _dark = results[0] as ui.Image;
         _heart = results[1] as ui.Image;
         _flow = results[2] as ui.Image;
@@ -260,6 +271,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           rect: mark,
           child: CustomPaint(
             painter: _MarkPainter(
+              program: _reveal,
               dark: _dark!,
               heart: _heart!,
               flow: _flow!,
@@ -278,9 +290,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 /// the flow map (each pixel's R = when it appears), plus the heart beat and
 /// its ripple.
 class _MarkPainter extends CustomPainter {
+  final ui.FragmentProgram? program;
   final ui.Image dark, heart, flow;
   final double reveal, heartScale, ripple;
   _MarkPainter({
+    required this.program,
     required this.dark,
     required this.heart,
     required this.flow,
@@ -313,6 +327,21 @@ class _MarkPainter extends CustomPainter {
         canvas.drawImageRect(im, src, dst, image);
         return;
       }
+      final p = program;
+      if (p != null) {
+        // Shader reveal: one draw, no offscreen layer or blend modes.
+        final shader = p.fragmentShader()
+          ..setFloat(0, size.width)
+          ..setFloat(1, size.height)
+          ..setFloat(2, reveal)
+          ..setFloat(3, k)
+          ..setImageSampler(0, im)
+          ..setImageSampler(1, flow);
+        canvas.drawRect(dst, Paint()..shader = shader);
+        shader.dispose();
+        return;
+      }
+      // Fallback: alpha mask via dstIn (renders wrongly on some Impeller GPUs).
       canvas.saveLayer(dst.inflate(2), Paint());
       canvas.drawImageRect(im, src, dst, image);
       canvas.drawImageRect(

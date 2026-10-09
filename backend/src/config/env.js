@@ -45,6 +45,13 @@ const env = {
     loginTemplateId: v('MSG91_TEMPLATE_LOGIN', v('MSG91_OTP_TEMPLATE_ID')),
     registerTemplateId: v('MSG91_TEMPLATE_REGISTER', v('MSG91_TEMPLATE_LOGIN', v('MSG91_OTP_TEMPLATE_ID'))),
   },
+  // How sign-in codes reach the phone: msg91 (SMS from this server) or
+  // firebase (Firebase Phone Auth sends the SMS; the app sends us the ID token).
+  // dev: no SMS, the code is returned to the app (refused in production).
+  smsProvider: v('SMS_PROVIDER', 'msg91'),
+  firebase: {
+    projectId: v('FIREBASE_PROJECT_ID'),
+  },
   whatsapp: {
     accessToken: v('WHATSAPP_ACCESS_TOKEN'),
     phoneNumberId: v('WHATSAPP_PHONE_NUMBER_ID'),
@@ -95,6 +102,8 @@ const env = {
   v,
 };
 
+if (env.isProd && env.smsProvider === 'dev') throw new Error('SMS_PROVIDER=dev is not allowed in production');
+
 // Which AI provider answers: AI_PROVIDER=gemini|anthropic, else whichever key is set.
 env.ai.provider = v('AI_PROVIDER') || (env.ai.gemini.apiKey ? 'gemini' : env.ai.apiKey ? 'anthropic' : 'off');
 
@@ -106,6 +115,6 @@ env.exposeDevOtp = !env.isProd && !env.msg91.authKey;
 // SMS. Defaults to the demo accounts from `npm run db:seed`.
 env.devOtpPhones = env.isProd
   ? []
-  : v('DEV_OTP_PHONES', '9830041275,9876518210,9876543210').split(',').map((s) => s.replace(/\D/g, '')).filter(Boolean);
+  : v('DEV_OTP_PHONES', '9876518210,9876543210').split(',').map((s) => s.replace(/\D/g, '')).filter(Boolean);
 
 module.exports = env;

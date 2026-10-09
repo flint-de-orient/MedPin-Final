@@ -1,4 +1,4 @@
-package com.medpin.medpin_app
+package com.fdo.medpin
 
 import io.flutter.embedding.android.FlutterActivity
 

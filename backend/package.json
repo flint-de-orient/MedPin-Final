@@ -15,7 +15,8 @@
     "db:seed": "node scripts/seed.js",
     "db:test": "node scripts/test-schema.js",
     "test:api": "node scripts/test-api.js",
-    "test:ai": "node scripts/test-ai.js"
+    "test:ai": "node scripts/test-ai.js",
+    "db:seed:clinic": "node scripts/seed-clinic.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",

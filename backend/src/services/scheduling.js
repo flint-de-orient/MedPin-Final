@@ -62,7 +62,13 @@ async function nextFreeSlot({ doctorId, locationId, from = new Date(), days = 7 
   return null;
 }
 
-const nextToken = (locationId, day) => M.Counter.next(`token:${locationId}:${T.dayKey(day)}`);
+/** Next queue token for a location's day; never reuses a number already on the list. */
+async function nextToken(locationId, day) {
+  const key = `token:${locationId}:${T.dayKey(day)}`;
+  const top = await M.Appointment.findOne({ locationId, date: T.dayStart(day), tokenNo: { $type: 'number' } }).sort({ tokenNo: -1 }).select('tokenNo');
+  if (top) await M.Counter.updateOne({ _id: key }, { $max: { seq: top.tokenNo } }, { upsert: true });
+  return M.Counter.next(key);
+}
 
 /** Fee for a visit from the doctor's services at that location. */
 async function feeFor(dl, { visitType, mode, patientId }) {
@@ -223,4 +229,4 @@ async function getAppointment(id, practiceId) {
   return appt;
 }
 
-module.exports = { slotsFor, nextFreeSlot, book, transition, reschedule, getAppointment, feeFor, TRANSITIONS, ACTIVE };
+module.exports = { slotsFor, nextFreeSlot, nextToken, book, transition, reschedule, getAppointment, feeFor, TRANSITIONS, ACTIVE };
