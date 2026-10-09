@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/api.dart';
+import '../../data/config.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 
 /// Design: Auth-OTP.dc.html — "Login · code" (Sign in).
@@ -15,7 +18,8 @@ class AuthOtpScreen extends StatefulWidget {
 
 class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProviderStateMixin {
   // One hidden field holds the code; the six boxes render it.
-  final _code = TextEditingController(text: '482');
+  // The design shows a half-typed sample code; the real screen starts empty.
+  final _code = TextEditingController(text: AppMode.preview ? '482' : '');
   final _focus = FocusNode();
   late final AnimationController _blink =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 1000))..repeat();
@@ -24,12 +28,14 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
     TweenSequenceItem(tween: ConstantTween(0.0), weight: 50),
   ]));
   Timer? _timer;
-  int _left = 24;
+  int _left = AppMode.preview ? 24 : Session.I.pendingResendIn;
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
     _code.addListener(_changed);
+    _code.addListener(_autoVerify);
     _focus.addListener(_changed);
     _startTimer();
   }
@@ -50,10 +56,55 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
     });
   }
 
-  void _resend() {
+  Future<void> _resend() async {
+    final phone = Session.I.pendingPhone;
+    if (!AppMode.preview && phone != null) {
+      try {
+        final res = await Api.I.post('/api/auth/otp/request', {'phone': phone}) as Map;
+        Session.I.pendingDevCode = res['devCode'] as String?;
+      } on ApiException catch (e) {
+        if (mounted) toast(context, e.message);
+        return;
+      }
+    }
+    if (!mounted) return;
     setState(() => _left = 30);
     _startTimer();
-    toast(context, 'New code sent');
+    final dev = AppMode.preview ? null : Session.I.pendingDevCode;
+    toast(context, dev == null ? 'New code sent' : 'Test code: $dev');
+  }
+
+  void _autoVerify() {
+    if (!AppMode.preview && _code.text.length == 6 && !_busy) _verify();
+  }
+
+  Future<void> _verify() async {
+    if (AppMode.preview) {
+      Nav.reset(context, 'Doctor-Dashboard');
+      return;
+    }
+    final phone = Session.I.pendingPhone;
+    if (phone == null) {
+      Nav.back(context);
+      return;
+    }
+    if (_code.text.length != 6) {
+      toast(context, 'Enter the 6-digit code');
+      return;
+    }
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final res = await Api.I.post('/api/auth/otp/verify', {'phone': phone, 'code': _code.text}) as Map;
+      await Session.I.signIn(res.cast<String, dynamic>());
+      if (mounted) Nav.reset(context, Session.I.landing);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      toast(context, e.message);
+      _code.clear();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _openKeyboard() {
@@ -91,7 +142,7 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text('Sent to +91 98765 •••10', style: tx(16, c: MP.ink2, h: 1.5, tab: true)),
+                Text('Sent to ${AppMode.preview ? '+91 98765 •••10' : Session.I.pendingMaskedPhone ?? ''}', style: tx(16, c: MP.ink2, h: 1.5, tab: true)),
                 Tap(
                   onTap: () => Nav.back(context),
                   radius: 6,
@@ -165,7 +216,7 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
                 ),
               ),
             const Gap(32),
-            MpButton('Verify', onTap: () => Nav.reset(context, 'Doctor-Dashboard')),
+            MpButton('Verify', onTap: _verify),
           ],
         ),
       ),

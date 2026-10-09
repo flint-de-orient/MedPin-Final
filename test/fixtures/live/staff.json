@@ -1,0 +1,99 @@
+{
+ "session": {
+  "user": {
+   "id": "6ac881fecb2ada7457707387",
+   "name": "Tania Ghosh",
+   "phone": "9876518210",
+   "language": "en",
+   "appLock": true
+  },
+  "memberships": [
+   {
+    "id": "6ac881fecb2ada745770739b",
+    "practiceId": "6ac881fecb2ada7457707390",
+    "practiceName": "City Care Clinic",
+    "role": "front_desk",
+    "isOwner": false,
+    "status": "active"
+   }
+  ],
+  "patientId": null,
+  "landing": "Staff-Today"
+ },
+ "path": "/api/staff/today",
+ "data": {
+  "date": "2026-10-08T18:30:00.000Z",
+  "summary": {
+   "booked": 1,
+   "checkedIn": 0,
+   "done": 0,
+   "missed": 0,
+   "doctors": [
+    "Dr. Arjun Sen"
+   ]
+  },
+  "unreadChats": 0,
+  "unreadNotifications": 0,
+  "userName": "Tania Ghosh",
+  "requests": [],
+  "items": [
+   {
+    "practiceId": "6ac881fecb2ada7457707390",
+    "locationId": "6ac881fecb2ada7457707393",
+    "doctorId": "6ac881fecb2ada7457707380",
+    "patientId": "6ac881fecb2ada74577073ad",
+    "date": "2026-10-08T18:30:00.000Z",
+    "startAt": "2026-10-09T11:30:00.000Z",
+    "tokenNo": 4,
+    "isWalkIn": false,
+    "visitType": "follow_up",
+    "mode": "in_clinic",
+    "status": "confirmed",
+    "channel": "app",
+    "fee": 600,
+    "feeStatus": "pending",
+    "todos": [
+     {
+      "text": "Upload HbA1c report",
+      "done": false,
+      "_id": "6ac881fecb2ada74577073b8"
+     },
+     {
+      "text": "Log today's fasting sugar",
+      "done": false,
+      "_id": "6ac881fecb2ada74577073b9"
+     },
+     {
+      "text": "Note down questions for Dr. Sen",
+      "done": false,
+      "_id": "6ac881fecb2ada74577073ba"
+     }
+    ],
+    "createdAt": "2026-10-09T05:56:14.652Z",
+    "updatedAt": "2026-10-09T05:56:14.652Z",
+    "id": "6ac881fecb2ada74577073b7",
+    "token": "04",
+    "patient": {
+     "id": "6ac881fecb2ada74577073ad",
+     "name": "Priya Sharma",
+     "age": 29,
+     "gender": "female",
+     "phone": "9876543210",
+     "conditions": [
+      "Type 2 diabetes",
+      "PCOS"
+     ]
+    },
+    "doctor": {
+     "id": "6ac881fecb2ada7457707380",
+     "name": "Dr. Arjun Sen"
+    },
+    "location": {
+     "id": "6ac881fecb2ada7457707393",
+     "name": "Salt Lake"
+    },
+    "waitingMin": null
+   }
+  ]
+ }
+}

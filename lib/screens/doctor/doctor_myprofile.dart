@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 
@@ -150,7 +151,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
             _SettingRow('App language', sub: _appLanguage, onTap: _pickAppLanguage),
             _SettingRow('Help and support', onTap: () => _soon('Help and support')),
           ]),
-          D4OutlineButton('Log out', border: MP.redLine, onTap: () => Nav.reset(context, 'Auth-Login')),
+          D4OutlineButton('Log out', border: MP.redLine, onTap: () => signOut(context)),
           Text('MedPin 3.8.2', textAlign: TextAlign.center, style: tx(12, c: MP.ink3)),
         ],
       ),

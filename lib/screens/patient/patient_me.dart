@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 
@@ -127,7 +128,12 @@ class _PatientMeScreenState extends State<PatientMeScreen> {
 
   Future<void> _logOut() async {
     final ok = await openSheet<bool>(context, (_) => const _LogOutSheet());
-    if (ok == true && mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+    if (ok != true || !mounted) return;
+    if (isLive) {
+      await signOut(context);
+    } else {
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    }
   }
 
   @override

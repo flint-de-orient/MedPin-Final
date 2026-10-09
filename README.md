@@ -7,11 +7,21 @@ canvas). The app opens with an animated splash (`lib/app/splash.dart`).
 
 ## Run
 
+Start the backend first (`cd backend && npm run dev`, see [backend/README.md](backend/README.md)), then:
+
 ```sh
 flutter pub get
-flutter run            # Android / iOS
-flutter run -d chrome  # web
+flutter run            # Android emulator reaches the API at http://10.0.2.2:4000
+flutter run -d chrome  # web uses http://localhost:4000
+flutter run --dart-define=API_BASE_URL=http://192.168.1.20:4000   # a real phone on your Wi-Fi
+flutter run --dart-define=MEDPIN_PREVIEW=true                     # design launcher, no backend
 ```
+
+The app opens with the splash, then the home screen of the signed-in account
+(doctor dashboard, front desk Today, or patient home), or sign-in when signed
+out: Login → 6-digit code → home for the account's role. New numbers with a
+clinic invite continue to Register. Screens opened from the design launcher or
+the screen gallery keep the design's sample data.
 
 The app opens on a launcher: **Doctor app** (starts at sign-in), **Front desk**,
 **Patient app**, or **Browse all screens** (grouped like the canvas rows;

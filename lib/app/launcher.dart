@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/config.dart';
 import '../widgets/mp.dart';
 import 'splash.dart';
 
@@ -10,6 +11,8 @@ class LauncherScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Everything opened from here shows the design's sample data.
+    AppMode.preview = true;
     final count = Nav.registry.length;
     return MpPage(
       body: VGap(

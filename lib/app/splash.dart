@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/tokens.dart';
+import '../core/nav.dart';
+import '../data/config.dart';
+import '../data/session.dart';
 import 'launcher.dart';
 
 /// Hero tag shared by the splash lockup and the launcher's header logo.
@@ -71,6 +74,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     });
     // Never strand the user on the splash if an asset fails to load.
     _fallback = Timer(const Duration(seconds: 4), _goNext);
+    unawaited(_next); // check the saved session while the animation plays
   }
 
   @override
@@ -118,14 +122,28 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _c.value = 1;
   }
 
-  void _goNext() {
+  /// Where to go after the splash: the design launcher (preview builds), the
+  /// signed-in account's home, or sign-in. Checked while the animation plays.
+  late final Future<String?> _next = _decideNext();
+
+  static Future<String?> _decideNext() async {
+    if (AppConfig.previewLauncher) return null;
+    final signedIn = await Session.I.restore();
+    return signedIn ? Session.I.landing : 'Auth-Login';
+  }
+
+  Future<void> _goNext() async {
     if (_left || !mounted) return;
     _left = true;
     _fallback?.cancel();
+    final stem = await _next;
+    if (!mounted) return;
+    final spec = stem == null ? null : Nav.spec(stem);
     Navigator.of(context).pushReplacement(PageRouteBuilder(
+      settings: RouteSettings(name: spec?.stem),
       transitionDuration: const Duration(milliseconds: 700),
       reverseTransitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (_, __, ___) => const LauncherScreen(),
+      pageBuilder: (context, __, ___) => spec == null ? const LauncherScreen() : spec.builder(context),
       transitionsBuilder: (_, a, __, child) => FadeTransition(
         opacity: CurvedAnimation(parent: a, curve: const Interval(0.15, 1, curve: Curves.easeOut)),
         child: child,

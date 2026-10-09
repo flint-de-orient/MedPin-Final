@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
 
@@ -164,7 +165,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Semantics(
                   button: true,
                   child: Tap(
-                    onTap: () => Nav.reset(context, 'Auth-Login'),
+                    onTap: () => signOut(context),
                     radius: 0,
                     child: SizedBox(
                       height: 56,

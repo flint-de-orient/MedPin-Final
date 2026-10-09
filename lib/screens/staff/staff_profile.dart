@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
 
@@ -182,7 +183,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                 children: [
                   D10ListRow(
                     vPad: 0,
-                    onTap: () => Nav.reset(context, 'Auth-Login'),
+                    onTap: () => signOut(context),
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(minHeight: 56),
                       child: Row(

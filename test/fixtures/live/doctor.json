@@ -1,0 +1,53 @@
+{
+ "session": {
+  "user": {
+   "id": "6ac881fecb2ada7457707380",
+   "name": "Dr. Arjun Sen",
+   "phone": "9830041275",
+   "language": "en",
+   "appLock": true
+  },
+  "memberships": [
+   {
+    "id": "6ac881fecb2ada745770739a",
+    "practiceId": "6ac881fecb2ada7457707390",
+    "practiceName": "City Care Clinic",
+    "role": "doctor",
+    "isOwner": true,
+    "status": "active"
+   }
+  ],
+  "patientId": null,
+  "landing": "Doctor-Dashboard"
+ },
+ "path": "/api/dashboard",
+ "data": {
+  "greetingName": "Dr. Arjun Sen",
+  "date": "2026-10-08T18:30:00.000Z",
+  "practiceName": "City Care Clinic",
+  "location": null,
+  "unreadNotifications": 0,
+  "today": {
+   "total": 1,
+   "pending": 1,
+   "waiting": 0,
+   "completed": 0
+  },
+  "actionQueue": {
+   "unreadMessages": 0,
+   "checkInsOverdue": 1,
+   "pendingActions": 0,
+   "nutritionReviewsDue": 0
+  },
+  "alerts": [],
+  "last7Days": {
+   "consultations": 0,
+   "avgConsultMin": null
+  },
+  "aiChats": {
+   "handled": 0,
+   "escalated": 0
+  },
+  "updatedAt": "2026-10-09T07:12:56.338Z"
+ }
+}

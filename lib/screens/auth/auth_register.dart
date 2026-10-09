@@ -2,6 +2,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/api.dart';
+import '../../data/config.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 
 /// Design: Auth-Register.dc.html — "Register" (Sign in).
@@ -15,9 +18,28 @@ class AuthRegisterScreen extends StatefulWidget {
 }
 
 const _languages = ['English', 'বাংলা (Bengali)', 'हिन्दी (Hindi)'];
+const _languageCodes = ['en', 'bn', 'hi'];
+
+const _roleLabels = {
+  'doctor': 'Doctor',
+  'front_desk': 'Front desk',
+  'doctor_assistant': "Doctor's assistant",
+  'dietician': 'Dietician',
+  'lab_manager': 'Lab manager',
+  'lab_technician': 'Lab technician',
+  'practice_manager': 'Practice manager',
+};
 
 class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
-  final _invite = TextEditingController(text: 'CCC-4821');
+  // The design shows a sample invite and name; the real form starts empty.
+  final _invite = TextEditingController(text: AppMode.preview ? 'CCC-4821' : '');
+  final _name = TextEditingController(text: AppMode.preview ? 'Tania Ghosh' : Session.I.name);
+  final _email = TextEditingController();
+
+  /// Live invite details from the server, for the code currently typed.
+  String? _checkedCode;
+  Map<String, dynamic>? _inviteInfo;
+  bool _busy = false;
   final _inviteFocus = FocusNode();
   late final _terms = TapGestureRecognizer()..onTap = () => toast(context, 'Terms of Use is not in the design yet');
   late final _privacy = TapGestureRecognizer()..onTap = () => toast(context, 'Privacy Policy is not in the design yet');
@@ -33,26 +55,92 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
 
   void _changed() {
     if (mounted) setState(() {});
+    if (!AppMode.preview && _formatOk && _checkedCode != _invite.text.trim()) _checkInvite();
   }
 
-  bool get _inviteOk => RegExp(r'^[A-Z]{3}-\d{4}$').hasMatch(_invite.text.trim());
+  bool get _formatOk => RegExp(r'^[A-Z]{3}-\d{4}$').hasMatch(_invite.text.trim());
+
+  /// Preview: any well-formed code. Live: the server has to know it.
+  bool get _inviteOk => AppMode.preview ? _formatOk : _formatOk && _inviteInfo != null && _checkedCode == _invite.text.trim();
+
+  Future<void> _checkInvite() async {
+    final code = _invite.text.trim();
+    _checkedCode = code;
+    _inviteInfo = null;
+    try {
+      final res = await Api.I.get('/api/auth/invites/$code') as Map;
+      if (mounted && _checkedCode == code) setState(() => _inviteInfo = res.cast<String, dynamic>());
+    } on ApiException catch (e) {
+      if (mounted && _checkedCode == code) toast(context, e.status == 404 ? "That invite code isn't valid" : e.message);
+    }
+  }
+
+  String get _inviteTitle => AppMode.preview ? 'Invite from City Care Clinic' : 'Invite from ${_inviteInfo?['practiceName'] ?? ''}';
+
+  String get _inviteDetail {
+    if (AppMode.preview) return 'Role: Front desk · Location: Salt Lake';
+    final role = _roleLabels[_inviteInfo?['role']] ?? '';
+    final locations = [for (final l in (_inviteInfo?['locations'] as List? ?? const [])) '$l'];
+    return locations.isEmpty ? 'Role: $role' : 'Role: $role · Location: ${locations.join(', ')}';
+  }
+
+  String get _phoneText {
+    if (AppMode.preview) return '+91 98765 18210';
+    final p = Session.I.phone;
+    return p.length == 10 ? '+91 ${p.substring(0, 5)} ${p.substring(5)}' : p;
+  }
 
   @override
   void dispose() {
     _invite.dispose();
+    _name.dispose();
+    _email.dispose();
     _inviteFocus.dispose();
     _terms.dispose();
     _privacy.dispose();
     super.dispose();
   }
 
-  void _create() {
+  Future<void> _create() async {
     if (!_agree) {
       toast(context, 'Please agree to the Terms of Use and Privacy Policy');
       return;
     }
-    // The invite is for the front desk, so the new account lands there.
-    Nav.reset(context, 'Staff-Today');
+    if (AppMode.preview) {
+      // The invite is for the front desk, so the new account lands there.
+      Nav.reset(context, 'Staff-Today');
+      return;
+    }
+    if (!Session.I.signedIn) {
+      toast(context, 'Verify your mobile number first');
+      Navigator.of(context).pushReplacementNamed('Auth-Login');
+      return;
+    }
+    if (!_inviteOk) {
+      toast(context, 'Enter the invite code from your clinic');
+      return;
+    }
+    if (_name.text.trim().isEmpty) {
+      toast(context, 'Enter your full name');
+      return;
+    }
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await Api.I.post('/api/auth/register', {
+        'inviteCode': _invite.text.trim(),
+        'name': _name.text.trim(),
+        if (_email.text.trim().isNotEmpty) 'email': _email.text.trim(),
+        'language': _languageCodes[_languages.indexOf(_lang)],
+        'termsAccepted': true,
+      });
+      await Session.I.reloadAccount();
+      if (mounted) Nav.reset(context, Session.I.landing);
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _signIn() {
@@ -93,7 +181,7 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
                       children: [
                         Text('Phone verified', style: tx(16, w: w600, h: 1.4)),
                         const Gap(2),
-                        Text('+91 98765 18210', style: tx(14, c: MP.ink2, h: 1.4, tab: true)),
+                        Text(_phoneText, style: tx(14, c: MP.ink2, h: 1.4, tab: true)),
                       ],
                     ),
                   ),
@@ -118,9 +206,9 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Invite from City Care Clinic', style: tx(16, w: w600, h: 1.4)),
+                    Text(_inviteTitle, style: tx(16, w: w600, h: 1.4)),
                     const Gap(4),
-                    Text('Role: Front desk · Location: Salt Lake', style: tx(14, c: MP.ink2, h: 1.4)),
+                    Text(_inviteDetail, style: tx(14, c: MP.ink2, h: 1.4)),
                   ],
                 ),
               ),
@@ -132,7 +220,7 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
             const Gap(8),
             const _Label('Full name'),
             const Gap(8),
-            const MpInput(value: 'Tania Ghosh', keyboard: TextInputType.name),
+            MpInput(controller: _name, keyboard: TextInputType.name),
             const Gap(20),
             Text.rich(
               TextSpan(
@@ -142,7 +230,7 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
               ),
             ),
             const Gap(8),
-            const MpInput(hint: 'name@example.com', keyboard: TextInputType.emailAddress),
+            MpInput(controller: _email, hint: 'name@example.com', keyboard: TextInputType.emailAddress),
             const Gap(20),
             const _Label('Preferred language'),
             const Gap(8),

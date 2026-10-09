@@ -2,7 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import 'patient_log.dart';
@@ -17,7 +22,8 @@ class PatientHomeScreen extends StatefulWidget {
 
 typedef _Task = ({String icon, String title, String sub, String action, String later, String doneLabel});
 
-class _PatientHomeScreenState extends State<PatientHomeScreen> {
+/// Live data: GET /api/patient/home.
+class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
   static const List<_Task> _tasks = [
     (icon: I.pill, title: 'Glimepiride 1 mg', sub: '7:30 AM · before breakfast', action: '', later: '', doneLabel: 'Taken'),
     (icon: I.pill, title: 'Metformin 500 mg', sub: '8:30 AM · after breakfast', action: '', later: '', doneLabel: 'Taken'),
@@ -32,12 +38,312 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   final Set<int> _done = {0, 1};
   bool _walkDone = false;
 
-  void _taskAction(BuildContext context, int i) {
-    if (_tasks[i].action == 'Upload') {
-      Nav.go(context, 'Records-Add');
-    } else {
-      setState(() => _done.add(i));
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/patient/home');
+
+  static const _food = {
+    'before_food': 'before food',
+    'after_food': 'after food',
+    'with_food': 'with food',
+    'empty_stomach': 'empty stomach',
+    'bedtime': 'at bedtime',
+  };
+
+  List<Map<String, dynamic>> get _rawTasks => data?.list('tasks') ?? const [];
+
+  /// Today's checklist: the design's sample, or doses, meals and visit to-dos.
+  List<_Task> get _taskList => data == null ? _tasks : [for (final t in _rawTasks) _taskFrom(t)];
+
+  Set<int> get _doneSet => data == null
+      ? _done
+      : {
+          for (var i = 0; i < _rawTasks.length; i++)
+            if (_rawTasks[i]['done'] == true) i,
+        };
+
+  static String _todoAction(String text) {
+    final t = text.toLowerCase();
+    if (t.contains('upload')) return 'Upload';
+    if (t.contains('log')) return 'Log';
+    return 'Done';
+  }
+
+  _Task _taskFrom(Map<String, dynamic> t) {
+    switch (t['kind']) {
+      case 'dose':
+        final at = F.date(t['at']);
+        final food = _food[t['foodRelation']];
+        final status = t['status'];
+        return (
+          icon: I.pill,
+          title: t.str('title'),
+          sub: [if (at != null) F.time(at), if (food != null) food].join(' · '),
+          action: '',
+          later: status == 'missed' ? 'Missed' : t['slot'] == 'night' ? 'Tonight' : t['slot'] == 'afternoon' ? 'Afternoon' : '',
+          doneLabel: 'Taken',
+        );
+      case 'visit_todo':
+        final action = _todoAction(t.str('title'));
+        return (
+          icon: action == 'Upload' ? I.upload : action == 'Log' ? I.drop : I.check,
+          title: t.str('title'),
+          sub: 'Before your visit today',
+          action: action,
+          later: '',
+          doneLabel: action == 'Upload' ? 'Uploaded' : action == 'Log' ? 'Logged' : 'Done',
+        );
+      default:
+        final logged = [for (final m in (t['detail'] as List? ?? const [])) '$m'];
+        return (
+          icon: I.camera,
+          title: 'Log your meals',
+          sub: logged.isEmpty ? 'Nothing logged yet today' : 'Logged: ${logged.join(', ')}',
+          action: 'Log',
+          later: '',
+          doneLabel: 'Logged',
+        );
     }
+  }
+
+  Future<void> _taskAction(BuildContext context, int i) async {
+    final t = _taskList[i];
+    if (!isLive) {
+      if (t.action == 'Upload') {
+        Nav.go(context, 'Records-Add');
+      } else {
+        setState(() => _done.add(i));
+      }
+      return;
+    }
+    final raw = _rawTasks[i];
+    if (t.action == 'Upload') {
+      await Nav.go(context, 'Records-Add');
+    } else if (t.action == 'Log') {
+      await Nav.go(context, 'Patient-Log');
+    }
+    if (raw['kind'] == 'visit_todo' && context.mounted) {
+      await runAction(context, () => Api.I.post('/api/patient/appointments/${raw['appointmentId']}/todos/${raw['id']}', {'done': true}));
+    }
+    if (mounted) reload(quiet: true);
+  }
+
+  // ── Header ──
+  String get _name => data == null ? 'Priya' : data!.str('greetingName', F.firstName(Session.I.name));
+  String get _hello => data == null ? 'Good morning,' : '${F.greeting()},';
+  int get _unread => data == null ? 1 : data!.numOr('unreadNotifications').toInt();
+  String get _initials => data == null ? 'PS' : F.initials(Session.I.name.isEmpty ? _name : Session.I.name);
+
+  // ── Carousel ──
+  List<P1Slide> get _slides {
+    final d = data;
+    if (d == null) return P1.slides;
+    final out = <P1Slide>[];
+    final v = d.obj('nextVisit');
+    final at = F.date(v['startAt']);
+    if (at != null) {
+      final token = v['tokenNo'] == null ? '' : ' · Token ${'${v['tokenNo']}'.padLeft(2, '0')}';
+      out.add(P1Slide(
+        spec: '',
+        tag: F.sameDay(at, DateTime.now()) ? 'Today · ${F.time(at)}' : F.when(at),
+        title: 'Visit with ${F.doctorShort(v.obj('doctorId').str('name'))}',
+        sub: '${v.obj('locationId').str('name')}$token',
+        cta: 'View details',
+        stem: 'Patient-DoctorDetail',
+      ));
+    }
+    final lab = d.obj('latestLab');
+    if (lab.isNotEmpty && d.list('slides').any((x) => x['kind'] == 'report')) {
+      final n = lab.numOr('abnormalCount').toInt();
+      final names = [for (final a in (lab['abnormal'] as List? ?? const [])) '$a'];
+      out.add(P1Slide(
+        spec: '',
+        tag: 'New report',
+        title: 'Your ${lab.str('testName')} is in',
+        sub: n == 0 ? 'All values in the normal range' : '${names.take(2).join(', ')} ${n == 1 ? 'is' : 'are'} ${lab.str('abnormalDirection')}',
+        cta: 'See what it means',
+        icon: I.fileText,
+        stem: 'Patient-Records',
+      ));
+    }
+    final refills = d.list('refills');
+    if (refills.isNotEmpty) {
+      final r = refills.first;
+      final days = r.numOr('daysLeft').toInt();
+      out.add(P1Slide(
+        spec: '',
+        tag: 'Refill soon',
+        title: '${r.str('name')} runs out ${days <= 0 ? 'today' : days == 1 ? 'tomorrow' : 'in $days days'}',
+        sub: '${r.numOr('tabletsLeft').toInt()} tablets left',
+        cta: 'Order a refill',
+        icon: I.pill,
+        stem: 'Patient-Medicines',
+      ));
+    }
+    final score = d.obj('healthScore');
+    if (score['value'] != null) {
+      final delta = score.numOr('weeklyDelta').toInt();
+      final plan = d.obj('activityPlan');
+      out.add(P1Slide(
+        spec: '',
+        tag: 'This week',
+        title: delta > 0 ? 'Health score up by $delta' : delta < 0 ? 'Health score down by ${-delta}' : 'Health score ${score['value']}',
+        sub: plan.isEmpty ? 'Out of 100' : 'You did ${plan['doneThisWeek']} of ${plan['daysPerWeek']} planned days',
+        cta: 'See your progress',
+        icon: I.activity,
+      ));
+    }
+    return out;
+  }
+
+  // ── Daily log ──
+  static const _mealOrder = ['breakfast', 'lunch', 'dinner'];
+
+  String get _mealsLine {
+    if (data == null) return 'Breakfast logged · lunch next';
+    final logged = [for (final m in (data!['mealsLogged'] as List? ?? const [])) '$m'];
+    final next = _mealOrder.where((m) => !logged.contains(m)).firstOrNull;
+    if (logged.isEmpty) return 'Nothing logged yet · ${next ?? 'breakfast'} next';
+    final last = logged.last;
+    final cap = last[0].toUpperCase() + last.substring(1);
+    return next == null ? 'All meals logged' : '$cap logged · $next next';
+  }
+
+  Map<String, dynamic> get _plan => data?.obj('activityPlan') ?? const {};
+
+  static String _clock(String hhmm) {
+    final parts = hhmm.split(':');
+    final h = int.tryParse(parts.first) ?? 0;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    return F.time(DateTime(2000, 1, 1, h, m));
+  }
+
+  Future<void> _markWalkDone() async {
+    if (!isLive) {
+      setState(() => _walkDone = true);
+      return;
+    }
+    final ok = await runAction(context, () => Api.I.post('/api/patient/activity-plans/${_plan['id']}/done'));
+    if (ok != null && mounted) reload(quiet: true);
+  }
+
+  int get _steps => data == null ? 4820 : data!.obj('steps').numOr('today').toInt();
+  int get _stepGoal => data == null ? 8000 : data!.obj('steps').numOr('goal', 8000).toInt();
+
+  String get _sharedLine {
+    if (data == null) return 'Shared with Dr. Sen and Mou (dietician)';
+    final people = [
+      for (final p in data!.list('logSharedWith'))
+        p['role'] == 'doctor' ? F.doctorShort(p.str('name')) : '${F.firstName(p.str('name'))} (${p.str('role').replaceAll('_', ' ')})',
+    ];
+    return people.isEmpty ? 'Not shared with your care team yet' : 'Shared with ${F.joinAnd(people)}';
+  }
+
+  // ── Your health ──
+  num? get _score => data == null ? 74 : data!.obj('healthScore')['value'] as num?;
+  int get _scoreDelta => data == null ? 3 : data!.obj('healthScore').numOr('weeklyDelta').toInt();
+  num? get _adherence => data == null ? 86 : data!.obj('adherence')['pct'] as num?;
+  int get _adherenceDoctors => data == null ? 3 : data!.obj('adherence').numOr('doctors').toInt();
+
+  // ── Health summary ──
+  Map<String, dynamic>? get _ai {
+    if (data == null) return null;
+    final a = data!.obj('aiSummary');
+    return a.isEmpty ? null : a;
+  }
+
+  // ── What you track ──
+  static const _measureLabels = {
+    'blood_sugar': ('Fasting sugar', ' mg/dL'),
+    'blood_pressure': ('Blood pressure', null),
+    'weight': ('Weight', ' kg'),
+    'heart_rate': ('Heart rate', ' bpm'),
+    'spo2': ('SpO₂', '%'),
+  };
+
+  /// Sparkline points in the tile's 130×32 box.
+  static String _points(List<num> values) {
+    if (values.isEmpty) return '';
+    final lo = values.reduce(math.min).toDouble();
+    final hi = values.reduce(math.max).toDouble();
+    final span = hi - lo == 0 ? 1.0 : hi - lo;
+    final n = values.length;
+    return [
+      for (var i = 0; i < n; i++)
+        '${(n == 1 ? 65 : 2 + i * 126 / (n - 1)).round()},${(28 - (values[i] - lo) / span * 24).round()}',
+    ].join(' ');
+  }
+
+  (String note, Color color) _noteFor(String measure, Map<String, dynamic> last) {
+    final v = last.numOr('value');
+    switch (measure) {
+      case 'blood_sugar':
+        final target = data!.obj('targets').numOr('sugarFasting', 130);
+        return v > target ? ('Above target', MP.amber) : ('In range', MP.green);
+      case 'blood_pressure':
+        final dia = last.numOr('value2');
+        if (v >= 140 || dia >= 90) return ('High', MP.amber);
+        if (v >= 130 || dia >= 80) return ('Above normal', MP.amber);
+        return ('Normal', MP.green);
+      case 'heart_rate':
+        return v < 50 || v > 100 ? ('Check with your doctor', MP.amber) : ('Normal', MP.green);
+      case 'spo2':
+        return v < 95 ? ('Low', MP.amber) : ('Normal', MP.green);
+      default:
+        return ('', MP.ink3);
+    }
+  }
+
+  List<Widget> _trackTiles(BuildContext context) {
+    final measures = [
+      for (final m in (data!['trackedMeasures'] as List? ?? const []))
+        if (_measureLabels.containsKey(m)) '$m',
+    ].take(2);
+    final tracked = data!.obj('tracked');
+    return [
+      for (final m in measures)
+        () {
+          final series = tracked.list(m);
+          final (label, unit) = _measureLabels[m]!;
+          if (series.isEmpty) {
+            return _TrackTile(
+              label: label,
+              value: '–',
+              points: '',
+              note: 'No reading yet',
+              noteColor: MP.ink3,
+              onTap: () => Nav.go(context, 'Patient-Track'),
+            );
+          }
+          final last = series.last;
+          final value = m == 'blood_pressure'
+              ? '${last.numOr('value').round()}/${last.numOr('value2').round()}'
+              : last.numOr('value').toStringAsFixed(last.numOr('value') % 1 == 0 ? 0 : 1);
+          final (note, color) = _noteFor(m, last);
+          return _TrackTile(
+            label: label,
+            value: value,
+            unit: unit,
+            points: _points([for (final x in series) x.numOr('value')]),
+            note: note,
+            noteColor: color,
+            onTap: () => toast(context, '$label trend is coming soon'),
+          );
+        }(),
+    ];
+  }
+
+  // ── From your doctor ──
+  Map<String, dynamic>? get _rx => data == null ? null : (data!.obj('latestPrescription').isEmpty ? null : data!.obj('latestPrescription'));
+  Map<String, dynamic>? get _lab => data == null ? null : (data!.obj('latestLab').isEmpty ? null : data!.obj('latestLab'));
+
+  Future<void> _download(BuildContext context) async {
+    final url = _rx?['url'] as String?;
+    if (url == null) {
+      toast(context, 'This prescription has no file yet');
+      return;
+    }
+    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) toast(context, "Couldn't open the prescription");
   }
 
   void _openLog(BuildContext context, int tab) {
@@ -51,6 +357,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
+    final placeholder = livePlaceholder();
+    final slides = placeholder == null ? _slides : const <P1Slide>[];
     return MpPage(
       nav: const PatientNav(current: 0),
       overlays: [
@@ -65,9 +373,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
         children: [
           _header(context),
           const Gap(20),
+          if (placeholder != null) placeholder else ...[
           // The slide row bleeds into the right gutter (margin-right: -20px).
-          const Padding(padding: EdgeInsets.only(left: 20), child: _HeroCarousel()),
-          const Gap(16),
+          if (slides.isNotEmpty) ...[
+            Padding(padding: const EdgeInsets.only(left: 20), child: _HeroCarousel(slides: slides)),
+            const Gap(16),
+          ],
           _pad(_emergency(context)),
           const Gap(16),
           _pad(_today(context)),
@@ -75,12 +386,17 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           _pad(_dailyLog(context)),
           const Gap(16),
           _pad(_health(context)),
-          const Gap(16),
-          _pad(_summary(context)),
+          if (data == null || _ai != null) ...[
+            const Gap(16),
+            _pad(_summary(context)),
+          ],
           const Gap(16),
           _pad(_tracking(context)),
-          const Gap(16),
-          _pad(_fromDoctor(context)),
+          if (data == null || _rx != null || _lab != null) ...[
+            const Gap(16),
+            _pad(_fromDoctor(context)),
+          ],
+          ],
           // main has 184px below it; MpPage already leaves 112 for the nav.
           const Gap(72),
         ],
@@ -120,9 +436,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Good morning,', style: tx(15, c: MP.ink2)),
+                Text(_hello, style: tx(15, c: MP.ink2)),
                 const Gap(2),
-                Text('Priya', style: tx(28, w: w800, h: 1.15, em: -0.02)),
+                Text(_name, style: tx(28, w: w800, h: 1.15, em: -0.02)),
               ],
             ),
           ),
@@ -132,7 +448,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             children: [
               MpIconButton(
                 I.bell,
-                label: 'Notifications, 1 new',
+                label: _unread > 0 ? 'Notifications, $_unread new' : 'Notifications',
                 iconSize: 20,
                 radius: 999,
                 background: MP.white,
@@ -140,7 +456,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                 onTap: () => toast(context, 'Notifications are coming soon'),
               ),
               // 8px dot + 2px white ring, top 9 / right 10 inside the border.
-              Positioned(
+              if (_unread > 0) Positioned(
                 top: 10,
                 right: 11,
                 child: IgnorePointer(
@@ -164,7 +480,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             child: Tap(
               onTap: () => Nav.tab(context, 'Patient-Me'),
               radius: 999,
-              child: const MpAvatar('PS', size: 44, fontSize: 15),
+              child: MpAvatar(_initials, size: 44, fontSize: 15),
             ),
           ),
         ],
@@ -209,7 +525,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   // ── Today's checklist ─────────────────────────────────────────────────────
 
   Widget _today(BuildContext context) {
-    final n = _done.length;
+    final tasks = _taskList;
+    final n = _doneSet.length;
     return _card(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       child: Column(
@@ -225,26 +542,26 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                   textBaseline: TextBaseline.alphabetic,
                   children: [
                     Expanded(child: _cardTitle('Today')),
-                    Text('$n of ${_tasks.length} done', style: tx(14, c: MP.ink2, tab: true)),
+                    Text('$n of ${tasks.length} done', style: tx(14, c: MP.ink2, tab: true)),
                   ],
                 ),
                 const Gap(10),
                 Semantics(
-                  label: '$n of ${_tasks.length} tasks done',
-                  child: MpProgress(n / _tasks.length, height: 6, color: MP.green, track: MP.line),
+                  label: '$n of ${tasks.length} tasks done',
+                  child: MpProgress(tasks.isEmpty ? 0 : n / tasks.length, height: 6, color: MP.green, track: MP.line),
                 ),
               ],
             ),
           ),
-          for (var i = 0; i < _tasks.length; i++) _taskRow(context, i),
+          for (var i = 0; i < tasks.length; i++) _taskRow(context, i),
         ],
       ),
     );
   }
 
   Widget _taskRow(BuildContext context, int i) {
-    final t = _tasks[i];
-    final done = _done.contains(i);
+    final t = _taskList[i];
+    final done = _doneSet.contains(i);
     final Widget trailing;
     if (done) {
       trailing = _DoneBadge(t.doneLabel);
@@ -292,19 +609,27 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             first: true,
             child: _LogLine(
               title: const Text('Meals'),
-              sub: 'Breakfast logged · lunch next',
+              sub: _mealsLine,
               trailing: P1SoftButton('Log meal', icon: I.camera, onTap: () => _openLog(context, 0)),
             ),
           ),
-          _ListRow(
-            child: _LogLine(
-              title: const Text('Evening walk · 30 min'),
-              sub: 'Planned 6:00 PM · ${_walkDone ? 4 : 3} of 5 this week',
-              trailing: _walkDone
-                  ? const _DoneBadge('Done')
-                  : P1SoftButton('Mark done', onTap: () => setState(() => _walkDone = true)),
+          if (data == null)
+            _ListRow(
+              child: _LogLine(
+                title: const Text('Evening walk · 30 min'),
+                sub: 'Planned 6:00 PM · ${_walkDone ? 4 : 3} of 5 this week',
+                trailing: _walkDone ? const _DoneBadge('Done') : P1SoftButton('Mark done', onTap: _markWalkDone),
+              ),
+            )
+          else if (_plan.isNotEmpty)
+            _ListRow(
+              child: _LogLine(
+                title: Text('${_plan.str('name')}${_plan['durationMin'] == null ? '' : ' · ${_plan['durationMin']} min'}'),
+                sub: '${_plan['plannedTime'] == null ? '' : 'Planned ${_clock(_plan.str('plannedTime'))} · '}'
+                    '${_plan['doneThisWeek']} of ${_plan['daysPerWeek']} this week',
+                trailing: _plan['doneToday'] == true ? const _DoneBadge('Done') : P1SoftButton('Mark done', onTap: _markWalkDone),
+              ),
             ),
-          ),
           _ListRow(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -312,17 +637,17 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                 _LogLine(
                   title: Text.rich(
                     TextSpan(children: [
-                      TextSpan(text: '4,820', style: tx(16, w: w600, tab: true)),
+                      TextSpan(text: F.count(_steps), style: tx(16, w: w600, tab: true)),
                       const TextSpan(text: ' steps'),
                     ]),
                   ),
-                  sub: 'Goal 8,000 · entered by you',
+                  sub: 'Goal ${F.count(_stepGoal)} · entered by you',
                   trailing: P1SoftButton('Add', onTap: () => _openLog(context, 2)),
                 ),
                 const Gap(8),
                 Semantics(
-                  label: '4,820 of 8,000 steps',
-                  child: const MpProgress(0.6, height: 6, color: MP.primary, track: MP.line),
+                  label: '${F.count(_steps)} of ${F.count(_stepGoal)} steps',
+                  child: MpProgress(_stepGoal == 0 ? 0 : math.min(1, _steps / _stepGoal), height: 6, color: MP.primary, track: MP.line),
                 ),
               ],
             ),
@@ -337,7 +662,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                 children: [
                   const Ico(I.share, size: 16, color: MP.ink2),
                   const Gap(10),
-                  Expanded(child: Text('Shared with Dr. Sen and Mou (dietician)', style: tx(13, c: MP.ink2))),
+                  Expanded(child: Text(_sharedLine, style: tx(13, c: MP.ink2))),
                   const Gap(10),
                   Text('Change', style: tx(14, w: w600, c: MP.primary)),
                 ],
@@ -372,12 +697,17 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                           width: 56,
                           height: 56,
                           child: CustomPaint(
-                            painter: const _RingPainter(111.6 / (2 * math.pi * 24)),
-                            child: Center(child: Text('74', style: tx(18, w: w800, tab: true))),
+                            painter: _RingPainter(data == null ? 111.6 / (2 * math.pi * 24) : ((_score ?? 0) / 100).clamp(0, 1).toDouble()),
+                            child: Center(child: Text(_score == null ? '–' : '${_score!.round()}', style: tx(18, w: w800, tab: true))),
                           ),
                         ),
                         const Gap(12),
-                        Expanded(child: Text('+3 this week', style: tx(13, w: w700, c: MP.green))),
+                        Expanded(
+                          child: Text(
+                            _score == null ? '' : '${_scoreDelta >= 0 ? '+' : ''}$_scoreDelta this week',
+                            style: tx(13, w: w700, c: _scoreDelta >= 0 ? MP.green : MP.amber),
+                          ),
+                        ),
                       ],
                     ),
                     const Gap(10),
@@ -396,7 +726,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                       height: 56,
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: Text('86%', style: tx(30, w: w800, h: 1, em: -0.02, tab: true)),
+                        child: Text(_adherence == null ? '–' : '${_adherence!.round()}%', style: tx(30, w: w800, h: 1, em: -0.02, tab: true)),
                       ),
                     ),
                     const Gap(10),
@@ -405,7 +735,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('3 doctors', style: tx(13, w: w600, c: MP.primary)),
+                        Text('$_adherenceDoctors ${_adherenceDoctors == 1 ? 'doctor' : 'doctors'}', style: tx(13, w: w600, c: MP.primary)),
                         const Gap(2),
                         const Ico(I.chevronRight, size: 14, color: MP.primary, stroke: 2),
                       ],
@@ -421,6 +751,16 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
   }
 
   // ── AI health summary ─────────────────────────────────────────────────────
+
+  List<String> get _focusItems => _ai == null
+      ? (data == null ? const ['Take Metformin after dinner, every day', 'Walk 30 minutes, 5 days a week'] : const [])
+      : [for (final f in (_ai!['focusItems'] as List? ?? const [])) '$f'].take(3).toList();
+
+  String get _summaryUpdated {
+    final at = F.date(_ai?['generatedAt']);
+    if (at == null) return 'Updated today';
+    return F.sameDay(at, DateTime.now()) ? 'Updated today' : 'Updated ${F.dayMonth(at)}';
+  }
 
   Widget _summary(BuildContext context) {
     Widget focus(String n, String text) => Row(
@@ -441,15 +781,17 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
               const Gap(8),
               Expanded(child: _cardTitle('Health summary')),
               const Gap(12),
-              Text('Updated today', style: tx(13, c: MP.ink3)),
+              Text(_summaryUpdated, style: tx(13, c: MP.ink3)),
             ],
           ),
           const Gap(14),
           Text(
-            'Your sugar has crept up a little since July (HbA1c 7.2%) and bad cholesterol (LDL) is still high. '
-            'You missed 4 evening doses of Metformin this week. Taking it every evening is the biggest help right now.',
+            _ai?.str('body') ??
+                'Your sugar has crept up a little since July (HbA1c 7.2%) and bad cholesterol (LDL) is still high. '
+                    'You missed 4 evening doses of Metformin this week. Taking it every evening is the biggest help right now.',
             style: tx(16, h: 1.55),
           ),
+          if (_focusItems.isNotEmpty) ...[
           const Gap(14),
           Container(
             padding: const EdgeInsets.all(14),
@@ -459,12 +801,14 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
               children: [
                 Text('FOCUS THIS WEEK', style: tx(12, w: w700, c: MP.ink3, em: 0.06)),
                 const Gap(8),
-                focus('1', 'Take Metformin after dinner, every day'),
-                const Gap(8),
-                focus('2', 'Walk 30 minutes, 5 days a week'),
+                for (var i = 0; i < _focusItems.length; i++) ...[
+                  if (i > 0) const Gap(8),
+                  focus('${i + 1}', _focusItems[i]),
+                ],
               ],
             ),
           ),
+          ],
           const Gap(14),
           Row(
             children: [
@@ -489,7 +833,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
           const Gap(14),
           MpGrid(
             columns: 2,
-            children: [
+            children: data != null ? _trackTiles(context) : [
               _TrackTile(
                 label: 'Fasting sugar',
                 value: '142',
@@ -534,6 +878,42 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 
   // ── From your doctor ──────────────────────────────────────────────────────
 
+  String get _rxTitle {
+    final at = F.date(_rx?['issuedAt']);
+    return at == null ? 'Prescription · 29 Sep' : 'Prescription · ${F.dayMonth(at)}';
+  }
+
+  String get _rxDetail {
+    final rx = _rx;
+    if (rx == null) return 'Dr. Arjun Sen · 3 medicines · valid till 29 Oct';
+    final n = rx.numOr('medicines').toInt();
+    final until = F.date(rx['validUntil']);
+    return [
+      if (rx.str('doctorName').isNotEmpty) rx.str('doctorName'),
+      '$n ${n == 1 ? 'medicine' : 'medicines'}',
+      if (until != null) 'valid till ${F.dayMonth(until)}',
+    ].join(' · ');
+  }
+
+  String get _labTitle {
+    final lab = _lab;
+    if (lab == null) return 'Diabetes panel · 18 Jul';
+    final at = F.date(lab['collectedAt']);
+    return at == null ? lab.str('testName') : '${lab.str('testName')} · ${F.dayMonth(at)}';
+  }
+
+  bool get _labFlagged => _lab == null || _lab!.numOr('abnormalCount') > 0;
+
+  String get _labBadge {
+    final lab = _lab;
+    if (lab == null) return '2 values high';
+    final n = lab.numOr('abnormalCount').toInt();
+    if (n == 0) return 'All normal';
+    return '$n ${n == 1 ? 'value' : 'values'} ${lab.str('abnormalDirection', 'high')}';
+  }
+
+  String get _labNames => _lab == null ? 'HbA1c, fasting sugar' : [for (final a in (_lab!['abnormal'] as List? ?? const [])) '$a'].join(', ');
+
   Widget _fromDoctor(BuildContext context) {
     return _card(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
@@ -544,7 +924,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
             padding: const EdgeInsets.only(bottom: 8),
             child: _cardHeading('From your doctor', 'All records', () => Nav.go(context, 'Patient-Records')),
           ),
-          _ListRow(
+          if (data == null || _rx != null) _ListRow(
             first: true,
             child: Row(
               children: [
@@ -552,9 +932,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Prescription · 29 Sep', style: tx(16, w: w600)),
+                      Text(_rxTitle, style: tx(16, w: w600)),
                       const Gap(3),
-                      Text('Dr. Arjun Sen · 3 medicines · valid till 29 Oct', style: tx(13, c: MP.ink2)),
+                      Text(_rxDetail, style: tx(13, c: MP.ink2)),
                     ],
                   ),
                 ),
@@ -566,33 +946,34 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
                   color: MP.primary,
                   background: MP.white,
                   borderColor: MP.lineStrong,
-                  onTap: () => toast(context, 'Prescription downloaded'),
+                  onTap: () => data == null ? toast(context, 'Prescription downloaded') : _download(context),
                 ),
               ],
             ),
           ),
-          _ListRow(
+          if (data == null || _lab != null) _ListRow(
+            first: data != null && _rx == null,
             child: Row(
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Diabetes panel · 18 Jul', style: tx(16, w: w600)),
+                      Text(_labTitle, style: tx(16, w: w600)),
                       const Gap(4),
                       Row(
                         children: [
                           Container(
                             height: 22,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
-                            decoration: BoxDecoration(color: MP.amberSoft, borderRadius: BorderRadius.circular(999)),
+                            decoration: BoxDecoration(color: _labFlagged ? MP.amberSoft : MP.greenSoft, borderRadius: BorderRadius.circular(999)),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
-                              children: [Text('2 values high', style: tx(12, w: w700, c: MP.amber))],
+                              children: [Text(_labBadge, style: tx(12, w: w700, c: _labFlagged ? MP.amber : MP.green))],
                             ),
                           ),
                           const Gap(8),
-                          Flexible(child: Text('HbA1c, fasting sugar', style: tx(13, c: MP.ink2))),
+                          Flexible(child: Text(_labNames, style: tx(13, c: MP.ink2))),
                         ],
                       ),
                     ],
@@ -621,7 +1002,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _HeroCarousel extends StatefulWidget {
-  const _HeroCarousel();
+  final List<P1Slide> slides;
+  const _HeroCarousel({required this.slides});
 
   @override
   State<_HeroCarousel> createState() => _HeroCarouselState();
@@ -649,7 +1031,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     final pc = _pc;
     if (!mounted || _dragging || pc == null || !pc.hasClients) return;
     pc.animateToPage(
-      (_page + 1) % P1.slides.length,
+      (_page + 1) % widget.slides.length,
       duration: const Duration(milliseconds: 450),
       curve: Curves.easeOutCubic,
     );
@@ -668,7 +1050,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   /// Scroll position in slides. With padEnds off the last slide is fully in
   /// view at page n − 1/fraction (≈2.89), so that stretch is mapped to n − 1.
   double _position(PageController pc) {
-    final n = P1.slides.length;
+    final n = widget.slides.length;
     var p = pc.hasClients ? (pc.page ?? _page.toDouble()) : _page.toDouble();
     final last = _fraction > 0 ? n - 1 / _fraction : n - 1.0;
     if (p > n - 2 && last > n - 2) p = n - 2 + (p - (n - 2)) / (last - (n - 2));
@@ -684,7 +1066,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    const slides = P1.slides;
+    final slides = widget.slides;
     return Semantics(
       label: 'Highlights, slide ${_page + 1} of ${slides.length}',
       child: Column(

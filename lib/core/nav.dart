@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/config.dart';
 import 'tokens.dart';
 
 /// One screen from the design canvas.
@@ -40,14 +41,32 @@ class Nav {
   static ScreenSpec? spec(String stem) => registry[stem];
 
   /// Opens [stem]. Sheets open as modal bottom sheets over the current screen.
-  static Future<T?> go<T>(BuildContext context, String stem) {
+  /// [args] (e.g. a record id) is read on the next screen with [Nav.args].
+  static Future<T?> go<T>(BuildContext context, String stem, {Object? args}) {
     final s = spec(stem);
     if (s == null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$stem is not in the design yet')));
       return Future.value();
     }
-    if (s.sheet) return openSheet<T>(context, s.builder);
-    return Navigator.of(context).push<T>(_route(s));
+    if (s.sheet) {
+      return showModalBottomSheet<T>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: MP.scrim,
+        elevation: 0,
+        routeSettings: RouteSettings(name: stem, arguments: args),
+        builder: s.builder,
+      );
+    }
+    return Navigator.of(context).push<T>(_route(s, args));
+  }
+
+  /// Arguments passed to the current screen with [Nav.go].
+  static T? args<T>(BuildContext context) {
+    final a = ModalRoute.of(context)?.settings.arguments;
+    return a is T ? a : null;
   }
 
   /// Replaces the current screen (used by bottom-nav tabs), no transition.
@@ -66,11 +85,12 @@ class Nav {
     ));
   }
 
-  /// Clears the stack and starts at [stem] (e.g. after sign-in).
+  /// Clears the stack and starts at [stem] (e.g. after sign-in or log out).
+  /// In the design launcher the launcher itself stays underneath.
   static void reset(BuildContext context, String stem) {
     final s = spec(stem);
     if (s == null) return;
-    Navigator.of(context).pushAndRemoveUntil(_route(s), (r) => r.isFirst);
+    Navigator.of(context).pushAndRemoveUntil(_route(s), (r) => AppMode.preview && r.isFirst);
   }
 
   /// Opens a sheet screen on top of its parent screen (used by the gallery).
@@ -93,8 +113,8 @@ class Nav {
     if (nav.canPop()) nav.pop();
   }
 
-  static Route<T> _route<T>(ScreenSpec s) => MaterialPageRoute<T>(
-        settings: RouteSettings(name: s.stem),
+  static Route<T> _route<T>(ScreenSpec s, [Object? args]) => MaterialPageRoute<T>(
+        settings: RouteSettings(name: s.stem, arguments: args),
         builder: s.builder,
       );
 }

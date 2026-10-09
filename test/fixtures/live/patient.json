@@ -1,0 +1,153 @@
+{
+ "session": {
+  "user": {
+   "id": "6ac881fecb2ada745770738d",
+   "name": "Priya Sharma",
+   "phone": "9876543210",
+   "language": "en",
+   "appLock": true
+  },
+  "memberships": [],
+  "patientId": "6ac881fecb2ada74577073ad",
+  "landing": "Main"
+ },
+ "path": "/api/patient/home",
+ "data": {
+  "latestPrescription": null,
+  "latestLab": null,
+  "mealsLogged": [],
+  "logSharedWith": [
+   {
+    "name": "Dr. Arjun Sen",
+    "role": "doctor"
+   }
+  ],
+  "adherence": {
+   "pct": null,
+   "doctors": 0
+  },
+  "trackedMeasures": [
+   "blood_sugar",
+   "blood_pressure"
+  ],
+  "tracked": {
+   "blood_sugar": [],
+   "blood_pressure": [],
+   "weight": [],
+   "heart_rate": [],
+   "spo2": []
+  },
+  "targets": {
+   "sugarFasting": 130,
+   "hba1c": 7,
+   "stepsPerDay": 8000
+  },
+  "greetingName": "Priya",
+  "date": "2026-10-08T18:30:00.000Z",
+  "slides": [
+   {
+    "kind": "visit",
+    "title": "Visit today, 5:00 PM",
+    "sub": "Dr. Arjun Sen · Token 04",
+    "screen": "Patient-DoctorDetail",
+    "params": {
+     "appointmentId": "6ac881fecb2ada74577073b7"
+    }
+   },
+   {
+    "kind": "score",
+    "title": "Health score 74",
+    "sub": "+3 this week",
+    "screen": "Patient-Home"
+   }
+  ],
+  "tasks": [
+   {
+    "kind": "log",
+    "id": "meal-log",
+    "title": "Log your meals",
+    "done": false,
+    "doneLabel": "Logged",
+    "detail": []
+   },
+   {
+    "kind": "visit_todo",
+    "id": "6ac881fecb2ada74577073b8",
+    "appointmentId": "6ac881fecb2ada74577073b7",
+    "title": "Upload HbA1c report",
+    "done": false
+   },
+   {
+    "kind": "visit_todo",
+    "id": "6ac881fecb2ada74577073b9",
+    "appointmentId": "6ac881fecb2ada74577073b7",
+    "title": "Log today's fasting sugar",
+    "done": false
+   },
+   {
+    "kind": "visit_todo",
+    "id": "6ac881fecb2ada74577073ba",
+    "appointmentId": "6ac881fecb2ada74577073b7",
+    "title": "Note down questions for Dr. Sen",
+    "done": false
+   }
+  ],
+  "tasksDone": 0,
+  "steps": {
+   "today": 0,
+   "goal": 8000
+  },
+  "refills": [],
+  "nextVisit": {
+   "practiceId": "6ac881fecb2ada7457707390",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac881fecb2ada7457707393"
+   },
+   "doctorId": {
+    "name": "Dr. Arjun Sen",
+    "id": "6ac881fecb2ada7457707380"
+   },
+   "patientId": "6ac881fecb2ada74577073ad",
+   "date": "2026-10-08T18:30:00.000Z",
+   "startAt": "2026-10-09T11:30:00.000Z",
+   "tokenNo": 4,
+   "isWalkIn": false,
+   "visitType": "follow_up",
+   "mode": "in_clinic",
+   "status": "confirmed",
+   "channel": "app",
+   "fee": 600,
+   "feeStatus": "pending",
+   "todos": [
+    {
+     "text": "Upload HbA1c report",
+     "done": false,
+     "_id": "6ac881fecb2ada74577073b8"
+    },
+    {
+     "text": "Log today's fasting sugar",
+     "done": false,
+     "_id": "6ac881fecb2ada74577073b9"
+    },
+    {
+     "text": "Note down questions for Dr. Sen",
+     "done": false,
+     "_id": "6ac881fecb2ada74577073ba"
+    }
+   ],
+   "createdAt": "2026-10-09T05:56:14.652Z",
+   "updatedAt": "2026-10-09T05:56:14.652Z",
+   "id": "6ac881fecb2ada74577073b7"
+  },
+  "aiSummary": null,
+  "healthScore": {
+   "value": 74,
+   "weeklyDelta": 3,
+   "computedAt": "2026-10-09T05:56:14.593Z"
+  },
+  "unreadMessages": 0,
+  "unreadNotifications": 0
+ }
+}

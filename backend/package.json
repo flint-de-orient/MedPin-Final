@@ -1,0 +1,34 @@
+{
+  "name": "medpin-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MedPin API and MongoDB schema (doctor panel, front desk and patient app).",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:sync": "node scripts/sync-indexes.js",
+    "db:seed": "node scripts/seed.js",
+    "db:test": "node scripts/test-schema.js",
+    "test:api": "node scripts/test-api.js",
+    "test:ai": "node scripts/test-ai.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.132.1",
+    "@aws-sdk/client-s3": "^3.1148.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.8.0",
+    "multer": "^2.4.0",
+    "nodemailer": "^10.0.16",
+    "pdfkit": "^0.20.2"
+  }
+}

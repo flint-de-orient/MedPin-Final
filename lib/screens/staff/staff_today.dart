@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
 
@@ -22,7 +26,20 @@ const _statusColors = <String, (Color, Color)>{
   'Waiting': (MP.amberSoft, MP.amber),
   'Upcoming': (MP.fill, MP.ink2),
   'Done': (MP.greenSoft, MP.green),
+  'Missed': (MP.redSoft, MP.red),
 };
+
+/// API appointment status → the label on the pill.
+const _statusLabels = {
+  'booked': 'Upcoming',
+  'confirmed': 'Upcoming',
+  'waiting': 'Waiting',
+  'in_consultation': 'In consult',
+  'completed': 'Done',
+  'missed': 'Missed',
+};
+
+const _channelLabels = {'app': 'app', 'whatsapp': 'WhatsApp', 'phone': 'phone', 'desk': 'desk'};
 
 /// (name, detail, meta)
 const _requests = [
@@ -47,27 +64,111 @@ const _actions = [
   (I.calendar, 'Book appointment', 'Appointments'),
 ];
 
-class _StaffTodayScreenState extends State<StaffTodayScreen> {
+/// Live data: GET /api/staff/today, refreshed every 30 s.
+class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
+  // Design preview state.
   late final List<String> _status = [for (final a in _appts) a.$3];
   int _checkedIn = 7;
 
-  void _checkIn(int i) {
-    setState(() {
-      _status[i] = 'Waiting';
-      _checkedIn++;
-    });
-    toast(context, '${_appts[i].$2} checked in');
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/staff/today');
+
+  @override
+  Duration? get refreshEvery => const Duration(seconds: 30);
+
+  /// (name, detail, meta)
+  List<(String, String, String)> get _requestRows {
+    final d = data;
+    if (d == null) return _requests;
+    return [
+      for (final r in d.list('requests'))
+        (
+          r.obj('patientId').str('name'),
+          _requestDetail(r),
+          'Asked ${F.askedAt(F.date(r['createdAt']) ?? DateTime.now())} · ${_channelLabels[r['channel']] ?? r.str('channel')}',
+        ),
+    ];
+  }
+
+  static String _requestDetail(Map<String, dynamic> r) {
+    final kind = r['visitType'] == 'follow_up' ? 'Follow-up' : 'New visit';
+    final doctor = r.obj('doctorId').str('name');
+    return doctor.isEmpty ? kind : '$kind with ${F.doctorShort(doctor)}';
+  }
+
+  /// Today's list (time, name, status, doctor, appointment id), at most six:
+  /// earlier finished visits drop off first.
+  List<(String, String, String, String, String?)> get _apptRows {
+    final d = data;
+    if (d == null) {
+      return [for (var i = 0; i < _appts.length; i++) (_appts[i].$1, _appts[i].$2, _status[i], _appts[i].$4, null)];
+    }
+    final rows = [
+      for (final a in d.list('items'))
+        (
+          F.timeShort(F.date(a['startAt']) ?? DateTime.now()),
+          a.obj('patient').str('name'),
+          _statusLabels[a['status']] ?? 'Upcoming',
+          F.doctorShort(a.obj('doctor').str('name')),
+          a['id'] as String?,
+        ),
+    ];
+    while (rows.length > 6 && (rows.first.$3 == 'Done' || rows.first.$3 == 'Missed')) {
+      rows.removeAt(0);
+    }
+    return rows.take(6).toList();
+  }
+
+  Map<String, dynamic> get _summary => data?.obj('summary') ?? const {};
+
+  Future<void> _checkIn(int i) async {
+    final row = _apptRows[i];
+    if (!isLive) {
+      setState(() {
+        _status[i] = 'Waiting';
+        _checkedIn++;
+      });
+      toast(context, '${row.$2} checked in');
+      return;
+    }
+    final ok = await runAction(context, () => Api.I.post('/api/appointments/${row.$5}/status', {'status': 'waiting'}));
+    if (ok == null || !mounted) return;
+    toast(context, '${row.$2} checked in');
+    reload(quiet: true);
+  }
+
+  String get _greeting {
+    if (data == null) return 'Good morning, Tania';
+    return '${F.greeting()}, ${F.firstName(data!.str('userName', Session.I.name))}';
+  }
+
+  String get _dateLine {
+    final at = loadedAt;
+    if (data == null || at == null) return 'Tue, 29 Sep 2026 · Updated 4s ago';
+    final secs = DateTime.now().difference(at).inSeconds;
+    final ago = secs < 60 ? '${secs}s' : '${secs ~/ 60} min';
+    return '${F.dateLong(DateTime.now())} · Updated $ago ago';
+  }
+
+  int get _unread => data == null ? 3 : data!.numOr('unreadNotifications').toInt();
+
+  String get _bookedLine {
+    if (data == null) return '18 booked · Dr. Sen and Dr. Mitra';
+    final doctors = [for (final d in (_summary['doctors'] as List? ?? const [])) F.doctorShort('$d')];
+    final booked = '${_summary['booked'] ?? 0} booked';
+    return doctors.isEmpty ? booked : '$booked · ${F.joinAnd(doctors)}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
     return MpPage(
       nav: const StaffNav(current: 0),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const D10StaffHeader(bellLabel: 'Notifications, 3 new', dot: MP.primary),
-          VGap(
+          D10StaffHeader(bellLabel: _unread > 0 ? 'Notifications, $_unread new' : 'Notifications', dot: MP.primary),
+          if (placeholder != null) placeholder else VGap(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             gap: 16,
             children: [
@@ -77,7 +178,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Good morning, Tania', style: tx(28, w: w800, h: 1.15, em: -0.02)),
+                    Text(_greeting, style: tx(28, w: w800, h: 1.15, em: -0.02)),
                     const Gap(6),
                     Row(
                       children: [
@@ -88,14 +189,14 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> {
                         ),
                         const Gap(8),
                         Flexible(
-                          child: Text('Tue, 29 Sep 2026 · Updated 4s ago', style: tx(14, c: MP.ink2, h: _lh)),
+                          child: Text(_dateLine, style: tx(14, c: MP.ink2, h: _lh)),
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
-              _requestsCard(context),
+              if (_requestRows.isNotEmpty) _requestsCard(context),
               Row(
                 children: [
                   for (var i = 0; i < _actions.length; i++) ...[
@@ -125,11 +226,14 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> {
               children: [
                 Text('Requests waiting for a time', style: tx(20, w: w700, h: 1.25)),
                 const Gap(2),
-                Text('2 patients asked for a visit, no slot yet', style: tx(14, c: MP.ink2, h: _lh)),
+                Text(
+                  '${_requestRows.length} ${_requestRows.length == 1 ? 'patient' : 'patients'} asked for a visit, no slot yet',
+                  style: tx(14, c: MP.ink2, h: _lh),
+                ),
               ],
             ),
           ),
-          for (final r in _requests)
+          for (final r in _requestRows)
             Container(
               padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
@@ -183,7 +287,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> {
                     children: [
                       Text("Today's appointments", style: tx(20, w: w700, h: 1.25)),
                       const Gap(2),
-                      Text('18 booked · Dr. Sen and Dr. Mitra', style: tx(14, c: MP.ink2, h: _lh)),
+                      Text(_bookedLine, style: tx(14, c: MP.ink2, h: _lh)),
                     ],
                   ),
                 ),
@@ -198,15 +302,15 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> {
               ],
             ),
           ),
-          for (var i = 0; i < _appts.length; i++) _apptRow(context, i),
+          for (var i = 0; i < _apptRows.length; i++) _apptRow(context, i),
         ],
       ),
     );
   }
 
   Widget _apptRow(BuildContext context, int i) {
-    final a = _appts[i];
-    final status = _status[i];
+    final a = _apptRows[i];
+    final status = a.$3;
     final (bg, fg) = _statusColors[status]!;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -264,7 +368,15 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> {
   }
 
   Widget _summaryCard() {
-    final summary = [('18', 'Booked'), ('$_checkedIn', 'Checked in'), ('5', 'Done'), ('1', 'Missed appointments')];
+    final m = _summary;
+    final summary = data == null
+        ? [('18', 'Booked'), ('$_checkedIn', 'Checked in'), ('5', 'Done'), ('1', 'Missed appointments')]
+        : [
+            ('${m['booked'] ?? 0}', 'Booked'),
+            ('${m['checkedIn'] ?? 0}', 'Checked in'),
+            ('${m['done'] ?? 0}', 'Done'),
+            ('${m['missed'] ?? 0}', 'Missed appointments'),
+          ];
     return MpCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

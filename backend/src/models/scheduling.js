@@ -1,0 +1,154 @@
+// Booking, queue, payments, follow-ups and referrals
+// (Appointments, Appointments-Manage, Queue-*, Staff-Today, Doctor-History,
+// Doctor-FollowUps, Report-Fees, Report-Referrals, patient visit request).
+const { Schema, model } = require('mongoose');
+const E = require('./enums');
+const { ref, rupees, enumOf, baseOptions } = require('./common');
+
+// "Requests waiting for a time" — the patient asks, the clinic assigns a slot.
+const appointmentRequestSchema = new Schema(
+  {
+    practiceId: ref('Practice', true),
+    patientId: ref('Patient', true),
+    doctorId: ref('User'),
+    locationId: ref('Location'),
+    visitType: enumOf(E.VISIT_TYPES, { default: 'new' }),
+    mode: enumOf(E.VISIT_MODES, { default: 'in_clinic' }),
+    reason: String, // "fever and body ache for 3 days"
+    preferredTime: String, // "Thu or Fri, after 5 PM"
+    preferredSlots: [Date], // slots offered in the patient app sheet
+    channel: enumOf(E.REQUEST_CHANNELS, { default: 'app' }),
+    status: enumOf(E.REQUEST_STATUSES, { default: 'pending' }),
+    appointmentId: ref('Appointment'),
+    declineReason: String, // "Asked for a home visit"
+    handledBy: ref('User'),
+    handledAt: Date,
+  },
+  baseOptions,
+);
+appointmentRequestSchema.index({ practiceId: 1, status: 1, createdAt: 1 });
+
+const todoSchema = new Schema({
+  text: { type: String, required: true }, // "Upload HbA1c report"
+  done: { type: Boolean, default: false },
+  doneAt: Date,
+});
+
+// One booking = one queue token for the day.
+const appointmentSchema = new Schema(
+  {
+    practiceId: ref('Practice', true),
+    locationId: ref('Location', true),
+    doctorId: ref('User', true),
+    patientId: ref('Patient', true),
+    requestId: ref('AppointmentRequest'),
+    date: { type: Date, required: true }, // local day at 00:00 (IST)
+    startAt: { type: Date, required: true },
+    endAt: Date,
+    tokenNo: { type: Number, min: 1 }, // shown zero-padded: "Token 04"
+    isWalkIn: { type: Boolean, default: false },
+    visitType: enumOf(E.VISIT_TYPES, { default: 'follow_up' }),
+    mode: enumOf(E.VISIT_MODES, { default: 'in_clinic' }),
+    serviceName: String,
+    reason: String, // "Diabetes", "Fever, cough"
+    status: enumOf(E.APPOINTMENT_STATUSES, { default: 'booked' }),
+    confirmedAt: Date,
+    arrivedAt: Date, // check-in; drives "Waiting 22 min"
+    checkedInBy: ref('User'),
+    consultStartedAt: Date,
+    completedAt: Date,
+    missedAt: Date,
+    cancelledAt: Date,
+    cancelledBy: enumOf(E.CANCELLED_BY),
+    cancelReason: String,
+    rescheduledFromId: ref('Appointment'),
+    rescheduledToId: ref('Appointment'),
+    bookedBy: ref('User'),
+    channel: enumOf(E.REQUEST_CHANNELS, { default: 'desk' }),
+    fee: { ...rupees, default: 0 },
+    feeStatus: enumOf(E.FEE_STATUSES, { default: 'pending' }),
+    todos: [todoSchema], // patient's before-visit checklist
+    patientNotifiedAt: Date,
+    reminderSentAt: Date,
+    videoRoomUrl: String,
+  },
+  baseOptions,
+);
+appointmentSchema.index({ locationId: 1, date: 1, tokenNo: 1 }, {
+  unique: true,
+  partialFilterExpression: { tokenNo: { $type: 'number' } },
+});
+appointmentSchema.index({ doctorId: 1, startAt: 1 });
+appointmentSchema.index({ practiceId: 1, date: 1, status: 1 });
+appointmentSchema.index({ patientId: 1, startAt: -1 });
+
+// Fees and collections (Report-Fees: "Mark as paid", "Send payment link").
+const paymentSchema = new Schema(
+  {
+    practiceId: ref('Practice', true),
+    locationId: ref('Location'),
+    patientId: ref('Patient', true),
+    appointmentId: ref('Appointment'),
+    amount: { ...rupees, required: true },
+    method: enumOf(E.PAYMENT_METHODS),
+    status: enumOf(E.FEE_STATUSES, { default: 'pending' }),
+    paidAt: Date,
+    markedPaidBy: ref('User'),
+    paymentLinkUrl: String,
+    paymentLinkSentAt: Date,
+    razorpayOrderId: String,
+    razorpayPaymentId: { type: String, sparse: true, unique: true },
+    note: String,
+  },
+  baseOptions,
+);
+paymentSchema.index({ practiceId: 1, status: 1, createdAt: -1 });
+
+// Advised follow-ups ("Come back in 2 weeks with fasting sugar.").
+const followUpSchema = new Schema(
+  {
+    practiceId: ref('Practice', true),
+    patientId: ref('Patient', true),
+    doctorId: ref('User', true),
+    locationId: ref('Location'),
+    consultationId: ref('Consultation'),
+    advisedOn: { type: Date, default: Date.now },
+    adviceText: String,
+    dueDate: { type: Date, required: true },
+    status: enumOf(E.FOLLOW_UP_STATUSES, { default: 'not_booked' }),
+    appointmentId: ref('Appointment'),
+    remindPatient: { type: Boolean, default: true },
+    remindersSent: { type: Number, default: 0 },
+    lastRemindedAt: Date,
+    outcome: enumOf(E.FOLLOW_UP_OUTCOMES), // set when the visit happens or is missed
+    cameBackAt: Date,
+  },
+  baseOptions,
+);
+followUpSchema.index({ practiceId: 1, dueDate: 1, status: 1 });
+
+const referralSchema = new Schema(
+  {
+    practiceId: ref('Practice', true),
+    patientId: ref('Patient', true),
+    doctorId: ref('User', true), // our doctor
+    direction: enumOf(E.REFERRAL_DIRECTIONS, { required: true }),
+    counterpartName: { type: String, required: true }, // "Dr. Sourav Lahiri", "Eye clinic"
+    counterpartUserId: ref('User'), // when the other doctor is on MedPin
+    specialty: String, // Cardiology, Nephrology…
+    reason: String, // "Rising creatinine"
+    referredAt: { type: Date, default: Date.now },
+    status: enumOf(E.REFERRAL_STATUSES, { default: 'awaiting' }),
+    seenAt: Date,
+    consultationId: ref('Consultation'),
+  },
+  baseOptions,
+);
+
+module.exports = {
+  AppointmentRequest: model('AppointmentRequest', appointmentRequestSchema),
+  Appointment: model('Appointment', appointmentSchema),
+  Payment: model('Payment', paymentSchema),
+  FollowUp: model('FollowUp', followUpSchema),
+  Referral: model('Referral', referralSchema),
+};

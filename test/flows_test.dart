@@ -8,6 +8,8 @@ import 'package:medpin_app/app/registry.dart';
 import 'package:medpin_app/app/splash.dart';
 import 'package:medpin_app/core/nav.dart';
 import 'package:medpin_app/core/tokens.dart';
+import 'package:medpin_app/data/session.dart';
+import 'package:medpin_app/screens/auth/auth_login.dart';
 import 'package:medpin_app/screens/doctor/doctor_dashboard.dart';
 import 'package:medpin_app/screens/doctor/doctor_history.dart';
 import 'package:medpin_app/screens/doctor/doctor_messages.dart';
@@ -48,10 +50,11 @@ Future<void> _tab(WidgetTester t, String label) async {
 void main() {
   setUpAll(() async {
     Nav.registry = screenRegistry;
+    Session.I.store = MemorySessionStore(); // no secure storage plugin in tests
     await _loadFigtree();
   });
 
-  testWidgets('splash plays, then lands on the launcher', (t) async {
+  testWidgets('splash plays, then lands on sign-in when signed out', (t) async {
     t.view.physicalSize = const Size(390, 844);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
@@ -61,11 +64,11 @@ void main() {
       await t.runAsync(() => Future.delayed(const Duration(milliseconds: 100)));
       await t.pump();
     }
-    expect(find.byType(LauncherScreen), findsNothing);
+    expect(find.byType(AuthLoginScreen), findsNothing);
     await t.pump(const Duration(milliseconds: 2800));
     await _settle(t);
     await t.pump(const Duration(milliseconds: 800));
-    expect(find.byType(LauncherScreen), findsOneWidget);
+    expect(find.byType(AuthLoginScreen), findsOneWidget);
     expect(find.byType(SplashScreen), findsNothing);
     expect(t.takeException(), isNull);
   });

@@ -1,0 +1,809 @@
+// Patient app: Patient-Home, Hero-Carousel, Patient-Me, Patient-FindDoctor, Patient-Doctors,
+// Patient-DoctorDetail, Patient-DoctorChat, Patient-Chat, Patient-Emergency, Patient-AskAI,
+// Patient-Medicines, Patient-Adherence, Patient-Log, Patient-Track, Patient-Records,
+// Records-Add, Records-Review, Med-AddToCart, Med-Cart, Med-Pharmacy.
+const { Router } = require('express');
+const multer = require('multer');
+const M = require('../models');
+const E = require('../models/enums');
+const T = require('../lib/time');
+const { requireAuth, patientOnly } = require('../middleware/auth');
+const { pick, badRequest, notFound, conflict, escapeRegex, list, isId } = require('../lib/http');
+const { hmac, randomDigits } = require('../lib/security');
+const storage = require('../services/storage');
+const S = require('../services/scheduling');
+const care = require('../services/care');
+const assistant = require('../services/assistant');
+const { notify, practiceStaff } = require('../services/notify');
+const { patientSummary, doseText, dosesPerDay } = require('../services/clinical');
+
+const upload = multer({ limits: { fileSize: 20 * 1024 * 1024, files: 10 } });
+const r = Router();
+r.use(requireAuth);
+
+// Sign-up for someone with no record yet (a clinic may have created one already).
+r.post('/register', async (req, res) => {
+  if (await M.Patient.exists({ userId: req.user._id })) throw conflict('You already have a profile', 'ALREADY_REGISTERED');
+  const { name, gender, ageYears, dateOfBirth } = req.body;
+  if (!name || !E.GENDERS.includes(gender)) throw badRequest('Enter your name and gender');
+  const existing = await M.Patient.findOne({ phone: req.user.phone });
+  if (existing) {
+    existing.userId = req.user._id;
+    await existing.save();
+    return res.json(existing);
+  }
+  const p = await M.Patient.create({ userId: req.user._id, name, gender, ageYears, ageRecordedAt: ageYears != null ? new Date() : undefined, dateOfBirth, phone: req.user.phone, phoneVerifiedAt: req.user.phoneVerifiedAt });
+  if (!req.user.name) await M.User.updateOne({ _id: req.user._id }, { name });
+  return res.status(201).json(p);
+});
+
+r.use(patientOnly);
+
+// ── Profile (Patient-Me) ──
+const meView = (p, user) => ({
+  ...p.toJSON(),
+  age: T.ageFrom(p),
+  bmi: p.heightCm && p.weightKg ? +(p.weightKg / (p.heightCm / 100) ** 2).toFixed(1) : null,
+  language: user.language,
+  appLock: user.appLock,
+});
+
+r.get('/me', async (req, res) => res.json(meView(req.patient, req.user)));
+
+r.patch('/me', async (req, res) => {
+  const p = req.patient;
+  const body = pick(req.body, ['name', 'gender', 'ageYears', 'dateOfBirth', 'bloodGroup', 'heightCm', 'weightKg', 'emergencyContact', 'trackedMeasures', 'area']);
+  if (body.name !== undefined && !String(body.name).trim()) delete body.name; // empty edit keeps the old name
+  if (body.heightCm != null) body.heightCm = Math.min(250, Math.max(50, Number(body.heightCm)));
+  if (body.weightKg != null) body.weightKg = Math.min(400, Math.max(2, Number(body.weightKg)));
+  if (body.ageYears != null) p.ageRecordedAt = new Date();
+  if (body.emergencyContact && !body.emergencyContact.name) body.emergencyContact = { name: undefined, phone: undefined };
+  Object.assign(p, body);
+  if (req.body.settings) p.settings = { ...p.settings.toObject(), ...req.body.settings, reminderTimes: { ...p.settings.reminderTimes.toObject(), ...(req.body.settings.reminderTimes || {}) } };
+  if (req.body.conditions) p.conditions = req.body.conditions.map((c) => (typeof c === 'string' ? { name: c } : c));
+  if (req.body.allergies) p.allergies = req.body.allergies.map((a) => (typeof a === 'string' ? { allergen: a } : a));
+  if (req.body.lat != null && req.body.lng != null) p.geo = { type: 'Point', coordinates: [Number(req.body.lng), Number(req.body.lat)] };
+  await p.save();
+  const userBody = pick(req.body, ['language', 'appLock']);
+  if (Object.keys(userBody).length || body.name) {
+    Object.assign(req.user, userBody, body.name ? { name: body.name } : {});
+    await req.user.save();
+  }
+  res.json(meView(p, req.user));
+});
+
+r.post('/addresses', async (req, res) => {
+  if (!req.body.line) throw badRequest('Enter the address');
+  if (req.body.isDefault) req.patient.addresses.forEach((a) => { a.isDefault = false; });
+  req.patient.addresses.push(pick(req.body, ['label', 'line', 'area', 'city', 'pincode', 'isDefault']));
+  await req.patient.save();
+  res.status(201).json(req.patient.addresses);
+});
+
+// Rotating 6-digit consent code (valid 60 s); a clinic enters it to link the record.
+r.post('/consent-code', async (req, res) => {
+  await M.ConsentCode.updateMany({ patientId: req.patient._id, usedAt: null, expiresAt: { $gt: new Date() } }, { expiresAt: new Date() });
+  const code = randomDigits(6);
+  const expiresAt = new Date(Date.now() + 60 * 1000);
+  await M.ConsentCode.create({ patientId: req.patient._id, codeHash: hmac(`consent:${req.patient._id}:${code}`), expiresAt });
+  res.json({ code, display: `${code.slice(0, 3)} ${code.slice(3)}`, expiresAt });
+});
+
+// ── Who can see my record ──
+r.get('/care-team', async (req, res) => {
+  const rows = await M.CareTeamAccess.find({ patientId: req.patient._id }).populate('userId', 'name').populate('practiceId', 'name');
+  res.json(rows.map((c) => ({ userId: c.userId?._id, name: c.userId?.name, role: c.role, practice: c.practiceId?.name, accessLevel: c.accessLevel, since: c.since })));
+});
+
+r.patch('/care-team/:userId', async (req, res) => {
+  if (!E.ACCESS_LEVELS.includes(req.body.accessLevel)) throw badRequest('Choose what they can see');
+  const c = await M.CareTeamAccess.findOne({ patientId: req.patient._id, userId: req.params.userId });
+  if (!c) throw notFound('Care team member');
+  c.accessLevel = req.body.accessLevel;
+  c.changedAt = new Date();
+  c.viewerNotifiedAt = new Date();
+  await c.save();
+  await notify([c.userId], { type: 'access_changed', title: `${req.patient.name} changed what you can see`, body: req.body.accessLevel.replace(/_/g, ' '), screen: 'Patient-Profile', params: { patientId: req.patient._id } });
+  res.json(c);
+});
+
+// Stop sharing with a whole clinic.
+r.post('/clinics/:practiceId/revoke', async (req, res) => {
+  const e = await M.PatientEnrolment.findOneAndUpdate({ patientId: req.patient._id, practiceId: req.params.practiceId }, { status: 'revoked', revokedAt: new Date() }, { new: true });
+  if (!e) throw notFound('Clinic');
+  await M.CareTeamAccess.updateMany({ patientId: req.patient._id, practiceId: req.params.practiceId }, { accessLevel: 'not_shared', changedAt: new Date() });
+  res.json(e);
+});
+
+// ── Home ──
+r.get('/home', async (req, res) => {
+  const p = req.patient;
+  const now = new Date();
+  const today = T.dayStart();
+  await care.ensureDoses(p, today);
+  const [doses, nextVisit, newReport, courses, steps, logs, summary, plan] = await Promise.all([
+    M.DoseLog.find({ patientId: p._id, scheduledAt: { $gte: today, $lt: T.addDays(today, 1) } }).sort({ scheduledAt: 1 }).populate('courseId', 'name strength foodRelation'),
+    M.Appointment.findOne({ patientId: p._id, startAt: { $gte: today }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }).sort({ startAt: 1 }).populate('doctorId', 'name').populate('locationId', 'name shortName'),
+    M.LabResult.findOne({ patientId: p._id, createdAt: { $gte: T.addDays(today, -3) } }).sort({ createdAt: -1 }),
+    M.MedicationCourse.find({ patientId: p._id, status: 'active' }),
+    M.HealthLog.aggregate([{ $match: { patientId: p._id, type: 'steps', loggedAt: { $gte: today } } }, { $group: { _id: null, n: { $sum: '$steps' } } }]),
+    M.HealthLog.find({ patientId: p._id, loggedAt: { $gte: today } }),
+    M.AiSummary.findOne({ patientId: p._id, audience: 'patient' }).sort({ generatedAt: -1 }),
+    M.TreatmentPlan.findOne({ patientId: p._id }).sort({ updatedAt: -1 }),
+  ]);
+  const refills = courses
+    .filter((c) => c.stockUnits != null && dosesPerDay(c.dose) > 0)
+    .map((c) => ({ courseId: c._id, name: `${c.name} ${c.strength || ''}`.trim(), tabletsLeft: c.stockUnits, daysLeft: Math.floor(c.stockUnits / dosesPerDay(c.dose)) }))
+    .filter((x) => x.daysLeft <= 5)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+  const tasks = doses.map((d) => ({
+    kind: 'dose', id: d._id, title: `${d.courseId?.name} ${d.courseId?.strength || ''}`.trim(), slot: d.slot, at: d.scheduledAt, foodRelation: d.courseId?.foodRelation,
+    status: care.effectiveStatus(d, now), done: d.status === 'taken', doneLabel: 'Taken',
+  }));
+  const mealsLogged = logs.filter((l) => l.type === 'meal').map((l) => l.mealType);
+  tasks.push({ kind: 'log', id: 'meal-log', title: 'Log your meals', done: mealsLogged.length >= 2, doneLabel: 'Logged', detail: mealsLogged });
+  if (nextVisit && T.dayKey(nextVisit.startAt) === T.dayKey(now)) {
+    for (const t of nextVisit.todos.filter((x) => !x.done)) tasks.push({ kind: 'visit_todo', id: t._id, appointmentId: nextVisit._id, title: t.text, done: false });
+  }
+  const slides = [];
+  if (nextVisit) slides.push({ kind: 'visit', title: `Visit ${T.dayKey(nextVisit.startAt) === T.dayKey(now) ? 'today' : T.dayKey(nextVisit.startAt)}, ${T.fmtTime(T.minuteOfDay(nextVisit.startAt))}`, sub: `${nextVisit.doctorId?.name} · Token ${String(nextVisit.tokenNo).padStart(2, '0')}`, screen: 'Patient-DoctorDetail', params: { appointmentId: nextVisit._id } });
+  if (newReport) slides.push({ kind: 'report', title: `Your ${newReport.testName} is in`, sub: newReport.abnormalCount ? `${newReport.abnormalCount} value(s) outside the range` : 'All values in range', screen: 'Patient-Records' });
+  if (refills[0]) slides.push({ kind: 'refill', title: `${refills[0].name} runs out in ${refills[0].daysLeft} days`, sub: `${refills[0].tabletsLeft} tablets left`, screen: 'Med-Cart' });
+  if (p.healthScore?.value != null) slides.push({ kind: 'score', title: `Health score ${p.healthScore.value}`, sub: p.healthScore.weeklyDelta ? `${p.healthScore.weeklyDelta > 0 ? '+' : ''}${p.healthScore.weeklyDelta} this week` : '', screen: 'Patient-Home' });
+  const unread = await M.Conversation.aggregate([{ $match: { patientId: p._id } }, { $unwind: '$participants' }, { $match: { 'participants.userId': req.user._id } }, { $group: { _id: null, n: { $sum: '$participants.unreadCount' } } }]);
+
+  // Cards further down the home screen.
+  const [rx, lab, plans, team, adh, readings] = await Promise.all([
+    M.Prescription.findOne({ patientId: p._id }).sort({ issuedAt: -1 }),
+    M.LabResult.findOne({ patientId: p._id }).sort({ collectedAt: -1 }),
+    M.ActivityPlan.find({ patientId: p._id, active: true }).limit(1),
+    M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $in: ['full_with_logs', 'daily_log_only'] } }).populate('userId', 'name'),
+    care.adherence(p, 30),
+    M.Vitals.find({ patientId: p._id, recordedAt: { $gte: T.addDays(today, -30) } }).sort({ recordedAt: 1 }),
+  ]);
+  const weekStart = T.addDays(today, -((new Date(now.getTime() + T.IST_MS).getUTCDay() + 6) % 7));
+  const activity = plans[0];
+  const series = (pickFn) => readings.map((v) => ({ at: v.recordedAt, ...pickFn(v) })).filter((x) => x.value != null).slice(-7);
+  const tracked = {
+    blood_sugar: series((v) => ({ value: v.sugarType === 'fasting' ? v.bloodSugar : null })),
+    blood_pressure: series((v) => ({ value: v.bpSystolic, value2: v.bpDiastolic })),
+    weight: series((v) => ({ value: v.weightKg })),
+    heart_rate: series((v) => ({ value: v.pulse })),
+    spo2: series((v) => ({ value: v.spo2 })),
+  };
+  res.json({
+    latestPrescription: rx && {
+      id: rx._id, issuedAt: rx.issuedAt, doctorName: rx.doctorName, medicines: rx.items.length, validUntil: rx.validUntil, url: storage.signedUrl(rx.file?.key),
+    },
+    latestLab: lab && {
+      id: lab._id, recordId: lab.recordId, testName: lab.testName, collectedAt: lab.collectedAt, abnormalCount: lab.abnormalCount,
+      abnormal: lab.values.filter((v) => v.flag !== 'normal').map((v) => v.analyte),
+      abnormalDirection: lab.values.some((v) => v.flag === 'high' || v.flag === 'critical') ? 'high' : 'low',
+    },
+    activityPlan: activity && {
+      id: activity._id, name: activity.name, durationMin: activity.durationMin, plannedTime: activity.plannedTime, daysPerWeek: activity.daysPerWeek,
+      doneThisWeek: activity.completions.filter((d) => d >= weekStart).length, doneToday: activity.completions.some((d) => T.dayKey(d) === T.dayKey(now)),
+    },
+    mealsLogged,
+    logSharedWith: team.map((c) => ({ name: c.userId?.name, role: c.role })),
+    adherence: { pct: adh.overallPct, doctors: adh.perDoctor.length },
+    trackedMeasures: p.trackedMeasures,
+    tracked,
+    targets: p.targets,
+    greetingName: p.name.split(' ')[0],
+    date: today,
+    slides,
+    tasks,
+    tasksDone: tasks.filter((t) => t.done).length,
+    steps: { today: steps[0]?.n || 0, goal: p.targets?.stepsPerDay || 8000 },
+    refills,
+    nextVisit,
+    aiSummary: summary || (plan?.healthSummary ? { body: plan.healthSummary, focusItems: plan.focusItems, generatedAt: plan.updatedAt } : null),
+    healthScore: p.healthScore,
+    unreadMessages: unread[0]?.n || 0,
+    unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, readAt: null }),
+  });
+});
+
+// ── Find a doctor ──
+const haversineKm = (a, b) => {
+  if (!a || !b) return null;
+  const [lng1, lat1] = a;
+  const [lng2, lat2] = b;
+  const rad = (x) => (x * Math.PI) / 180;
+  const h = Math.sin(rad(lat2 - lat1) / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lng2 - lng1) / 2) ** 2;
+  return +(12742 * Math.asin(Math.sqrt(h))).toFixed(1);
+};
+
+async function doctorCards(req, profiles, origin) {
+  const myDoctors = new Set((await M.CareTeamAccess.find({ patientId: req.patient._id, accessLevel: { $ne: 'not_shared' } }).distinct('userId')).map(String));
+  const dls = await M.DoctorLocation.find({ doctorId: { $in: profiles.map((p) => p.userId) }, status: 'active' }).populate('locationId').populate('practiceId', 'name');
+  const out = [];
+  for (const prof of profiles) {
+    const places = dls.filter((d) => String(d.doctorId) === String(prof.userId) && d.locationId?.status === 'active');
+    if (!places.length) continue;
+    let best = null;
+    for (const d of places) {
+      const km = haversineKm(origin, d.locationId.geo?.coordinates);
+      const next = await S.nextFreeSlot({ doctorId: prof.userId, locationId: d.locationId._id });
+      const fee = (d.services.find((s) => s.visitType === 'new') || d.services[0])?.fee ?? null;
+      const cand = { place: d, km, next, fee };
+      if (!best || (km ?? 1e9) < (best.km ?? 1e9)) best = cand;
+    }
+    out.push({
+      doctorId: prof.userId, name: prof.displayName, initials: prof.displayName.replace(/^Dr\.?\s*/i, '').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
+      photo: storage.withUrl(prof.photo), headline: prof.headline, specialtyKeys: prof.specialtyKeys, degrees: prof.degreesSummary,
+      years: prof.practisingSince ? new Date().getFullYear() - prof.practisingSince : null, languages: prof.languagesSpoken,
+      gender: prof.gender, video: prof.offersVideo, verified: prof.isVerified, presence: prof.presence,
+      clinic: best.place.practiceId?.name, location: { id: best.place.locationId._id, name: best.place.locationId.name, area: best.place.locationId.area },
+      km: best.km, fee: best.fee, nextSlot: best.next && { startAt: best.next.startAt, time: best.next.time },
+      availableToday: Boolean(best.next && T.dayKey(best.next.startAt) === T.dayKey(new Date())), mine: myDoctors.has(String(prof.userId)),
+    });
+  }
+  return out;
+}
+
+r.get('/doctors/search', async (req, res) => {
+  const q = { acceptingBookings: true };
+  if (req.query.specialty) q.specialtyKeys = { $in: list(req.query.specialty) };
+  if (req.query.female === 'true') q.gender = 'female';
+  if (req.query.video === 'true') q.offersVideo = true;
+  if (req.query.language) q.languagesSpoken = req.query.language;
+  if (req.query.q) {
+    const re = new RegExp(escapeRegex(req.query.q), 'i');
+    q.$or = [{ displayName: re }, { specialisations: re }, { conditionsTreated: re }, { headline: re }];
+  }
+  const profiles = await M.DoctorProfile.find(q).limit(100);
+  const origin = req.query.lat && req.query.lng ? [Number(req.query.lng), Number(req.query.lat)] : req.patient.geo?.coordinates;
+  let cards = await doctorCards(req, profiles, origin);
+  if (req.query.today === 'true') cards = cards.filter((c) => c.availableToday);
+  if (req.query.withinKm) cards = cards.filter((c) => c.km != null && c.km <= Number(req.query.withinKm));
+  if (req.query.area) cards = cards.filter((c) => new RegExp(escapeRegex(req.query.area), 'i').test(c.location.area || ''));
+  if (req.query.sort === 'soonest') cards.sort((a, b) => new Date(a.nextSlot?.startAt || 8.64e15) - new Date(b.nextSlot?.startAt || 8.64e15));
+  else cards.sort((a, b) => (a.km ?? 1e9) - (b.km ?? 1e9) || Number(b.mine) - Number(a.mine));
+  res.json({ total: cards.length, emergency: req.query.q ? assistant.isEmergencyText(req.query.q) : false, items: cards });
+});
+
+r.get('/doctors/:doctorId', async (req, res) => {
+  const prof = await M.DoctorProfile.findOne({ userId: req.params.doctorId });
+  if (!prof) throw notFound('Doctor');
+  const [card] = await doctorCards(req, [prof], req.patient.geo?.coordinates);
+  const places = await M.DoctorLocation.find({ doctorId: prof.userId, status: 'active' }).populate('locationId', 'name address area googleMapsUrl geo');
+  const access = await M.CareTeamAccess.findOne({ patientId: req.patient._id, userId: prof.userId });
+  const [nextVisit, lastVisit, records, history, courses] = await Promise.all([
+    M.Appointment.findOne({ patientId: req.patient._id, doctorId: prof.userId, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }).sort({ startAt: 1 }).populate('locationId', 'name shortName googleMapsUrl'),
+    M.Consultation.findOne({ patientId: req.patient._id, doctorId: prof.userId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).populate('vitalsId').populate('prescriptionId', 'items tests advice'),
+    M.MedicalRecord.find({ patientId: req.patient._id, deletedAt: null, $or: [{ doctorId: prof.userId }, { 'sharedWith.userId': prof.userId }] }).sort({ recordDate: -1 }).limit(50),
+    M.Consultation.find({ patientId: req.patient._id, doctorId: prof.userId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).limit(10),
+    M.MedicationCourse.find({ patientId: req.patient._id, doctorId: prof.userId, status: 'active' }),
+  ]);
+  res.json({
+    ...(card || { doctorId: prof.userId, name: prof.displayName }),
+    bio: prof.bio,
+    qualifications: prof.qualifications.map((q) => ({ name: q.name, institution: q.institution, year: q.year })),
+    places: places.map((d) => ({ locationId: d.locationId._id, name: d.locationId.name, address: d.locationId.address, mapUrl: d.locationId.googleMapsUrl, services: d.services })),
+    access: access && { level: access.accessLevel, since: access.since },
+    nextVisit,
+    lastVisit: lastVisit && { date: lastVisit.startedAt, diagnoses: lastVisit.diagnoses.map((d) => d.name), vitals: lastVisit.vitalsId, prescriptionId: lastVisit.prescriptionId?._id, advice: lastVisit.prescriptionId?.advice },
+    medicines: courses.map((c) => ({ id: c._id, name: c.name, strength: c.strength, pattern: doseText(c.dose) })),
+    records: records.map((x) => ({ id: x._id, kind: x.kind, title: x.title, date: x.recordDate, origin: x.origin, flagLabel: x.flagLabel, flagTone: x.flagTone })),
+    timeline: history.map((h) => ({ date: h.startedAt, text: h.diagnoses.map((d) => d.name).join(', ') || h.chiefComplaint })),
+  });
+});
+
+r.get('/doctors/:doctorId/slots', async (req, res) => {
+  if (!req.query.locationId) throw badRequest('locationId is required');
+  const out = await S.slotsFor({ doctorId: req.params.doctorId, locationId: req.query.locationId, day: T.parseDay(req.query.date) });
+  res.json({ ...out, slots: out.slots.filter((s) => !s.walkIn) });
+});
+
+// My doctors (Doctors tab).
+r.get('/my-doctors', async (req, res) => {
+  const team = await M.CareTeamAccess.find({ patientId: req.patient._id, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name').populate('practiceId', 'name');
+  const adh = await care.adherence(req.patient, 30);
+  const out = [];
+  for (const c of team) {
+    const [prof, next, last, convo, fu, meds] = await Promise.all([
+      M.DoctorProfile.findOne({ userId: c.userId._id }, 'displayName headline presence avgReplyMinutes'),
+      M.Appointment.findOne({ patientId: req.patient._id, doctorId: c.userId._id, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting'] } }).sort({ startAt: 1 }),
+      M.Appointment.findOne({ patientId: req.patient._id, doctorId: c.userId._id, status: 'completed' }).sort({ completedAt: -1 }),
+      M.Conversation.findOne({ patientId: req.patient._id, practiceId: c.practiceId?._id, type: 'care' }),
+      M.FollowUp.findOne({ patientId: req.patient._id, doctorId: c.userId._id, status: { $in: ['not_booked', 'no_reply'] } }).sort({ dueDate: 1 }),
+      M.MedicationCourse.countDocuments({ patientId: req.patient._id, doctorId: c.userId._id, status: 'active' }),
+    ]);
+    const docAdh = adh.perDoctor.find((d) => d.doctor === String(c.userId._id));
+    out.push({
+      doctorId: c.userId._id, name: prof?.displayName || c.userId.name, role: c.role, headline: prof?.headline, clinic: c.practiceId?.name,
+      presence: prof?.presence, avgReplyMinutes: prof?.avgReplyMinutes, nextVisit: next && { id: next._id, startAt: next.startAt, token: String(next.tokenNo).padStart(2, '0') },
+      lastSeenAt: last?.completedAt, followUpDue: fu?.dueDate, medicines: meds, adherencePct: docAdh?.pct ?? null,
+      conversationId: convo?._id, unread: convo?.participants.find((p) => String(p.userId) === String(req.user._id))?.unreadCount || 0,
+    });
+  }
+  res.json(out);
+});
+
+// ── Visits ──
+r.post('/visit-requests', async (req, res) => {
+  const { doctorId, locationId, visitType = 'new', mode = 'in_clinic', reason, preferredTime, slot } = req.body;
+  if (!isId(doctorId)) throw badRequest('Choose a doctor');
+  const dl = await M.DoctorLocation.findOne({ doctorId, status: 'active', ...(locationId ? { locationId } : {}) });
+  if (!dl) throw notFound('Doctor');
+  await M.PatientEnrolment.findOneAndUpdate(
+    { patientId: req.patient._id, practiceId: dl.practiceId },
+    { $setOnInsert: { status: 'linked', shareScope: 'partial', linkedAt: new Date() } },
+    { upsert: true },
+  );
+  await M.CareTeamAccess.findOneAndUpdate(
+    { patientId: req.patient._id, userId: doctorId },
+    { $setOnInsert: { practiceId: dl.practiceId, role: 'doctor', accessLevel: 'prescriptions_and_tests', since: new Date() } },
+    { upsert: true },
+  );
+  const request = await M.AppointmentRequest.create({
+    practiceId: dl.practiceId, patientId: req.patient._id, doctorId, locationId: dl.locationId, visitType, mode, reason, preferredTime,
+    preferredSlots: slot ? [new Date(slot)] : [], channel: 'app',
+  });
+  // Instant booking when the doctor doesn't require approval and a slot was picked.
+  let appointment = null;
+  if (slot && !dl.schedule.requireApproval) {
+    appointment = await S.book({ practiceId: dl.practiceId, locationId: dl.locationId, doctorId, patientId: req.patient._id, startAt: slot, visitType, mode, reason, channel: 'app', bookedBy: req.user._id, requestId: request._id });
+    Object.assign(request, { status: 'scheduled', appointmentId: appointment._id, handledAt: new Date() });
+    await request.save();
+  } else {
+    const desk = await practiceStaff(dl.practiceId, { roles: ['front_desk', 'practice_manager'], locationId: dl.locationId });
+    await notify(desk, { type: 'visit_request', practiceId: dl.practiceId, title: `${req.patient.name} asked for a visit`, body: preferredTime || reason, screen: 'Appointments' });
+  }
+  res.status(201).json({ request, appointment });
+});
+
+r.get('/appointments', async (req, res) => {
+  const upcoming = req.query.view !== 'past';
+  const q = { patientId: req.patient._id, ...(upcoming ? { startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } } : { $or: [{ startAt: { $lt: T.dayStart() } }, { status: { $in: ['completed', 'missed', 'cancelled'] } }] }) };
+  const items = await M.Appointment.find(q).sort({ startAt: upcoming ? 1 : -1 }).limit(100).populate('doctorId', 'name').populate('locationId', 'name shortName googleMapsUrl');
+  const requests = upcoming ? await M.AppointmentRequest.find({ patientId: req.patient._id, status: 'pending' }).populate('doctorId', 'name') : [];
+  res.json({ items: items.map((a) => ({ ...a.toJSON(), token: a.tokenNo ? String(a.tokenNo).padStart(2, '0') : null })), pendingRequests: requests });
+});
+
+const myAppointment = async (req) => {
+  const a = await M.Appointment.findOne({ _id: req.params.id, patientId: req.patient._id });
+  if (!a) throw notFound('Visit');
+  return a;
+};
+
+r.post('/appointments/:id/todos/:todoId', async (req, res) => {
+  const a = await myAppointment(req);
+  const t = a.todos.id(req.params.todoId);
+  if (!t) throw notFound('To-do');
+  t.done = req.body.done !== undefined ? Boolean(req.body.done) : !t.done;
+  t.doneAt = t.done ? new Date() : undefined;
+  await a.save();
+  res.json(a.todos);
+});
+
+r.post('/appointments/:id/cancel', async (req, res) => {
+  const a = await myAppointment(req);
+  const dl = await M.DoctorLocation.findOne({ doctorId: a.doctorId, locationId: a.locationId });
+  const cutoff = (dl?.schedule.cancelCutoffHours || 2) * 3600e3;
+  if (a.startAt - Date.now() < cutoff) throw conflict(`Visits can be cancelled up to ${dl?.schedule.cancelCutoffHours || 2} hours before. Please call the clinic.`, 'TOO_LATE');
+  await S.transition(a, 'cancelled', { cancelledBy: 'patient', reason: req.body.reason });
+  res.json(a);
+});
+
+r.post('/appointments/:id/reschedule', async (req, res) => {
+  const a = await myAppointment(req);
+  const next = await S.reschedule(a, req.body.startAt, req.user._id);
+  res.json(next);
+});
+
+// ── Medicines ──
+r.get('/medicines', async (req, res) => {
+  const courses = await M.MedicationCourse.find({ patientId: req.patient._id, status: 'active' });
+  const adh = await care.adherence(req.patient, 30);
+  const today = T.dayStart();
+  const items = courses.map((c) => {
+    const perDay = dosesPerDay(c.dose) || (c.frequency === 'weekly' ? 1 / 7 : 0);
+    const day = Math.floor((today - T.dayStart(c.startDate)) / T.DAY_MS) + 1;
+    const totalDays = c.endDate ? Math.floor((T.dayStart(c.endDate) - T.dayStart(c.startDate)) / T.DAY_MS) + 1 : null;
+    const a = adh.perMedicine.find((m) => String(m.courseId) === String(c._id));
+    return {
+      id: c._id, name: c.name, strength: c.strength, pattern: c.frequency === 'weekly' ? `Once a week${c.weekday ? ` · ${c.weekday}` : ''}` : doseText(c.dose),
+      foodRelation: c.foodRelation, instructions: c.instructions, prescriber: c.prescriberName, doctorId: c.doctorId, startDate: c.startDate, endDate: c.endDate,
+      course: { day, totalDays }, tracked: c.trackingEnabled, adherencePct: a?.pct ?? null,
+      stock: c.stockUnits != null ? { units: c.stockUnits, daysLeft: perDay ? Math.floor(c.stockUnits / perDay) : null } : null,
+    };
+  });
+  items.sort((a, b) => (a.stock?.daysLeft ?? 1e9) - (b.stock?.daysLeft ?? 1e9));
+  const doctors = new Set(courses.map((c) => String(c.doctorId || c.prescriberName)));
+  const allergies = req.patient.allergies.map((x) => x.allergen);
+  res.json({ running: items.length, fromDoctors: doctors.size, adherence30d: adh.overallPct, allergies, items });
+});
+
+r.post('/medicines', async (req, res) => {
+  const body = pick(req.body, ['name', 'strength', 'dose', 'frequency', 'weekday', 'foodRelation', 'instructions', 'prescriberName', 'stockUnits', 'endDate']);
+  if (!body.name) throw badRequest('Enter the medicine name');
+  const c = await M.MedicationCourse.create({ ...body, patientId: req.patient._id, startDate: req.body.startDate ? T.parseDay(req.body.startDate) : T.dayStart() });
+  res.status(201).json(c);
+});
+
+r.patch('/medicines/:id', async (req, res) => {
+  const c = await M.MedicationCourse.findOne({ _id: req.params.id, patientId: req.patient._id });
+  if (!c) throw notFound('Medicine');
+  Object.assign(c, pick(req.body, ['trackingEnabled', 'stockUnits']));
+  if (req.body.stockUnits != null) c.stockUpdatedAt = new Date();
+  if (req.body.stop) { c.status = 'stopped'; c.stoppedAt = new Date(); }
+  await c.save();
+  res.json(c);
+});
+
+r.get('/doses', async (req, res) => {
+  const day = T.parseDay(req.query.date);
+  await care.ensureDoses(req.patient, day);
+  const doses = await M.DoseLog.find({ patientId: req.patient._id, scheduledAt: { $gte: day, $lt: T.addDays(day, 1) } }).sort({ scheduledAt: 1 }).populate('courseId', 'name strength foodRelation instructions');
+  const items = doses.map((d) => ({ id: d._id, slot: d.slot, at: d.scheduledAt, status: care.effectiveStatus(d), takenAt: d.takenAt, medicine: d.courseId && { id: d.courseId._id, name: d.courseId.name, strength: d.courseId.strength, foodRelation: d.courseId.foodRelation } }));
+  res.json({ date: day, taken: items.filter((d) => d.status === 'taken').length, total: items.length, items });
+});
+
+// Taken / Skip / undo (back to due).
+r.post('/doses/:id', async (req, res) => {
+  const d = await M.DoseLog.findOne({ _id: req.params.id, patientId: req.patient._id });
+  if (!d) throw notFound('Dose');
+  const status = req.body.status;
+  if (!['taken', 'skipped', 'due'].includes(status)) throw badRequest('status must be taken, skipped or due');
+  const was = d.status;
+  d.status = status;
+  d.takenAt = status === 'taken' ? new Date() : undefined;
+  await d.save();
+  // Stock goes down when a dose is taken (and back up on undo).
+  const course = await M.MedicationCourse.findById(d.courseId);
+  const units = course?.dose?.[d.slot] || 1;
+  if (course?.stockUnits != null) {
+    if (status === 'taken' && was !== 'taken') course.stockUnits = Math.max(0, course.stockUnits - units);
+    if (was === 'taken' && status !== 'taken') course.stockUnits += units;
+    await course.save();
+  }
+  res.json(d);
+});
+
+r.get('/adherence', async (req, res) => {
+  const out = await care.adherence(req.patient, Math.min(Number(req.query.days) || 30, 180));
+  const doctorIds = out.perDoctor.map((d) => d.doctor).filter(isId);
+  const names = new Map((await M.User.find({ _id: { $in: doctorIds } }, 'name')).map((u) => [String(u._id), u.name]));
+  res.json({ ...out, perDoctor: out.perDoctor.map((d) => ({ ...d, name: names.get(d.doctor) || d.doctor })) });
+});
+
+// ── Health log (meal / exercise / steps) and activity plans ──
+r.get('/logs', async (req, res) => {
+  const day = T.parseDay(req.query.date);
+  const logs = await M.HealthLog.find({ patientId: req.patient._id, loggedAt: { $gte: day, $lt: T.addDays(day, 1) } }).sort({ loggedAt: 1 });
+  res.json(logs.map((l) => ({ ...l.toJSON(), photo: storage.withUrl(l.photo) })));
+});
+
+r.post('/logs', upload.single('photo'), async (req, res) => {
+  const b = req.body;
+  if (!E.LOG_TYPES.includes(b.type)) throw badRequest('Choose meal, exercise or steps');
+  if (b.type === 'steps' && !(Number(b.steps) >= 0)) throw badRequest('Enter the steps');
+  const sharedWith = list(b.sharedWith).filter(isId);
+  const practice = (await M.PatientEnrolment.findOne({ patientId: req.patient._id, status: 'linked' }).populate('practiceId', 'foodLogReviewCadence'))?.practiceId;
+  const cadence = { daily: 1, every_3_days: 3, weekly: 7 }[practice?.foodLogReviewCadence || 'every_3_days'];
+  const log = await M.HealthLog.create({
+    patientId: req.patient._id, type: b.type, mealType: b.mealType, exerciseType: b.exerciseType, durationMin: b.durationMin, steps: b.steps, note: b.note,
+    inputMode: b.inputMode, loggedAt: b.loggedAt ? new Date(b.loggedAt) : new Date(), sharedWith, activityPlanId: b.activityPlanId,
+    photo: req.file ? await storage.save(req.file.buffer, { folder: 'logs', name: req.file.originalname, mimeType: req.file.mimetype }) : undefined,
+    review: b.type === 'meal' && sharedWith.length ? { dueAt: T.addDays(T.dayStart(), cadence) } : undefined,
+  });
+  res.status(201).json(log);
+});
+
+r.delete('/logs/:id', async (req, res) => {
+  await M.HealthLog.deleteOne({ _id: req.params.id, patientId: req.patient._id });
+  res.json({ ok: true });
+});
+
+r.get('/activity-plans', async (req, res) => {
+  const plans = await M.ActivityPlan.find({ patientId: req.patient._id, active: true });
+  const weekStart = T.addDays(T.dayStart(), -((new Date(Date.now() + T.IST_MS).getUTCDay() + 6) % 7));
+  res.json(plans.map((p) => ({ ...p.toJSON(), doneThisWeek: p.completions.filter((d) => d >= weekStart).length })));
+});
+
+r.post('/activity-plans', async (req, res) => {
+  if (!req.body.name) throw badRequest('Name the activity');
+  res.status(201).json(await M.ActivityPlan.create({ ...pick(req.body, ['name', 'exerciseType', 'durationMin', 'plannedTime', 'daysPerWeek']), patientId: req.patient._id, setBy: req.user._id }));
+});
+
+r.post('/activity-plans/:id/done', async (req, res) => {
+  const p = await M.ActivityPlan.findOne({ _id: req.params.id, patientId: req.patient._id });
+  if (!p) throw notFound('Plan');
+  const today = T.dayKey(new Date());
+  if (!p.completions.some((d) => T.dayKey(d) === today)) p.completions.push(new Date());
+  await p.save();
+  res.json(p);
+});
+
+// ── Home readings (BP, sugar, weight…) ──
+r.post('/readings', async (req, res) => {
+  const v = pick(req.body, ['bpSystolic', 'bpDiastolic', 'pulse', 'spo2', 'temperatureF', 'weightKg', 'bloodSugar', 'sugarType', 'note']);
+  if (!Object.keys(v).filter((k) => k !== 'note').length) throw badRequest('Enter a reading');
+  const p = req.patient;
+  const vitals = await M.Vitals.create({
+    ...v, patientId: p._id, recordedBy: req.user._id, recordedByRole: 'patient', source: req.body.source === 'device' ? 'device' : 'home',
+    recordedAt: req.body.recordedAt ? new Date(req.body.recordedAt) : new Date(),
+    bmi: p.heightCm && v.weightKg ? +(v.weightKg / (p.heightCm / 100) ** 2).toFixed(1) : undefined,
+  });
+  if (v.weightKg) { p.weightKg = v.weightKg; await p.save(); }
+  const alerts = await care.checkReading(vitals, p);
+  res.status(201).json({ reading: vitals, alerted: alerts.length > 0 });
+});
+
+r.get('/readings', async (req, res) => {
+  const days = Math.min(Number(req.query.days) || 30, 365);
+  const field = { blood_sugar: 'bloodSugar', blood_pressure: 'bpSystolic', weight: 'weightKg', heart_rate: 'pulse', spo2: 'spo2' }[req.query.measure];
+  const q = { patientId: req.patient._id, recordedAt: { $gte: T.addDays(new Date(), -days) }, ...(field ? { [field]: { $ne: null } } : {}) };
+  res.json(await M.Vitals.find(q).sort({ recordedAt: 1 }).limit(1000));
+});
+
+// ── Records ──
+r.get('/records', async (req, res) => {
+  const q = { patientId: req.patient._id, deletedAt: null };
+  if (req.query.kind) q.kind = req.query.kind;
+  let items = await M.MedicalRecord.find(q).sort({ recordDate: -1 }).limit(300);
+  if (req.query.q) {
+    const re = new RegExp(escapeRegex(req.query.q), 'i');
+    items = items.filter((x) => re.test(x.title) || re.test(x.kind) || re.test(x.sourceName || '') || re.test(x.aiSummary || ''));
+  }
+  const all = await M.MedicalRecord.aggregate([{ $match: { patientId: req.patient._id, deletedAt: null } }, { $group: { _id: '$kind', n: { $sum: 1 } } }]);
+  const counts = Object.fromEntries(all.map((x) => [x._id, x.n]));
+  res.json({ counts: { all: Object.values(counts).reduce((a, b) => a + b, 0), ...counts }, items: items.map((x) => ({ ...x.toJSON(), files: x.files.map(storage.withUrl) })) });
+});
+
+r.get('/records/:id', async (req, res) => {
+  const rec = await M.MedicalRecord.findOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null });
+  if (!rec) throw notFound('Record');
+  const results = await M.LabResult.find({ recordId: rec._id });
+  const rx = rec.prescriptionId ? await M.Prescription.findById(rec.prescriptionId) : null;
+  res.json({ ...rec.toJSON(), files: rec.files.map(storage.withUrl), results, prescription: rx && { ...rx.toJSON(), file: storage.withUrl(rx.file) } });
+});
+
+// Records-Add: upload. For a test report the AI proposes the tests it found (Records-Review).
+r.post('/records', upload.array('files', 10), async (req, res) => {
+  if (!req.files?.length) throw badRequest('Choose a file');
+  const kind = req.body.kind === 'prescription' ? 'prescription' : 'test_result';
+  const files = [];
+  for (const f of req.files) files.push(await storage.save(f.buffer, { folder: 'records', name: f.originalname, mimeType: f.mimetype }));
+  const sharedWith = list(req.body.shareWith).filter(isId).map((userId) => ({ userId }));
+  const record = await M.MedicalRecord.create({
+    patientId: req.patient._id, kind, title: req.body.title || (kind === 'prescription' ? 'Prescription' : 'Test report'),
+    recordDate: req.body.recordDate ? T.parseDay(req.body.recordDate) : new Date(), origin: 'shared_by_patient', sourceName: req.body.sourceName || 'uploaded by you',
+    uploadSource: E.UPLOAD_SOURCES.includes(req.body.uploadSource) ? req.body.uploadSource : undefined, files, sharedWith,
+    status: kind === 'test_result' ? 'processing' : 'ready', uploadedBy: req.user._id, flagLabel: 'New', flagTone: 'new',
+  });
+  let extracted = null;
+  if (kind === 'test_result') {
+    extracted = await assistant.extractLabReport(req.files[0].buffer, req.files[0].mimetype).catch((err) => { console.warn('[extract]', err.message); return null; });
+    if (!extracted) { record.status = 'ready'; await record.save(); }
+  }
+  if (sharedWith.length) {
+    await notify(sharedWith.map((s) => s.userId), { type: 'record_shared', title: `${req.patient.name} shared a ${kind === 'prescription' ? 'prescription' : 'report'}`, screen: 'Patient-Profile', params: { patientId: req.patient._id } });
+  }
+  res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted });
+});
+
+// Records-Review: save the tests the patient kept; each test becomes its own record.
+r.post('/records/:id/split', async (req, res) => {
+  const parent = await M.MedicalRecord.findOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null });
+  if (!parent) throw notFound('Record');
+  const tests = req.body.tests || [];
+  if (!tests.length) throw badRequest('Pick at least one test to save', 'TEST_REQUIRED');
+  const collectedAt = req.body.collectedAt ? T.parseDay(req.body.collectedAt) : parent.recordDate;
+  const labName = req.body.labName || parent.sourceName;
+  const created = [];
+  for (const t of tests) {
+    const values = (t.values || []).map((v) => ({
+      analyte: v.analyte, value: Number.isFinite(parseFloat(v.value)) ? parseFloat(v.value) : undefined, valueText: Number.isFinite(parseFloat(v.value)) ? undefined : v.value,
+      unit: v.unit, refText: v.refText || v.ref_text, refLow: v.refLow, refHigh: v.refHigh, flag: E.RESULT_FLAGS.includes(v.flag) ? v.flag : 'normal',
+    }));
+    const abnormal = values.filter((v) => v.flag !== 'normal').length;
+    const rec = await M.MedicalRecord.create({
+      patientId: req.patient._id, kind: 'test_result', title: t.testName || t.test_name, recordDate: collectedAt, origin: 'shared_by_patient', sourceName: labName,
+      files: parent.files, pageFrom: t.pageFrom ?? t.page_from, pageTo: t.pageTo ?? t.page_to, batchId: parent._id, aiSummary: t.summary,
+      flagLabel: abnormal ? `${abnormal} ${values.some((v) => v.flag === 'low') && !values.some((v) => v.flag === 'high') ? 'low' : 'high'}` : 'Normal', flagTone: abnormal ? 'high' : 'ok',
+      sharedWith: parent.sharedWith, uploadedBy: req.user._id,
+    });
+    await M.LabResult.create({ patientId: req.patient._id, recordId: rec._id, testName: rec.title, labName, collectedAt, values, abnormalCount: abnormal, hasCritical: values.some((v) => v.flag === 'critical') });
+    created.push(rec);
+  }
+  parent.deletedAt = new Date(); // replaced by the per-test records
+  await parent.save();
+  res.status(201).json(created);
+});
+
+r.post('/records/:id/share', async (req, res) => {
+  const rec = await M.MedicalRecord.findOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null });
+  if (!rec) throw notFound('Record');
+  const ids = list(req.body.userIds).filter(isId);
+  rec.sharedWith = ids.map((userId) => rec.sharedWith.find((s) => String(s.userId) === userId) || { userId });
+  await rec.save();
+  res.json(rec);
+});
+
+r.delete('/records/:id', async (req, res) => {
+  await M.MedicalRecord.updateOne({ _id: req.params.id, patientId: req.patient._id }, { deletedAt: new Date() });
+  res.json({ ok: true });
+});
+
+// ── Pharmacy ──
+const cartOf = async (patientId) => (await M.Cart.findOne({ patientId })) || M.Cart.create({ patientId, items: [] });
+
+async function cartView(cart, patient) {
+  const courses = await M.MedicationCourse.find({ _id: { $in: cart.items.map((i) => i.courseId).filter(Boolean) } });
+  const today = T.dayStart();
+  return {
+    ...cart.toJSON(),
+    items: cart.items.map((i) => {
+      const c = courses.find((x) => String(x._id) === String(i.courseId));
+      const perDay = c ? dosesPerDay(c.dose) : 0;
+      const units = (c?.stockUnits || 0) + i.strips * (i.unitsPerStrip || 10);
+      return { ...i.toJSON(), lastsTill: perDay ? T.addDays(today, Math.floor(units / perDay) - 1) : null };
+    }),
+    count: cart.items.length,
+    patientAddress: patient.addresses.find((a) => a.isDefault) || patient.addresses[0] || null,
+  };
+}
+
+r.get('/cart', async (req, res) => res.json(await cartView(await cartOf(req.patient._id), req.patient)));
+
+// Med-AddToCart: pack option or a strip count.
+r.post('/cart/items', async (req, res) => {
+  const cart = await cartOf(req.patient._id);
+  const course = req.body.courseId ? await M.MedicationCourse.findOne({ _id: req.body.courseId, patientId: req.patient._id }) : null;
+  if (req.body.courseId && !course) throw notFound('Medicine');
+  const name = course ? `${course.name}${course.strength ? ` ${course.strength}` : ''}` : req.body.name;
+  if (!name) throw badRequest('Choose a medicine');
+  let strips = Number(req.body.strips) || 1;
+  const per = course ? dosesPerDay(course.dose) : 1;
+  if (req.body.packOption === '1_month') strips = Math.ceil((30 * per) / 10);
+  if (req.body.packOption === '3_months') strips = Math.ceil((90 * per) / 10);
+  if (req.body.packOption === 'till_next_visit') {
+    const next = await M.Appointment.findOne({ patientId: req.patient._id, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } }).sort({ startAt: 1 });
+    const days = next ? Math.ceil((next.startAt - Date.now()) / T.DAY_MS) + 3 : 30;
+    strips = Math.max(1, Math.ceil((days * per - (course?.stockUnits || 0)) / 10));
+  }
+  strips = Math.min(99, Math.max(1, strips));
+  const existing = cart.items.find((i) => (course && String(i.courseId) === String(course._id)) || i.name === name);
+  if (existing) Object.assign(existing, { strips, packOption: req.body.packOption || 'custom' });
+  else cart.items.push({ courseId: course?._id, medicineId: course?.medicineId, name, strength: course?.strength, prescriberName: course?.prescriberName, strips, packOption: req.body.packOption || 'custom' });
+  await cart.save();
+  res.status(201).json(await cartView(cart, req.patient));
+});
+
+r.patch('/cart/items/:itemId', async (req, res) => {
+  const cart = await cartOf(req.patient._id);
+  const item = cart.items.id(req.params.itemId);
+  if (!item) throw notFound('Cart item');
+  item.strips = Math.min(99, Math.max(1, Number(req.body.strips) || item.strips));
+  await cart.save();
+  res.json(await cartView(cart, req.patient));
+});
+
+r.delete('/cart/items/:itemId', async (req, res) => {
+  const cart = await cartOf(req.patient._id);
+  cart.items.pull(req.params.itemId);
+  await cart.save();
+  res.json(await cartView(cart, req.patient));
+});
+
+async function quote(cart, pharmacy) {
+  const meds = await M.Medicine.find({ _id: { $in: cart.items.map((i) => i.medicineId).filter(Boolean) } });
+  let subtotal = 0;
+  const lines = cart.items.map((i) => {
+    const m = meds.find((x) => String(x._id) === String(i.medicineId)) || null;
+    const mrp = m?.mrpPerStrip ?? null;
+    const unitPrice = mrp != null ? Math.round(mrp * (1 - (pharmacy.discountPct || 0) / 100)) : null;
+    const lineTotal = unitPrice != null ? unitPrice * i.strips : null;
+    subtotal += lineTotal || 0;
+    return { name: i.name, strength: i.strength, strips: i.strips, unitPrice, lineTotal, inStock: true };
+  });
+  const deliveryFee = pharmacy.type === 'online' && !(pharmacy.freeDeliveryAbove && subtotal >= pharmacy.freeDeliveryAbove) ? pharmacy.deliveryFee || 0 : 0;
+  return { lines, subtotal, deliveryFee, total: subtotal + deliveryFee, priced: lines.every((l) => l.unitPrice != null) };
+}
+
+r.get('/pharmacies/quotes', async (req, res) => {
+  const cart = await cartOf(req.patient._id);
+  if (!cart.items.length) throw badRequest('Your cart is empty', 'CART_EMPTY');
+  const mode = req.query.mode === 'pickup' ? 'pickup' : 'delivery';
+  const pharmacies = await M.Pharmacy.find({ active: true, type: mode === 'delivery' ? 'online' : { $in: ['nearby', 'clinic'] } });
+  const origin = req.patient.geo?.coordinates;
+  const out = [];
+  for (const ph of pharmacies) {
+    out.push({ pharmacy: { id: ph._id, name: ph.name, type: ph.type, etaText: ph.deliveryEtaText, pickupEtaMin: ph.pickupEtaMin, km: haversineKm(origin, ph.geo?.coordinates) }, ...(await quote(cart, ph)) });
+  }
+  out.sort((a, b) => a.total - b.total);
+  res.json({ mode, items: out, note: 'Final price depends on the pharmacy' });
+});
+
+r.post('/orders', async (req, res) => {
+  const cart = await cartOf(req.patient._id);
+  if (!cart.items.length) throw badRequest('Your cart is empty', 'CART_EMPTY');
+  const pharmacy = await M.Pharmacy.findOne({ _id: req.body.pharmacyId, active: true });
+  if (!pharmacy) throw notFound('Pharmacy');
+  const mode = req.body.mode === 'pickup' ? 'pickup' : 'delivery';
+  const q = await quote(cart, pharmacy);
+  const address = req.patient.addresses.id(req.body.addressId) || req.patient.addresses.find((a) => a.isDefault) || req.patient.addresses[0];
+  if (mode === 'delivery' && !address) throw badRequest('Add a delivery address first', 'ADDRESS_REQUIRED');
+  const prescriptionIds = await M.Prescription.find({ patientId: req.patient._id, validUntil: { $gte: new Date() } }).distinct('_id');
+  const order = await M.Order.create({
+    patientId: req.patient._id, pharmacyId: pharmacy._id, mode, items: q.lines.map((l) => ({ ...l, unitPrice: l.unitPrice ?? undefined, lineTotal: l.lineTotal ?? undefined })),
+    prescriptionIds, deliveryAddress: mode === 'delivery' ? pick(address, ['line', 'area', 'city', 'pincode']) : undefined,
+    subtotal: q.subtotal, deliveryFee: q.deliveryFee, total: q.total, statusHistory: [{ status: 'placed', at: new Date() }],
+    etaText: mode === 'delivery' ? pharmacy.deliveryEtaText : pharmacy.pickupEtaMin ? `Ready in ${pharmacy.pickupEtaMin} min` : undefined,
+  });
+  cart.items = [];
+  await cart.save();
+  res.status(201).json(order);
+});
+
+r.get('/orders', async (req, res) => {
+  res.json(await M.Order.find({ patientId: req.patient._id }).sort({ createdAt: -1 }).limit(50).populate('pharmacyId', 'name type'));
+});
+
+// ── Chat ──
+r.get('/conversations', async (req, res) => {
+  const convos = await M.Conversation.find({ patientId: req.patient._id, 'participants.userId': req.user._id }).sort({ 'lastMessage.at': -1 }).populate('practiceId', 'name');
+  res.json(convos.map((c) => ({ id: c._id, type: c.type, practice: c.practiceId?.name, isUrgent: c.isUrgent, lastMessage: c.lastMessage, unread: c.participants.find((p) => String(p.userId) === String(req.user._id))?.unreadCount || 0 })));
+});
+
+// Open the chat with a doctor's clinic ("You can chat with the doctor once the visit is booked").
+r.post('/conversations', async (req, res) => {
+  const access = await M.CareTeamAccess.findOne({ patientId: req.patient._id, userId: req.body.doctorId, accessLevel: { $ne: 'not_shared' } });
+  const booked = await M.Appointment.exists({ patientId: req.patient._id, doctorId: req.body.doctorId, status: { $nin: ['cancelled', 'rescheduled'] } });
+  if (!access || !booked) throw conflict('You can chat with the doctor once a visit is booked', 'NO_VISIT');
+  const dl = await M.DoctorLocation.findOne({ doctorId: req.body.doctorId, status: 'active' });
+  const convo = await care.careConversation(req.patient._id, access.practiceId || dl.practiceId);
+  await care.ensureParticipant(convo, req.user._id, 'patient');
+  res.json(convo);
+});
+
+// Patient-Emergency: urgent chat with the chosen doctor.
+r.post('/urgent', async (req, res) => {
+  const access = await M.CareTeamAccess.findOne({ patientId: req.patient._id, userId: req.body.doctorId });
+  if (!access?.practiceId) throw notFound('Doctor');
+  const text = String(req.body.text || 'I need help urgently.').trim();
+  const convo = await care.careConversation(req.patient._id, access.practiceId);
+  await care.ensureParticipant(convo, req.user._id, 'patient');
+  const msg = await care.postMessage(convo, { sender: req.user, senderType: 'patient', text, isUrgent: true });
+  const alert = await care.raiseAlert({ practiceId: access.practiceId, patientId: req.patient._id, doctorId: access.userId, severity: 'emergency', kind: 'urgent_chat', detail: text, sourceModel: 'Message', sourceId: msg._id, conversationId: convo._id });
+  res.status(201).json({ conversationId: convo._id, messageId: msg._id, alertId: alert._id, call: '108' });
+});
+
+// ── Ask MedPin AI ──
+r.get('/ai/session', async (req, res) => {
+  let s = await M.AiSession.findOne({ userId: req.user._id, ownerType: 'patient' }).sort({ lastAt: -1 });
+  if (!s) s = await M.AiSession.create({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id, lastAt: new Date() });
+  res.json({ session: s, messages: await M.AiMessage.find({ sessionId: s._id }).sort({ createdAt: 1 }).limit(100) });
+});
+
+r.post('/ai/ask', async (req, res) => {
+  const text = String(req.body.text || '').trim();
+  if (!text) throw badRequest('Ask a question', 'EMPTY_MESSAGE');
+  let s = await M.AiSession.findOne({ userId: req.user._id, ownerType: 'patient' }).sort({ lastAt: -1 });
+  if (!s) s = await M.AiSession.create({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id });
+  const question = await M.AiMessage.create({ sessionId: s._id, role: 'user', text, inputMode: req.body.inputMode, voiceLanguage: req.body.voiceLanguage });
+  const out = await assistant.patientAnswer(s, text, req.patient);
+  const answer = await M.AiMessage.create({ sessionId: s._id, role: 'assistant', text: out.text, aiModel: out.model, latencyMs: out.latencyMs, payload: out.scripted ? { scripted: true } : undefined });
+  s.lastAt = new Date();
+  await s.save();
+  res.status(201).json({ question, answer, emergency: Boolean(out.emergency), specialistKey: out.specialistKey || null });
+});
+
+// ── Feedback ──
+r.post('/feedback', async (req, res) => {
+  const rating = Number(req.body.rating);
+  if (!(rating >= 1 && rating <= 5)) throw badRequest('Choose 1 to 5 stars');
+  const link = await M.PatientEnrolment.findOne({ patientId: req.patient._id, practiceId: req.body.practiceId, status: 'linked' });
+  if (!link) throw notFound('Clinic');
+  const f = await M.Feedback.create({ practiceId: link.practiceId, patientId: req.patient._id, doctorId: req.body.doctorId, appointmentId: req.body.appointmentId, rating, category: req.body.category === 'app' ? 'app' : 'care', comment: req.body.comment });
+  res.status(201).json(f);
+});
+
+// The patient's own summary (also what the AI sees).
+r.get('/summary', async (req, res) => res.json(await patientSummary(req.patient)));
+
+module.exports = r;

@@ -7,6 +7,7 @@ import 'package:medpin_app/app/launcher.dart';
 import 'package:medpin_app/app/registry.dart';
 import 'package:medpin_app/core/nav.dart';
 import 'package:medpin_app/core/tokens.dart';
+import 'package:medpin_app/data/session.dart';
 
 /// Loads the real Figtree files so text measures like the app, not like the
 /// test font (Ahem), which would make every check meaningless.
@@ -30,6 +31,7 @@ Widget _host(ScreenSpec s) => MaterialApp(
 void main() {
   setUpAll(() async {
     Nav.registry = screenRegistry;
+    Session.I.store = MemorySessionStore(); // no secure storage plugin in tests
     await _loadFigtree();
   });
 
