@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 
@@ -11,26 +13,61 @@ class PatientTrackSheet extends StatefulWidget {
   State<PatientTrackSheet> createState() => _PatientTrackSheetState();
 }
 
-class _PatientTrackSheetState extends State<PatientTrackSheet> {
+/// Live: the choice comes from GET /api/patient/me (trackedMeasures) and Save
+/// sends PATCH /api/patient/me, then the sheet closes with true.
+class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
   static const _max = 4;
   static const _items = [
-    (name: 'Blood sugar', source: 'You log it'),
-    (name: 'Blood pressure', source: 'You log it'),
-    (name: 'HbA1c', source: 'From lab reports'),
-    (name: 'Heart rate', source: 'You log it or a device'),
-    (name: 'Weight', source: 'You log it'),
-    (name: 'SpO₂', source: 'From a device'),
+    (key: 'blood_sugar', name: 'Blood sugar', source: 'You log it'),
+    (key: 'blood_pressure', name: 'Blood pressure', source: 'You log it'),
+    (key: 'hba1c', name: 'HbA1c', source: 'From lab reports'),
+    (key: 'heart_rate', name: 'Heart rate', source: 'You log it or a device'),
+    (key: 'weight', name: 'Weight', source: 'You log it'),
+    (key: 'spo2', name: 'SpO₂', source: 'From a device'),
   ];
   static const _devices = ['Smartwatch', 'Smart ring'];
 
   final List<bool> _on = [true, true, false, false, false, false];
+  final _busy = ValueNotifier(false);
+
+  @override
+  Future<Object?> fetch() async {
+    final me = (await Api.I.get('/api/patient/me') as Map).cast<String, dynamic>();
+    final tracked = {for (final m in (me['trackedMeasures'] as List? ?? const [])) '$m'};
+    for (var i = 0; i < _items.length; i++) {
+      _on[i] = tracked.contains(_items[i].key);
+    }
+    return me;
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
 
   int get _count => _on.where((v) => v).length;
 
   void _toggle(int i) {
     // Pick up to 4.
-    if (!_on[i] && _count >= _max) return;
+    if (!_on[i] && _count >= _max) {
+      if (isLive) toast(context, 'Pick up to $_max');
+      return;
+    }
     setState(() => _on[i] = !_on[i]);
+  }
+
+  Future<void> _save() async {
+    if (!isLive) {
+      P1.closeWithToast(context, 'Saved');
+      return;
+    }
+    final keys = [
+      for (var i = 0; i < _items.length; i++)
+        if (_on[i]) _items[i].key,
+    ];
+    final ok = await runAction(context, () => Api.I.patch('/api/patient/me', {'trackedMeasures': keys}), busy: _busy);
+    if (ok != null && mounted) P1.closeWithToast(context, 'Saved', true);
   }
 
   @override
@@ -80,7 +117,7 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> {
                   ),
               ],
             ),
-            MpButton('Save · $_count selected', onTap: () => P1.closeWithToast(context, 'Saved')),
+            MpButton('Save · $_count selected', onTap: data == null && isLive ? null : _save),
           ],
         ),
       ),

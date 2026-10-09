@@ -1,0 +1,25 @@
+{
+ "items": [
+  {
+   "doctorId": "6ac8d0c08645bb27079976b9",
+   "name": "Dr. Rina Mitra",
+   "gender": "female",
+   "specialty": "Heart",
+   "clinic": "City Care Clinic",
+   "presence": "available",
+   "avgReplyMinutes": 10,
+   "clinicPhone": "033 4012 5678"
+  },
+  {
+   "doctorId": "6ac8d0bd07fdebd2731d1eb3",
+   "name": "Dr. Arjun Sen",
+   "gender": "male",
+   "specialty": "Diabetes & thyroid",
+   "clinic": "City Care Clinic",
+   "presence": "in_clinic",
+   "avgReplyMinutes": 15,
+   "clinicPhone": "033 4012 5678"
+  }
+ ],
+ "call": "108"
+}

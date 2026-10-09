@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
+import 'p1_sheets.dart';
 
 /// Design: Patient-AskAI.dc.html — "Patient · Ask MedPin AI" (sheet over 'Main').
 class PatientAskaiSheet extends StatefulWidget {
@@ -21,33 +24,84 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
   ];
   static const _questions = ['Is HbA1c 7.2% high?', 'I missed a dose, what now?'];
 
+  /// Live: not tied to the design's sample patient.
+  static const _liveQuestions = ['What do my latest results mean?', 'I missed a dose, what now?'];
+
   final _ask = TextEditingController();
   final _focus = FocusNode();
+  final _busy = ValueNotifier(false);
   bool _listening = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Live: a question handed over by the opener ("Explain" on a report).
+    Future.microtask(() {
+      if (!mounted) return;
+      final prefill = Nav.args<Map>(context)?['prefill'];
+      if (prefill is String && prefill.isNotEmpty) _ask.text = prefill;
+    });
+  }
 
   @override
   void dispose() {
     _ask.dispose();
     _focus.dispose();
+    _busy.dispose();
     super.dispose();
   }
 
   void _option(int i) {
     if (i < 2) {
       // Prescription or test report: the add-a-record sheet.
-      P1.closeThen(context, 'Records-Add');
+      P1.closeThen(context, 'Records-Add', args: isLive ? {'kind': i == 0 ? 'prescription' : 'test_result'} : null);
     } else {
       // "Describe your symptoms" — straight into the box above.
       _focus.requestFocus();
     }
   }
 
-  void _send() {
-    if (_ask.text.trim().isEmpty) {
+  /// Live: POST /api/patient/ai/ask, then the answer replaces this sheet.
+  Future<void> _send() async {
+    final q = _ask.text.trim();
+    if (q.isEmpty) {
       _focus.requestFocus();
       return;
     }
-    P1.closeWithToast(context, 'Sent to MedPin AI');
+    if (!isLive) {
+      P1.closeWithToast(context, 'Sent to MedPin AI');
+      return;
+    }
+    final res = await runAction(context, () => Api.I.post('/api/patient/ai/ask', {'text': q, 'inputMode': 'typed'}), busy: _busy);
+    if (res is! Map || !mounted) return;
+    final nav = Navigator.of(context);
+    nav.pop();
+    openSheet<void>(nav.context, (_) => P1AiAnswerSheet(question: q, result: res.cast<String, dynamic>()));
+  }
+
+  void _speak() {
+    if (isLive) {
+      toast(context, 'Voice input is coming soon. Please type your question.');
+      _focus.requestFocus();
+      return;
+    }
+    setState(() => _listening = !_listening);
+  }
+
+  /// "call your clinic": the phone of the clinic of the patient's doctor.
+  Future<void> _callClinic() async {
+    if (!isLive) {
+      P1.closeWithToast(context, 'Calling your clinic…');
+      return;
+    }
+    final res = await runAction(context, () => Api.I.get('/api/patient/urgent/doctors'));
+    if (res is! Map || !mounted) return;
+    final phone = [for (final d in res['items'] as List? ?? const []) (d as Map)['clinicPhone']].whereType<String>().firstOrNull;
+    if (phone == null) {
+      toast(context, "We don't have your clinic's number. In an emergency, call 108.");
+      return;
+    }
+    await P1.dial(context, phone);
   }
 
   void _askQuestion(String q) {
@@ -98,7 +152,7 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: [for (final q in _questions) P1Pill(q, onTap: () => _askQuestion(q))],
+                    children: [for (final q in (isLive ? _liveQuestions : _questions)) P1Pill(q, onTap: () => _askQuestion(q))],
                   ),
                 ],
               ),
@@ -116,7 +170,7 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
                       P1.link(
                         'call your clinic',
                         style: tx(13, w: w700, h: 1.45, c: MP.red),
-                        onTap: () => P1.closeWithToast(context, 'Calling your clinic…'),
+                        onTap: _callClinic,
                       ),
                       const TextSpan(text: '.'),
                     ],
@@ -184,7 +238,7 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
                     icon: _listening ? I.stop : I.mic,
                     iconSize: 18,
                     padding: 14,
-                    onTap: () => setState(() => _listening = !_listening),
+                    onTap: _speak,
                   ),
                 ),
                 const Gap(8),

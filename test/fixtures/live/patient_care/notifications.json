@@ -1,0 +1,43 @@
+{
+ "items": [
+  {
+   "userId": "6ac8d0bd07fdebd2731d1ebb",
+   "practiceId": "6ac8d0bd07fdebd2731d1ebe",
+   "type": "message",
+   "title": "New message from Clinic",
+   "body": "Should I take the tablet before or after food?",
+   "screen": "Patient-Thread",
+   "params": {
+    "conversationId": "6ac8d0bd07fdebd2731d1ee8"
+   },
+   "channels": [
+    "in_app",
+    "push"
+   ],
+   "sentAt": "2026-10-09T11:32:18.083Z",
+   "createdAt": "2026-10-09T11:32:18.084Z",
+   "updatedAt": "2026-10-09T11:32:18.084Z",
+   "id": "6ac8d0c28645bb270799797f"
+  },
+  {
+   "userId": "6ac8d0bd07fdebd2731d1ebb",
+   "practiceId": "6ac8d0bd07fdebd2731d1ebe",
+   "type": "urgent_message",
+   "title": "Urgent message",
+   "body": "Chest tightness, hard to breathe.",
+   "screen": "Patient-Thread",
+   "params": {
+    "conversationId": "6ac8d0bd07fdebd2731d1ee8"
+   },
+   "channels": [
+    "in_app",
+    "push"
+   ],
+   "sentAt": "2026-10-09T11:32:17.837Z",
+   "createdAt": "2026-10-09T11:32:17.838Z",
+   "updatedAt": "2026-10-09T11:32:17.838Z",
+   "id": "6ac8d0c18645bb27079978e9"
+  }
+ ],
+ "unread": 2
+}

@@ -1,0 +1,12 @@
+{
+ "user": {
+  "id": "6ac8d0bd07fdebd2731d1ebb",
+  "name": "Priya Sharma",
+  "phone": "9230592842",
+  "language": "en",
+  "appLock": true
+ },
+ "memberships": [],
+ "patientId": "6ac8d0bd07fdebd2731d1ed9",
+ "landing": "Main"
+}

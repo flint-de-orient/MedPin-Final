@@ -176,7 +176,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const sent = ok(await ctx.desk('POST', '/api/patients/phone-otp', { phone: '9230592842' }));
     const p = ok(await ctx.desk('POST', '/api/patients', { name: 'Priya Sharma', phone: '9230592842', gender: 'female', ageYears: 29, address: '14/2 Beliaghata Main Road', otpCode: sent.devCode }), 201);
     ctx.patientId = p.id;
-    const dup = await ctx.desk('POST', '/api/patients', { name: 'Dup', phone: '98765 43210', gender: 'female', ageYears: 30 });
+    const dup = await ctx.desk('POST', '/api/patients', { name: 'Dup', phone: '92305 92842', gender: 'female', ageYears: 30 });
     assert.equal(dup.status, 409);
     assert.equal(dup.body.error.code, 'PATIENT_EXISTS');
     const look = ok(await ctx.desk('GET', '/api/patients/lookup?phone=9230592842'));

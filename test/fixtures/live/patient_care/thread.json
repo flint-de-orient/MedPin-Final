@@ -1,0 +1,72 @@
+{
+ "conversation": {
+  "lastMessage": {
+   "text": "Should I take the tablet before or after food?",
+   "senderType": "patient",
+   "senderLabel": "Clinic",
+   "at": "2026-10-09T11:32:18.072Z"
+  },
+  "type": "care",
+  "practiceId": "6ac8d0bd07fdebd2731d1ebe",
+  "patientId": "6ac8d0bd07fdebd2731d1ed9",
+  "participants": [
+   {
+    "userId": "6ac8d0bd07fdebd2731d1ebb",
+    "role": "patient",
+    "unreadCount": 2
+   },
+   {
+    "userId": "6ac8d0bd07fdebd2731d1eb3",
+    "role": "doctor",
+    "unreadCount": 2
+   }
+  ],
+  "isUrgent": true,
+  "aiEnabled": true,
+  "createdAt": "2026-10-09T11:32:13.340Z",
+  "updatedAt": "2026-10-09T11:32:18.079Z",
+  "triage": "needs_attention",
+  "urgentSince": "2026-10-09T11:32:17.832Z",
+  "id": "6ac8d0bd07fdebd2731d1ee8",
+  "aiPaused": false,
+  "patient": {
+   "id": "6ac8d0bd07fdebd2731d1ed9",
+   "name": "Priya Sharma"
+  },
+  "nextVisit": {
+   "startAt": "2026-10-09T11:30:00.000Z",
+   "token": "04"
+  }
+ },
+ "pinned": null,
+ "items": [
+  {
+   "conversationId": "6ac8d0bd07fdebd2731d1ee8",
+   "senderType": "patient",
+   "kind": "text",
+   "text": "Chest tightness, hard to breathe.",
+   "isUrgent": true,
+   "deliveryStatus": "sent",
+   "hiddenFor": [],
+   "createdAt": "2026-10-09T11:32:17.830Z",
+   "updatedAt": "2026-10-09T11:32:17.830Z",
+   "id": "6ac8d0c18645bb27079978e6",
+   "deleted": false,
+   "mine": false
+  },
+  {
+   "conversationId": "6ac8d0bd07fdebd2731d1ee8",
+   "senderType": "patient",
+   "kind": "text",
+   "text": "Should I take the tablet before or after food?",
+   "isUrgent": false,
+   "deliveryStatus": "sent",
+   "hiddenFor": [],
+   "createdAt": "2026-10-09T11:32:18.072Z",
+   "updatedAt": "2026-10-09T11:32:18.072Z",
+   "id": "6ac8d0c28645bb270799797a",
+   "deleted": false,
+   "mine": false
+  }
+ ]
+}
