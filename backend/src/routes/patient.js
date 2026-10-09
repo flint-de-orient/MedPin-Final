@@ -396,11 +396,14 @@ r.post('/appointments/:id/reschedule', async (req, res) => {
 
 // ── Medicines ──
 r.get('/medicines', async (req, res) => {
-  const courses = await M.MedicationCourse.find({ patientId: req.patient._id, status: 'active' });
+  const past = req.query.status === 'past';
+  const courses = past
+    ? await M.MedicationCourse.find({ patientId: req.patient._id, status: { $in: ['completed', 'stopped'] } }).sort({ updatedAt: -1 }).limit(100)
+    : await M.MedicationCourse.find({ patientId: req.patient._id, status: 'active' });
   const adh = await care.adherence(req.patient, 30);
   const today = T.dayStart();
   const items = courses.map((c) => {
-    const perDay = dosesPerDay(c.dose) || (c.frequency === 'weekly' ? 1 / 7 : 0);
+    const perDay = c.frequency === 'weekly' ? (dosesPerDay(c.dose) || 1) / 7 : dosesPerDay(c.dose);
     const day = Math.floor((today - T.dayStart(c.startDate)) / T.DAY_MS) + 1;
     const totalDays = c.endDate ? Math.floor((T.dayStart(c.endDate) - T.dayStart(c.startDate)) / T.DAY_MS) + 1 : null;
     const a = adh.perMedicine.find((m) => String(m.courseId) === String(c._id));
@@ -409,12 +412,28 @@ r.get('/medicines', async (req, res) => {
       foodRelation: c.foodRelation, instructions: c.instructions, prescriber: c.prescriberName, doctorId: c.doctorId, startDate: c.startDate, endDate: c.endDate,
       course: { day, totalDays }, tracked: c.trackingEnabled, adherencePct: a?.pct ?? null,
       stock: c.stockUnits != null ? { units: c.stockUnits, daysLeft: perDay ? Math.floor(c.stockUnits / perDay) : null } : null,
+      // Med-AddToCart works out pack sizes from these; self-added medicines can be edited.
+      dose: c.dose, frequency: c.frequency, weekday: c.weekday, perDay, unitsPerStrip: c.unitsPerStrip || 10,
+      prescriptionId: c.prescriptionId, selfAdded: !c.doctorId && !c.prescriptionId, status: c.status, stoppedAt: c.stoppedAt,
     };
   });
+  if (past) return res.json({ items });
   items.sort((a, b) => (a.stock?.daysLeft ?? 1e9) - (b.stock?.daysLeft ?? 1e9));
   const doctors = new Set(courses.map((c) => String(c.doctorId || c.prescriberName)));
   const allergies = req.patient.allergies.map((x) => x.allergen);
-  res.json({ running: items.length, fromDoctors: doctors.size, adherence30d: adh.overallPct, allergies, items });
+  // Safety card: allergy clashes against the medicine catalog.
+  const { checkItems } = require('../services/clinical');
+  const checks = await checkItems(req.patient, courses.map((c) => ({ name: c.name, strength: c.strength })));
+  const warnings = checks.flatMap((c) => c.warnings.filter((w) => w.type === 'allergy').map((w) => ({ medicine: c.name, text: w.text })));
+  const [nextVisit, pastCount] = await Promise.all([
+    M.Appointment.findOne({ patientId: req.patient._id, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } }).sort({ startAt: 1 }),
+    M.MedicationCourse.countDocuments({ patientId: req.patient._id, status: { $in: ['completed', 'stopped'] } }),
+  ]);
+  res.json({
+    running: items.length, fromDoctors: doctors.size, adherence30d: adh.overallPct, allergies, items,
+    safety: { checked: items.length, warnings }, nextVisitAt: nextVisit?.startAt || null, pastCount,
+    reminderTimes: req.patient.settings?.reminderTimes || null,
+  });
 });
 
 r.post('/medicines', async (req, res) => {
@@ -429,9 +448,24 @@ r.patch('/medicines/:id', async (req, res) => {
   if (!c) throw notFound('Medicine');
   Object.assign(c, pick(req.body, ['trackingEnabled', 'stockUnits']));
   if (req.body.stockUnits != null) c.stockUpdatedAt = new Date();
+  // Medicines the patient added themselves can be edited in full.
+  if (!c.doctorId && !c.prescriptionId) {
+    const edit = pick(req.body, ['name', 'strength', 'dose', 'frequency', 'weekday', 'foodRelation', 'instructions', 'prescriberName', 'endDate']);
+    if (edit.name !== undefined && !String(edit.name).trim()) throw badRequest('Enter the medicine name');
+    Object.assign(c, edit);
+  }
   if (req.body.stop) { c.status = 'stopped'; c.stoppedAt = new Date(); }
   await c.save();
   res.json(c);
+});
+
+// Patient-Medicines "Share medicine list": PDF of the medicines taken now.
+r.post('/medicines/share-pdf', async (req, res) => {
+  const { renderMedicineList } = require('../services/medlist');
+  const courses = await M.MedicationCourse.find({ patientId: req.patient._id, status: 'active' }).sort({ startDate: 1 });
+  const pdf = await renderMedicineList({ patient: req.patient, courses });
+  const file = await storage.save(pdf, { folder: 'exports', name: 'Medicine list.pdf', mimeType: 'application/pdf' });
+  res.status(201).json({ ...storage.withUrl(file), count: courses.length });
 });
 
 r.get('/doses', async (req, res) => {
@@ -586,6 +620,18 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
   res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted });
 });
 
+// Records-Review reopened for a report still waiting to be checked: read it again.
+r.post('/records/:id/extract', async (req, res) => {
+  const rec = await M.MedicalRecord.findOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null });
+  if (!rec) throw notFound('Record');
+  const file = rec.files[0];
+  if (rec.kind !== 'test_result' || !file?.key) throw badRequest('This record has no report to read', 'NOT_A_REPORT');
+  const buffer = await storage.read(file.key).catch(() => null);
+  const extracted = buffer ? await assistant.extractLabReport(buffer, file.mimeType || 'application/pdf').catch((err) => { console.warn('[extract]', err.message); return null; }) : null;
+  if (!extracted && rec.status === 'processing') { rec.status = 'ready'; await rec.save(); }
+  res.json({ record: { ...rec.toJSON(), files: rec.files.map(storage.withUrl) }, extracted });
+});
+
 // Records-Review: save the tests the patient kept; each test becomes its own record.
 r.post('/records/:id/split', async (req, res) => {
   const parent = await M.MedicalRecord.findOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null });
@@ -594,6 +640,8 @@ r.post('/records/:id/split', async (req, res) => {
   if (!tests.length) throw badRequest('Pick at least one test to save', 'TEST_REQUIRED');
   const collectedAt = req.body.collectedAt ? T.parseDay(req.body.collectedAt) : parent.recordDate;
   const labName = req.body.labName || parent.sourceName;
+  // "Share all N tests with" on Records-Review (else keep who the upload was shared with).
+  const sharedWith = req.body.shareWith !== undefined ? list(req.body.shareWith).filter(isId).map((userId) => ({ userId })) : parent.sharedWith;
   const created = [];
   for (const t of tests) {
     const values = (t.values || []).map((v) => ({
@@ -605,13 +653,17 @@ r.post('/records/:id/split', async (req, res) => {
       patientId: req.patient._id, kind: 'test_result', title: t.testName || t.test_name, recordDate: collectedAt, origin: 'shared_by_patient', sourceName: labName,
       files: parent.files, pageFrom: t.pageFrom ?? t.page_from, pageTo: t.pageTo ?? t.page_to, batchId: parent._id, aiSummary: t.summary,
       flagLabel: abnormal ? `${abnormal} ${values.some((v) => v.flag === 'low') && !values.some((v) => v.flag === 'high') ? 'low' : 'high'}` : 'Normal', flagTone: abnormal ? 'high' : 'ok',
-      sharedWith: parent.sharedWith, uploadedBy: req.user._id,
+      sharedWith, uploadedBy: req.user._id,
     });
     await M.LabResult.create({ patientId: req.patient._id, recordId: rec._id, testName: rec.title, labName, collectedAt, values, abnormalCount: abnormal, hasCritical: values.some((v) => v.flag === 'critical') });
     created.push(rec);
   }
   parent.deletedAt = new Date(); // replaced by the per-test records
   await parent.save();
+  const fresh = sharedWith.filter((s) => !parent.sharedWith.some((p) => String(p.userId) === String(s.userId)));
+  if (fresh.length) {
+    await notify(fresh.map((s) => s.userId), { type: 'record_shared', title: `${req.patient.name} shared ${created.length === 1 ? 'a report' : `${created.length} reports`}`, screen: 'Patient-Profile', params: { patientId: req.patient._id } });
+  }
   res.status(201).json(created);
 });
 
@@ -619,8 +671,12 @@ r.post('/records/:id/share', async (req, res) => {
   const rec = await M.MedicalRecord.findOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null });
   if (!rec) throw notFound('Record');
   const ids = list(req.body.userIds).filter(isId);
+  const fresh = ids.filter((id) => !rec.sharedWith.some((s) => String(s.userId) === id));
   rec.sharedWith = ids.map((userId) => rec.sharedWith.find((s) => String(s.userId) === userId) || { userId });
   await rec.save();
+  if (fresh.length) {
+    await notify(fresh, { type: 'record_shared', title: `${req.patient.name} shared ${rec.kind === 'prescription' ? 'a prescription' : 'a report'}`, screen: 'Patient-Profile', params: { patientId: req.patient._id } });
+  }
   res.json(rec);
 });
 
@@ -635,11 +691,15 @@ const cartOf = async (patientId) => (await M.Cart.findOne({ patientId })) || M.C
 async function cartView(cart, patient) {
   const courses = await M.MedicationCourse.find({ _id: { $in: cart.items.map((i) => i.courseId).filter(Boolean) } });
   const today = T.dayStart();
+  // "Prescriptions attached": the valid prescriptions that go with an order.
+  const prescriptions = await M.Prescription.find({ patientId: patient._id, validUntil: { $gte: new Date() } }, 'doctorName issuedAt').sort({ issuedAt: -1 }).limit(10);
   return {
+    prescriptions: prescriptions.map((p) => ({ id: p._id, doctorName: p.doctorName, issuedAt: p.issuedAt })),
+    addresses: patient.addresses,
     ...cart.toJSON(),
     items: cart.items.map((i) => {
       const c = courses.find((x) => String(x._id) === String(i.courseId));
-      const perDay = c ? dosesPerDay(c.dose) : 0;
+      const perDay = c ? (c.frequency === 'weekly' ? (dosesPerDay(c.dose) || 1) / 7 : dosesPerDay(c.dose)) : 0;
       const units = (c?.stockUnits || 0) + i.strips * (i.unitsPerStrip || 10);
       return { ...i.toJSON(), lastsTill: perDay ? T.addDays(today, Math.floor(units / perDay) - 1) : null };
     }),
@@ -658,7 +718,7 @@ r.post('/cart/items', async (req, res) => {
   const name = course ? `${course.name}${course.strength ? ` ${course.strength}` : ''}` : req.body.name;
   if (!name) throw badRequest('Choose a medicine');
   let strips = Number(req.body.strips) || 1;
-  const per = course ? dosesPerDay(course.dose) : 1;
+  const per = course ? (course.frequency === 'weekly' ? (dosesPerDay(course.dose) || 1) / 7 : dosesPerDay(course.dose) || 1) : 1;
   if (req.body.packOption === '1_month') strips = Math.ceil((30 * per) / 10);
   if (req.body.packOption === '3_months') strips = Math.ceil((90 * per) / 10);
   if (req.body.packOption === 'till_next_visit') {
@@ -692,9 +752,12 @@ r.delete('/cart/items/:itemId', async (req, res) => {
 
 async function quote(cart, pharmacy) {
   const meds = await M.Medicine.find({ _id: { $in: cart.items.map((i) => i.medicineId).filter(Boolean) } });
+  // Items without a catalog link (medicines the patient typed in): match by generic name.
+  const byName = await M.Medicine.find({ genericName: { $in: cart.items.filter((i) => !i.medicineId).map((i) => new RegExp(`^${escapeRegex(String(i.name).replace(/\s+\d.*$/, '').trim())}$`, 'i')) } });
   let subtotal = 0;
   const lines = cart.items.map((i) => {
-    const m = meds.find((x) => String(x._id) === String(i.medicineId)) || null;
+    const m = meds.find((x) => String(x._id) === String(i.medicineId))
+      || (!i.medicineId && byName.find((x) => String(i.name).toLowerCase().startsWith(x.genericName.toLowerCase()))) || null;
     const mrp = m?.mrpPerStrip ?? null;
     const unitPrice = mrp != null ? Math.round(mrp * (1 - (pharmacy.discountPct || 0) / 100)) : null;
     const lineTotal = unitPrice != null ? unitPrice * i.strips : null;
@@ -737,7 +800,8 @@ r.post('/orders', async (req, res) => {
   });
   cart.items = [];
   await cart.save();
-  res.status(201).json(order);
+  // No online payment yet: paid in cash on delivery or at the pharmacy counter.
+  res.status(201).json({ ...order.toJSON(), payment: mode === 'delivery' ? 'cash_on_delivery' : 'pay_at_pharmacy', pharmacyName: pharmacy.name });
 });
 
 r.get('/orders', async (req, res) => {

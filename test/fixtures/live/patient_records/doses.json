@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-08T18:30:00.000Z",
+  "taken": 0,
+  "total": 6,
+  "items": [
+    {
+      "id": "6ac8d25dbfcb2f5a9d64d73f",
+      "slot": "morning",
+      "at": "2026-10-09T02:00:00.000Z",
+      "status": "missed",
+      "medicine": {
+        "id": "6ac8d250c0d20a47471fe839",
+        "name": "Myo-inositol",
+        "strength": "2 g",
+        "foodRelation": "after_food"
+      }
+    },
+    {
+      "id": "6ac8d224bfcb2f5a9d64d6e2",
+      "slot": "morning",
+      "at": "2026-10-09T02:00:00.000Z",
+      "status": "missed",
+      "medicine": {
+        "id": "6ac8d12f316d92de32637d6d",
+        "name": "Glimepiride",
+        "strength": "1 mg",
+        "foodRelation": "before_food"
+      }
+    },
+    {
+      "id": "6ac8d224bfcb2f5a9d64d6e0",
+      "slot": "morning",
+      "at": "2026-10-09T02:00:00.000Z",
+      "status": "missed",
+      "medicine": {
+        "id": "6ac8d12f316d92de32637d6c",
+        "name": "Metformin",
+        "strength": "500 mg",
+        "foodRelation": "after_food"
+      }
+    },
+    {
+      "id": "6ac8d25dbfcb2f5a9d64d740",
+      "slot": "night",
+      "at": "2026-10-09T15:00:00.000Z",
+      "status": "due",
+      "medicine": {
+        "id": "6ac8d250c0d20a47471fe839",
+        "name": "Myo-inositol",
+        "strength": "2 g",
+        "foodRelation": "after_food"
+      }
+    },
+    {
+      "id": "6ac8d25dbfcb2f5a9d64d73e",
+      "slot": "night",
+      "at": "2026-10-09T15:00:00.000Z",
+      "status": "due",
+      "medicine": {
+        "id": "6ac8d24fc0d20a47471fe829",
+        "name": "Atorvastatin",
+        "strength": "10 mg",
+        "foodRelation": "bedtime"
+      }
+    },
+    {
+      "id": "6ac8d224bfcb2f5a9d64d6e1",
+      "slot": "night",
+      "at": "2026-10-09T15:00:00.000Z",
+      "status": "due",
+      "medicine": {
+        "id": "6ac8d12f316d92de32637d6c",
+        "name": "Metformin",
+        "strength": "500 mg",
+        "foodRelation": "after_food"
+      }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+[
+  {
+    "doctorId": "6ac8d12d5e6ed8754976cfb1",
+    "name": "Dr. Arjun Sen",
+    "role": "doctor",
+    "headline": "Diabetologist · Internal medicine",
+    "clinic": "City Care Clinic",
+    "presence": "in_clinic",
+    "avgReplyMinutes": 15,
+    "nextVisit": {
+      "id": "6ac8d12d5e6ed8754976cfe3",
+      "startAt": "2026-10-09T11:30:00.000Z",
+      "token": "04"
+    },
+    "lastSeenAt": "2026-09-29T03:43:00.000Z",
+    "followUpDue": "2026-10-12T18:30:00.000Z",
+    "medicines": 2,
+    "adherencePct": 0,
+    "conversationId": "6ac8d12d5e6ed8754976cfe8",
+    "unread": 2
+  },
+  {
+    "doctorId": "6ac8d12f316d92de32637ccc",
+    "name": "Mou Banerjee",
+    "role": "dietician",
+    "clinic": "City Care Clinic",
+    "nextVisit": null,
+    "medicines": 0,
+    "adherencePct": null,
+    "conversationId": "6ac8d12d5e6ed8754976cfe8",
+    "unread": 2
+  },
+  {
+    "doctorId": "6ac8d12f316d92de32637cc7",
+    "name": "Dr. Rina Mitra",
+    "role": "doctor",
+    "headline": "Cardiologist",
+    "clinic": "City Care Clinic",
+    "presence": "available",
+    "avgReplyMinutes": 10,
+    "nextVisit": null,
+    "medicines": 0,
+    "adherencePct": null,
+    "conversationId": "6ac8d12d5e6ed8754976cfe8",
+    "unread": 2
+  }
+]

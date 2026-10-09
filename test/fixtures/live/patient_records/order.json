@@ -1,0 +1,51 @@
+{
+  "patientId": "6ac8d12d5e6ed8754976cfd9",
+  "pharmacyId": "6ac8d12dbfcb2f5a9d64d6b9",
+  "mode": "delivery",
+  "items": [
+    {
+      "name": "Metformin 500 mg",
+      "strength": "500 mg",
+      "strips": 3,
+      "unitPrice": 35,
+      "lineTotal": 105,
+      "inStock": true,
+      "_id": "6ac8d2d76008b2dd3c09147e",
+      "id": "6ac8d2d76008b2dd3c09147e"
+    },
+    {
+      "name": "Atorvastatin 10 mg",
+      "strength": "10 mg",
+      "strips": 2,
+      "unitPrice": 53,
+      "lineTotal": 106,
+      "inStock": true,
+      "_id": "6ac8d2d76008b2dd3c09147f",
+      "id": "6ac8d2d76008b2dd3c09147f"
+    }
+  ],
+  "prescriptionIds": [
+    "6ac8d12f316d92de32637d68"
+  ],
+  "deliveryAddress": {
+    "line": "Flat 3B, 12 Purbachal Rd, Salt Lake",
+    "area": "Salt Lake",
+    "city": "Kolkata"
+  },
+  "subtotal": 211,
+  "deliveryFee": 0,
+  "total": 211,
+  "status": "placed",
+  "statusHistory": [
+    {
+      "status": "placed",
+      "at": "2026-10-09T11:41:11.596Z"
+    }
+  ],
+  "etaText": "Delivers tomorrow by 11 AM · free delivery",
+  "createdAt": "2026-10-09T11:41:11.608Z",
+  "updatedAt": "2026-10-09T11:41:11.608Z",
+  "id": "6ac8d2d76008b2dd3c09147d",
+  "payment": "cash_on_delivery",
+  "pharmacyName": "CarePlus Online"
+}
