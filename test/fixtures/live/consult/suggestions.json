@@ -1,0 +1,83 @@
+{
+  "method": "GET",
+  "path": "/api/consultations/6ac8be2a0640a42493dc5506/suggestions",
+  "data": {
+    "fromPastPrescriptions": [],
+    "forDiagnosis": [
+      {
+        "name": "Metformin",
+        "strength": "500 mg",
+        "dose": {
+          "morning": 1,
+          "night": 1,
+          "afternoon": 0
+        },
+        "frequency": "daily",
+        "foodRelation": "after_food",
+        "duration": {
+          "value": 3,
+          "unit": "months"
+        },
+        "change": "new",
+        "entrySource": "typed",
+        "_id": "6ac8bbd08adea6a429a73227",
+        "reason": "Prescribed 4 times for Type 2 diabetes mellitus"
+      },
+      {
+        "name": "Telmisartan",
+        "strength": "40 mg",
+        "dose": {
+          "morning": 1,
+          "afternoon": 0,
+          "night": 0
+        },
+        "frequency": "daily",
+        "foodRelation": "after_food",
+        "duration": {
+          "value": 1,
+          "unit": "months"
+        },
+        "change": "new",
+        "entrySource": "typed",
+        "_id": "6ac8bbd08adea6a429a7327d",
+        "reason": "Prescribed 1 times for Type 2 diabetes mellitus"
+      },
+      {
+        "name": "Glimepiride",
+        "strength": "1 mg",
+        "dose": {
+          "morning": 1,
+          "afternoon": 0,
+          "night": 0
+        },
+        "frequency": "daily",
+        "foodRelation": "before_food",
+        "duration": {
+          "value": 1,
+          "unit": "months"
+        },
+        "change": "new",
+        "entrySource": "typed",
+        "_id": "6ac8bbd08adea6a429a73228",
+        "reason": "Prescribed 1 times for Type 2 diabetes mellitus"
+      }
+    ],
+    "tests": [
+      {
+        "testName": "HbA1c",
+        "panel": "Diabetes panel",
+        "source": "ai"
+      },
+      {
+        "testName": "Fasting glucose",
+        "panel": "Diabetes panel",
+        "source": "ai"
+      },
+      {
+        "testName": "Post-prandial glucose",
+        "panel": "Diabetes panel",
+        "source": "ai"
+      }
+    ]
+  }
+}

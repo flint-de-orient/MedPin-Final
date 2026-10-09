@@ -1,0 +1,225 @@
+{
+  "method": "POST",
+  "path": "/api/consultations/6ac8be2a0640a42493dc5506/issue",
+  "data": {
+    "consultation": {
+      "advice": {
+        "items": [
+          {
+            "text": "Walk 30 minutes, 5 days a week.",
+            "category": "activity",
+            "included": true,
+            "_id": "6ac8be2a0640a42493dc551d"
+          },
+          {
+            "text": "Avoid sugar and sweets.",
+            "category": "diet",
+            "included": false,
+            "_id": "6ac8be2a0640a42493dc551e"
+          }
+        ],
+        "freeText": ""
+      },
+      "validity": {
+        "preset": "1_month"
+      },
+      "followUp": {
+        "enabled": false,
+        "remindPatient": true
+      },
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8be2a0640a42493dc54dc",
+      "status": "issued",
+      "printVitalsOnRx": true,
+      "startedAt": "2026-10-09T10:12:58.654Z",
+      "diagnoses": [
+        {
+          "name": "Type 2 diabetes mellitus",
+          "icdCode": "E11.9",
+          "source": "catalog",
+          "_id": "6ac8be2a0640a42493dc551b"
+        }
+      ],
+      "medications": [
+        {
+          "dose": {
+            "morning": 1,
+            "afternoon": 0,
+            "night": 1
+          },
+          "duration": {
+            "value": 30,
+            "unit": "days"
+          },
+          "medicineId": "6ac8bbcebfcb2f5a9d64d500",
+          "name": "Metformin",
+          "strength": "500 mg",
+          "form": "Tablet",
+          "frequency": "daily",
+          "foodRelation": "after_food",
+          "instructions": "after food",
+          "change": "continued",
+          "entrySource": "typed",
+          "_id": "6ac8be2a0640a42493dc551f"
+        },
+        {
+          "dose": {
+            "morning": 1,
+            "afternoon": 0,
+            "night": 0
+          },
+          "duration": {
+            "value": 30,
+            "unit": "days"
+          },
+          "medicineId": "6ac8bbcebfcb2f5a9d64d501",
+          "name": "Glimepiride",
+          "strength": "1 mg",
+          "form": "Tablet",
+          "frequency": "daily",
+          "foodRelation": "before_food",
+          "instructions": "before breakfast",
+          "change": "new",
+          "caution": "Sulfa drugs allergy · sulfonylurea",
+          "entrySource": "typed",
+          "_id": "6ac8be2a0640a42493dc5520"
+        },
+        {
+          "dose": {
+            "morning": 0,
+            "afternoon": 0,
+            "night": 1
+          },
+          "duration": {
+            "value": 15,
+            "unit": "days"
+          },
+          "medicineId": "6ac8bbcebfcb2f5a9d64d500",
+          "name": "Metformin",
+          "strength": "750 mg",
+          "form": "Tablet",
+          "frequency": "daily",
+          "foodRelation": "after_food",
+          "change": "new",
+          "entrySource": "typed",
+          "_id": "6ac8be2a0640a42493dc5521"
+        }
+      ],
+      "labOrders": [
+        {
+          "testName": "HbA1c",
+          "source": "typed",
+          "selected": true,
+          "_id": "6ac8be2a0640a42493dc551c"
+        }
+      ],
+      "createdAt": "2026-10-09T10:12:58.654Z",
+      "updatedAt": "2026-10-09T10:12:58.979Z",
+      "vitalsId": "6ac8be2a0640a42493dc550f",
+      "chiefComplaint": "Tired for two weeks. Sugar readings high.",
+      "draftSavedAt": "2026-10-09T10:12:58.708Z",
+      "prescriptionId": "6ac8be2a0640a42493dc55a6",
+      "completedAt": "2026-10-09T10:12:58.901Z",
+      "durationSec": 0,
+      "id": "6ac8be2a0640a42493dc5506"
+    },
+    "prescription": {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "doctorName": "Dr. Arjun Sen",
+      "patientId": "6ac8be2a0640a42493dc54dc",
+      "consultationId": "6ac8be2a0640a42493dc5506",
+      "rxNumber": 10,
+      "kind": "digital",
+      "source": "this_clinic",
+      "issuedAt": "2026-10-09T10:12:58.901Z",
+      "validUntil": "2026-11-07T18:30:00.000Z",
+      "diagnosisSummary": "Type 2 diabetes mellitus",
+      "items": [
+        {
+          "medicineId": "6ac8bbcebfcb2f5a9d64d500",
+          "name": "Metformin",
+          "strength": "500 mg",
+          "form": "Tablet",
+          "dose": {
+            "morning": 1,
+            "afternoon": 0,
+            "night": 1
+          },
+          "frequency": "daily",
+          "foodRelation": "after_food",
+          "instructions": "after food",
+          "duration": {
+            "value": 30,
+            "unit": "days"
+          },
+          "quantity": 60,
+          "change": "continued",
+          "entrySource": "typed",
+          "_id": "6ac8be2a0640a42493dc551f"
+        },
+        {
+          "medicineId": "6ac8bbcebfcb2f5a9d64d501",
+          "name": "Glimepiride",
+          "strength": "1 mg",
+          "form": "Tablet",
+          "dose": {
+            "morning": 1,
+            "afternoon": 0,
+            "night": 0
+          },
+          "frequency": "daily",
+          "foodRelation": "before_food",
+          "instructions": "before breakfast",
+          "duration": {
+            "value": 30,
+            "unit": "days"
+          },
+          "quantity": 30,
+          "change": "new",
+          "caution": "Sulfa drugs allergy · sulfonylurea",
+          "entrySource": "typed",
+          "_id": "6ac8be2a0640a42493dc5520"
+        },
+        {
+          "medicineId": "6ac8bbcebfcb2f5a9d64d500",
+          "name": "Metformin",
+          "strength": "750 mg",
+          "form": "Tablet",
+          "dose": {
+            "morning": 0,
+            "afternoon": 0,
+            "night": 1
+          },
+          "frequency": "daily",
+          "foodRelation": "after_food",
+          "duration": {
+            "value": 15,
+            "unit": "days"
+          },
+          "quantity": 15,
+          "change": "new",
+          "entrySource": "typed",
+          "_id": "6ac8be2a0640a42493dc5521"
+        }
+      ],
+      "tests": [
+        "HbA1c"
+      ],
+      "advice": "Walk 30 minutes, 5 days a week.",
+      "followUpDate": null,
+      "createdAt": "2026-10-09T10:12:58.908Z",
+      "updatedAt": "2026-10-09T10:12:58.975Z",
+      "file": {
+        "key": "prescriptions/2026-10/ddfb768d-c352-45a5-8a7d-9e85fe68f98f.pdf",
+        "name": "Rx-0010.pdf",
+        "mimeType": "application/pdf",
+        "sizeBytes": 1946,
+        "pages": 1,
+        "url": "http://localhost:4000/files/prescriptions/2026-10/ddfb768d-c352-45a5-8a7d-9e85fe68f98f.pdf?exp=1791544378&sig=463f08585b8eb156c27821c8f341beeda863f870b533ebcd84d89f046dfd1a7c"
+      },
+      "id": "6ac8be2a0640a42493dc55a6"
+    }
+  }
+}

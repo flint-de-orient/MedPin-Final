@@ -1,0 +1,32 @@
+{
+  "method": "GET",
+  "path": "/api/catalog/medicines?q=Atorvastatin",
+  "data": [
+    {
+      "genericName": "Atorvastatin",
+      "active": true,
+      "brandNames": [],
+      "createdAt": "2026-10-09T10:02:54.902Z",
+      "drugClass": "statin",
+      "form": "Tablet",
+      "mrpPerStrip": 60,
+      "strengths": [
+        {
+          "value": 10,
+          "unit": "mg"
+        },
+        {
+          "value": 20,
+          "unit": "mg"
+        },
+        {
+          "value": 40,
+          "unit": "mg"
+        }
+      ],
+      "unitsPerStrip": 10,
+      "updatedAt": "2026-10-09T10:02:54.902Z",
+      "id": "6ac8bbcebfcb2f5a9d64d504"
+    }
+  ]
+}

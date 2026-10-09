@@ -1,0 +1,24 @@
+{
+  "method": "GET",
+  "path": "/api/patients/lookup?phone=9876543210",
+  "data": {
+    "exists": true,
+    "linked": true,
+    "hasApp": true,
+    "patient": {
+      "id": "6ac8bbcee42c9f0836e9857c",
+      "name": "Priya Sharma",
+      "phone": "9876543210",
+      "gender": "female",
+      "age": 29,
+      "conditions": [
+        "Type 2 diabetes",
+        "PCOS"
+      ],
+      "allergies": [
+        "Sulfa drugs"
+      ],
+      "hasApp": true
+    }
+  }
+}

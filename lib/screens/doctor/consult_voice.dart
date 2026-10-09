@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
 
@@ -63,17 +64,52 @@ class _ConsultVoiceSheetState extends State<ConsultVoiceSheet> with SingleTicker
     super.dispose();
   }
 
+  /// Live: there is no speech-to-text service, so the sheet reads the line
+  /// the doctor typed in the medicine field (args {'text', 'caution'?}).
+  Map<String, dynamic> get _args => (Nav.args<Map>(context) ?? const {}).cast<String, dynamic>();
+  String get _text => _args.str('text').trim();
+  late final Map<String, dynamic> _item = D5Live.parse(_text, source: 'voice');
+
+  List<(String, String)> get _items {
+    if (!isLive) return _parsed;
+    final food = D5Live.food(_item);
+    final dur = D5Live.durationText(_item['duration']);
+    return [
+      ('Medicine', D5Live.medName(_item)),
+      ('When', D5Live.when(_item)),
+      ('Food', food.isEmpty ? '—' : food[0].toUpperCase() + food.substring(1)),
+      ('Duration', dur.isEmpty ? '—' : dur),
+    ];
+  }
+
   void _add() {
-    toast(context, 'Glimepiride 1 mg added');
+    if (!isLive) {
+      toast(context, 'Glimepiride 1 mg added');
+      Navigator.pop<D5MedResult>(context, (
+        name: 'Glimepiride 1 mg',
+        dose: '1-0-0 · before breakfast',
+        duration: '30 days',
+        item: null,
+      ));
+      return;
+    }
+    if (_item.str('name').isEmpty) {
+      toast(context, 'Say or type the medicine name first');
+      return;
+    }
+    final line = D5Live.item(_item);
+    toast(context, '${D5Live.medName(line)} added');
     Navigator.pop<D5MedResult>(context, (
-      name: 'Glimepiride 1 mg',
-      dose: '1-0-0 · before breakfast',
-      duration: '30 days',
+      name: D5Live.medName(line),
+      dose: D5Live.doseText(line),
+      duration: D5Live.durationText(line['duration']),
+      item: line,
     ));
   }
 
   @override
   Widget build(BuildContext context) {
+    final items = _items;
     return MpSheet(
       child: VGap(
         padding: const EdgeInsets.only(top: 20),
@@ -94,10 +130,12 @@ class _ConsultVoiceSheetState extends State<ConsultVoiceSheet> with SingleTicker
           Semantics(
             liveRegion: true,
             child: Text.rich(
-              TextSpan(
-                text: '“Glimepiride one mg, once in the morning before breakfast, ',
-                children: [TextSpan(text: 'for thirty days”', style: tx(20, w: w600, c: MP.ink3, h: 1.4))],
-              ),
+              isLive
+                  ? TextSpan(text: '“$_text”')
+                  : TextSpan(
+                    text: '“Glimepiride one mg, once in the morning before breakfast, ',
+                    children: [TextSpan(text: 'for thirty days”', style: tx(20, w: w600, c: MP.ink3, h: 1.4))],
+                  ),
               style: tx(20, w: w600, h: 1.4),
             ),
           ),
@@ -137,20 +175,23 @@ class _ConsultVoiceSheetState extends State<ConsultVoiceSheet> with SingleTicker
                 const D5Label('Understood as', color: MP.green, icon: I.check, stroke: 2.5),
                 Column(
                   children: [
-                    for (var r = 0; r < _parsed.length; r += 2) ...[
+                    for (var r = 0; r < items.length; r += 2) ...[
                       if (r > 0) const Gap(12),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(child: _Parsed(_parsed[r])),
+                          Expanded(child: _Parsed(items[r])),
                           const Gap(16),
-                          Expanded(child: _Parsed(_parsed[r + 1])),
+                          Expanded(child: _Parsed(items[r + 1])),
                         ],
                       ),
                     ],
                   ],
                 ),
-                const D5Note('Sulfonylurea. Priya has a sulfa drug allergy.'),
+                if (!isLive)
+                  const D5Note('Sulfonylurea. Priya has a sulfa drug allergy.')
+                else if (_args.str('caution').isNotEmpty)
+                  D5Note(_args.str('caution')),
               ],
             ),
           ),

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'common_d5.dart';
 
 /// Design: Add-Patient-Existing.dc.html — "Add patient · existing account".
 /// Sheet over 'Add-Patient'.
@@ -16,8 +19,13 @@ class _AddPatientExistingSheetState extends State<AddPatientExistingSheet> {
   static const _length = 6;
 
   /// The design shows 4 · 8 · 2 entered, waiting for the 4th digit.
-  final _code = TextEditingController(text: '482');
+  final _code = TextEditingController(text: isLive ? '' : '482');
   final _focus = FocusNode();
+  bool _busy = false;
+
+  /// Live: args {'phone', 'startConsult'?} from Add-Patient / Consult-QuickAdd.
+  Map get _args => Nav.args<Map>(context) ?? const {};
+  String get _phone => isLive ? D5Live.digits('${_args['phone'] ?? ''}') : '9876543210';
 
   @override
   void initState() {
@@ -39,9 +47,40 @@ class _AddPatientExistingSheetState extends State<AddPatientExistingSheet> {
       return;
     }
     final nav = Navigator.of(context);
-    nav.pop(); // the sheet
-    nav.maybePop(); // the Add patient form
-    toast(nav.context, 'Patient linked to your practice');
+    if (!isLive) {
+      nav.pop(); // the sheet
+      nav.maybePop(); // the Add patient form
+      toast(nav.context, 'Patient linked to your practice');
+      return;
+    }
+    _linkLive(nav);
+  }
+
+  /// POST /api/patients/link, then the patient's profile (or, from
+  /// Consult-QuickAdd, a consultation for them).
+  Future<void> _linkLive(NavigatorState nav) async {
+    if (_busy) return;
+    _busy = true;
+    final startConsult = _args['startConsult'] == true;
+    try {
+      final p = await runAction(context, () => Api.I.post('/api/patients/link', {'phone': _phone, 'consentCode': _code.text}));
+      if (p is! Map || !mounted) return;
+      final id = '${p['id']}';
+      if (startConsult) {
+        final c = await runAction(context, () => Api.I.post('/api/consultations', {'patientId': id}));
+        if (c is! Map || !mounted) return;
+        nav.pop(); // the sheet
+        toast(nav.context, 'Patient linked to your practice');
+        Nav.go(nav.context, 'Consult-Page', args: {'consultationId': '${c['id']}', 'patientId': id});
+        return;
+      }
+      nav.pop(); // the sheet
+      if (nav.canPop()) nav.pop(); // the Add patient form
+      toast(nav.context, 'Patient linked to your practice');
+      Nav.go(nav.context, 'Patient-Profile', args: {'patientId': id});
+    } finally {
+      _busy = false;
+    }
   }
 
   @override
@@ -111,7 +150,7 @@ class _AddPatientExistingSheetState extends State<AddPatientExistingSheet> {
             ],
           ),
           const Gap(8),
-          Text("6 digits, from the patient's phone for +91 98765 43210", style: tx(13, c: MP.ink3)),
+          Text("6 digits, from the patient's phone for ${D5Live.phone(_phone)}", style: tx(13, c: MP.ink3)),
           const Gap(24),
           MpButton('Link patient', onTap: _link),
           const Gap(12),

@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
 
@@ -13,7 +18,7 @@ class ConsultPickScreen extends StatefulWidget {
 
 typedef _Person = (String, String, String, String, String);
 
-class _ConsultPickScreenState extends State<ConsultPickScreen> {
+class _ConsultPickScreenState extends State<ConsultPickScreen> with LiveData {
   // (token, name, age · sex, phone, waiting)
   static const _queue = <_Person>[
     ('05', 'Rahul Das', '45 M', '+91 98311 20764', 'waiting 22 min'),
@@ -39,6 +44,72 @@ class _ConsultPickScreenState extends State<ConsultPickScreen> {
 
   String _query = '';
 
+  // Live: GET /api/consultations/pick (waiting now + recent); typing searches
+  // with ?q= and the matches replace the recent list.
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/consultations/pick');
+
+  List<Map<String, dynamic>>? _found;
+  String _foundFor = '';
+  Timer? _debounce;
+  int _seq = 0;
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _busy.dispose();
+    super.dispose();
+  }
+
+  void _changed(String v) {
+    setState(() => _query = v);
+    if (!isLive) return;
+    _debounce?.cancel();
+    if (v.trim().isEmpty) {
+      setState(() => _found = null);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () => _search(v.trim()));
+  }
+
+  Future<void> _search(String q) async {
+    final seq = ++_seq;
+    try {
+      final r = await Api.I.get('/api/consultations/pick', query: {'q': q});
+      if (!mounted || seq != _seq) return;
+      setState(() {
+        _found = D5Live.list(r is Map ? r['matches'] : null);
+        _foundFor = q;
+      });
+    } on ApiException catch (e) {
+      if (mounted && seq == _seq) toast(context, e.message);
+    }
+  }
+
+  static _Person _row(Map<String, dynamic> p, String lead, String extra) =>
+      (lead, p.str('name'), D5Live.ageSex(p), D5Live.phone(p['phone']), extra);
+
+  /// Live waiting rows with their appointment and patient ids.
+  List<(_Person, String, String)> get _liveQueue => [
+    for (final w in data!.list('waiting'))
+      (
+        _row(w.obj('patient'), w.str('token'), D5Live.waiting(w['waitingMin'])),
+        w.str('appointmentId'),
+        w.obj('patient').str('id'),
+      ),
+  ];
+
+  /// Live recent patients (or the search matches) with their ids.
+  List<(_Person, String)> get _liveRecent {
+    final waiting = {for (final w in data!.list('waiting')) w.obj('patient').str('id')};
+    final source = _query.trim().isEmpty ? data!.list('recent') : (_found ?? const <Map<String, dynamic>>[]);
+    return [
+      for (final p in source)
+        if (_query.trim().isEmpty || !waiting.contains(p.str('id'))) (_row(p, F.initials(p.str('name')), ''), p.str('id')),
+    ];
+  }
+
   bool _matches(_Person p) {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return true;
@@ -47,22 +118,56 @@ class _ConsultPickScreenState extends State<ConsultPickScreen> {
     return digits.isNotEmpty && p.$4.replaceAll(RegExp(r'\D'), '').contains(digits);
   }
 
-  void _submit(String _) {
-    if (_query.trim().isEmpty) return;
-    final hits = _queue.where(_matches).length + _recent.where(_matches).length;
-    if (hits == 0) {
+  String _meta(_Person p) => [p.$3, p.$4, p.$5].where((s) => s.isNotEmpty).join(' · ');
+
+  void _startAppointment(String appointmentId, String patientId) =>
+      D5Live.start(context, appointmentId: appointmentId, patientId: patientId, busy: _busy);
+
+  void _startPatient(String patientId) => D5Live.start(context, patientId: patientId, busy: _busy);
+
+  Future<void> _submit(String _) async {
+    final q = _query.trim();
+    if (q.isEmpty) return;
+    if (!isLive) {
+      final hits = _queue.where(_matches).length + _recent.where(_matches).length;
+      if (hits == 0) {
+        // Same search screen, "patient not found" state.
+        Nav.tab(context, 'Consult-NotFound');
+      } else if (hits == 1) {
+        Nav.go(context, 'Consult-Page');
+      }
+      return;
+    }
+    if (data == null) return;
+    if (_foundFor != q) {
+      _debounce?.cancel();
+      await _search(q);
+      if (!mounted || _foundFor != q) return;
+    }
+    final queue = _liveQueue.where((r) => _matches(r.$1)).toList();
+    final recent = _liveRecent;
+    if (queue.isEmpty && recent.isEmpty) {
       // Same search screen, "patient not found" state.
-      Nav.tab(context, 'Consult-NotFound');
-    } else if (hits == 1) {
-      Nav.go(context, 'Consult-Page');
+      D5Live.replace(context, 'Consult-NotFound', {'query': q});
+    } else if (queue.length + recent.length == 1) {
+      if (queue.isNotEmpty) {
+        _startAppointment(queue.first.$2, queue.first.$3);
+      } else {
+        _startPatient(recent.first.$2);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final queue = _queue.where(_matches).toList();
-    final recent = _recent.where(_matches).toList();
-    final none = queue.isEmpty && recent.isEmpty;
+    final placeholder = livePlaceholder();
+    final live = isLive && data != null;
+    final liveQueue = live ? _liveQueue.where((r) => _matches(r.$1)).toList() : const <(_Person, String, String)>[];
+    final liveRecent = live ? _liveRecent : const <(_Person, String)>[];
+    final queue = live ? [for (final r in liveQueue) r.$1] : _queue.where(_matches).toList();
+    final recent = live ? [for (final r in liveRecent) r.$1] : _recent.where(_matches).toList();
+    final searched = !isLive || _query.trim().isEmpty || _foundFor == _query.trim();
+    final none = queue.isEmpty && recent.isEmpty && (!isLive || (_query.trim().isNotEmpty && searched));
     final byNumber = RegExp(r'\d').hasMatch(_query);
 
     return MpPage(
@@ -86,21 +191,26 @@ class _ConsultPickScreenState extends State<ConsultPickScreen> {
                 D5SearchField(
                   hint: 'Name or phone number',
                   autofocus: true,
-                  onChanged: (v) => setState(() => _query = v),
+                  onChanged: _changed,
                   onSubmitted: _submit,
                 ),
+                if (placeholder != null) placeholder,
                 if (queue.isNotEmpty)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const D5Label('Waiting now · Salt Lake', bottom: 4),
+                      // The pick list has no location name, so live it is just "Waiting now".
+                      D5Label(isLive ? 'Waiting now' : 'Waiting now · Salt Lake', bottom: 4),
                       for (var i = 0; i < queue.length; i++)
                         D5PersonRow(
                           leading: _Token(queue[i].$1),
                           name: queue[i].$2,
-                          meta: TextSpan(text: '${queue[i].$3} · ${queue[i].$4} · ${queue[i].$5}'),
+                          meta: TextSpan(text: isLive ? _meta(queue[i]) : '${queue[i].$3} · ${queue[i].$4} · ${queue[i].$5}'),
                           first: i == 0,
-                          onTap: () => Nav.go(context, 'Consult-Page'),
+                          onTap:
+                              live
+                                  ? () => _startAppointment(liveQueue[i].$2, liveQueue[i].$3)
+                                  : () => Nav.go(context, 'Consult-Page'),
                         ),
                     ],
                   ),
@@ -108,14 +218,14 @@ class _ConsultPickScreenState extends State<ConsultPickScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const D5Label('Recent', bottom: 4),
+                      D5Label(isLive && _query.trim().isNotEmpty ? 'Patients' : 'Recent', bottom: 4),
                       for (var i = 0; i < recent.length; i++)
                         D5PersonRow(
                           leading: MpAvatar(recent[i].$1, size: 40, fontSize: 14),
                           name: recent[i].$2,
-                          meta: TextSpan(text: '${recent[i].$3} · ${recent[i].$4} · ${recent[i].$5}'),
+                          meta: TextSpan(text: isLive ? _meta(recent[i]) : '${recent[i].$3} · ${recent[i].$4} · ${recent[i].$5}'),
                           first: i == 0,
-                          onTap: () => Nav.go(context, 'Consult-Page'),
+                          onTap: live ? () => _startPatient(liveRecent[i].$2) : () => Nav.go(context, 'Consult-Page'),
                         ),
                     ],
                   ),
@@ -144,7 +254,7 @@ class _ConsultPickScreenState extends State<ConsultPickScreen> {
                   height: 48,
                   radius: 12,
                   fontSize: 15,
-                  onTap: () => Nav.go(context, 'Consult-QuickAdd'),
+                  onTap: () => Nav.go(context, 'Consult-QuickAdd', args: isLive ? {'query': _query.trim()} : null),
                 ),
               ],
             ),
