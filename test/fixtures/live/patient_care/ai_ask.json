@@ -1,0 +1,33 @@
+{
+ "question": {
+  "sessionId": "6ac8d52a3e3bfd1dfac207b8",
+  "role": "user",
+  "text": "I have chest pain",
+  "inputMode": "typed",
+  "sources": {
+   "refs": []
+  },
+  "vote": 0,
+  "createdAt": "2026-10-09T11:51:42.108Z",
+  "updatedAt": "2026-10-09T11:51:42.108Z",
+  "id": "6ac8d54e3e3bfd1dfac208ac"
+ },
+ "answer": {
+  "sessionId": "6ac8d52a3e3bfd1dfac207b8",
+  "role": "assistant",
+  "text": "MedPin AI is not available right now. You can message your doctor from the Doctors tab.",
+  "inputMode": "typed",
+  "payload": {
+   "scripted": true
+  },
+  "sources": {
+   "refs": []
+  },
+  "vote": 0,
+  "createdAt": "2026-10-09T11:51:42.109Z",
+  "updatedAt": "2026-10-09T11:51:42.109Z",
+  "id": "6ac8d54e3e3bfd1dfac208ae"
+ },
+ "emergency": true,
+ "specialistKey": null
+}

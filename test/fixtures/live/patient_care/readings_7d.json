@@ -1,0 +1,93 @@
+[
+ {
+  "patientId": "6ac8d0bd07fdebd2731d1ed9",
+  "recordedAt": "2026-10-03T02:15:00.000Z",
+  "recordedByRole": "patient",
+  "source": "home",
+  "bpSystolic": 126,
+  "bpDiastolic": 80,
+  "bloodSugar": 146,
+  "sugarType": "fasting",
+  "createdAt": "2026-10-09T11:32:17.039Z",
+  "updatedAt": "2026-10-09T11:32:17.039Z",
+  "id": "6ac8d0c18645bb270799772f"
+ },
+ {
+  "patientId": "6ac8d0bd07fdebd2731d1ed9",
+  "recordedAt": "2026-10-04T02:15:00.000Z",
+  "recordedByRole": "patient",
+  "source": "home",
+  "bpSystolic": 130,
+  "bpDiastolic": 84,
+  "bloodSugar": 139,
+  "sugarType": "fasting",
+  "createdAt": "2026-10-09T11:32:17.041Z",
+  "updatedAt": "2026-10-09T11:32:17.041Z",
+  "id": "6ac8d0c18645bb2707997731"
+ },
+ {
+  "patientId": "6ac8d0bd07fdebd2731d1ed9",
+  "recordedAt": "2026-10-05T02:15:00.000Z",
+  "recordedByRole": "patient",
+  "source": "home",
+  "bpSystolic": 124,
+  "bpDiastolic": 79,
+  "bloodSugar": 151,
+  "sugarType": "fasting",
+  "createdAt": "2026-10-09T11:32:17.044Z",
+  "updatedAt": "2026-10-09T11:32:17.044Z",
+  "id": "6ac8d0c18645bb2707997733"
+ },
+ {
+  "patientId": "6ac8d0bd07fdebd2731d1ed9",
+  "recordedAt": "2026-10-06T02:15:00.000Z",
+  "recordedByRole": "patient",
+  "source": "home",
+  "bpSystolic": 128,
+  "bpDiastolic": 82,
+  "bloodSugar": 142,
+  "sugarType": "fasting",
+  "createdAt": "2026-10-09T11:32:17.045Z",
+  "updatedAt": "2026-10-09T11:32:17.045Z",
+  "id": "6ac8d0c18645bb2707997735"
+ },
+ {
+  "patientId": "6ac8d0bd07fdebd2731d1ed9",
+  "recordedAt": "2026-10-07T02:15:00.000Z",
+  "recordedByRole": "patient",
+  "source": "home",
+  "bpSystolic": 131,
+  "bpDiastolic": 85,
+  "bloodSugar": 137,
+  "sugarType": "fasting",
+  "createdAt": "2026-10-09T11:32:17.046Z",
+  "updatedAt": "2026-10-09T11:32:17.046Z",
+  "id": "6ac8d0c18645bb2707997737"
+ },
+ {
+  "patientId": "6ac8d0bd07fdebd2731d1ed9",
+  "recordedAt": "2026-10-08T02:15:00.000Z",
+  "recordedByRole": "patient",
+  "source": "home",
+  "bpSystolic": 127,
+  "bpDiastolic": 81,
+  "bloodSugar": 148,
+  "sugarType": "fasting",
+  "createdAt": "2026-10-09T11:32:17.048Z",
+  "updatedAt": "2026-10-09T11:32:17.048Z",
+  "id": "6ac8d0c18645bb2707997739"
+ },
+ {
+  "patientId": "6ac8d0bd07fdebd2731d1ed9",
+  "recordedAt": "2026-10-09T02:15:00.000Z",
+  "recordedByRole": "patient",
+  "source": "home",
+  "bpSystolic": 128,
+  "bpDiastolic": 82,
+  "bloodSugar": 142,
+  "sugarType": "fasting",
+  "createdAt": "2026-10-09T11:32:17.049Z",
+  "updatedAt": "2026-10-09T11:32:17.049Z",
+  "id": "6ac8d0c18645bb270799773b"
+ }
+]

@@ -147,7 +147,10 @@ r.get('/home', async (req, res) => {
   }
   const slides = [];
   if (nextVisit) slides.push({ kind: 'visit', title: `Visit ${T.dayKey(nextVisit.startAt) === T.dayKey(now) ? 'today' : T.dayKey(nextVisit.startAt)}, ${T.fmtTime(T.minuteOfDay(nextVisit.startAt))}`, sub: `${nextVisit.doctorId?.name} · Token ${String(nextVisit.tokenNo).padStart(2, '0')}`, screen: 'Patient-DoctorDetail', params: { appointmentId: nextVisit._id } });
-  if (newReport) slides.push({ kind: 'report', title: `Your ${newReport.testName} is in`, sub: newReport.abnormalCount ? `${newReport.abnormalCount} value(s) outside the range` : 'All values in range', screen: 'Patient-Records' });
+  if (newReport) slides.push({ kind: 'report', title: `Your ${newReport.testName} is in`, sub: newReport.abnormalCount ? `${newReport.abnormalCount} value(s) outside the range` : 'All values in range', screen: 'Patient-Records',
+    recordId: newReport.recordId, testName: newReport.testName, abnormalCount: newReport.abnormalCount || 0,
+    abnormal: newReport.values.filter((v) => v.flag !== 'normal').map((v) => v.analyte),
+    abnormalDirection: newReport.values.some((v) => v.flag === 'high' || v.flag === 'critical') ? 'high' : 'low' });
   if (refills[0]) slides.push({ kind: 'refill', title: `${refills[0].name} runs out in ${refills[0].daysLeft} days`, sub: `${refills[0].tabletsLeft} tablets left`, screen: 'Med-Cart' });
   if (p.healthScore?.value != null) slides.push({ kind: 'score', title: `Health score ${p.healthScore.value}`, sub: p.healthScore.weeklyDelta ? `${p.healthScore.weeklyDelta > 0 ? '+' : ''}${p.healthScore.weeklyDelta} this week` : '', screen: 'Patient-Home' });
   const unread = await M.Conversation.aggregate([{ $match: { patientId: p._id } }, { $unwind: '$participants' }, { $match: { 'participants.userId': req.user._id } }, { $group: { _id: null, n: { $sum: '$participants.unreadCount' } } }]);
@@ -185,7 +188,7 @@ r.get('/home', async (req, res) => {
       doneThisWeek: activity.completions.filter((d) => d >= weekStart).length, doneToday: activity.completions.some((d) => T.dayKey(d) === T.dayKey(now)),
     },
     mealsLogged,
-    logSharedWith: team.map((c) => ({ name: c.userId?.name, role: c.role })),
+    logSharedWith: team.map((c) => ({ userId: c.userId?._id, name: c.userId?.name, role: c.role })),
     adherence: { pct: adh.overallPct, doctors: adh.perDoctor.length },
     trackedMeasures: p.trackedMeasures,
     tracked,
@@ -467,7 +470,42 @@ r.get('/adherence', async (req, res) => {
   const out = await care.adherence(req.patient, Math.min(Number(req.query.days) || 30, 180));
   const doctorIds = out.perDoctor.map((d) => d.doctor).filter(isId);
   const names = new Map((await M.User.find({ _id: { $in: doctorIds } }, 'name')).map((u) => [String(u._id), u.name]));
-  res.json({ ...out, perDoctor: out.perDoctor.map((d) => ({ ...d, name: names.get(d.doctor) || d.doctor })) });
+  // Patient-Adherence: one card per doctor with their medicines (untracked ones too).
+  const [profiles, team, courses] = await Promise.all([
+    M.DoctorProfile.find({ userId: { $in: doctorIds } }, 'userId specialtyKeys'),
+    M.CareTeamAccess.find({ patientId: req.patient._id, userId: { $in: doctorIds } }).populate('practiceId', 'name'),
+    M.MedicationCourse.find({ patientId: req.patient._id, status: 'active' }, 'startDate'),
+  ]);
+  const labels = new Map((await M.Specialty.find({ key: { $in: profiles.flatMap((p) => p.specialtyKeys) } }, 'key label')).map((s) => [s.key, s.label]));
+  const started = new Map(courses.map((c) => [String(c._id), c.startDate]));
+  const groups = new Map();
+  const groupOf = (key, fallbackName) => {
+    if (!groups.has(key)) {
+      const prof = profiles.find((p) => String(p.userId) === key);
+      const access = team.find((c) => String(c.userId) === key);
+      const perDoc = out.perDoctor.find((d) => d.doctor === key);
+      groups.set(key, {
+        id: key, name: names.get(key) || fallbackName || (key === 'self' ? 'Added by you' : key),
+        specialty: prof ? labels.get(prof.specialtyKeys[0]) || null : null, clinic: access?.practiceId?.name || null,
+        pct: perDoc?.pct ?? null, medicines: [],
+      });
+    }
+    return groups.get(key);
+  };
+  for (const d of out.perDoctor) groupOf(d.doctor);
+  for (const m of out.perMedicine) {
+    const key = m.doctorId ? String(m.doctorId) : m.prescriber || 'self';
+    groupOf(key, m.prescriber).medicines.push({ courseId: m.courseId, name: m.name, strength: m.strength, tracked: m.tracked, pct: m.pct, isNew: m.isNew, startDate: started.get(String(m.courseId)) || null });
+  }
+  const doctors = [...groups.values()].map((g) => ({ ...g, tracked: g.medicines.length ? g.medicines.some((m) => m.tracked) : g.pct != null }));
+  doctors.sort((a, b) => Number(b.tracked) - Number(a.tracked) || (b.medicines.length - a.medicines.length));
+  res.json({
+    ...out,
+    perDoctor: out.perDoctor.map((d) => ({ ...d, name: names.get(d.doctor) || d.doctor })),
+    doctors,
+    medReminders: req.patient.toObject().settings?.medReminders !== false,
+    reminderTimes: req.patient.toObject().settings?.reminderTimes || null,
+  });
 });
 
 // ── Health log (meal / exercise / steps) and activity plans ──
@@ -475,6 +513,31 @@ r.get('/logs', async (req, res) => {
   const day = T.parseDay(req.query.date);
   const logs = await M.HealthLog.find({ patientId: req.patient._id, loggedAt: { $gte: day, $lt: T.addDays(day, 1) } }).sort({ loggedAt: 1 });
   res.json(logs.map((l) => ({ ...l.toJSON(), photo: storage.withUrl(l.photo) })));
+});
+
+// Patient-Log: who the entry can be shared with, and today's steps for the Steps tab.
+r.get('/logs/options', async (req, res) => {
+  const p = req.patient;
+  const today = T.dayStart();
+  const [team, steps, enrolment] = await Promise.all([
+    M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name'),
+    M.HealthLog.aggregate([{ $match: { patientId: p._id, type: 'steps', loggedAt: { $gte: today } } }, { $group: { _id: null, n: { $sum: '$steps' } } }]),
+    M.PatientEnrolment.findOne({ patientId: p._id, status: 'linked' }).populate('practiceId', 'foodLogReviewCadence'),
+  ]);
+  const profiles = await M.DoctorProfile.find({ userId: { $in: team.map((c) => c.userId?._id) } }, 'userId specialtyKeys');
+  const labels = new Map((await M.Specialty.find({ key: { $in: profiles.flatMap((x) => x.specialtyKeys) } }, 'key label')).map((s) => [s.key, s.label]));
+  const cadence = enrolment?.practiceId?.foodLogReviewCadence || 'every_3_days';
+  const reviews = { daily: 'reviews every day', every_3_days: 'reviews every 3 days', weekly: 'reviews every week' }[cadence];
+  const shareWith = team.filter((c) => c.userId).map((c) => {
+    const prof = profiles.find((x) => String(x.userId) === String(c.userId._id));
+    const specialty = prof ? labels.get(prof.specialtyKeys[0]) : null;
+    const label = c.role === 'dietician' ? `Dietician · ${reviews}` : specialty || c.role.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase());
+    return { userId: c.userId._id, name: c.userId.name, role: c.role, label, seesLogs: ['full_with_logs', 'daily_log_only'].includes(c.accessLevel) };
+  });
+  // Dieticians first (they review food logs), then doctors who already see the log.
+  shareWith.sort((a, b) => Number(b.role === 'dietician') - Number(a.role === 'dietician') || Number(b.seesLogs) - Number(a.seesLogs));
+  const plans = await M.ActivityPlan.find({ patientId: p._id, active: true }, 'name exerciseType durationMin');
+  res.json({ shareWith, steps: { today: steps[0]?.n || 0, goal: p.targets?.stepsPerDay || 8000 }, activityPlans: plans });
 });
 
 r.post('/logs', upload.single('photo'), async (req, res) => {
@@ -764,6 +827,31 @@ r.post('/conversations', async (req, res) => {
   res.json(convo);
 });
 
+// Patient-Emergency: the doctors who can get an urgent message, with presence and clinic phone.
+r.get('/urgent/doctors', async (req, res) => {
+  const team = await M.CareTeamAccess.find({ patientId: req.patient._id, role: 'doctor', accessLevel: { $ne: 'not_shared' }, practiceId: { $ne: null } })
+    .populate('userId', 'name').populate('practiceId', 'name');
+  const ids = team.filter((c) => c.userId).map((c) => c.userId._id);
+  const [profiles, places] = await Promise.all([
+    M.DoctorProfile.find({ userId: { $in: ids } }, 'userId displayName gender specialtyKeys presence avgReplyMinutes'),
+    M.DoctorLocation.find({ doctorId: { $in: ids }, status: 'active' }).populate('locationId', 'phone'),
+  ]);
+  const labels = new Map((await M.Specialty.find({ key: { $in: profiles.flatMap((x) => x.specialtyKeys) } }, 'key label')).map((s) => [s.key, s.label]));
+  const order = { available: 0, in_clinic: 1, away: 2 };
+  const items = team.filter((c) => c.userId).map((c) => {
+    const prof = profiles.find((x) => String(x.userId) === String(c.userId._id));
+    const place = places.find((d) => String(d.doctorId) === String(c.userId._id) && String(d.practiceId) === String(c.practiceId?._id) && d.locationId?.phone)
+      || places.find((d) => String(d.doctorId) === String(c.userId._id) && d.locationId?.phone);
+    return {
+      doctorId: c.userId._id, name: prof?.displayName || c.userId.name, gender: prof?.gender || null,
+      specialty: prof ? labels.get(prof.specialtyKeys[0]) || null : null, clinic: c.practiceId?.name || null,
+      presence: prof?.presence || 'away', avgReplyMinutes: prof?.avgReplyMinutes ?? null, clinicPhone: place?.locationId?.phone || null,
+    };
+  });
+  items.sort((a, b) => order[a.presence] - order[b.presence]);
+  res.json({ items, call: '108' });
+});
+
 // Patient-Emergency: urgent chat with the chosen doctor.
 r.post('/urgent', async (req, res) => {
   const access = await M.CareTeamAccess.findOne({ patientId: req.patient._id, userId: req.body.doctorId });
@@ -793,7 +881,8 @@ r.post('/ai/ask', async (req, res) => {
   const answer = await M.AiMessage.create({ sessionId: s._id, role: 'assistant', text: out.text, aiModel: out.model, latencyMs: out.latencyMs, payload: out.scripted ? { scripted: true } : undefined });
   s.lastAt = new Date();
   await s.save();
-  res.status(201).json({ question, answer, emergency: Boolean(out.emergency), specialistKey: out.specialistKey || null });
+  // Emergency words always flag the answer, even when the AI is off.
+  res.status(201).json({ question, answer, emergency: Boolean(out.emergency || assistant.isEmergencyText(text)), specialistKey: out.specialistKey || null });
 });
 
 // ── Feedback ──

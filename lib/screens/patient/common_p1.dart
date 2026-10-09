@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 
 /// Shared pieces for batch P1 (patient home, its sheets and the carousel).
@@ -52,21 +56,123 @@ class P1 {
     if (slide.stem == null) {
       toast(context, 'Health score details are coming soon');
     } else {
-      Nav.go(context, slide.stem!);
+      Nav.go(context, slide.stem!, args: slide.args);
     }
   }
 
+  /// The carousel slides from GET /api/patient/home, most urgent first:
+  /// next visit, a new report, a refill running out, the health score.
+  static List<P1Slide> slidesFrom(Map<String, dynamic> d) {
+    final out = <P1Slide>[];
+    final v = d.obj('nextVisit');
+    final at = F.date(v['startAt']);
+    if (at != null) {
+      final token = v['tokenNo'] == null ? '' : ' · Token ${'${v['tokenNo']}'.padLeft(2, '0')}';
+      out.add(P1Slide(
+        spec: '',
+        tag: F.sameDay(at, DateTime.now()) ? 'Today · ${F.time(at)}' : F.when(at),
+        title: 'Visit with ${F.doctorShort(v.obj('doctorId').str('name'))}',
+        sub: '${v.obj('locationId').str('name')}$token',
+        cta: 'View details',
+        stem: 'Patient-DoctorDetail',
+        args: {'doctorId': v.obj('doctorId')['id'], 'appointmentId': v['id']},
+      ));
+    }
+    final report = d.list('slides').where((x) => x['kind'] == 'report').firstOrNull;
+    if (report != null) {
+      final n = report.numOr('abnormalCount').toInt();
+      final names = [for (final a in (report['abnormal'] as List? ?? const [])) '$a'];
+      out.add(P1Slide(
+        spec: '',
+        tag: 'New report',
+        title: report['testName'] == null ? report.str('title') : 'Your ${report.str('testName')} is in',
+        sub: n == 0
+            ? 'All values in the normal range'
+            : names.isEmpty
+                ? '$n ${n == 1 ? 'value' : 'values'} outside the range'
+                : '${names.take(2).join(', ')} ${names.length == 1 ? 'is' : 'are'} ${report.str('abnormalDirection', 'high')}',
+        cta: 'See what it means',
+        icon: I.fileText,
+        stem: 'Patient-Records',
+        args: report['recordId'] == null ? null : {'recordId': report['recordId']},
+      ));
+    }
+    final refills = d.list('refills');
+    if (refills.isNotEmpty) {
+      final r = refills.first;
+      final days = r.numOr('daysLeft').toInt();
+      out.add(P1Slide(
+        spec: '',
+        tag: 'Refill soon',
+        title: '${r.str('name')} runs out ${days <= 0 ? 'today' : days == 1 ? 'tomorrow' : 'in $days days'}',
+        sub: '${r.numOr('tabletsLeft').toInt()} tablets left',
+        cta: 'Order a refill',
+        icon: I.pill,
+        stem: 'Patient-Medicines',
+        args: {'courseId': r['courseId']},
+      ));
+    }
+    final score = d.obj('healthScore');
+    if (score['value'] != null) {
+      final delta = score.numOr('weeklyDelta').toInt();
+      final plan = d.obj('activityPlan');
+      out.add(P1Slide(
+        spec: '',
+        tag: 'This week',
+        title: delta > 0 ? 'Health score up by $delta' : delta < 0 ? 'Health score down by ${-delta}' : 'Health score ${score['value']}',
+        sub: plan.isEmpty ? 'Out of 100' : 'You did ${plan['doneThisWeek']} of ${plan['daysPerWeek']} planned days',
+        cta: 'See your progress',
+        icon: I.activity,
+      ));
+    }
+    return out;
+  }
+
+  /// Phones [number] (108, the clinic).
+  static Future<void> dial(BuildContext context, String number) async {
+    final digits = number.replaceAll(RegExp(r'[^0-9+]'), '');
+    final ok = await launchUrl(Uri(scheme: 'tel', path: digits));
+    if (!ok && context.mounted) toast(context, 'Call $number');
+  }
+
+  /// "Diabetes & thyroid · City Care Clinic" (either part may be missing).
+  static String dept(Map<String, dynamic> d) =>
+      [d.str('specialty'), d.str('clinic')].where((s) => s.isNotEmpty).join(' · ');
+
+  /// A doctor's presence line and dot: "Available now" / "In clinic · usually
+  /// replies in 15 min" / "Away · his clinic team will see it".
+  static ({String status, Color color, Color dot}) presence(Map<String, dynamic> d) {
+    switch (d['presence']) {
+      case 'available':
+        return (status: 'Available now', color: MP.green, dot: MP.green);
+      case 'in_clinic':
+        final mins = d['avgReplyMinutes'] as num?;
+        return (status: mins == null ? 'In clinic' : 'In clinic · usually replies in ${mins.round()} min', color: MP.ink2, dot: MP.amber);
+      default:
+        final pron = d['gender'] == 'female' ? 'her' : d['gender'] == 'male' ? 'his' : 'their';
+        return (status: 'Away · $pron clinic team will see it', color: MP.ink2, dot: MP.lineStrong);
+    }
+  }
+
+  /// 'HH:MM' → '8:30 PM'.
+  static String clock(String hhmm) {
+    final parts = hhmm.split(':');
+    final h = int.tryParse(parts.first) ?? 0;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    return F.time(DateTime(2000, 1, 1, h, m));
+  }
+
   /// Closes the open sheet, then opens [stem] from the screen underneath.
-  static void closeThen(BuildContext context, String stem) {
+  static void closeThen(BuildContext context, String stem, {Object? args}) {
     final nav = Navigator.of(context);
     nav.pop();
-    Nav.go(nav.context, stem);
+    Nav.go(nav.context, stem, args: args);
   }
 
   /// Closes the open sheet and confirms [message] on the screen underneath.
-  static void closeWithToast(BuildContext context, String message) {
+  static void closeWithToast(BuildContext context, String message, [Object? result]) {
     final nav = Navigator.of(context);
-    nav.pop();
+    nav.pop(result);
     toast(nav.context, message);
   }
 
@@ -93,6 +199,9 @@ class P1Slide {
   final String cta;
   final String? icon;
   final String? stem;
+
+  /// Route arguments for [stem] (the appointment, record or medicine).
+  final Object? args;
   const P1Slide({
     required this.spec,
     required this.tag,
@@ -101,6 +210,7 @@ class P1Slide {
     required this.cta,
     this.icon,
     this.stem,
+    this.args,
   });
 }
 

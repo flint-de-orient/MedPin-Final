@@ -1,0 +1,15 @@
+[
+ {
+  "id": "6ac8d0bd07fdebd2731d1ee8",
+  "type": "care",
+  "practice": "City Care Clinic",
+  "isUrgent": true,
+  "lastMessage": {
+   "text": "Should I take the tablet before or after food?",
+   "senderType": "patient",
+   "senderLabel": "Clinic",
+   "at": "2026-10-09T11:32:18.072Z"
+  },
+  "unread": 2
+ }
+]

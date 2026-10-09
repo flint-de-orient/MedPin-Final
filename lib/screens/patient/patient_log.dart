@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/files.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 
@@ -13,32 +17,70 @@ class PatientLogSheet extends StatefulWidget {
   State<PatientLogSheet> createState() => _PatientLogSheetState();
 }
 
-class _PatientLogSheetState extends State<PatientLogSheet> {
+/// Live: who it can be shared with and today's steps come from
+/// GET /api/patient/logs/options; Save posts POST /api/patient/logs (with the
+/// meal photo as multipart) and closes the sheet with true.
+class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
   static const _tabs = ['Meal', 'Exercise', 'Steps'];
   static const _meals = ['Breakfast', 'Lunch', 'Snack', 'Dinner'];
   static const _exercises = ['Walk', 'Yoga', 'Cycling', 'Other'];
-  static const _people = [
+  static const _samplePeople = [
     (name: 'Mou Banerjee', role: 'Dietician · reviews every 3 days'),
     (name: 'Dr. Arjun Sen', role: 'Diabetes'),
     (name: 'Dr. Rina Mitra', role: 'Heart'),
   ];
 
   late int _tab = widget.initialTab.clamp(0, _tabs.length - 1);
-  int _meal = 1;
+  int _meal = _mealForNow();
   int _exercise = 0;
   final List<bool> _share = [true, true, false];
-  bool _photo = false;
+  UploadFile? _photoFile;
+  bool _photoSample = false;
   bool _listening = false;
   final _mealNote = TextEditingController();
   final _exerciseNote = TextEditingController();
   final _steps = TextEditingController();
+  final _busy = ValueNotifier(false);
+
+  /// The meal chip that fits the time of day (the design shows Lunch).
+  static int _mealForNow() {
+    if (!isLive) return 1;
+    final h = DateTime.now().hour;
+    if (h < 11) return 0;
+    if (h < 16) return 1;
+    if (h < 19) return 2;
+    return 3;
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    final res = (await Api.I.get('/api/patient/logs/options') as Map).cast<String, dynamic>();
+    final people = res.list('shareWith');
+    _share
+      ..clear()
+      ..addAll([for (final p in people) p['seesLogs'] == true]);
+    return res;
+  }
 
   @override
   void dispose() {
     _mealNote.dispose();
     _exerciseNote.dispose();
     _steps.dispose();
+    _busy.dispose();
     super.dispose();
+  }
+
+  List<({String name, String role})> get _people => data == null
+      ? (isLive ? const [] : _samplePeople)
+      : [for (final p in data!.list('shareWith')) (name: p.str('name'), role: p.str('label'))];
+
+  bool get _photo => isLive ? _photoFile != null : _photoSample;
+
+  String get _stepsHelp {
+    if (data == null) return 'Goal 8,000 · 4,820 so far today';
+    final s = data!.obj('steps');
+    return 'Goal ${F.count(s.numOr('goal', 8000))} · ${F.count(s.numOr('today'))} so far today';
   }
 
   String get _saveLabel => switch (_tab) {
@@ -47,13 +89,92 @@ class _PatientLogSheetState extends State<PatientLogSheet> {
         _ => 'Save steps',
       };
 
-  void _save() {
+  Future<void> _togglePhoto() async {
+    if (!isLive) {
+      setState(() => _photoSample = !_photoSample);
+      return;
+    }
+    if (_photoFile != null) {
+      setState(() => _photoFile = null);
+      return;
+    }
+    final f = await Files.chooseSource(context, title: 'Photo of your meal', allowPdf: false);
+    if (f != null && mounted) setState(() => _photoFile = f);
+  }
+
+  void _toggleMic() {
+    if (isLive) {
+      toast(context, 'Voice input is coming soon. Please type it.');
+      return;
+    }
+    setState(() => _listening = !_listening);
+  }
+
+  /// "30 min brisk walk" → 30; "1 hour yoga" → 60.
+  static int? _minutesIn(String text) {
+    final t = text.toLowerCase();
+    final m = RegExp(r'(\d+(?:\.\d+)?)\s*(min|minute|m\b)').firstMatch(t);
+    if (m != null) return double.parse(m.group(1)!).round();
+    final h = RegExp(r'(\d+(?:\.\d+)?)\s*(h|hr|hour)').firstMatch(t);
+    if (h != null) return (double.parse(h.group(1)!) * 60).round();
+    return null;
+  }
+
+  Future<void> _save() async {
     final what = switch (_tab) {
       0 => _meals[_meal],
       1 => _exercises[_exercise],
       _ => 'Steps',
     };
-    P1.closeWithToast(context, '$what saved to your log');
+    if (!isLive) {
+      P1.closeWithToast(context, '$what saved to your log');
+      return;
+    }
+    final people = data?.list('shareWith') ?? const <Map<String, dynamic>>[];
+    final shared = [
+      for (var i = 0; i < people.length && i < _share.length; i++)
+        if (_share[i]) people[i].str('userId'),
+    ];
+    final fields = <String, String>{'inputMode': 'typed','sharedWith': shared.join(',')};
+    String? planId;
+    switch (_tab) {
+      case 0:
+        final note = _mealNote.text.trim();
+        if (note.isEmpty && _photoFile == null) {
+          toast(context, 'Add a photo or write what you ate');
+          return;
+        }
+        fields.addAll({'type': 'meal', 'mealType': _meals[_meal].toLowerCase(), if (note.isNotEmpty) 'note': note});
+      case 1:
+        final note = _exerciseNote.text.trim();
+        final type = _exercises[_exercise].toLowerCase();
+        final mins = _minutesIn(note);
+        planId = (data?.list('activityPlans') ?? const <Map<String, dynamic>>[]).where((p) => p['exerciseType'] == type).firstOrNull?.str('id');
+        fields.addAll({
+          'type': 'exercise',
+          'exerciseType': type,
+          if (note.isNotEmpty) 'note': note,
+          if (mins != null) 'durationMin': '$mins',
+          if (planId != null) 'activityPlanId': planId,
+        });
+      default:
+        final steps = int.tryParse(_steps.text.replaceAll(RegExp(r'[^0-9]'), ''));
+        if (steps == null) {
+          toast(context, 'Enter your steps');
+          return;
+        }
+        fields.addAll({'type': 'steps', 'steps': '$steps'});
+    }
+    final photo = _tab == 0 ? _photoFile : null;
+    final ok = await runAction(context, () async {
+      final res = photo != null
+          ? await Api.I.upload('/api/patient/logs', files: {'photo': [photo]}, fields: fields)
+          : await Api.I.post('/api/patient/logs', {...fields, 'sharedWith': shared});
+      // Logging the planned activity also ticks it off for today.
+      if (planId != null) await Api.I.post('/api/patient/activity-plans/$planId/done');
+      return res ?? true;
+    }, busy: _busy);
+    if (ok != null && mounted) P1.closeWithToast(context, '$what saved to your log', true);
   }
 
   @override
@@ -69,7 +190,7 @@ class _PatientLogSheetState extends State<PatientLogSheet> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _PhotoTile(added: _photo, onTap: () => setState(() => _photo = !_photo)),
+                _PhotoTile(added: _photo, onTap: _togglePhoto),
                 const Gap(10),
                 Expanded(child: _noteBox(_mealNote, 'What did you eat? E.g. 2 rotis, dal, salad')),
               ],
@@ -87,10 +208,10 @@ class _PatientLogSheetState extends State<PatientLogSheet> {
             hint: 'E.g. 6,000',
             keyboard: TextInputType.number,
             unit: 'steps',
-            help: 'Goal 8,000 · 4,820 so far today',
+            help: _stepsHelp,
           ),
         ),
-      pad(_shareWith()),
+      if (_people.isNotEmpty) pad(_shareWith()),
       pad(MpButton(_saveLabel, onTap: _save)),
     ];
     return MpSheet(
@@ -158,7 +279,7 @@ class _PatientLogSheetState extends State<PatientLogSheet> {
               toggled: _listening,
               label: 'Speak instead',
               child: Tap(
-                onTap: () => setState(() => _listening = !_listening),
+                onTap: _toggleMic,
                 radius: 12,
                 color: _listening ? MP.primary : MP.primarySoft,
                 child: SizedBox(
