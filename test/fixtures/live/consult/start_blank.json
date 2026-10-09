@@ -1,0 +1,28 @@
+{
+  "method": "POST",
+  "path": "/api/consultations",
+  "data": {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "doctorId": "6ac8bbcee42c9f0836e9855b",
+    "patientId": "6ac8be2a0640a42493dc556b",
+    "status": "draft",
+    "printVitalsOnRx": true,
+    "advice": {
+      "items": []
+    },
+    "validity": {
+      "preset": "1_month"
+    },
+    "followUp": {
+      "enabled": false,
+      "remindPatient": true
+    },
+    "startedAt": "2026-10-09T10:12:58.825Z",
+    "diagnoses": [],
+    "medications": [],
+    "labOrders": [],
+    "createdAt": "2026-10-09T10:12:58.825Z",
+    "updatedAt": "2026-10-09T10:12:58.825Z",
+    "id": "6ac8be2a0640a42493dc5579"
+  }
+}

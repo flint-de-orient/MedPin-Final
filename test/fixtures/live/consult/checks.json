@@ -1,0 +1,34 @@
+{
+  "method": "GET",
+  "path": "/api/consultations/6ac8be2a0640a42493dc5506/checks",
+  "data": [
+    {
+      "name": "Metformin",
+      "strength": "500 mg",
+      "medicineId": "6ac8bbcebfcb2f5a9d64d500",
+      "warnings": []
+    },
+    {
+      "name": "Glimepiride",
+      "strength": "1 mg",
+      "medicineId": "6ac8bbcebfcb2f5a9d64d501",
+      "warnings": [
+        {
+          "type": "allergy",
+          "text": "Sulfa drugs allergy · sulfonylurea"
+        }
+      ]
+    },
+    {
+      "name": "Metformin",
+      "strength": "750 mg",
+      "medicineId": "6ac8bbcebfcb2f5a9d64d500",
+      "warnings": [
+        {
+          "type": "strength",
+          "text": "Catalog strengths for Metformin: 500, 850, 1000 mg. Check the strength."
+        }
+      ]
+    }
+  ]
+}

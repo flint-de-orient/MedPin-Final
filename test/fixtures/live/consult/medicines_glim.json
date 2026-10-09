@@ -1,0 +1,32 @@
+{
+  "method": "GET",
+  "path": "/api/catalog/medicines?q=Glimepiride",
+  "data": [
+    {
+      "genericName": "Glimepiride",
+      "active": true,
+      "brandNames": [],
+      "createdAt": "2026-10-09T10:02:54.902Z",
+      "drugClass": "sulfonylurea",
+      "form": "Tablet",
+      "mrpPerStrip": 75,
+      "strengths": [
+        {
+          "value": 1,
+          "unit": "mg"
+        },
+        {
+          "value": 2,
+          "unit": "mg"
+        },
+        {
+          "value": 4,
+          "unit": "mg"
+        }
+      ],
+      "unitsPerStrip": 10,
+      "updatedAt": "2026-10-09T10:02:54.902Z",
+      "id": "6ac8bbcebfcb2f5a9d64d501"
+    }
+  ]
+}

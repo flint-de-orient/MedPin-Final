@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'common_d5.dart';
 
 /// Design: Add-Patient.dc.html — "Add patient".
 ///
@@ -25,42 +28,189 @@ const _vitals = [
 /// Numbers that already have a MedPin account (digits only).
 const _existingAccounts = {'9876543210'};
 
+/// Live: small sheet for the code sent to the patient's phone (the design
+/// has no screen for it; POST /api/patients checks the code).
+class _OtpSheet extends StatefulWidget {
+  final String masked;
+  const _OtpSheet({required this.masked});
+
+  @override
+  State<_OtpSheet> createState() => _OtpSheetState();
+}
+
+class _OtpSheetState extends State<_OtpSheet> {
+  final _c = TextEditingController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final code = _c.text.replaceAll(RegExp(r'\D'), '');
+    if (code.length != 6) {
+      toast(context, 'Enter the 6-digit code');
+      return;
+    }
+    Navigator.pop(context, code);
+  }
+
+  @override
+  Widget build(BuildContext context) => MpSheet(
+    title: 'Verify the number',
+    subtitle: 'Enter the 6-digit code sent to ${widget.masked}.',
+    showClose: true,
+    child: VGap(
+      gap: 16,
+      children: [
+        MpInput(controller: _c, hint: '6-digit code', keyboard: TextInputType.number, autofocus: true, tab: true),
+        MpButton('Verify', onTap: _save),
+      ],
+    ),
+  );
+}
+
 class _AddPatientScreenState extends State<AddPatientScreen> {
-  final _phone = TextEditingController(text: '98301 22457');
-  String _verifiedNumber = '98301 22457';
+  // Live: the form starts empty; the design's sample values only in preview.
+  final _phone = TextEditingController(text: isLive ? '' : '98301 22457');
+  String? _verifiedNumber = isLive ? null : '98301 22457';
+  final _name = TextEditingController(text: isLive ? '' : 'Farhana Islam');
+  final _age = TextEditingController(text: isLive ? '' : '34');
+  final _address = TextEditingController(text: isLive ? '' : '14/2 Beliaghata Main Road, Kolkata 700010');
+  final _complaint = TextEditingController();
+  final _vitalCtrls = [for (final v in _vitals) TextEditingController(text: isLive ? '' : v.$2)];
   int _gender = 0;
   bool _vitalsOpen = true;
   bool _complaintsOpen = false;
 
+  /// Live: the code sent to the patient's phone (checked when registering).
+  String? _otpCode;
+  bool _busy = false;
+
   bool get _verified => _phone.text == _verifiedNumber;
+  String get _digits => _phone.text.replaceAll(RegExp(r'\D'), '');
 
   @override
   void dispose() {
-    _phone.dispose();
+    for (final c in [_phone, _name, _age, _address, _complaint, ..._vitalCtrls]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  void _verify() {
-    final digits = _phone.text.replaceAll(RegExp(r'\D'), '');
+  Future<void> _verify() async {
+    final digits = _digits;
     if (digits.length != 10) {
       toast(context, 'Enter a 10-digit mobile number');
       return;
     }
-    if (_existingAccounts.contains(digits)) {
-      Nav.go(context, 'Add-Patient-Existing');
+    if (!isLive) {
+      if (_existingAccounts.contains(digits)) {
+        Nav.go(context, 'Add-Patient-Existing');
+        return;
+      }
+      setState(() => _verifiedNumber = _phone.text);
+      toast(context, 'Number verified');
       return;
     }
-    setState(() => _verifiedNumber = _phone.text);
-    toast(context, 'Number verified');
+    if (_busy) return;
+    _busy = true;
+    try {
+      // Already on MedPin? GET /api/patients/lookup
+      final look = await runAction(context, () => Api.I.get('/api/patients/lookup', query: {'phone': digits}));
+      if (look is! Map || !mounted) return;
+      if (look['exists'] == true) {
+        final p = look['patient'];
+        if (look['linked'] == true && p is Map) {
+          toast(context, '${p['name']} is already your patient');
+          Nav.go(context, 'Patient-Profile', args: {'patientId': '${p['id']}'});
+        } else {
+          Nav.go(context, 'Add-Patient-Existing', args: {'phone': digits});
+        }
+        return;
+      }
+      // New number: send a code to the patient's phone.
+      final otp = await runAction(context, () => Api.I.post('/api/patients/phone-otp', {'phone': digits}));
+      if (otp is! Map || !mounted) return;
+      D5Live.devCode(context, otp);
+      final code = await openSheet<String>(
+        context,
+        (_) => _OtpSheet(masked: '${otp['maskedPhone'] ?? D5Live.phone(digits)}'),
+      );
+      if (code == null || !mounted) return;
+      setState(() {
+        _otpCode = code;
+        _verifiedNumber = _phone.text;
+      });
+    } finally {
+      _busy = false;
+    }
   }
 
-  void _submit() {
+  Map<String, dynamic> _vitalsJson() {
+    num? n(int i) => num.tryParse(_vitalCtrls[i].text.trim());
+    final bp = RegExp(r'^(\d{2,3})\s*/\s*(\d{2,3})$').firstMatch(_vitalCtrls[0].text.trim());
+    final note = _complaint.text.trim();
+    return {
+      if (bp != null) 'bpSystolic': int.parse(bp.group(1)!),
+      if (bp != null) 'bpDiastolic': int.parse(bp.group(2)!),
+      if (n(1) != null) 'pulse': n(1),
+      if (n(2) != null) 'weightKg': n(2),
+      if (n(3) != null) 'bloodSugar': n(3),
+      if (n(3) != null) 'sugarType': 'fasting',
+      // The complaint travels with the vitals as their note.
+      if (note.isNotEmpty) 'note': note,
+    };
+  }
+
+  Future<void> _submit() async {
     if (!_verified) {
       _verify();
       return;
     }
-    toast(context, 'Patient added');
-    Nav.back(context);
+    if (!isLive) {
+      toast(context, 'Patient added');
+      Nav.back(context);
+      return;
+    }
+    final bp = _vitalCtrls[0].text.trim();
+    if (bp.isNotEmpty && !RegExp(r'^\d{2,3}\s*/\s*\d{2,3}$').hasMatch(bp)) {
+      toast(context, 'Enter the blood pressure like 120/80');
+      return;
+    }
+    if (_busy) return;
+    _busy = true;
+    try {
+      final vitals = _vitalsJson();
+      final p = await Api.I.post('/api/patients', {
+        'name': _name.text.trim(),
+        'phone': _digits,
+        'gender': const ['female', 'male', 'other'][_gender],
+        if (_age.text.trim().isNotEmpty) 'ageYears': int.tryParse(_age.text.trim()),
+        if (_address.text.trim().isNotEmpty) 'address': _address.text.trim(),
+        if (_otpCode != null) 'otpCode': _otpCode,
+        if (vitals.isNotEmpty) 'vitals': vitals,
+      });
+      if (!mounted) return;
+      final nav = Navigator.of(context);
+      toast(context, 'Patient added');
+      nav.pop();
+      Nav.go(nav.context, 'Patient-Profile', args: {'patientId': '${(p as Map)['id']}'});
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.code == 'PATIENT_EXISTS') {
+        Nav.go(context, 'Add-Patient-Existing', args: {'phone': _digits});
+      } else {
+        // A wrong or expired code has to be requested again.
+        if (e.code == 'WRONG_CODE' || e.code == 'CODE_EXPIRED' || e.code == 'TOO_MANY_ATTEMPTS') {
+          setState(() => _verifiedNumber = null);
+        }
+        toast(context, e.message);
+      }
+    } finally {
+      _busy = false;
+    }
   }
 
   @override
@@ -84,9 +234,9 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: _VitalField(_vitals[r])),
+                      Expanded(child: _VitalField(_vitals[r], controller: _vitalCtrls[r])),
                       const Gap(12),
-                      Expanded(child: _VitalField(_vitals[r + 1])),
+                      Expanded(child: _VitalField(_vitals[r + 1], controller: _vitalCtrls[r + 1])),
                     ],
                   ),
                 ],
@@ -98,7 +248,7 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
             subtitle: 'Optional · what brings them in today',
             open: _complaintsOpen,
             onToggle: () => setState(() => _complaintsOpen = !_complaintsOpen),
-            child: const MpInput(hint: 'Describe the complaints, e.g. fever for 3 days', maxLines: 3),
+            child: MpInput(controller: _complaint, hint: 'Describe the complaints, e.g. fever for 3 days', maxLines: 3),
           ),
           Padding(padding: const EdgeInsets.only(top: 8), child: MpButton('Add patient', onTap: _submit)),
         ],
@@ -119,8 +269,8 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
               Text('Required to register the patient', style: tx(14, c: MP.ink2)),
             ],
           ),
-          const MpInput(label: 'Full name', value: 'Farhana Islam'),
-          const MpInput(label: 'Age', value: '34', width: 144, unit: 'years', keyboard: TextInputType.number, tab: true),
+          MpInput(label: 'Full name', controller: _name),
+          MpInput(label: 'Age', controller: _age, width: 144, unit: 'years', keyboard: TextInputType.number, tab: true),
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -185,7 +335,7 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
               ],
             ],
           ),
-          const MpInput(label: 'Address', value: '14/2 Beliaghata Main Road, Kolkata 700010', maxLines: 2, height: 80),
+          MpInput(label: 'Address', controller: _address, maxLines: 2, height: 80),
         ],
       ),
     );
@@ -276,14 +426,15 @@ class _Collapsible extends StatelessWidget {
 /// tabular + unit 13px #69738A. Focus → #003399 border with the 3px ring.
 class _VitalField extends StatefulWidget {
   final (String, String, String, TextInputType) v;
-  const _VitalField(this.v);
+  final TextEditingController? controller;
+  const _VitalField(this.v, {this.controller});
 
   @override
   State<_VitalField> createState() => _VitalFieldState();
 }
 
 class _VitalFieldState extends State<_VitalField> {
-  late final _c = TextEditingController(text: widget.v.$2);
+  late final _c = widget.controller ?? TextEditingController(text: widget.v.$2);
   final _f = FocusNode();
 
   @override
@@ -294,7 +445,7 @@ class _VitalFieldState extends State<_VitalField> {
 
   @override
   void dispose() {
-    _c.dispose();
+    if (widget.controller == null) _c.dispose();
     _f.dispose();
     super.dispose();
   }

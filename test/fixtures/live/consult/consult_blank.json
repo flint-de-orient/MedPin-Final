@@ -1,0 +1,54 @@
+{
+  "method": "GET",
+  "path": "/api/consultations/6ac8be2a0640a42493dc5579",
+  "data": {
+    "consultation": {
+      "advice": {
+        "items": []
+      },
+      "validity": {
+        "preset": "1_month"
+      },
+      "followUp": {
+        "enabled": false,
+        "remindPatient": true
+      },
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8be2a0640a42493dc556b",
+      "status": "draft",
+      "printVitalsOnRx": true,
+      "startedAt": "2026-10-09T10:12:58.825Z",
+      "diagnoses": [],
+      "medications": [],
+      "labOrders": [],
+      "createdAt": "2026-10-09T10:12:58.825Z",
+      "updatedAt": "2026-10-09T10:12:58.825Z",
+      "id": "6ac8be2a0640a42493dc5579"
+    },
+    "vitals": null,
+    "summary": {
+      "patient": {
+        "id": "6ac8be2a0640a42493dc556b",
+        "name": "Test Blank",
+        "phone": "9000055502",
+        "gender": "male",
+        "age": 33,
+        "bmi": null,
+        "healthScore": {},
+        "hasApp": false
+      },
+      "conditions": [],
+      "allergies": [],
+      "latestVitals": null,
+      "currentMedicines": [],
+      "abnormalResults": [],
+      "nextVisit": null,
+      "lastVisitAt": null,
+      "openAlerts": 0,
+      "aiSummary": null
+    },
+    "previousDiagnoses": [],
+    "previousVisitAt": null
+  }
+}

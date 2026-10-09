@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for the consultation screens of batch D5:
@@ -8,7 +13,8 @@ import '../../widgets/mp.dart';
 // Consult-NotFound, Consult-QuickAdd and Consult-Blank.
 
 /// What the dosage and voice sheets hand back when a medicine is added.
-typedef D5MedResult = ({String name, String dose, String duration});
+/// Live, [item] is the prescription line as the API stores it.
+typedef D5MedResult = ({String name, String dose, String duration, Map<String, dynamic>? item});
 
 /// A medicine on the prescription being written.
 class D5Med {
@@ -1166,7 +1172,25 @@ class D5ValidityFollowUp extends StatefulWidget {
   /// First name used in "Remind … 2 days before".
   final String patient;
   final bool followUp;
-  const D5ValidityFollowUp({super.key, required this.patient, this.followUp = true});
+
+  /// Live: the visit day the options count from (the design's 29 Sep otherwise).
+  final DateTime? today;
+
+  /// Live: the draft's `validity` and `followUp` objects.
+  final Map<String, dynamic>? validity;
+  final Map<String, dynamic>? followUpData;
+
+  /// Live: called with the new `validity` and `followUp` objects to save.
+  final void Function(Map<String, dynamic> validity, Map<String, dynamic> followUp)? onChanged;
+  const D5ValidityFollowUp({
+    super.key,
+    required this.patient,
+    this.followUp = true,
+    this.today,
+    this.validity,
+    this.followUpData,
+    this.onChanged,
+  });
 
   @override
   State<D5ValidityFollowUp> createState() => _D5ValidityFollowUpState();
@@ -1175,23 +1199,69 @@ class D5ValidityFollowUp extends StatefulWidget {
 class _D5ValidityFollowUpState extends State<D5ValidityFollowUp> {
   static const _validity = ['15 days', '1 month', '3 months'];
   static const _follow = ['1 week', '2 weeks', '1 month', '3 months'];
+  static const _validityKeys = ['15_days', '1_month', '3_months'];
+  static const _followKeys = ['1_week', '2_weeks', '1_month', '3_months'];
 
-  int _v = 1;
-  int _f = 1;
-  late DateTime _validTill = D5Date.add(D5Date.today, _validity[_v]);
-  late DateTime _followOn = D5Date.add(D5Date.today, _follow[_f]);
-  late bool _followUp = widget.followUp;
-  bool _remind = true;
+  late final DateTime _today = widget.today ?? D5Date.today;
+  late int _v = _initialV();
+  late int _f = _initialF();
+  late DateTime _validTill = _initialDate(widget.validity?['validUntil']) ?? D5Date.add(_today, _validity[_v < 0 ? 1 : _v]);
+  late DateTime _followOn = _initialDate(widget.followUpData?['date']) ?? D5Date.add(_today, _follow[_f < 0 ? 1 : _f]);
+  late bool _followUp = widget.followUpData == null ? widget.followUp : widget.followUpData!['enabled'] == true;
+  late bool _remind = widget.followUpData?['remindPatient'] != false;
 
-  Future<DateTime?> _pick(DateTime initial) =>
-      showDatePicker(context: context, initialDate: initial, firstDate: D5Date.today, lastDate: DateTime(2027, 12, 31));
+  int _initialV() {
+    final p = widget.validity?['preset'];
+    if (p == null) return 1;
+    return _validityKeys.indexOf('$p');
+  }
+
+  int _initialF() {
+    final p = widget.followUpData?['preset'];
+    if (p == null) return 1;
+    return _followKeys.indexOf('$p');
+  }
+
+  DateTime? _initialDate(Object? v) {
+    final d = F.date(v);
+    return d == null ? null : DateTime(d.year, d.month, d.day);
+  }
+
+  static String _day(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Hands the current choice to the screen (live) so it is saved.
+  void _changed() {
+    widget.onChanged?.call(
+      {'preset': _v < 0 ? 'custom' : _validityKeys[_v], 'validUntil': _day(_validTill)},
+      {
+        'enabled': _followUp,
+        'preset': _f < 0 ? 'custom' : _followKeys[_f],
+        'date': _day(_followOn),
+        'remindPatient': _remind,
+      },
+    );
+  }
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _changed();
+  }
+
+  Future<DateTime?> _pick(DateTime initial) => showDatePicker(
+    context: context,
+    initialDate: initial.isBefore(_today) ? _today : initial,
+    firstDate: _today,
+    lastDate: widget.today == null ? DateTime(2027, 12, 31) : DateTime(_today.year + 2, 12, 31),
+  );
 
   Future<void> _changeValidity() async {
     final d = await _pick(_validTill);
     if (d == null || !mounted) return;
     setState(() {
       _validTill = d;
-      _v = _validity.indexWhere((o) => D5Date.add(D5Date.today, o) == d);
+      _v = _validity.indexWhere((o) => D5Date.add(_today, o) == d);
     });
   }
 
@@ -1200,7 +1270,7 @@ class _D5ValidityFollowUpState extends State<D5ValidityFollowUp> {
     if (d == null || !mounted) return;
     setState(() {
       _followOn = d;
-      _f = _follow.indexWhere((o) => D5Date.add(D5Date.today, o) == d);
+      _f = _follow.indexWhere((o) => D5Date.add(_today, o) == d);
     });
   }
 
@@ -1224,7 +1294,7 @@ class _D5ValidityFollowUpState extends State<D5ValidityFollowUp> {
                     onTap:
                         () => setState(() {
                           _v = i;
-                          _validTill = D5Date.add(D5Date.today, _validity[i]);
+                          _validTill = D5Date.add(_today, _validity[i]);
                         }),
                   ),
               ],
@@ -1268,7 +1338,7 @@ class _D5ValidityFollowUpState extends State<D5ValidityFollowUp> {
                       onTap:
                           () => setState(() {
                             _f = i;
-                            _followOn = D5Date.add(D5Date.today, _follow[i]);
+                            _followOn = D5Date.add(_today, _follow[i]);
                           }),
                     ),
                 ],
@@ -1293,5 +1363,600 @@ class _D5ValidityFollowUpState extends State<D5ValidityFollowUp> {
         ),
       ],
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live data: API JSON ↔ the design's text
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Formatting and parsing shared by the live consultation screens.
+class D5Live {
+  D5Live._();
+
+  static List<Map<String, dynamic>> list(Object? v) => [
+    for (final x in (v is List ? v : const [])) if (x is Map) x.cast<String, dynamic>(),
+  ];
+
+  /// '9831120764' → '+91 98311 20764'.
+  static String phone(Object? raw) {
+    final d = '${raw ?? ''}'.replaceAll(RegExp(r'\D'), '');
+    if (d.length != 10) return d.isEmpty ? '' : '+91 $d';
+    return '+91 ${d.substring(0, 5)} ${d.substring(5)}';
+  }
+
+  /// Digits of a typed phone number without the +91 / 0 prefix.
+  static String digits(String raw) {
+    final d = raw.replaceAll(RegExp(r'\D'), '');
+    if (d.length == 12 && d.startsWith('91')) return d.substring(2);
+    if (d.length == 11 && d.startsWith('0')) return d.substring(1);
+    return d;
+  }
+
+  /// '45 M' — the age and the gender's initial (either may be missing).
+  static String ageSex(Map<String, dynamic> p) {
+    final g = p.str('gender');
+    return [if (p['age'] != null) '${p['age']}', if (g.isNotEmpty) g[0].toUpperCase()].join(' ');
+  }
+
+  static String gender(Object? g) => switch ('$g') {
+    'female' => 'Female',
+    'male' => 'Male',
+    'other' => 'Other',
+    _ => '',
+  };
+
+  /// 'waiting 22 min', 'waiting 1 h 5 min'.
+  static String waiting(Object? min) {
+    if (min is! num) return 'waiting';
+    final m = min.round();
+    if (m < 60) return 'waiting $m min';
+    return 'waiting ${m ~/ 60} h${m % 60 == 0 ? '' : ' ${m % 60} min'}';
+  }
+
+  /// 7.0 → '7', 7.2 → '7.2'.
+  static String number(Object? v) {
+    if (v is! num) return v == null ? '' : '$v';
+    return v == v.roundToDouble() ? '${v.toInt()}' : '$v';
+  }
+
+  /// Shows the code the dev backend returns for test numbers.
+  static void devCode(BuildContext context, Object? res) {
+    final code = res is Map ? res['devCode'] : null;
+    if (code != null && context.mounted) toast(context, 'Test code: $code');
+  }
+
+  /// Opens [stem] in place of the current screen, with [args].
+  static void replace(BuildContext context, String stem, Object? args) {
+    final s = Nav.spec(stem);
+    if (s == null) return;
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        settings: RouteSettings(name: stem, arguments: args),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (c, _, __) => s.builder(c),
+      ),
+    );
+  }
+
+  /// Starts (or resumes) a consultation — POST /api/consultations — and
+  /// opens [stem] for it.
+  static Future<void> start(
+    BuildContext context, {
+    String? appointmentId,
+    String? patientId,
+    String stem = 'Consult-Page',
+    bool justAdded = false,
+    ValueNotifier<bool>? busy,
+  }) async {
+    final res = await runAction(
+      context,
+      () => Api.I.post('/api/consultations', {
+        if (appointmentId != null) 'appointmentId': appointmentId else 'patientId': patientId,
+      }),
+      busy: busy,
+    );
+    if (res is! Map || !context.mounted) return;
+    Nav.go(
+      context,
+      stem,
+      args: {
+        'consultationId': '${res['id']}',
+        'patientId': '${res['patientId'] ?? patientId}',
+        if (appointmentId != null) 'appointmentId': appointmentId,
+        if (justAdded) 'justAdded': true,
+      },
+    );
+  }
+
+  // Medicines ----------------------------------------------------------------
+
+  static const foodText = {
+    'before_food': 'before food',
+    'after_food': 'after food',
+    'with_food': 'with food',
+    'empty_stomach': 'empty stomach',
+    'bedtime': 'at bedtime',
+  };
+
+  static const _weekdays = {
+    'mon': 'Monday',
+    'tue': 'Tuesday',
+    'wed': 'Wednesday',
+    'thu': 'Thursday',
+    'fri': 'Friday',
+    'sat': 'Saturday',
+    'sun': 'Sunday',
+  };
+
+  /// 'Glimepiride 1 mg'.
+  static String medName(Map<String, dynamic> m) =>
+      [m.str('name'), m.str('strength')].where((s) => s.isNotEmpty).join(' ');
+
+  /// '1-0-1', 'Once a week · Sunday' or 'As needed'.
+  static String when(Map<String, dynamic> m) {
+    switch (m['frequency']) {
+      case 'weekly':
+        final wd = _weekdays[m['weekday']];
+        return wd == null ? 'Once a week' : 'Once a week · $wd';
+      case 'as_needed':
+        return 'As needed';
+    }
+    final d = m.obj('dose');
+    return '${number(d['morning'] ?? 0)}-${number(d['afternoon'] ?? 0)}-${number(d['night'] ?? 0)}';
+  }
+
+  /// 'before breakfast' (the doctor's words) or 'after food'.
+  static String food(Map<String, dynamic> m) {
+    final i = m.str('instructions').trim();
+    return i.isNotEmpty ? i : foodText[m['foodRelation']] ?? '';
+  }
+
+  /// '1-0-1 · after food'.
+  static String doseText(Map<String, dynamic> m) {
+    final f = food(m);
+    return f.isEmpty ? when(m) : '${when(m)} · $f';
+  }
+
+  /// '30 days', '1 month', 'Ongoing' ('' without a duration).
+  static String durationText(Object? d) {
+    if (d is! Map) return '';
+    final unit = '${d['unit'] ?? 'days'}';
+    if (unit == 'ongoing') return 'Ongoing';
+    final v = d['value'];
+    if (v is! num || v <= 0) return '';
+    final one = unit.endsWith('s') ? unit.substring(0, unit.length - 1) : unit;
+    return v == 1 ? '1 $one' : '${number(v)} $unit';
+  }
+
+  /// Days in a duration (weeks × 7, months × 30); null when open-ended.
+  static int? days(Object? d) {
+    if (d is! Map || d['value'] is! num) return null;
+    final v = (d['value'] as num).round();
+    return switch ('${d['unit'] ?? 'days'}') {
+      'weeks' => v * 7,
+      'months' => v * 30,
+      'ongoing' => null,
+      _ => v,
+    };
+  }
+
+  /// The medicine card for a draft line, with any warnings from the checks.
+  static D5Med med(Map<String, dynamic> m, [List<String> warnings = const []]) {
+    final dur = durationText(m['duration']);
+    final change = m.str('change', 'new');
+    final caution = <String>[
+      if (m.str('caution').isNotEmpty) m.str('caution'),
+      for (final w in warnings)
+        if (w != m['caution']) w,
+    ].join('\n');
+    return D5Med(medName(m), doseText(m), dur.isEmpty ? change : '$dur · $change', caution);
+  }
+
+  static const _itemFields = [
+    'medicineId', 'name', 'strength', 'form', 'dose', 'frequency', 'weekday', 'foodRelation', //
+    'instructions', 'duration', 'quantity', 'change', 'caution', 'entrySource',
+  ];
+
+  /// A prescription line with only the fields the API stores.
+  static Map<String, dynamic> item(Map<String, dynamic> m) => {
+    for (final k in _itemFields)
+      if (m[k] != null) k: m[k],
+  };
+
+  /// 'new', 'continued' or 'changed' against the patient's running medicines.
+  static String change(Map<String, dynamic> m, List<Map<String, dynamic>> current) {
+    final same = current.where((c) => c.str('name').toLowerCase() == m.str('name').toLowerCase());
+    if (same.isEmpty) return 'new';
+    return same.any((c) => c.str('strength') == m.str('strength')) ? 'continued' : 'changed';
+  }
+
+  /// "Prescribed 1 times for …" reads "Prescribed once for …".
+  static String reason(Object? r) => '${r ?? ''}'.replaceAll(RegExp(r'\b1 times\b'), 'once');
+
+  static const _numbers = <String, num>{
+    'half': 0.5, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, //
+    'nine': 9, 'ten': 10, 'twelve': 12, 'fourteen': 14, 'fifteen': 15, 'twenty': 20, 'thirty': 30,
+    'forty': 40, 'fifty': 50, 'sixty': 60, 'ninety': 90, 'hundred': 100,
+  };
+  static const _units = {
+    'mg': 'mg', 'g': 'g', 'gm': 'g', 'mcg': 'mcg', 'iu': 'IU', 'ml': 'ml', 'unit': 'units', 'units': 'units', //
+  };
+  static const _stop = {
+    'once', 'twice', 'thrice', 'daily', 'weekly', 'morning', 'afternoon', 'night', 'evening', 'bedtime', //
+    'before', 'after', 'with', 'for', 'at', 'in', 'od', 'bd', 'bid', 'tds', 'tid', 'sos', 'every', 'a', 'x',
+  };
+
+  static num? _num(String w) => num.tryParse(w.replaceAll(',', '')) ?? _numbers[w.toLowerCase()];
+
+  /// Reads a typed or spoken line — "Metformin 500 twice daily",
+  /// "Glimepiride one mg, once in the morning before breakfast, for thirty
+  /// days", "Atorvastatin 20 at night for 3 months" — into a prescription line.
+  static Map<String, dynamic> parse(String text, {String source = 'typed'}) {
+    final words = <String>[
+      for (final w in text.replaceAll(RegExp(r'[“”"]'), ' ').split(RegExp(r'\s+')))
+        if (w.replaceAll(RegExp(r'[,.;]+$'), '').isNotEmpty) w.replaceAll(RegExp(r'[,.;]+$'), ''),
+    ];
+    var i = 0;
+    final name = <String>[];
+    while (i < words.length &&
+        _num(words[i]) == null &&
+        !RegExp(r'^\d').hasMatch(words[i]) &&
+        !(name.isNotEmpty && _stop.contains(words[i].toLowerCase()))) {
+      name.add(words[i]);
+      i++;
+    }
+    String? strength;
+    final glued =
+        i < words.length
+            ? RegExp(r'^(\d[\d,]*(?:\.\d+)?)(mg|g|gm|mcg|iu|ml)$', caseSensitive: false).firstMatch(words[i])
+            : null;
+    if (glued != null) {
+      strength = '${number(_num(glued.group(1)!))} ${_units[glued.group(2)!.toLowerCase()]}';
+      i++;
+    } else if (i < words.length && _num(words[i]) != null && !words[i].contains('-')) {
+      final v = _num(words[i])!;
+      i++;
+      var unit = 'mg';
+      if (i < words.length && _units.containsKey(words[i].toLowerCase())) unit = _units[words[i++].toLowerCase()]!;
+      strength = '${number(v)} $unit';
+    }
+    final rest = ' ${words.sublist(i).join(' ').toLowerCase()} ';
+    bool has(String re) => RegExp(re).hasMatch(rest);
+
+    var dose = <String, num>{'morning': 1, 'afternoon': 0, 'night': 0};
+    var frequency = 'daily';
+    String? weekday;
+    final pattern = RegExp(r'\b(\d(?:\.\d)?)\s*-\s*(\d(?:\.\d)?)\s*-\s*(\d(?:\.\d)?)\b').firstMatch(rest);
+    if (pattern != null) {
+      dose = {
+        'morning': num.parse(pattern.group(1)!),
+        'afternoon': num.parse(pattern.group(2)!),
+        'night': num.parse(pattern.group(3)!),
+      };
+    } else if (has(r'\b(weekly|once a week|every week)\b')) {
+      frequency = 'weekly';
+      for (final e in _weekdays.entries) {
+        if (rest.contains(e.value.toLowerCase())) weekday = e.key;
+      }
+    } else if (has(r'\b(sos|as needed|when needed|if needed)\b')) {
+      frequency = 'as_needed';
+      dose = {'morning': 0, 'afternoon': 0, 'night': 0};
+    } else if (has(r'\b(thrice|three times|tds|tid)\b')) {
+      dose = {'morning': 1, 'afternoon': 1, 'night': 1};
+    } else if (has(r'\b(twice|two times|bd|bid)\b')) {
+      dose = {'morning': 1, 'afternoon': 0, 'night': 1};
+    } else {
+      final m = has(r'\b(morning|breakfast)\b');
+      final a = has(r'\b(afternoon|lunch)\b');
+      final n = has(r'\b(night|evening|dinner|bedtime)\b');
+      if (m || a || n) dose = {'morning': m ? 1 : 0, 'afternoon': a ? 1 : 0, 'night': n ? 1 : 0};
+    }
+
+    String? foodRelation;
+    String? instructions;
+    final meal = RegExp(r'\b(before|after|with)\s+(food|meals?|breakfast|lunch|dinner)\b').firstMatch(rest);
+    if (meal != null) {
+      foodRelation = '${meal.group(1)}_food';
+      instructions = '${meal.group(1)} ${meal.group(2)}';
+    } else if (has(r'\bempty stomach\b')) {
+      foodRelation = 'empty_stomach';
+      instructions = 'empty stomach';
+    } else if (has(r'\bbedtime\b')) {
+      foodRelation = 'bedtime';
+    }
+
+    Map<String, dynamic>? duration;
+    // "for 8 weeks" (not the "a week" of "once a week").
+    final dm = RegExp(r'(\S+)\s+(days?|weeks?|months?)\b')
+        .allMatches(rest)
+        .where((m) => (_num(m.group(1)!) ?? 0) > 0)
+        .firstOrNull;
+    final dv = dm == null ? null : _num(dm.group(1)!);
+    if (dm != null && dv != null) {
+      final u = dm.group(2)!;
+      duration = {'value': dv.round(), 'unit': u.endsWith('s') ? u : '${u}s'};
+    } else if (has(r'\b(ongoing|long term|continue)\b')) {
+      duration = {'unit': 'ongoing'};
+    }
+
+    final n = name.join(' ');
+    return {
+      'name': n.isEmpty ? n : n[0].toUpperCase() + n.substring(1),
+      if (strength != null) 'strength': strength,
+      'dose': dose,
+      'frequency': frequency,
+      if (weekday != null) 'weekday': weekday,
+      if (foodRelation != null) 'foodRelation': foodRelation,
+      if (instructions != null) 'instructions': instructions,
+      if (duration != null) 'duration': duration,
+      'entrySource': source,
+    };
+  }
+
+  // Snapshot -----------------------------------------------------------------
+
+  /// 'LDL 162 ↑', 'HbA1c 7.2% ↑', 'Vitamin D 14 ↓' (latest per analyte).
+  static List<String> abnormal(List<Map<String, dynamic>> rows) {
+    final seen = <String>{};
+    return [
+      for (final r in rows)
+        if (seen.add(r.str('analyte', r.str('test')).toLowerCase()))
+          '${r.str('analyte', r.str('test')).replaceFirst(RegExp(r'\s+cholesterol$', caseSensitive: false), '')} '
+              '${number(r['value'])}${r['unit'] == '%' ? '%' : ''} ${r['flag'] == 'low' ? '↓' : '↑'}',
+    ];
+  }
+
+  /// The six vitals tiles: (label, value, unit, colour).
+  static List<(String, String, String, Color)> vitalTiles(Map<String, dynamic> v) {
+    String n(Object? x) => x is num ? number(x) : '—';
+    final sys = v['bpSystolic'], dia = v['bpDiastolic'];
+    final sugar = v['bloodSugar'];
+    final fasting = v['sugarType'] != 'random';
+    final bpHigh = (sys is num && sys >= 140) || (dia is num && dia >= 90);
+    final sugarHigh = sugar is num && sugar >= (fasting ? 100 : 140);
+    final spo2 = v['spo2'];
+    return [
+      ('BP', sys is num && dia is num ? '${n(sys)}/${n(dia)}' : '—', 'mmHg', bpHigh ? MP.amber : MP.ink),
+      ('Pulse', n(v['pulse']), 'bpm', MP.ink),
+      ('SpO₂', n(spo2), '%', spo2 is num && spo2 < 95 ? MP.amber : MP.ink),
+      (fasting ? 'Sugar (F)' : 'Sugar (R)', n(sugar), 'mg/dL', sugarHigh ? MP.amber : MP.ink),
+      ('Weight', n(v['weightKg']), 'kg', MP.ink),
+      ('Temp', n(v['temperatureF']), '°F', MP.ink),
+    ];
+  }
+
+  /// 'Recorded at front desk, 8:52 AM', 'Home reading, 28 Sep, 7:40 AM'.
+  static String recorded(Map<String, dynamic> v, String myUserId) {
+    final at = F.date(v['recordedAt']);
+    final when = at == null ? '' : (F.sameDay(at, DateTime.now()) ? F.time(at) : '${F.dayMonth(at)}, ${F.time(at)}');
+    final who =
+        v['source'] == 'home' || v['recordedByRole'] == 'patient'
+            ? 'Home reading'
+            : v.str('recordedBy') == myUserId && myUserId.isNotEmpty
+            ? 'Recorded by you'
+            : v['recordedByRole'] == 'doctor'
+            ? 'Recorded by the doctor'
+            : 'Recorded at front desk';
+    return when.isEmpty ? who : '$who, $when';
+  }
+}
+
+/// The draft consultation behind Consult-Page and Consult-Blank (live):
+/// opens or resumes it, keeps the snapshot, and saves every change with
+/// PATCH /api/consultations/:id after a short pause.
+mixin D5Draft<W extends StatefulWidget> on LiveData<W> {
+  String? consultId;
+  Map<String, dynamic> consult = const {};
+  Map<String, dynamic> summary = const {};
+  Map<String, dynamic>? vitals;
+  Map<String, dynamic>? appointment;
+  List<Map<String, dynamic>> previousDiagnoses = const [];
+  Object? previousVisitAt;
+  List<Map<String, dynamic>> checks = const [];
+  Map<String, dynamic> suggestions = const {};
+
+  /// Opened right after Consult-QuickAdd created the patient.
+  bool justAdded = false;
+
+  /// The prescription once "Generate prescription" has issued it.
+  String? issuedRxId;
+  final busy = ValueNotifier(false);
+
+  Timer? _saveTimer;
+  final _pending = <String, dynamic>{};
+  Future<void>? _saving;
+
+  /// True while a change to [field] is still waiting to be sent.
+  bool pendingHas(String field) => _pending.containsKey(field);
+
+  Map<String, dynamic> get patient => summary.obj('patient');
+  String get patientId => consult.str('patientId', patient.str('id'));
+  String get firstName => F.firstName(patient.str('name'));
+  List<Map<String, dynamic>> get currentMedicines => summary.list('currentMedicines');
+
+  /// The draft has loaded: fill the screen's lists and fields from it.
+  void draftLoaded();
+
+  /// Everything on the screen, saved by "Save draft".
+  Map<String, dynamic> draftFields();
+
+  /// A save returned the draft ([fields] were sent); runs inside setState.
+  void draftSaved(Set<String> fields) {}
+
+  /// Runs before "Save draft" / "Generate prescription" (e.g. record vitals).
+  Future<bool> beforeSave() async => true;
+
+  /// Warnings from GET …/checks for the draft medicine at [i].
+  List<String> warningsAt(int i) => [
+    if (i < checks.length)
+      for (final w in checks[i].list('warnings')) w.str('text'),
+  ];
+
+  /// 'Started 9:14 AM · draft saved'.
+  String get startedLine {
+    final s = F.date(consult['startedAt']);
+    final base = s == null ? 'Draft' : 'Started ${F.time(s)}';
+    return consult['draftSavedAt'] != null ? '$base · draft saved' : base;
+  }
+
+  /// For fetch(): resolves the consultation from the route args and loads it.
+  Future<Map<String, dynamic>> loadDraft() async {
+    await Future<void>.value(); // the route args are read after initState
+    if (!mounted) return const {};
+    final a = Nav.args<Map>(context) ?? const {};
+    justAdded = a['justAdded'] == true;
+    var id = a['consultationId'] as String?;
+    if (id == null) {
+      Map<String, dynamic> body;
+      if (a['appointmentId'] != null) {
+        body = {'appointmentId': a['appointmentId']};
+      } else if (a['patientId'] != null) {
+        body = {'patientId': a['patientId']};
+      } else {
+        // No patient chosen: the doctor's patient in consultation now, if any.
+        final r = await Api.I.get(
+          '/api/appointments',
+          query: {'view': 'today', 'doctorId': 'me', 'status': 'in_consultation'},
+        );
+        final items = D5Live.list(r is Map ? r['items'] : null);
+        if (items.isEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            toast(context, 'Choose a patient first');
+            Nav.tab(context, 'Consult-Pick');
+          });
+          throw const ApiException(404, 'NO_PATIENT', 'Choose a patient first');
+        }
+        body = {'appointmentId': items.first['id']};
+      }
+      final c = await Api.I.post('/api/consultations', body);
+      id = '${(c as Map)['id']}';
+    }
+    final res = await Future.wait([
+      Api.I.get('/api/consultations/$id'),
+      Api.I.get('/api/consultations/$id/checks'),
+      Api.I.get('/api/consultations/$id/suggestions'),
+    ]);
+    final d = (res[0] as Map).cast<String, dynamic>();
+    consultId = id;
+    consult = d.obj('consultation');
+    summary = d.obj('summary');
+    vitals = d['vitals'] is Map ? d.obj('vitals') : null;
+    previousDiagnoses = d.list('previousDiagnoses');
+    previousVisitAt = d['previousVisitAt'];
+    checks = D5Live.list(res[1]);
+    suggestions = res[2] is Map ? (res[2] as Map).cast<String, dynamic>() : const {};
+    appointment = null;
+    if (consult['appointmentId'] != null) {
+      try {
+        final ap = await Api.I.get('/api/appointments/${consult['appointmentId']}');
+        if (ap is Map) appointment = ap.cast<String, dynamic>();
+      } on ApiException {
+        appointment = null;
+      }
+    }
+    if (consult['status'] != null && consult['status'] != 'draft') issuedRxId = consult.str('prescriptionId');
+    draftLoaded();
+    return d;
+  }
+
+  /// Queues [fields] for PATCH /api/consultations/:id.
+  void save(Map<String, dynamic> fields, {Duration delay = const Duration(milliseconds: 700)}) {
+    if (!isLive || consultId == null || issuedRxId != null) return;
+    _pending.addAll(fields);
+    _saveTimer?.cancel();
+    _saveTimer = Timer(delay, flush);
+  }
+
+  /// Sends the queued changes now; false when the save failed.
+  Future<bool> flush() async {
+    _saveTimer?.cancel();
+    while (_saving != null) {
+      await _saving;
+    }
+    if (_pending.isEmpty || consultId == null) return true;
+    final body = Map<String, dynamic>.of(_pending);
+    _pending.clear();
+    var ok = false;
+    Future<void> send() async {
+      try {
+        final res = await Api.I.patch('/api/consultations/$consultId', body);
+        if (res is Map) consult = res.cast<String, dynamic>();
+        if (body.containsKey('medications')) {
+          try {
+            checks = D5Live.list(await Api.I.get('/api/consultations/$consultId/checks'));
+          } on ApiException {
+            // keep the previous warnings
+          }
+        }
+        if (body.containsKey('diagnoses')) {
+          try {
+            final s = await Api.I.get('/api/consultations/$consultId/suggestions');
+            if (s is Map) suggestions = s.cast<String, dynamic>();
+          } on ApiException {
+            // keep the previous suggestions
+          }
+        }
+        ok = true;
+        if (mounted) setState(() => draftSaved(body.keys.toSet()));
+      } on ApiException catch (e) {
+        if (mounted) toast(context, e.message);
+      }
+    }
+
+    final f = send();
+    _saving = f;
+    await f;
+    _saving = null;
+    return ok;
+  }
+
+  /// "Save draft".
+  Future<void> saveDraft() async {
+    if (busy.value) return;
+    busy.value = true;
+    try {
+      if (!await beforeSave()) return;
+      _pending.addAll(draftFields());
+      if (await flush() && mounted) toast(context, 'Draft saved');
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  /// "Generate prescription": saves, issues, then opens the prescription.
+  Future<void> generate() async {
+    if (issuedRxId != null) {
+      Nav.go(context, 'Prescriptions', args: {'prescriptionId': issuedRxId, 'patientId': patientId, 'consultationId': consultId});
+      return;
+    }
+    if (busy.value) return;
+    busy.value = true;
+    try {
+      if (!await beforeSave()) return;
+      _pending.addAll(draftFields());
+      if (!await flush() || !mounted) return;
+    } finally {
+      busy.value = false;
+    }
+    final res = await runAction(context, () => Api.I.post('/api/consultations/$consultId/issue'), busy: busy);
+    if (res is! Map || !mounted) return;
+    final rx = res['prescription'] is Map ? (res['prescription'] as Map) : const {};
+    setState(() {
+      issuedRxId = '${rx['id']}';
+      if (res['consultation'] is Map) consult = (res['consultation'] as Map).cast<String, dynamic>();
+    });
+    toast(context, 'Prescription generated');
+    Nav.go(context, 'Prescriptions', args: {'prescriptionId': issuedRxId, 'patientId': patientId, 'consultationId': consultId});
+  }
+
+  @override
+  void dispose() {
+    _saveTimer?.cancel();
+    if (_pending.isNotEmpty) flush();
+    busy.dispose();
+    super.dispose();
   }
 }

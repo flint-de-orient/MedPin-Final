@@ -1,0 +1,106 @@
+{
+  "method": "GET",
+  "path": "/api/consultations/pick?q=987654",
+  "data": {
+    "matches": [
+      {
+        "id": "6ac8bbcee42c9f0836e9857c",
+        "name": "Priya Sharma",
+        "age": 29,
+        "gender": "female",
+        "phone": "9876543210"
+      }
+    ],
+    "waiting": [
+      {
+        "appointmentId": "6ac8bbd08adea6a429a733a7",
+        "token": "08",
+        "waitingMin": 380,
+        "patient": {
+          "id": "6ac8bbd08adea6a429a731dd",
+          "name": "Debasish Bose",
+          "age": 57,
+          "gender": "male",
+          "phone": "9831120769"
+        }
+      },
+      {
+        "appointmentId": "6ac8bbd08adea6a429a733b0",
+        "token": "09",
+        "waitingMin": 350,
+        "patient": {
+          "id": "6ac8bbd08adea6a429a731d6",
+          "name": "Farhana Islam",
+          "age": 38,
+          "gender": "female",
+          "phone": "9831120768"
+        }
+      }
+    ],
+    "recent": [
+      {
+        "id": "6ac8bbcee42c9f0836e9857c",
+        "name": "Priya Sharma",
+        "age": 29,
+        "gender": "female",
+        "phone": "9876543210"
+      },
+      {
+        "id": "6ac8bbd08adea6a429a731b7",
+        "name": "Rahul Das",
+        "age": 45,
+        "gender": "male",
+        "phone": "9831120764"
+      },
+      {
+        "id": "6ac8bbd08adea6a429a731be",
+        "name": "Aisha Khan",
+        "age": 34,
+        "gender": "female",
+        "phone": "9831120765"
+      },
+      {
+        "id": "6ac8bbd08adea6a429a731ce",
+        "name": "Sujit Mondal",
+        "age": 61,
+        "gender": "male",
+        "phone": "9831120767"
+      },
+      {
+        "id": "6ac8bbd08adea6a429a731d6",
+        "name": "Farhana Islam",
+        "age": 38,
+        "gender": "female",
+        "phone": "9831120768"
+      },
+      {
+        "id": "6ac8bbd08adea6a429a731dd",
+        "name": "Debasish Bose",
+        "age": 57,
+        "gender": "male",
+        "phone": "9831120769"
+      },
+      {
+        "id": "6ac8bbd08adea6a429a731e5",
+        "name": "Amit Pal",
+        "age": 42,
+        "gender": "male",
+        "phone": "9831120770"
+      },
+      {
+        "id": "6ac8be2a0640a42493dc54dc",
+        "name": "Test Consult",
+        "age": 40,
+        "gender": "female",
+        "phone": "9000055501"
+      },
+      {
+        "id": "6ac8be2a0640a42493dc556b",
+        "name": "Test Blank",
+        "age": 33,
+        "gender": "male",
+        "phone": "9000055502"
+      }
+    ]
+  }
+}

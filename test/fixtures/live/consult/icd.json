@@ -1,0 +1,13 @@
+{
+  "method": "GET",
+  "path": "/api/catalog/icd?q=Vitamin D deficiency",
+  "data": [
+    {
+      "code": "E55.9",
+      "createdAt": "2026-10-09T10:02:54.894Z",
+      "name": "Vitamin D deficiency",
+      "updatedAt": "2026-10-09T10:02:54.894Z",
+      "id": "6ac8bbcebfcb2f5a9d64d4f8"
+    }
+  ]
+}

@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
 
 /// Design: Consult-Blank.dc.html — "Consultation · fresh start, no records".
+/// Live: the same draft as Consult-Page (args {'consultationId'} or
+/// {'appointmentId'} / {'patientId'}, plus 'justAdded' from Consult-QuickAdd).
+/// Vitals typed here are recorded with POST /api/consultations/:id/vitals when
+/// the draft is saved or the prescription generated.
 class ConsultBlankScreen extends StatefulWidget {
   const ConsultBlankScreen({super.key});
 
@@ -11,7 +18,7 @@ class ConsultBlankScreen extends StatefulWidget {
   State<ConsultBlankScreen> createState() => _ConsultBlankScreenState();
 }
 
-class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
+class _ConsultBlankScreenState extends State<ConsultBlankScreen> with LiveData, D5Draft {
   // (label, placeholder, unit); BMI is worked out from weight and height.
   static const _fields = [
     ('Blood pressure', '120/80', 'mmHg'),
@@ -47,12 +54,25 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
   int _sugar = 1;
   bool _hasComplaint = false;
 
+  // Live: the draft's records behind the lists above (same order).
+  final _dxItems = <Map<String, dynamic>>[];
+  final _medItems = <Map<String, dynamic>>[];
+  Map<String, dynamic>? _validity;
+  Map<String, dynamic>? _followUp;
+  bool _applying = false;
+
+  /// The vitals last recorded from this screen (so they are sent once).
+  Map<String, dynamic>? _savedVitals;
+
   @override
   void initState() {
     super.initState();
     _vitals[_weight].addListener(_updateBmi);
     _vitals[_height].addListener(_updateBmi);
     _cc.addListener(_complaintChanged);
+    _advCtrl.addListener(() {
+      if (!_applying) save({'advice': _adviceJson});
+    });
   }
 
   @override
@@ -68,6 +88,125 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
     super.dispose();
   }
 
+  // Live data ----------------------------------------------------------------
+
+  @override
+  Future<Object?> fetch() => loadDraft();
+
+  @override
+  void draftLoaded() {
+    final c = consult;
+    _allergies
+      ..clear()
+      ..addAll(summary.list('allergies').map((a) => a.str('allergen')));
+    _dx.clear();
+    _dxItems.clear();
+    for (final d in c.list('diagnoses')) {
+      _dx.add(d.str('name'));
+      _dxItems.add(d);
+    }
+    _medItems
+      ..clear()
+      ..addAll(c.list('medications').map(D5Live.item));
+    _buildMeds();
+    _labs.clear();
+    for (final t in c.list('labOrders')) {
+      _labs[t.str('testName')] = t['selected'] != false;
+    }
+    _validity = c.obj('validity');
+    _followUp = c.obj('followUp');
+    _applying = true;
+    if (_cc.text != c.str('chiefComplaint')) _cc.text = c.str('chiefComplaint');
+    if (_advCtrl.text != c.obj('advice').str('freeText')) _advCtrl.text = c.obj('advice').str('freeText');
+    _applying = false;
+    _hasComplaint = _cc.text.trim().isNotEmpty;
+    final v = vitals;
+    if (v != null && _savedVitals == null) {
+      String n(Object? x) => x is num ? D5Live.number(x) : '';
+      _vitals[0].text = v['bpSystolic'] is num && v['bpDiastolic'] is num ? '${n(v['bpSystolic'])}/${n(v['bpDiastolic'])}' : '';
+      _vitals[1].text = n(v['pulse']);
+      _vitals[2].text = n(v['spo2']);
+      _vitals[3].text = n(v['temperatureF']);
+      _vitals[_weight].text = n(v['weightKg']);
+      _vitals[_height].text = n(v['heightCm']);
+      _vitals[6].text = n(v['bloodSugar']);
+      _sugar = v['sugarType'] == 'fasting' ? 0 : 1;
+      _savedVitals = _vitalsJson();
+    }
+  }
+
+  void _buildMeds() {
+    _meds
+      ..clear()
+      ..addAll([for (var i = 0; i < _medItems.length; i++) D5Live.med(_medItems[i], warningsAt(i))]);
+  }
+
+  @override
+  void draftSaved(Set<String> fields) {
+    if (fields.contains('medications') && !pendingHas('medications')) {
+      _medItems
+        ..clear()
+        ..addAll(consult.list('medications').map(D5Live.item));
+      _buildMeds();
+    }
+  }
+
+  List<Map<String, dynamic>> get _labJson => [
+    for (final e in _labs.entries) {'testName': e.key, 'source': 'typed', 'selected': e.value},
+  ];
+
+  Map<String, dynamic> get _adviceJson => {'items': consult.obj('advice').list('items'), 'freeText': _advCtrl.text.trim()};
+
+  @override
+  Map<String, dynamic> draftFields() => {
+    'chiefComplaint': _cc.text.trim(),
+    'diagnoses': _dxItems,
+    'medications': _medItems,
+    'labOrders': _labJson,
+    'advice': _adviceJson,
+    if (_validity != null) 'validity': _validity,
+    if (_followUp != null) 'followUp': _followUp,
+  };
+
+  /// The typed vitals as the API takes them; null when the BP is malformed.
+  Map<String, dynamic>? _vitalsJson() {
+    num? n(int i) => num.tryParse(_vitals[i].text.trim());
+    final bp = _vitals[0].text.trim();
+    final m = RegExp(r'^(\d{2,3})\s*/\s*(\d{2,3})$').firstMatch(bp);
+    if (bp.isNotEmpty && m == null) return null;
+    return {
+      if (m != null) 'bpSystolic': int.parse(m.group(1)!),
+      if (m != null) 'bpDiastolic': int.parse(m.group(2)!),
+      if (n(1) != null) 'pulse': n(1),
+      if (n(2) != null) 'spo2': n(2),
+      if (n(3) != null) 'temperatureF': n(3),
+      if (n(_weight) != null) 'weightKg': n(_weight),
+      if (n(_height) != null) 'heightCm': n(_height),
+      if (n(6) != null) 'bloodSugar': n(6),
+      if (n(6) != null) 'sugarType': _sugar == 0 ? 'fasting' : 'random',
+    };
+  }
+
+  /// Records the typed vitals (once per change) before saving.
+  @override
+  Future<bool> beforeSave() async {
+    final v = _vitalsJson();
+    if (v == null) {
+      toast(context, 'Enter the blood pressure like 120/80');
+      return false;
+    }
+    if (v.isEmpty || _sameVitals(v, _savedVitals)) return true;
+    final res = await runAction(context, () => Api.I.post('/api/consultations/$consultId/vitals', v));
+    if (res == null) return false;
+    _savedVitals = v;
+    return true;
+  }
+
+  bool _sameVitals(Map<String, dynamic> a, Map<String, dynamic>? b) =>
+      b != null && a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
+
+  // Actions ------------------------------------------------------------------
+
   void _updateBmi() {
     final w = double.tryParse(_vitals[_weight].text.trim());
     final h = double.tryParse(_vitals[_height].text.trim());
@@ -78,15 +217,30 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
   void _complaintChanged() {
     final has = _cc.text.trim().isNotEmpty;
     if (has != _hasComplaint) setState(() => _hasComplaint = has);
+    if (!_applying) save({'chiefComplaint': _cc.text.trim()});
   }
 
-  void _listen() => toast(context, 'Listening…');
+  void _listen() => toast(context, isLive ? 'Voice input isn\'t available yet. Please type.' : 'Listening…');
 
   Future<void> _addAllergies() async {
     final text = await openSheet<String>(context, (_) => const _AllergySheet());
     if (text == null || !mounted) return;
     final items = text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty && !_allergies.contains(s));
-    setState(() => _allergies.addAll(items.toSet()));
+    if (!isLive) {
+      setState(() => _allergies.addAll(items.toSet()));
+      return;
+    }
+    if (items.isEmpty) return;
+    final res = await runAction(context, () => Api.I.post('/api/patients/$patientId/allergies', {'allergens': items.join(', ')}));
+    if (res is! List || !mounted) return;
+    setState(() {
+      _allergies
+        ..clear()
+        ..addAll(D5Live.list(res).map((a) => a.str('allergen')));
+    });
+    toast(context, res.length == 1 ? 'Allergy saved' : 'Allergies saved');
+    // Medicines already added are checked against the new allergies.
+    if (_medItems.isNotEmpty) save({'medications': List.of(_medItems)}, delay: Duration.zero);
   }
 
   void _addDx(String value) {
@@ -94,11 +248,58 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
     if (name.isEmpty) return;
     setState(() {
       _dx.add(name);
+      _dxItems.add({'name': name, 'source': 'custom'});
       _dxCtrl.clear();
     });
+    if (!isLive) return;
+    save({'diagnoses': List.of(_dxItems)});
+    _matchIcd(name);
+  }
+
+  /// A typed diagnosis that is in the ICD catalog gets its code.
+  Future<void> _matchIcd(String name) async {
+    try {
+      final r = await Api.I.get('/api/catalog/icd', query: {'q': name});
+      final hit = D5Live.list(r).where((x) => x.str('name').toLowerCase() == name.toLowerCase()).firstOrNull;
+      final i = _dxItems.indexWhere((d) => d['name'] == name && d['source'] == 'custom');
+      if (hit == null || i < 0 || !mounted) return;
+      setState(() {
+        _dx[i] = hit.str('name');
+        _dxItems[i] = {'name': hit.str('name'), 'icdCode': hit.str('code'), 'source': 'catalog'};
+      });
+      save({'diagnoses': List.of(_dxItems)});
+    } on ApiException {
+      // Keep it as typed.
+    }
+  }
+
+  void _removeDx(String d) {
+    final i = _dx.indexOf(d);
+    setState(() {
+      _dx.remove(d);
+      if (isLive && i >= 0 && i < _dxItems.length) _dxItems.removeAt(i);
+    });
+    if (isLive) save({'diagnoses': List.of(_dxItems)});
+  }
+
+  void _saveMeds() => save({'medications': List.of(_medItems)}, delay: const Duration(milliseconds: 150));
+
+  void _addLine(D5MedResult r) {
+    final item = {...r.item!, 'change': D5Live.change(r.item!, currentMedicines)};
+    setState(() {
+      _medItems.add(item);
+      _meds.add(D5Live.med(item));
+    });
+    _saveMeds();
   }
 
   Future<void> _addMed(String name) async {
+    if (isLive) {
+      final r = await Nav.go<D5MedResult>(context, 'Consult-Dosage', args: {'item': D5Live.parse(name), 'consultationId': consultId});
+      if (r?.item == null || !mounted) return;
+      _addLine(r!);
+      return;
+    }
     final r = await Nav.go<D5MedResult>(context, 'Consult-Dosage');
     if (r == null || !mounted) return;
     setState(() => _meds.add(D5Med(name, r.dose, '${r.duration} · new')));
@@ -112,6 +313,19 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
   }
 
   Future<void> _voiceMed() async {
+    if (isLive) {
+      // No speech-to-text service yet: the sheet reads the typed line.
+      final text = _medCtrl.text.trim();
+      if (text.isEmpty) {
+        toast(context, 'Voice input isn\'t available yet. Type the medicine, e.g. “Metformin 500 twice daily”.');
+        return;
+      }
+      final r = await Nav.go<D5MedResult>(context, 'Consult-Voice', args: {'text': text, 'consultationId': consultId});
+      if (r?.item == null || !mounted) return;
+      _medCtrl.clear();
+      _addLine(r!);
+      return;
+    }
     final r = await Nav.go<D5MedResult>(context, 'Consult-Voice');
     if (r == null || !mounted) return;
     if (_meds.any((m) => m.name == r.name)) return;
@@ -119,11 +333,35 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
   }
 
   Future<void> _editMed(D5Med m) async {
+    final i = _meds.indexOf(m);
+    if (isLive) {
+      if (i < 0) return;
+      final r = await Nav.go<D5MedResult>(
+        context,
+        'Consult-Dosage',
+        args: {'item': _medItems[i], if (m.caution.isNotEmpty) 'caution': m.caution, 'consultationId': consultId},
+      );
+      if (r?.item == null || !mounted) return;
+      setState(() {
+        _medItems[i] = {...r!.item!, 'change': _medItems[i]['change'] ?? 'new'};
+        _meds[i] = D5Live.med(_medItems[i]);
+      });
+      _saveMeds();
+      return;
+    }
     final r = await Nav.go<D5MedResult>(context, 'Consult-Dosage');
     if (r == null || !mounted) return;
-    final i = _meds.indexOf(m);
     if (i < 0) return;
     setState(() => _meds[i] = D5Med(m.name, r.dose, '${r.duration} · new'));
+  }
+
+  void _removeMed(D5Med m) {
+    final i = _meds.indexOf(m);
+    setState(() {
+      _meds.remove(m);
+      if (isLive && i >= 0 && i < _medItems.length) _medItems.removeAt(i);
+    });
+    if (isLive) _saveMeds();
   }
 
   void _addLab(String value) {
@@ -134,6 +372,12 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
       _labs[existing.isEmpty ? name : existing.first] = true;
       _labCtrl.clear();
     });
+    if (isLive) save({'labOrders': _labJson});
+  }
+
+  void _toggleLab(String key, bool on) {
+    setState(() => _labs[key] = on);
+    if (isLive) save({'labOrders': _labJson});
   }
 
   void _toggle(int i) => setState(() {
@@ -141,46 +385,79 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
   });
 
   void _generate() {
+    if (isLive) {
+      generate();
+      return;
+    }
     toast(context, 'Prescription generated');
     Nav.go(context, 'Prescriptions');
   }
 
+  Future<void> _preview() async {
+    if (!isLive) {
+      Nav.go(context, 'Prescriptions');
+      return;
+    }
+    await flush();
+    if (!mounted) return;
+    Nav.go(
+      context,
+      'Prescriptions',
+      args: {'consultationId': consultId, 'patientId': patientId, if (issuedRxId != null) 'prescriptionId': issuedRxId},
+    );
+  }
+
+  // Display values -----------------------------------------------------------
+
+  String get _name => isLive ? patient.str('name') : 'Ankit Ghosh';
+  String get _first => isLive ? firstName : 'Ankit';
+
+  String get _meta {
+    if (!isLive) return 'Male · New patient · added just now';
+    return [
+      D5Live.gender(patient['gender']),
+      if (summary['lastVisitAt'] == null) 'New patient',
+      if (justAdded) 'added just now',
+    ].where((s) => s.isNotEmpty).join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    final ready = _hasComplaint && placeholder == null;
     return MpPage(
       header: D5Header(
         'Consultation',
-        subtitle: 'Started 9:41 AM',
+        subtitle: isLive ? (data == null ? 'Loading…' : startedLine) : 'Started 9:41 AM',
         action: 'Save draft',
-        onAction: () => toast(context, 'Draft saved'),
+        onAction: isLive ? (data == null ? null : saveDraft) : () => toast(context, 'Draft saved'),
       ),
       bottom: MpBottomBar(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
         child: Row(
           children: [
             Expanded(
-              child:
-                  _hasComplaint
-                      ? D5Button.secondary('Preview', onTap: () => Nav.go(context, 'Prescriptions'))
-                      : const D5Button.disabledOutline('Preview'),
+              child: ready ? D5Button.secondary('Preview', onTap: _preview) : const D5Button.disabledOutline('Preview'),
             ),
             const Gap(8),
             Expanded(
               flex: 2,
               child:
-                  _hasComplaint
+                  ready
                       ? D5Button('Generate prescription', onTap: _generate)
                       : const D5Button.disabled('Generate prescription'),
             ),
           ],
         ),
       ),
-      body: VGap(
-        // 136px in the design, less the 97px bar that covers it.
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 39),
-        gap: 16,
-        children: [_patient(), _snapshot(), _vitalsCard(), _complaint(), _diagnosis(), _laterSteps()],
-      ),
+      body:
+          placeholder ??
+          VGap(
+            // 136px in the design, less the 97px bar that covers it.
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 39),
+            gap: 16,
+            children: [_patient(), _snapshot(), _vitalsCard(), _complaint(), _diagnosis(), _laterSteps()],
+          ),
     );
   }
 
@@ -195,15 +472,15 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
       children: [
         Row(
           children: [
-            const MpAvatar('AG', size: 48, fontSize: 16),
+            MpAvatar(F.initials(_name), size: 48, fontSize: 16),
             const Gap(12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Ankit Ghosh', style: tx(18, w: w700)),
+                  Text(_name, style: tx(18, w: w700)),
                   const Gap(2),
-                  Text('Male · New patient · added just now', style: tx(14, c: MP.ink2)),
+                  Text(_meta, style: tx(14, c: MP.ink2)),
                 ],
               ),
             ),
@@ -232,17 +509,19 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
           Text('Patient snapshot', style: tx(20, w: w700, h: 1.25)),
           Text(
             'No records yet. The AI summary, abnormal test results and current medicines appear here '
-            'once Ankit shares reports or past prescriptions.',
+            'once $_first shares reports or past prescriptions.',
             style: tx(15, c: MP.ink2, h: 1.5),
           ),
           D5Button.tonal(
-            'Send Ankit an upload link',
+            'Send $_first an upload link',
             icon: I.upload,
             iconSize: 18,
             height: 48,
             radius: 12,
             fontSize: 15,
-            onTap: () => toast(context, 'Upload link sent to Ankit'),
+            // No API sends an upload link yet (see the report).
+            onTap:
+                () => toast(context, isLive ? 'Upload links can\'t be sent yet' : 'Upload link sent to Ankit'),
           ),
         ],
       ),
@@ -329,7 +608,7 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
         const D5Step('1', 'Chief complaint'),
         D5TextArea(
           controller: _cc,
-          hint: 'What brings Ankit in today?',
+          hint: 'What brings $_first in today?',
           speakLabel: 'Dictate chief complaint',
           onSpeak: _listen,
         ),
@@ -348,7 +627,7 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
         if (_dx.isNotEmpty)
           VGap(
             gap: 8,
-            children: [for (final d in _dx) D5DxRow(name: d, onRemove: () => setState(() => _dx.remove(d)))],
+            children: [for (final d in _dx) D5DxRow(name: d, onRemove: () => _removeDx(d))],
           ),
         D5MicField(
           controller: _dxCtrl,
@@ -398,8 +677,7 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
     0 => VGap(
       gap: 14,
       children: [
-        for (final m in _meds)
-          D5MedCard(med: m, onEdit: () => _editMed(m), onRemove: () => setState(() => _meds.remove(m))),
+        for (final m in _meds) D5MedCard(med: m, onEdit: () => _editMed(m), onRemove: () => _removeMed(m)),
         D5MicField(
           controller: _medCtrl,
           hint: 'Add medicine or say “Metformin 500 twice daily”',
@@ -424,10 +702,7 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [
-              for (final e in _labs.entries)
-                D5Chip.lab(e.key, on: e.value, onTap: () => setState(() => _labs[e.key] = !e.value)),
-            ],
+            children: [for (final e in _labs.entries) D5Chip.lab(e.key, on: e.value, onTap: () => _toggleLab(e.key, !e.value))],
           ),
       ],
     ),
@@ -439,7 +714,20 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> {
       speakLabel: 'Dictate advice',
       onSpeak: _listen,
     ),
-    _ => const D5ValidityFollowUp(patient: 'Ankit'),
+    _ =>
+      isLive
+          ? D5ValidityFollowUp(
+            patient: _first,
+            today: DateUtils.dateOnly(DateTime.now()),
+            validity: _validity,
+            followUpData: _followUp,
+            onChanged: (v, f) {
+              _validity = v;
+              _followUp = f;
+              save({'validity': v, 'followUp': f});
+            },
+          )
+          : const D5ValidityFollowUp(patient: 'Ankit'),
   };
 }
 

@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "path": "/api/patients/lookup?phone=9000055599",
+  "data": {
+    "exists": false
+  }
+}

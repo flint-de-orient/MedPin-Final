@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
 
@@ -17,19 +19,41 @@ class _ConsultQuickaddSheetState extends State<ConsultQuickaddSheet> {
   /// Number carried over from the search and verified by OTP.
   static const _verifiedPhone = '98300 71245';
 
-  final _phone = TextEditingController(text: _verifiedPhone);
-  final _name = TextEditingController(text: 'Ankit Ghosh');
+  final _phone = TextEditingController(text: isLive ? '' : _verifiedPhone);
+  final _name = TextEditingController(text: isLive ? '' : 'Ankit Ghosh');
   final _age = TextEditingController();
   int _gender = 1;
 
   /// Field drawn with the focused 2px border: 0 phone, 1 name, 2 age.
   int _active = 1;
 
+  /// Live: the number carried over from the search (not OTP-verified here).
+  String? _carried;
+  bool _argsRead = false;
+  bool _busy = false;
+
   @override
   void initState() {
     super.initState();
     _phone.addListener(_refresh);
     _name.addListener(_refresh);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_argsRead || !isLive) return;
+    _argsRead = true;
+    // Live: the search text becomes the phone number or the name.
+    final q = '${(Nav.args<Map>(context) ?? const {})['query'] ?? ''}'.trim();
+    final digits = D5Live.digits(q);
+    if (q.isNotEmpty && RegExp(r'^[\d\s+()-]+$').hasMatch(q)) {
+      _carried = digits.length == 10 ? '${digits.substring(0, 5)} ${digits.substring(5)}' : digits;
+      _phone.text = _carried!;
+    } else if (q.isNotEmpty) {
+      _name.text = q;
+      _active = 2;
+    }
   }
 
   void _refresh() => setState(() {});
@@ -42,15 +66,53 @@ class _ConsultQuickaddSheetState extends State<ConsultQuickaddSheet> {
     super.dispose();
   }
 
-  void _start() {
+  Future<void> _start() async {
     final nav = Navigator.of(context);
-    nav.pop();
-    Nav.go(nav.context, 'Consult-Blank');
+    if (!isLive) {
+      nav.pop();
+      Nav.go(nav.context, 'Consult-Blank');
+      return;
+    }
+    if (_busy) return;
+    final phone = D5Live.digits(_phone.text);
+    final name = _name.text.trim();
+    final age = int.tryParse(_age.text.trim());
+    if (phone.length != 10) return toast(context, 'Enter a 10-digit mobile number');
+    if (name.isEmpty) return toast(context, 'Enter the patient name');
+    if (age == null) return toast(context, 'Enter the age');
+    setState(() => _busy = true);
+    try {
+      final p = await Api.I.post('/api/patients', {
+        'name': name,
+        'phone': phone,
+        'gender': const ['female', 'male', 'other'][_gender],
+        'ageYears': age,
+      });
+      final c = await Api.I.post('/api/consultations', {'patientId': (p as Map)['id']});
+      if (!mounted) return;
+      nav.pop();
+      Nav.go(
+        nav.context,
+        'Consult-Blank',
+        args: {'consultationId': '${(c as Map)['id']}', 'patientId': '${p['id']}', 'justAdded': true},
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      if (e.code == 'PATIENT_EXISTS') {
+        // Link the existing MedPin record with the patient's consent code.
+        nav.pop();
+        Nav.go(nav.context, 'Add-Patient-Existing', args: {'phone': phone, 'startConsult': true});
+        return;
+      }
+      toast(context, e.message);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final verified = _phone.text.trim() == _verifiedPhone;
+    final verified = !isLive && _phone.text.trim() == _verifiedPhone;
+    final carried = isLive && _carried != null && _phone.text.trim() == _carried;
     final name = _name.text.trim();
     final first = name.isEmpty ? 'The patient' : name.split(RegExp(r'\s+')).first;
 
@@ -95,7 +157,10 @@ class _ConsultQuickaddSheetState extends State<ConsultQuickaddSheet> {
                     ),
                 ],
               ),
-              Text('Carried over from your search. Verified by OTP.', style: tx(13, c: MP.ink3)),
+              if (!isLive)
+                Text('Carried over from your search. Verified by OTP.', style: tx(13, c: MP.ink3))
+              else if (carried)
+                Text('Carried over from your search.', style: tx(13, c: MP.ink3)),
             ],
           ),
 
