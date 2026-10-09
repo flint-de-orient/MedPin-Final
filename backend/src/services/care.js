@@ -74,6 +74,14 @@ async function ensureParticipant(convo, userId, role) {
 
 const SENDER_LABEL = { ai: 'AI', system: 'Clinic' };
 
+/** "Dr. Ananya Sen" → "Dr. Sen"; "Tania Roy" → "Tania". */
+function shortName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '';
+  if (/^dr\.?$/i.test(parts[0])) return parts.length > 1 ? `Dr. ${parts[parts.length - 1]}` : 'Dr.';
+  return parts[0];
+}
+
 /** Saves a message, updates the thread preview and unread counts, and notifies. */
 async function postMessage(convo, { sender, senderType, text, kind = 'text', ...rest }) {
   const msg = await M.Message.create({ conversationId: convo._id, senderId: sender?._id, senderType, text, kind, ...rest });
@@ -81,7 +89,8 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', ...
   convo.lastMessage = {
     text: text || (kind === 'voice' ? 'Voice message' : kind === 'record' ? 'Shared a record' : 'Attachment'),
     senderType,
-    senderLabel: SENDER_LABEL[senderType] || sender?.name?.split(' ')[0] || 'Clinic',
+    senderId: sender?._id,
+    senderLabel: SENDER_LABEL[senderType] || shortName(sender?.name) || 'Clinic',
     at: msg.createdAt,
   };
   for (const p of convo.participants) {

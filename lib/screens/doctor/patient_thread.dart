@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/api.dart';
+import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
@@ -12,7 +13,7 @@ import 'common_d6.dart';
 /// Live (args `{'conversationId'}`, a bare conversation id, or
 /// `{'patientId'}`): GET /api/conversations/:id/messages every 12 s, marks
 /// the thread read on open, and sends / pins / hides / deletes messages.
-/// Voice replies and attachments need a multipart upload (not in Api yet).
+/// Attachments: POST /api/conversations/:id/messages (multipart `file`).
 ///
 /// The design shows the voice note long-pressed, with its action menu open;
 /// that is the initial state. Tapping anywhere closes the menu and a long
@@ -178,6 +179,23 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     if (ok == null || !mounted) return;
     _reply.clear();
     setState(() => _replyTo = null);
+    await reload(quiet: true);
+    _toLatest();
+  }
+
+  /// Sends a photo or PDF into the chat.
+  Future<void> _attachLive() async {
+    if (_convId == null) return;
+    final file = await Files.chooseSource(context, title: 'Attach to chat');
+    if (file == null || !mounted) return;
+    final text = _reply.text.trim();
+    final ok = await runAction(
+      context,
+      () => Api.I.upload('/api/conversations/$_convId/messages', files: {'file': [file]}, fields: {if (text.isNotEmpty) 'text': text}),
+      busy: _busy,
+    );
+    if (ok == null || !mounted) return;
+    _reply.clear();
     await reload(quiet: true);
     _toLatest();
   }
@@ -1043,7 +1061,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                 button: true,
                 label: 'Attach a file',
                 child: Tap(
-                  onTap: () => toast(context, 'Choose a photo, PDF or report to attach'),
+                  onTap: isLive ? _attachLive : () => toast(context, 'Choose a photo, PDF or report to attach'),
                   radius: 12,
                   child: const SizedBox(
                     width: 44,

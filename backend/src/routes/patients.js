@@ -278,7 +278,9 @@ r.get('/patients/:id/lab-results', async (req, res) => {
   if (req.query.filter === 'normal') q.abnormalCount = 0;
   const results = await M.LabResult.find(q).sort({ collectedAt: -1 }).limit(200);
   const abnormal = results.reduce((n, x) => n + x.abnormalCount, 0);
-  res.json({ abnormalFindings: abnormal, reports: new Set(results.filter((x) => x.abnormalCount).map((x) => String(x.recordId))).size, items: results });
+  // One report per uploaded record; results entered without a file count on their own.
+  const reports = new Set(results.map((x) => (x.recordId ? `r${x.recordId}` : `l${x._id}`))).size;
+  res.json({ abnormalFindings: abnormal, reports, items: results });
 });
 
 // HbA1c / LDL trends: one analyte over time.

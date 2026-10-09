@@ -35,6 +35,7 @@ const conversationSchema = new Schema(
     lastMessage: {
       text: String,
       senderType: enumOf(E.SENDER_TYPES),
+      senderId: ref('User'),
       senderLabel: String, // "AI", "You", "Tania", "Dietician"
       at: Date,
     },

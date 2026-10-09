@@ -59,13 +59,9 @@ class _PpTestsScreenState extends State<PpTestsScreen> with LiveData {
       toast(context, 'Marked as reviewed');
       reload(quiet: true);
     }
-    String? url;
-    final records = rec.m['records'];
-    for (final x in records is List ? records : const []) {
-      final m = (x as Map).cast<String, dynamic>();
-      if ('${m['id']}' == '${r['recordId']}' && m.list('files').isNotEmpty) url = m.list('files').first.str('url');
-    }
-    if (url != null && context.mounted) await d6OpenUrl(context, url, fail: "Couldn't open the report");
+    if (!context.mounted) return;
+    await Nav.go(context, 'Lab-Report', args: {'labResultId': r.str('id'), 'patientId': rec.m.str('id')});
+    if (context.mounted) reload(quiet: true);
   }
 
   Widget _liveBody(BuildContext context, D6Rec rec) {
@@ -181,8 +177,7 @@ class _PpTestsScreenState extends State<PpTestsScreen> with LiveData {
 
   int _filter = 0;
 
-  // There is no report-detail screen in the design yet.
-  void _open(BuildContext context) => toast(context, 'Report view is not in the design yet');
+  void _open(BuildContext context) => Nav.go(context, 'Lab-Report');
 
   @override
   Widget build(BuildContext context) {
