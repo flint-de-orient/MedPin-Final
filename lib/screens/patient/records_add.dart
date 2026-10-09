@@ -16,7 +16,8 @@ import 'common_p3.dart';
 /// AI could read opens Records-Review to check and save each test.
 ///
 /// Args (optional): {'kind': 'test_result' | 'prescription', 'title',
-/// 'appointmentId' (sent with the upload), 'doctorId' (preselected)}; staff
+/// 'appointmentId' (sent with the upload), 'doctorId' / 'doctorName' (ticked,
+/// so the upload is shared with them via the upload's shareWith)}; staff
 /// opening it for a patient pass {'patientId'} and the file goes to
 /// /api/patients/:id/records. Pops with the new record id after an upload.
 class RecordsAddSheet extends StatefulWidget {
@@ -63,8 +64,12 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
   @override
   Future<Object?> fetch() async {
     if (_forPatient != null) return {'doctors': const []};
-    final doctors = await p3LoadDoctors();
     final pre = _args['doctorId'] as String?;
+    final name = _args['doctorName'] as String?;
+    final doctors = await p3LoadDoctors();
+    // Opened from a doctor's page ("Share"): that doctor is ticked even when
+    // they aren't in the care team yet.
+    if (pre != null && !doctors.any((d) => d.id == pre)) doctors.insert(0, P3Doctor(pre, name ?? 'This doctor', ''));
     _liveDoctors = doctors;
     _shareWith = {
       for (final d in doctors)
@@ -97,6 +102,9 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     final upload = file;
     final kind = _kind == 0 ? 'prescription' : 'test_result';
     final patientId = _forPatient;
+    // The doctor this sheet was opened for, even if the care team didn't load.
+    final pre = _args['doctorId'] as String?;
+    if (data == null && pre != null) _shareWith = {..._shareWith, pre};
     setState(() => _uploading = true);
     if (kind == 'test_result') toast(context, 'Reading your report…');
     final res = await runAction(
