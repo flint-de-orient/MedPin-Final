@@ -1,0 +1,207 @@
+{
+  "practiceId": "6ac8bbcee42c9f0836e98561",
+  "name": "City Care Clinic — Salt Lake",
+  "shortName": "Salt Lake",
+  "type": "clinic",
+  "status": "active",
+  "address": "DD-24, Sector 1, Salt Lake, Kolkata 700064",
+  "area": "Salt Lake",
+  "city": "Kolkata",
+  "pincode": "700064",
+  "landmark": "Opposite Tank 9, near City Centre",
+  "phone": "033 4012 5678",
+  "geo": {
+    "type": "Point",
+    "coordinates": [
+      88.4116,
+      22.5867
+    ]
+  },
+  "facilities": [
+    "Wheelchair access",
+    "Parking",
+    "Lab sample collection",
+    "Pharmacy"
+  ],
+  "paymentMethods": [
+    "upi",
+    "cash",
+    "card"
+  ],
+  "collectFeeAtBooking": false,
+  "slotMinutes": 15,
+  "weeklyHours": [
+    {
+      "weekday": "mon",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+    },
+    {
+      "weekday": "tue",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+    },
+    {
+      "weekday": "wed",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+    },
+    {
+      "weekday": "thu",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+    },
+    {
+      "weekday": "fri",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+    },
+    {
+      "weekday": "sat",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 840
+    },
+    {
+      "weekday": "sun",
+      "isOpen": false,
+      "opensAt": 540,
+      "closesAt": 840
+    }
+  ],
+  "letterhead": {
+    "tagline": "Diabetes, thyroid and heart care",
+    "doctorNamePrinted": "Dr. Arjun Sen, MBBS, MD (Medicine)",
+    "registrationNo": "WBMC 64213"
+  },
+  "createdAt": "2026-10-09T10:02:54.946Z",
+  "updatedAt": "2026-10-09T10:02:54.946Z",
+  "id": "6ac8bbcee42c9f0836e98563",
+  "closures": [
+    {
+      "locationId": "6ac8bbcee42c9f0836e98563",
+      "startDate": "2026-10-19T18:30:00.000Z",
+      "endDate": "2026-10-22T18:30:00.000Z",
+      "reason": "Durga Puja · closed all day",
+      "allDay": true,
+      "createdAt": "2026-10-09T10:02:56.127Z",
+      "updatedAt": "2026-10-09T10:02:56.127Z",
+      "id": "6ac8bbd08adea6a429a73191"
+    }
+  ],
+  "doctors": [
+    {
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "name": "Dr. Arjun Sen",
+      "week": [
+        {
+          "weekday": "mon",
+          "sessions": [
+            {
+              "startMin": 540,
+              "endMin": 780
+            }
+          ]
+        },
+        {
+          "weekday": "tue",
+          "sessions": [
+            {
+              "startMin": 540,
+              "endMin": 780
+            }
+          ]
+        },
+        {
+          "weekday": "wed",
+          "sessions": [
+            {
+              "startMin": 540,
+              "endMin": 780
+            }
+          ]
+        },
+        {
+          "weekday": "thu",
+          "sessions": [
+            {
+              "startMin": 540,
+              "endMin": 780
+            }
+          ]
+        },
+        {
+          "weekday": "fri",
+          "sessions": [
+            {
+              "startMin": 540,
+              "endMin": 780
+            }
+          ]
+        },
+        {
+          "weekday": "sat",
+          "sessions": [
+            {
+              "startMin": 540,
+              "endMin": 690
+            }
+          ]
+        },
+        {
+          "weekday": "sun",
+          "sessions": []
+        }
+      ]
+    },
+    {
+      "doctorId": "6ac8bbd08adea6a429a73197",
+      "name": "Dr. Rina Mitra",
+      "week": [
+        {
+          "weekday": "mon",
+          "sessions": []
+        },
+        {
+          "weekday": "tue",
+          "sessions": [
+            {
+              "startMin": 1020,
+              "endMin": 1200
+            }
+          ]
+        },
+        {
+          "weekday": "wed",
+          "sessions": []
+        },
+        {
+          "weekday": "thu",
+          "sessions": [
+            {
+              "startMin": 1020,
+              "endMin": 1200
+            }
+          ]
+        },
+        {
+          "weekday": "fri",
+          "sessions": []
+        },
+        {
+          "weekday": "sat",
+          "sessions": []
+        },
+        {
+          "weekday": "sun",
+          "sessions": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'common_d4.dart';
 import 'common_d8.dart';
 
 /// Design: Profile.dc.html — "Profile" (Clinician · tabs): the doctor's
@@ -45,19 +48,148 @@ const _signatureSvg =
     '<path d="M150 20c-3 4-4 9-1 10"/>'
     '</svg>';
 
-class _ProfileScreenState extends State<ProfileScreen> {
-  bool _appLock = true;
-  String _language = _languages.first;
+class _ProfileScreenState extends State<ProfileScreen> with LiveData {
+  bool _sampleAppLock = true;
+  String _sampleLanguage = _languages.first;
+
+  /// API codes of [_languages], in the same order.
+  static const _languageCodes = ['en', 'bn', 'hi'];
+  static const _roleNames = {
+    'doctor': 'Doctor',
+    'front_desk': 'Front desk',
+    'doctor_assistant': 'Doctor assistant',
+    'dietician': 'Dietician',
+    'lab_manager': 'Lab manager',
+    'lab_technician': 'Lab technician',
+    'practice_manager': 'Practice manager',
+  };
+
+  /// GET /api/me, /api/doctor/profile, /api/practice, and the open-alert and
+  /// flagged-chat counts for the tool badges (optional).
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([
+      Api.I.get('/api/me'),
+      Api.I.get('/api/doctor/profile'),
+      Api.I.get('/api/practice'),
+      d4Optional('/api/alerts', query: {'status': 'open'}),
+      d4Optional('/api/inbox/reviews', query: {'status': 'needs_review'}),
+    ]);
+    return {'me': r[0], 'profile': r[1], 'practice': r[2], 'alerts': r[3], 'reviews': r[4]};
+  }
+
+  Map<String, dynamic> get _user => data!.obj('me').obj('user');
+  Map<String, dynamic> get _p => data!.obj('profile');
+  Map<String, dynamic> get _practice => data!.obj('practice');
+
+  bool get _appLock => data == null ? _sampleAppLock : _user['appLock'] == true;
+
+  String get _language {
+    if (data == null) return _sampleLanguage;
+    final i = _languageCodes.indexOf(_user.str('language', 'en'));
+    return _languages[i < 0 ? 0 : i];
+  }
+
+  String get _name => data == null ? 'Dr. Arjun Sen' : _p.str('displayName', _user.str('name'));
+
+  /// "9830041275" → "+91 98300 41275"
+  String get _phone {
+    if (data == null) return '+91 98300 41275';
+    final p = _user.str('phone').replaceAll(RegExp(r'\D'), '');
+    final ten = p.length > 10 ? p.substring(p.length - 10) : p;
+    return ten.length == 10 ? '+91 ${ten.substring(0, 5)} ${ten.substring(5)}' : _user.str('phone');
+  }
+
+  /// "Doctor · Owner"
+  String get _roleBadge {
+    if (data == null) return 'Doctor · Owner';
+    final role = _roleNames[_practice.str('role')] ?? 'Member';
+    return _practice['isOwner'] == true ? '$role · Owner' : role;
+  }
+
+  /// "MBBS, MD (Medicine) · WBMC 64213"
+  String get _credentials => data == null
+      ? 'MBBS, MD (Medicine) · WBMC 64213'
+      : [_p.str('degreesSummary'), _p.str('registrationDisplay')].where((s) => s.isNotEmpty).join(' · ');
+
+  String? get _signatureUrl => data == null ? null : _p.obj('signature')['url'] as String?;
+  bool get _hasSignature => data == null || _signatureUrl != null;
+
+  String get _callNumber {
+    if (data == null) return '+91 33 4000 1234';
+    final n = _practice.obj('practice').str('patientCallNumber');
+    return n.isEmpty ? 'Not set' : n;
+  }
+
+  /// Tool badges: open alerts and flagged AI answers (hidden at zero).
+  List<_Tool> get _toolList {
+    if (data == null) return _tools;
+    final open = data!.obj('alerts').obj('counts').numOr('open').toInt();
+    final flagged = data!.obj('reviews').numOr('flagged').toInt();
+    return [
+      for (final t in _tools)
+        switch (t.stem) {
+          'Alerts' => open > 0 ? _Tool(t.label, t.stem, badge: '$open open', tone: t.tone) : _Tool(t.label, t.stem),
+          'Chat-Review' => flagged > 0 ? _Tool(t.label, t.stem, badge: '$flagged flagged', tone: t.tone) : _Tool(t.label, t.stem),
+          _ => t,
+        },
+    ];
+  }
+
+  Future<void> _setAppLock(bool v) async {
+    if (!isLive) {
+      setState(() => _sampleAppLock = v);
+      return;
+    }
+    setState(() => _user['appLock'] = v);
+    final ok = await runAction(context, () => Api.I.patch('/api/me', {'appLock': v}));
+    if (!mounted) return;
+    if (ok == null) {
+      setState(() => _user['appLock'] = !v);
+      return;
+    }
+    toast(context, v ? 'App lock on' : 'App lock off');
+  }
+
+  void _replaceSignature() {
+    if (isLive) {
+      // POST /api/doctor/profile/signature is a file upload, which the app's API client can't send yet.
+      toast(context, 'Signature upload is coming soon');
+      return;
+    }
+    toast(context, 'Signature replaced');
+  }
+
+  Future<void> _editCallNumber() async {
+    if (!isLive) {
+      Nav.go(context, 'Profile-Location');
+      return;
+    }
+    final current = _practice.obj('practice').str('patientCallNumber');
+    final r = await d4FormSheet(
+      context,
+      title: 'Patient call number',
+      subtitle: 'Patients call this number from the app',
+      fields: [D4FormField('Phone number', value: current, hint: 'e.g. +91 33 4000 1234', keyboard: TextInputType.phone)],
+    );
+    if (r == null || r.isEmpty || !mounted || r.first == current) return;
+    final ok = await runAction(context, () => Api.I.patch('/api/practice', {'patientCallNumber': r.first}));
+    if (ok == null || !mounted) return;
+    toast(context, 'Patient call number saved');
+    reload(quiet: true);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    final tools = _toolList;
     return MpPage(
       nav: const ClinicianNav(current: 3),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const D8TabHeader(),
-          VGap(
+          if (placeholder != null) placeholder else VGap(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             gap: 24,
             children: [
@@ -79,15 +211,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (var i = 0; i < _tools.length; i++)
+                    for (var i = 0; i < tools.length; i++)
                       _NavRow(
-                        _tools[i].label,
+                        tools[i].label,
                         divider: i > 0,
                         value:
-                            _tools[i].tone == null
+                            tools[i].tone == null
                                 ? null
-                                : MpBadge(_tools[i].badge, bg: _tools[i].tone!.$1, fg: _tools[i].tone!.$2),
-                        onTap: () => Nav.go(context, _tools[i].stem),
+                                : MpBadge(tools[i].badge, bg: tools[i].tone!.$1, fg: tools[i].tone!.$2),
+                        onTap: () => Nav.go(context, tools[i].stem),
                       ),
                   ],
                 ),
@@ -103,7 +235,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const Gap(12),
                       Semantics(
                         label: 'App lock',
-                        child: MpSwitch(value: _appLock, onChanged: (v) => setState(() => _appLock = v)),
+                        child: MpSwitch(value: _appLock, onChanged: _setAppLock),
                       ),
                     ],
                   ),
@@ -115,7 +247,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   child: Row(
                     children: [
-                      const Expanded(child: _TwoLine('Patient call number', '+91 33 4000 1234', tabular: true)),
+                      Expanded(child: _TwoLine('Patient call number', _callNumber, tabular: true)),
                       const Gap(12),
                       D8Link(
                         'Edit',
@@ -123,7 +255,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         height: 48,
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         semanticLabel: 'Edit patient call number',
-                        onTap: () => Nav.go(context, 'Profile-Location'),
+                        onTap: _editCallNumber,
                       ),
                     ],
                   ),
@@ -190,18 +322,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _identity() {
     return Row(
       children: [
-        const MpAvatar('AS', size: 72, fontSize: 26, weight: w600),
+        MpAvatar(F.initials(_name), size: 72, fontSize: 26, weight: w600),
         const Gap(16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Dr. Arjun Sen', style: tx(28, w: w800, h: 1.15, em: -0.02)),
+              Text(_name, style: tx(28, w: w800, h: 1.15, em: -0.02)),
               const Gap(4),
-              Text('+91 98300 41275', style: tx(14, c: MP.ink2, h: 1.45, tab: true)),
+              Text(_phone, style: tx(14, c: MP.ink2, h: 1.45, tab: true)),
               // Column gap 4px + `margin-top: 4px`.
               const Gap(8),
-              const MpBadge.blue('Doctor · Owner', weight: w600),
+              MpBadge.blue(_roleBadge, weight: w600),
             ],
           ),
         ),
@@ -220,7 +352,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: const EdgeInsets.symmetric(vertical: 14),
             child: Row(
               children: [
-                const Expanded(child: _TwoLine('Professional details', 'MBBS, MD (Medicine) · WBMC 64213')),
+                Expanded(child: _TwoLine('Professional details', _credentials)),
                 const Gap(12),
                 const Ico(I.chevronRight, size: 18, color: MP.ink3),
               ],
@@ -235,34 +367,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Row(
                 children: [
-                  const Expanded(child: _TwoLine('Digital signature', 'Printed on every prescription')),
+                  Expanded(
+                    child: _TwoLine('Digital signature', _hasSignature ? 'Printed on every prescription' : 'Not added yet'),
+                  ),
                   const Gap(12),
-                  MpButton.small('Replace', expand: false, onTap: () => toast(context, 'Signature replaced')),
+                  MpButton.small(_hasSignature ? 'Replace' : 'Add', expand: false, onTap: _replaceSignature),
                 ],
               ),
-              const Gap(12),
-              // <figure>: the signature as printed.
-              Semantics(
-                image: true,
-                label: 'Signature preview as printed',
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: MP.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: MP.line),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Svg(_signatureSvg, width: 176, height: 56),
-                      Container(height: 1, margin: const EdgeInsets.only(top: 4), color: MP.line),
-                      const Gap(8),
-                      Text('Dr. Arjun Sen', style: tx(14, w: w600, h: 20 / 14)),
-                    ],
+              if (_hasSignature) ...[
+                const Gap(12),
+                // <figure>: the signature as printed.
+                Semantics(
+                  image: true,
+                  label: 'Signature preview as printed',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: MP.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: MP.line),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_signatureUrl != null)
+                          Image.network(_signatureUrl!, width: 176, height: 56, fit: BoxFit.contain, alignment: Alignment.centerLeft)
+                        else
+                          const Svg(_signatureSvg, width: 176, height: 56),
+                        Container(height: 1, margin: const EdgeInsets.only(top: 4), color: MP.line),
+                        const Gap(8),
+                        Text(_name, style: tx(14, w: w600, h: 20 / 14)),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -297,7 +436,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
-    if (picked != null && mounted) setState(() => _language = picked);
+    if (picked == null || !mounted) return;
+    if (!isLive) {
+      setState(() => _sampleLanguage = picked);
+      return;
+    }
+    if (picked == _language) return;
+    final code = _languageCodes[_languages.indexOf(picked)];
+    final ok = await runAction(context, () => Api.I.patch('/api/me', {'language': code}));
+    if (ok == null || !mounted) return;
+    toast(context, 'App language: $picked');
+    reload(quiet: true);
   }
 }
 

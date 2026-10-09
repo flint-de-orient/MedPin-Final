@@ -1,0 +1,58 @@
+{
+  "greetingName": "Dr. Arjun Sen",
+  "date": "2026-10-08T18:30:00.000Z",
+  "practiceName": "City Care Clinic",
+  "location": null,
+  "unreadNotifications": 13,
+  "today": {
+    "total": 8,
+    "pending": 6,
+    "waiting": 2,
+    "completed": 2
+  },
+  "actionQueue": {
+    "unreadMessages": 5,
+    "checkInsOverdue": 0,
+    "pendingActions": 5,
+    "nutritionReviewsDue": 0
+  },
+  "alerts": [
+    {
+      "id": "6ac8bbd08adea6a429a733dd",
+      "severity": "urgent",
+      "kind": "lab",
+      "patient": "Sujit Mondal",
+      "patientId": "6ac8bbd08adea6a429a731ce",
+      "detail": "Potassium 6.1 mmol/L · ref 3.5–5.1 (critical).",
+      "at": "2026-10-09T10:02:56.939Z"
+    },
+    {
+      "id": "6ac8bbd08adea6a429a733d4",
+      "severity": "urgent",
+      "kind": "reading",
+      "patient": "Rahul Das",
+      "patientId": "6ac8bbd08adea6a429a731b7",
+      "detail": "Home BP reading 172/104 mmHg, above his alert limit.",
+      "at": "2026-10-09T10:02:56.933Z"
+    },
+    {
+      "id": "6ac8bbd08adea6a429a733cb",
+      "severity": "emergency",
+      "kind": "urgent_chat",
+      "patient": "Priya Sharma",
+      "patientId": "6ac8bbcee42c9f0836e9857c",
+      "conversationId": "6ac8bbcee42c9f0836e9858b",
+      "detail": "Chest tightness, hard to breathe.",
+      "at": "2026-10-09T10:02:56.924Z"
+    }
+  ],
+  "last7Days": {
+    "consultations": 5,
+    "avgConsultMin": 10
+  },
+  "aiChats": {
+    "handled": 0,
+    "escalated": 2
+  },
+  "updatedAt": "2026-10-09T10:08:28.219Z"
+}

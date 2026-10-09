@@ -1,0 +1,70 @@
+{
+  "counts": {
+    "all": 8,
+    "today": 8,
+    "followUpDue": 5,
+    "abnormal": 4
+  },
+  "total": 4,
+  "items": [
+    {
+      "id": "6ac8bbd08adea6a429a731be",
+      "name": "Aisha Khan",
+      "phone": "9831120765",
+      "gender": "female",
+      "age": 34,
+      "conditions": [
+        "Type 2 diabetes"
+      ],
+      "allergies": [],
+      "riskLevel": "moderate",
+      "hasApp": false,
+      "lastVisitAt": "2026-10-09T03:41:00.000Z"
+    },
+    {
+      "id": "6ac8bbcee42c9f0836e9857c",
+      "name": "Priya Sharma",
+      "phone": "9876543210",
+      "gender": "female",
+      "age": 29,
+      "conditions": [
+        "Type 2 diabetes",
+        "PCOS"
+      ],
+      "allergies": [
+        "Sulfa drugs"
+      ],
+      "hasApp": true,
+      "lastVisitAt": "2026-09-29T03:43:00.000Z"
+    },
+    {
+      "id": "6ac8bbd08adea6a429a731d6",
+      "name": "Farhana Islam",
+      "phone": "9831120768",
+      "gender": "female",
+      "age": 38,
+      "conditions": [
+        "Hypothyroidism"
+      ],
+      "allergies": [],
+      "riskLevel": "low",
+      "hasApp": false,
+      "lastVisitAt": "2026-09-24T05:39:00.000Z"
+    },
+    {
+      "id": "6ac8bbd08adea6a429a731ce",
+      "name": "Sujit Mondal",
+      "phone": "9831120767",
+      "gender": "male",
+      "age": 61,
+      "conditions": [
+        "Chronic kidney disease",
+        "Hypertension"
+      ],
+      "allergies": [],
+      "riskLevel": "critical",
+      "hasApp": false,
+      "lastVisitAt": "2026-09-09T03:54:00.000Z"
+    }
+  ]
+}

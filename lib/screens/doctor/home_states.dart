@@ -1,12 +1,38 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
 
 /// Design: Home-States.dc.html — "Home · states" (Clinician · tabs): how the
 /// dashboard cards look while loading, stale, empty, failed or all clear.
-class HomeStatesScreen extends StatelessWidget {
+///
+/// Live: the samples use the real GET /api/dashboard request — the greeting
+/// and "Updated / Last checked" times come from it, and Retry / Try again
+/// fetch it again.
+class HomeStatesScreen extends StatefulWidget {
   const HomeStatesScreen({super.key});
+
+  @override
+  State<HomeStatesScreen> createState() => _HomeStatesScreenState();
+}
+
+class _HomeStatesScreenState extends State<HomeStatesScreen> with LiveData {
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/dashboard');
+
+  String get _greeting =>
+      data == null ? 'Good morning, Dr. Sen' : '${F.greeting()}, ${F.doctorShort(data!.str('greetingName'))}';
+
+  /// "3 min ago" since the last successful load.
+  String get _since => loadedAt == null ? '' : d8Updated(loadedAt!).substring('Updated '.length);
+
+  void _retry() {
+    toast(context, 'Retrying…');
+    if (isLive) reload(quiet: true);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +63,7 @@ class HomeStatesScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Good morning, Dr. Sen', style: tx(28, w: w800, h: 1.15, em: -0.02)),
+                Text(_greeting, style: tx(28, w: w800, h: 1.15, em: -0.02)),
                 const Gap(6),
                 SizedBox(
                   height: 44,
@@ -51,7 +77,7 @@ class HomeStatesScreen extends StatelessWidget {
                       const Gap(8),
                       Expanded(
                         child: Text(
-                          'Updated 3 min ago · Reconnecting',
+                          data == null ? 'Updated 3 min ago · Reconnecting' : 'Updated $_since · Reconnecting',
                           style: tx(14, w: w600, c: MP.amber),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -62,7 +88,7 @@ class HomeStatesScreen extends StatelessWidget {
                         'Retry',
                         height: 44,
                         padding: const EdgeInsets.symmetric(horizontal: 4),
-                        onTap: () => toast(context, 'Retrying…'),
+                        onTap: _retry,
                       ),
                     ],
                   ),
@@ -92,7 +118,7 @@ class HomeStatesScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('No open alerts', style: tx(16, w: w600, h: 1.5)),
-                            Text('Last checked 4s ago', style: tx(13, c: MP.ink3, h: 18 / 13)),
+                            Text(data == null ? 'Last checked 4s ago' : 'Last checked $_since', style: tx(13, c: MP.ink3, h: 18 / 13)),
                           ],
                         ),
                       ),
@@ -144,7 +170,7 @@ class HomeStatesScreen extends StatelessWidget {
                     icon: I.history,
                     iconStroke: 1.75,
                     expand: false,
-                    onTap: () => toast(context, 'Retrying…'),
+                    onTap: _retry,
                   ),
                 ],
               ),
