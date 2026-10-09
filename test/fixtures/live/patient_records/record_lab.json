@@ -1,0 +1,75 @@
+{
+  "patientId": "6ac8d12d5e6ed8754976cfd9",
+  "kind": "test_result",
+  "title": "Lipid profile",
+  "recordDate": "2026-09-29T18:30:00.000Z",
+  "origin": "shared_by_patient",
+  "sourceName": "Suraksha Diagnostics",
+  "files": [
+    {
+      "key": "records/2026-10/9316745f-0721-453f-ad18-1234b0ed7739.pdf",
+      "name": "report.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 45,
+      "url": "http://localhost:4103/files/records/2026-10/9316745f-0721-453f-ad18-1234b0ed7739.pdf?exp=1791549660&sig=c5de19d4539c1f07dc676c779e350b6cae2d1b99f274a43263cb56aa34bb0c13"
+    }
+  ],
+  "pageFrom": 1,
+  "pageTo": 2,
+  "batchId": "6ac8d257c0d20a47471fe841",
+  "status": "ready",
+  "aiSummary": "Bad cholesterol (LDL) and triglycerides are high. Good cholesterol is normal.",
+  "flagLabel": "2 high",
+  "flagTone": "high",
+  "sharedWith": [
+    {
+      "userId": "6ac8d12f316d92de32637cc7",
+      "sharedAt": "2026-10-09T11:39:26.513Z"
+    }
+  ],
+  "uploadedBy": "6ac8d12d5e6ed8754976cfba",
+  "createdAt": "2026-10-09T11:39:26.514Z",
+  "updatedAt": "2026-10-09T11:39:26.514Z",
+  "id": "6ac8d26ec0d20a47471fe875",
+  "results": [
+    {
+      "patientId": "6ac8d12d5e6ed8754976cfd9",
+      "recordId": "6ac8d26ec0d20a47471fe875",
+      "testName": "Lipid profile",
+      "labName": "Suraksha Diagnostics",
+      "collectedAt": "2026-09-29T18:30:00.000Z",
+      "values": [
+        {
+          "analyte": "LDL cholesterol",
+          "value": 158,
+          "unit": "mg/dL",
+          "refText": "below 100",
+          "flag": "high",
+          "_id": "6ac8d26ec0d20a47471fe878"
+        },
+        {
+          "analyte": "Triglycerides",
+          "value": 205,
+          "unit": "mg/dL",
+          "refText": "below 150",
+          "flag": "high",
+          "_id": "6ac8d26ec0d20a47471fe879"
+        },
+        {
+          "analyte": "HDL cholesterol",
+          "value": 46,
+          "unit": "mg/dL",
+          "refText": "above 40",
+          "flag": "normal",
+          "_id": "6ac8d26ec0d20a47471fe87a"
+        }
+      ],
+      "abnormalCount": 2,
+      "hasCritical": false,
+      "createdAt": "2026-10-09T11:39:26.518Z",
+      "updatedAt": "2026-10-09T11:39:26.518Z",
+      "id": "6ac8d26ec0d20a47471fe877"
+    }
+  ],
+  "prescription": null
+}

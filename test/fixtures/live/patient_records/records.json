@@ -1,0 +1,122 @@
+{
+  "counts": {
+    "all": 4,
+    "prescription": 2,
+    "test_result": 2
+  },
+  "items": [
+    {
+      "patientId": "6ac8d12d5e6ed8754976cfd9",
+      "kind": "prescription",
+      "title": "Type 2 diabetes mellitus, Polycystic ovary syndrome",
+      "recordDate": "2026-10-09T11:34:07.752Z",
+      "origin": "from_doctor",
+      "sourceName": "Dr. Arjun Sen",
+      "practiceId": "6ac8d12d5e6ed8754976cfbd",
+      "doctorId": "6ac8d12d5e6ed8754976cfb1",
+      "prescriptionId": "6ac8d12f316d92de32637d68",
+      "status": "ready",
+      "flagLabel": "New",
+      "flagTone": "new",
+      "files": [],
+      "sharedWith": [],
+      "createdAt": "2026-10-09T11:34:07.773Z",
+      "updatedAt": "2026-10-09T11:34:07.773Z",
+      "id": "6ac8d12f316d92de32637d72"
+    },
+    {
+      "patientId": "6ac8d12d5e6ed8754976cfd9",
+      "kind": "test_result",
+      "title": "Lipid profile",
+      "recordDate": "2026-09-29T18:30:00.000Z",
+      "origin": "shared_by_patient",
+      "sourceName": "Suraksha Diagnostics",
+      "files": [
+        {
+          "key": "records/2026-10/9316745f-0721-453f-ad18-1234b0ed7739.pdf",
+          "name": "report.pdf",
+          "mimeType": "application/pdf",
+          "sizeBytes": 45,
+          "url": "http://localhost:4103/files/records/2026-10/9316745f-0721-453f-ad18-1234b0ed7739.pdf?exp=1791549593&sig=d3c2a61a47598a14404ef9a58f882332f2ac182aea471a86852b1894da524ee2"
+        }
+      ],
+      "pageFrom": 1,
+      "pageTo": 2,
+      "batchId": "6ac8d257c0d20a47471fe841",
+      "status": "ready",
+      "aiSummary": "Bad cholesterol (LDL) and triglycerides are high. Good cholesterol is normal.",
+      "flagLabel": "2 high",
+      "flagTone": "high",
+      "sharedWith": [
+        {
+          "userId": "6ac8d12f316d92de32637cc7",
+          "sharedAt": "2026-10-09T11:39:26.513Z"
+        }
+      ],
+      "uploadedBy": "6ac8d12d5e6ed8754976cfba",
+      "createdAt": "2026-10-09T11:39:26.514Z",
+      "updatedAt": "2026-10-09T11:39:26.514Z",
+      "id": "6ac8d26ec0d20a47471fe875"
+    },
+    {
+      "patientId": "6ac8d12d5e6ed8754976cfd9",
+      "kind": "test_result",
+      "title": "Kidney function (KFT)",
+      "recordDate": "2026-09-29T18:30:00.000Z",
+      "origin": "shared_by_patient",
+      "sourceName": "Suraksha Diagnostics",
+      "files": [
+        {
+          "key": "records/2026-10/9316745f-0721-453f-ad18-1234b0ed7739.pdf",
+          "name": "report.pdf",
+          "mimeType": "application/pdf",
+          "sizeBytes": 45,
+          "url": "http://localhost:4103/files/records/2026-10/9316745f-0721-453f-ad18-1234b0ed7739.pdf?exp=1791549593&sig=d3c2a61a47598a14404ef9a58f882332f2ac182aea471a86852b1894da524ee2"
+        }
+      ],
+      "pageFrom": 3,
+      "pageTo": 3,
+      "batchId": "6ac8d257c0d20a47471fe841",
+      "status": "ready",
+      "aiSummary": "Creatinine is slightly high (1.3). Your doctor may want to repeat it.",
+      "flagLabel": "1 high",
+      "flagTone": "high",
+      "sharedWith": [
+        {
+          "userId": "6ac8d12f316d92de32637cc7",
+          "sharedAt": "2026-10-09T11:39:26.520Z"
+        }
+      ],
+      "uploadedBy": "6ac8d12d5e6ed8754976cfba",
+      "createdAt": "2026-10-09T11:39:26.520Z",
+      "updatedAt": "2026-10-09T11:39:26.520Z",
+      "id": "6ac8d26ec0d20a47471fe87c"
+    },
+    {
+      "patientId": "6ac8d12d5e6ed8754976cfd9",
+      "kind": "prescription",
+      "title": "Cholesterol prescription",
+      "recordDate": "2026-02-01T18:30:00.000Z",
+      "origin": "shared_by_patient",
+      "sourceName": "uploaded by you",
+      "uploadSource": "pdf",
+      "files": [
+        {
+          "key": "records/2026-10/bab287f4-6ab2-4ba8-a0ce-934ae3b20a67.pdf",
+          "name": "report.pdf",
+          "mimeType": "application/pdf",
+          "sizeBytes": 45,
+          "url": "http://localhost:4103/files/records/2026-10/bab287f4-6ab2-4ba8-a0ce-934ae3b20a67.pdf?exp=1791549593&sig=e4c80cfba68ccd260785b74a2abf53c40cdc860eace3cfc95251d81f16928701"
+        }
+      ],
+      "status": "ready",
+      "flagLabel": "New",
+      "flagTone": "new",
+      "sharedWith": [],
+      "uploadedBy": "6ac8d12d5e6ed8754976cfba",
+      "createdAt": "2026-10-09T11:39:04.347Z",
+      "updatedAt": "2026-10-09T11:39:04.347Z",
+      "id": "6ac8d258c0d20a47471fe84a"
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "patientId": "6ac8d12d5e6ed8754976cfd9",
+  "kind": "prescription",
+  "title": "Type 2 diabetes mellitus, Polycystic ovary syndrome",
+  "recordDate": "2026-10-09T11:34:07.752Z",
+  "origin": "from_doctor",
+  "sourceName": "Dr. Arjun Sen",
+  "practiceId": "6ac8d12d5e6ed8754976cfbd",
+  "doctorId": "6ac8d12d5e6ed8754976cfb1",
+  "prescriptionId": "6ac8d12f316d92de32637d68",
+  "status": "ready",
+  "flagLabel": "New",
+  "flagTone": "new",
+  "files": [],
+  "sharedWith": [],
+  "createdAt": "2026-10-09T11:34:07.773Z",
+  "updatedAt": "2026-10-09T11:34:07.773Z",
+  "id": "6ac8d12f316d92de32637d72",
+  "results": [],
+  "prescription": {
+    "practiceId": "6ac8d12d5e6ed8754976cfbd",
+    "locationId": "6ac8d12d5e6ed8754976cfc0",
+    "doctorId": "6ac8d12d5e6ed8754976cfb1",
+    "doctorName": "Dr. Arjun Sen",
+    "patientId": "6ac8d12d5e6ed8754976cfd9",
+    "consultationId": "6ac8d12f316d92de32637d55",
+    "rxNumber": 1,
+    "kind": "digital",
+    "source": "this_clinic",
+    "issuedAt": "2026-09-29T03:34:00.000Z",
+    "validUntil": "2026-11-07T18:30:00.000Z",
+    "diagnosisSummary": "Type 2 diabetes mellitus, Polycystic ovary syndrome",
+    "items": [
+      {
+        "dose": {
+          "morning": 1,
+          "afternoon": 0,
+          "night": 1
+        },
+        "duration": {
+          "value": 3,
+          "unit": "months"
+        },
+        "name": "Metformin",
+        "strength": "500 mg",
+        "frequency": "daily",
+        "foodRelation": "after_food",
+        "quantity": 180,
+        "change": "new",
+        "entrySource": "typed",
+        "_id": "6ac8d12f316d92de32637d58"
+      },
+      {
+        "dose": {
+          "morning": 1,
+          "afternoon": 0,
+          "night": 0
+        },
+        "duration": {
+          "value": 1,
+          "unit": "months"
+        },
+        "name": "Glimepiride",
+        "strength": "1 mg",
+        "frequency": "daily",
+        "foodRelation": "before_food",
+        "quantity": 30,
+        "change": "new",
+        "entrySource": "typed",
+        "_id": "6ac8d12f316d92de32637d59"
+      }
+    ],
+    "tests": [
+      "HbA1c",
+      "Lipid profile"
+    ],
+    "advice": "Walk 30 minutes, 5 days a week\nCome back with fasting sugar.",
+    "followUpDate": "2026-10-12T18:30:00.000Z",
+    "createdAt": "2026-10-09T11:34:07.759Z",
+    "updatedAt": "2026-10-09T11:34:07.879Z",
+    "file": {
+      "key": "prescriptions/2026-10/ac85fdd0-daeb-499f-9f84-28d1289125fc.pdf",
+      "name": "Rx-0001.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 2150,
+      "pages": 1,
+      "url": "http://localhost:4103/files/prescriptions/2026-10/ac85fdd0-daeb-499f-9f84-28d1289125fc.pdf?exp=1791549661&sig=ee0f3d0c0789d77a67d68bc36f84e2d8ea2ccfd818e8fc0477624e27c82474c0"
+    },
+    "id": "6ac8d12f316d92de32637d68"
+  }
+}

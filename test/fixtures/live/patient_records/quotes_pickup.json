@@ -1,0 +1,68 @@
+{
+  "mode": "pickup",
+  "items": [
+    {
+      "pharmacy": {
+        "id": "6ac8d12dbfcb2f5a9d64d6bc",
+        "name": "Purbachal Pharmacy",
+        "type": "nearby",
+        "pickupEtaMin": 45,
+        "km": null
+      },
+      "lines": [
+        {
+          "name": "Metformin 500 mg",
+          "strength": "500 mg",
+          "strips": 3,
+          "unitPrice": 36,
+          "lineTotal": 108,
+          "inStock": true
+        },
+        {
+          "name": "Atorvastatin 10 mg",
+          "strength": "10 mg",
+          "strips": 2,
+          "unitPrice": 54,
+          "lineTotal": 108,
+          "inStock": true
+        }
+      ],
+      "subtotal": 216,
+      "deliveryFee": 0,
+      "total": 216,
+      "priced": true
+    },
+    {
+      "pharmacy": {
+        "id": "6ac8d12dbfcb2f5a9d64d6bb",
+        "name": "Salt Lake Medicals",
+        "type": "nearby",
+        "pickupEtaMin": 30,
+        "km": null
+      },
+      "lines": [
+        {
+          "name": "Metformin 500 mg",
+          "strength": "500 mg",
+          "strips": 3,
+          "unitPrice": 37,
+          "lineTotal": 111,
+          "inStock": true
+        },
+        {
+          "name": "Atorvastatin 10 mg",
+          "strength": "10 mg",
+          "strips": 2,
+          "unitPrice": 55,
+          "lineTotal": 110,
+          "inStock": true
+        }
+      ],
+      "subtotal": 221,
+      "deliveryFee": 0,
+      "total": 221,
+      "priced": true
+    }
+  ],
+  "note": "Final price depends on the pharmacy"
+}

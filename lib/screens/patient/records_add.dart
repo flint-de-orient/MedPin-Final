@@ -1,9 +1,25 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/files.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import 'common_p3.dart';
 
 /// Design: Records-Add.dc.html — "Records · add a record" (sheet over Patient-Records).
+///
+/// Live: the "Share with" list is the patient's care team (GET
+/// /api/patient/my-doctors). Take photo / Gallery / PDF file picks a file and
+/// uploads it (POST /api/patient/records, multipart `files`). A test report the
+/// AI could read opens Records-Review to check and save each test.
+///
+/// Args (optional): {'kind': 'test_result' | 'prescription', 'title',
+/// 'appointmentId' (sent with the upload), 'doctorId' / 'doctorName' (ticked,
+/// so the upload is shared with them via the upload's shareWith)}; staff
+/// opening it for a patient pass {'patientId'} and the file goes to
+/// /api/patients/:id/records. Pops with the new record id after an upload.
 class RecordsAddSheet extends StatefulWidget {
   const RecordsAddSheet({super.key});
 
@@ -11,16 +27,118 @@ class RecordsAddSheet extends StatefulWidget {
   State<RecordsAddSheet> createState() => _RecordsAddSheetState();
 }
 
-class _RecordsAddSheetState extends State<RecordsAddSheet> {
+class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
   int _kind = 1;
+  final _busy = ValueNotifier(false);
+  bool _uploading = false;
+
+  List<P3Doctor> _liveDoctors = const [];
+  Set<String> _shareWith = {};
 
   static const _sources = [(I.camera, 'Take photo'), (I.image, 'Gallery'), (I.fileText, 'PDF file')];
+  static const _sourceKeys = ['camera', 'gallery', 'pdf'];
 
   static const _doctors = [
     P2Doctor('Dr. Arjun Sen', "Suggested · asked for this before today's 5 PM visit", suggested: true, on: true),
     P2Doctor('Dr. Rina Mitra', 'Heart · City Care'),
     P2Doctor('Dr. Nandita Gupta', 'Gynaecology · Apollo Clinic'),
   ];
+
+  Map<String, dynamic> get _args => (Nav.args<Map>(context) ?? const {}).cast<String, dynamic>();
+
+  bool _argsRead = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_argsRead) return;
+    _argsRead = true;
+    final kind = _args['kind'];
+    if (kind == 'prescription') _kind = 0;
+    if (kind == 'test_result') _kind = 1;
+  }
+
+  /// Staff uploading for a patient (no care-team picker then).
+  String? get _forPatient => Session.I.patientId == null ? _args['patientId'] as String? : null;
+
+  @override
+  Future<Object?> fetch() async {
+    if (_forPatient != null) return {'doctors': const []};
+    final pre = _args['doctorId'] as String?;
+    final name = _args['doctorName'] as String?;
+    final doctors = await p3LoadDoctors();
+    // Opened from a doctor's page ("Share"): that doctor is ticked even when
+    // they aren't in the care team yet.
+    if (pre != null && !doctors.any((d) => d.id == pre)) doctors.insert(0, P3Doctor(pre, name ?? 'This doctor', ''));
+    _liveDoctors = doctors;
+    _shareWith = {
+      for (final d in doctors)
+        if (d.suggested || d.id == pre) d.id,
+    };
+    return {'doctors': doctors.length};
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pick(int i) async {
+    if (!isLive) {
+      p2SheetThen(context, 'Records-Review');
+      return;
+    }
+    if (_busy.value) return;
+    final source = _sourceKeys[i];
+    UploadFile? file;
+    try {
+      file = source == 'pdf' ? await Files.pdf() : await Files.photo(camera: source == 'camera');
+    } catch (_) {
+      if (mounted) toast(context, "Couldn't open ${source == 'camera' ? 'the camera' : 'your files'}");
+      return;
+    }
+    if (file == null || !mounted) return;
+    final upload = file;
+    final kind = _kind == 0 ? 'prescription' : 'test_result';
+    final patientId = _forPatient;
+    // The doctor this sheet was opened for, even if the care team didn't load.
+    final pre = _args['doctorId'] as String?;
+    if (data == null && pre != null) _shareWith = {..._shareWith, pre};
+    setState(() => _uploading = true);
+    if (kind == 'test_result') toast(context, 'Reading your report…');
+    final res = await runAction(
+      context,
+      () => Api.I.upload(
+        patientId != null ? '/api/patients/$patientId/records' : '/api/patient/records',
+        files: {'files': [upload]},
+        fields: {
+          'kind': kind,
+          'uploadSource': source,
+          if (_args['title'] != null) 'title': '${_args['title']}',
+          if (_args['appointmentId'] != null) 'appointmentId': '${_args['appointmentId']}',
+          if (patientId == null && _shareWith.isNotEmpty) 'shareWith': _shareWith.join(','),
+        },
+      ),
+      busy: _busy,
+    );
+    if (!mounted) return;
+    setState(() => _uploading = false);
+    if (res == null) return;
+    p3RecordsChanged.value++;
+    final body = res is Map ? res.cast<String, dynamic>() : <String, dynamic>{};
+    final extracted = body.obj('extracted');
+    final recordId = body.obj('record').str('id', body.str('id', 'uploaded'));
+    if (patientId == null && extracted.list('tests').isNotEmpty) {
+      // Check and save each test on Records-Review.
+      final nav = Navigator.of(context);
+      nav.pop(recordId);
+      Nav.go(nav.context, 'Records-Review', args: {'record': body.obj('record'), 'extracted': extracted, 'shareWith': _shareWith.toList()});
+      return;
+    }
+    toast(context, kind == 'prescription' ? 'Prescription saved' : 'Report saved');
+    Navigator.of(context).pop(recordId);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +171,7 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> {
                   if (i > 0) const Gap(8),
                   Expanded(
                     child: P2Box(
-                      onTap: () => p2SheetThen(context, 'Records-Review'),
+                      onTap: _uploading ? null : () => _pick(i),
                       label: _sources[i].$2,
                       height: 104,
                       radius: 16,
@@ -73,10 +191,26 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> {
                 ],
               ],
             ),
+            if (_uploading) ...[
+              const Gap(12),
+              const LinearProgressIndicator(minHeight: 3, color: MP.primary, backgroundColor: MP.fill),
+            ],
             const Gap(20),
 
-            const P2ShareDoctors(title: 'Share with', doctors: _doctors),
-            const Gap(20),
+            if (!isLive)
+              const P2ShareDoctors(title: 'Share with', doctors: _doctors)
+            else if (data != null && _forPatient == null)
+              P3ShareDoctors(
+                title: 'Share with',
+                doctors: _liveDoctors,
+                selected: _shareWith,
+                onChanged: (s) => setState(() => _shareWith = s),
+                onAdd: (d) => setState(() {
+                  _liveDoctors = [..._liveDoctors.where((x) => x.id != d.id), d];
+                  _shareWith = {..._shareWith, d.id};
+                }),
+              ),
+            if (!isLive || (data != null && _forPatient == null)) const Gap(20),
 
             Row(
               children: [

@@ -1,0 +1,56 @@
+{
+  "prescriptions": [
+    {
+      "id": "6ac8d12f316d92de32637d68",
+      "doctorName": "Dr. Arjun Sen",
+      "issuedAt": "2026-09-29T03:34:00.000Z"
+    }
+  ],
+  "addresses": [
+    {
+      "label": "Home",
+      "line": "Flat 3B, 12 Purbachal Rd, Salt Lake",
+      "area": "Salt Lake",
+      "city": "Kolkata",
+      "isDefault": true,
+      "_id": "6ac8d12d5e6ed8754976cfdd"
+    }
+  ],
+  "patientId": "6ac8d12d5e6ed8754976cfd9",
+  "items": [
+    {
+      "courseId": "6ac8d12f316d92de32637d6c",
+      "name": "Metformin 500 mg",
+      "strength": "500 mg",
+      "prescriberName": "Dr. Arjun Sen",
+      "strips": 3,
+      "unitsPerStrip": 10,
+      "packOption": "custom",
+      "_id": "6ac8d276c0d20a47471fe899",
+      "lastsTill": "2026-10-25T18:30:00.000Z"
+    },
+    {
+      "courseId": "6ac8d24fc0d20a47471fe829",
+      "name": "Atorvastatin 10 mg",
+      "strength": "10 mg",
+      "prescriberName": "Dr. Rina Mitra",
+      "strips": 2,
+      "unitsPerStrip": 10,
+      "packOption": "custom",
+      "_id": "6ac8d276c0d20a47471fe8a6",
+      "lastsTill": "2026-11-08T18:30:00.000Z"
+    }
+  ],
+  "createdAt": "2026-10-09T11:39:34.359Z",
+  "updatedAt": "2026-10-09T11:39:34.589Z",
+  "id": "6ac8d276c0d20a47471fe896",
+  "count": 2,
+  "patientAddress": {
+    "label": "Home",
+    "line": "Flat 3B, 12 Purbachal Rd, Salt Lake",
+    "area": "Salt Lake",
+    "city": "Kolkata",
+    "isDefault": true,
+    "_id": "6ac8d12d5e6ed8754976cfdd"
+  }
+}

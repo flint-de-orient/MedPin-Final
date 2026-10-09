@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import 'common_p3.dart';
 
 /// Design: Patient-Records.dc.html — "Patient · Health records".
 class PatientRecordsScreen extends StatefulWidget {
@@ -24,7 +28,10 @@ class _Rec {
   final String summary;
   final String flag;
   final _Tone? tone;
-  const _Rec(this.kind, this.title, this.meta, this.summary, [this.flag = '', this.tone]);
+
+  /// The API record (live only).
+  final Map<String, dynamic>? raw;
+  const _Rec(this.kind, this.title, this.meta, this.summary, [this.flag = '', this.tone, this.raw]);
 
   bool get isRx => kind == 'Prescription';
 }
@@ -86,9 +93,66 @@ const List<(String, List<_Rec>)> _months = [
   ),
 ];
 
-class _PatientRecordsScreenState extends State<PatientRecordsScreen> {
+const _kindLabels = {'prescription': 'Prescription', 'test_result': 'Test result', 'ecg': 'ECG', 'other': 'Record'};
+
+/// Live data: GET /api/patient/records (the screen reloads when a record is
+/// added from anywhere in the app).
+class _PatientRecordsScreenState extends State<PatientRecordsScreen> with LiveData, P3Listen {
   int _filter = 0;
   String _query = '';
+
+  /// Args {recordId}: open that record once the list has loaded.
+  bool _openedArg = false;
+
+  @override
+  Future<Object?> fetch() async {
+    final want = _openedArg ? null : Nav.args<Map>(context)?['recordId'];
+    final res = await Api.I.get('/api/patient/records');
+    if (want != null && res is Map) {
+      _openedArg = true;
+      final rows = res.cast<String, dynamic>().list('items');
+      final hit = rows.where((x) => x.str('id') == '$want').toList();
+      if (hit.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _view(_fromApi(hit.first));
+        });
+      }
+    }
+    return res;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    p3Listen(p3RecordsChanged, () => reload(quiet: true));
+  }
+
+  static _Rec _fromApi(Map<String, dynamic> x) {
+    final at = F.date(x['recordDate']);
+    final pending = x.str('status') == 'processing' && x.str('kind') == 'test_result';
+    final tone = switch (x.str('flagTone')) { 'high' => _high, 'ok' => _ok, 'new' => _new, _ => null };
+    return _Rec(
+      _kindLabels[x.str('kind')] ?? 'Record',
+      x.str('title'),
+      [if (at != null) F.dayMonth(at), x.str('sourceName')].where((s) => s.isNotEmpty).join(' · '),
+      x.str('aiSummary'),
+      pending ? 'To check' : x.str('flagLabel'),
+      pending ? _new : (x.str('flagLabel').isEmpty ? null : tone),
+      x,
+    );
+  }
+
+  /// Live records grouped by month, newest first (the API sorts by date).
+  List<(String, List<_Rec>)> get _liveMonths {
+    final out = <(String, List<_Rec>)>[];
+    for (final x in data!.list('items')) {
+      final at = F.date(x['recordDate']) ?? DateTime.now();
+      final m = p3Month(at);
+      if (out.isEmpty || out.last.$1 != m) out.add((m, <_Rec>[]));
+      out.last.$2.add(_fromApi(x));
+    }
+    return out;
+  }
 
   bool _shows(_Rec r) {
     if (_filter == 1 && !r.isRx) return false;
@@ -97,16 +161,53 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> {
     return q.isEmpty || '${r.kind} ${r.title} ${r.meta} ${r.summary}'.toLowerCase().contains(q);
   }
 
+  Future<void> _view(_Rec r) async {
+    final x = r.raw;
+    if (x == null) {
+      p2Missing(context, 'Viewing a record');
+      return;
+    }
+    if (r.flag == 'To check') {
+      await Nav.go(context, 'Records-Review', args: {'recordId': x.str('id')});
+      return;
+    }
+    await openSheet<void>(context, (_) => _RecordSheet(record: x));
+  }
+
+  Future<void> _download(_Rec r) async {
+    final x = r.raw;
+    if (x == null) {
+      toast(context, 'Downloading ${r.title}');
+      return;
+    }
+    String? url;
+    final files = x.list('files');
+    if (files.isNotEmpty) url = files.first['url'] as String?;
+    if (url == null && x['prescriptionId'] != null) {
+      final full = await runAction(context, () => Api.I.get('/api/patient/records/${x.str('id')}'));
+      if (full is Map) url = full.cast<String, dynamic>().obj('prescription').obj('file')['url'] as String?;
+    }
+    if (!mounted) return;
+    if (url == null) {
+      toast(context, 'This record has no file to download');
+      return;
+    }
+    await p3Open(context, url, what: r.title);
+  }
+
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
-    final all = [for (final m in _months) ...m.$2];
+    final live = data != null;
+    final source = live ? _liveMonths : _months;
+    final all = [for (final m in source) ...m.$2];
     final rx = all.where((r) => r.isRx).length;
     final filters = ['All · ${all.length}', 'Prescriptions · $rx', 'Tests · ${all.length - rx}'];
     final months = [
-      for (final m in _months)
+      for (final m in source)
         if (m.$2.any(_shows)) (m.$1, m.$2.where(_shows).toList()),
     ];
+    final placeholder = livePlaceholder();
 
     return MpPage(
         nav: const PatientNav(current: 3),
@@ -118,7 +219,7 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> {
             child: _AddRecordButton(onTap: () => Nav.go(context, 'Records-Add')),
           ),
         ],
-        body: Column(
+        body: placeholder ?? Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
@@ -161,12 +262,14 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> {
                       ? Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24),
                         child: Text(
-                          'No records match your search',
+                          all.isEmpty ? 'No records yet. Add a prescription or test report.' : 'No records match your search',
                           textAlign: TextAlign.center,
                           style: tx(14, c: MP.ink2),
                         ),
                       )
-                      : VGap(gap: 20, children: [for (final m in months) _MonthSection(title: m.$1, items: m.$2)]),
+                      : VGap(gap: 20, children: [
+                        for (final m in months) _MonthSection(title: m.$1, items: m.$2, onView: _view, onDownload: _download),
+                      ]),
             ),
           ],
         ),
@@ -200,7 +303,9 @@ class _FilterChip extends StatelessWidget {
 class _MonthSection extends StatelessWidget {
   final String title;
   final List<_Rec> items;
-  const _MonthSection({required this.title, required this.items});
+  final ValueChanged<_Rec> onView;
+  final ValueChanged<_Rec> onDownload;
+  const _MonthSection({required this.title, required this.items, required this.onView, required this.onDownload});
 
   @override
   Widget build(BuildContext context) => Column(
@@ -216,7 +321,10 @@ class _MonthSection extends StatelessWidget {
         decoration: MPDeco.card(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [for (var i = 0; i < items.length; i++) _RecordItem(items[i], first: i == 0)],
+          children: [
+            for (var i = 0; i < items.length; i++)
+              _RecordItem(items[i], first: i == 0, onView: () => onView(items[i]), onDownload: () => onDownload(items[i])),
+          ],
         ),
       ),
     ],
@@ -226,7 +334,9 @@ class _MonthSection extends StatelessWidget {
 class _RecordItem extends StatelessWidget {
   final _Rec r;
   final bool first;
-  const _RecordItem(this.r, {required this.first});
+  final VoidCallback onView;
+  final VoidCallback onDownload;
+  const _RecordItem(this.r, {required this.first, required this.onView, required this.onDownload});
 
   @override
   Widget build(BuildContext context) {
@@ -247,25 +357,28 @@ class _RecordItem extends StatelessWidget {
           const Gap(2),
           Text(r.meta, style: tx(13, c: MP.ink2)),
           const Gap(8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 3),
-                child: Ico(I.sparkle, size: 16, color: MP.primary, stroke: 2),
-              ),
-              const Gap(8),
-              Expanded(child: Text(r.summary, style: tx(14, h: 1.5))),
-            ],
-          ),
-          const Gap(8),
+          // Live records without a summary (e.g. a prescription you uploaded) skip this line.
+          if (r.summary.isNotEmpty) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 3),
+                  child: Ico(I.sparkle, size: 16, color: MP.primary, stroke: 2),
+                ),
+                const Gap(8),
+                Expanded(child: Text(r.summary, style: tx(14, h: 1.5))),
+              ],
+            ),
+            const Gap(8),
+          ],
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Row(
               children: [
                 Expanded(
                   child: P2Box(
-                    onTap: () => p2Missing(context, 'Viewing a record'),
+                    onTap: onView,
                     label: 'View ${r.title}',
                     height: 44,
                     radius: 12,
@@ -276,7 +389,7 @@ class _RecordItem extends StatelessWidget {
                 ),
                 const Gap(8),
                 P2Box(
-                  onTap: () => toast(context, 'Downloading ${r.title}'),
+                  onTap: onDownload,
                   label: 'Download ${r.title}',
                   width: 44,
                   height: 44,
@@ -317,4 +430,193 @@ class _AddRecordButton extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// "View" on a record (no screen in the design): the record's summary, its
+/// values or medicines, the file, who it is shared with and Delete.
+/// GET /api/patient/records/:id · POST …/share · DELETE …/:id
+class _RecordSheet extends StatefulWidget {
+  final Map<String, dynamic> record;
+  const _RecordSheet({required this.record});
+
+  @override
+  State<_RecordSheet> createState() => _RecordSheetState();
+}
+
+class _RecordSheetState extends State<_RecordSheet> with LiveData {
+  List<P3Doctor> _doctors = const [];
+  Set<String> _shared = {};
+  final _busy = ValueNotifier(false);
+
+  String get _id => widget.record.str('id');
+
+  @override
+  Future<Object?> fetch() async {
+    final res = await Future.wait([Api.I.get('/api/patient/records/$_id'), p3LoadDoctors()]);
+    final rec = (res[0] as Map).cast<String, dynamic>();
+    final doctors = res[1] as List<P3Doctor>;
+    final shared = {for (final s in rec.list('sharedWith')) s.str('userId')};
+    _doctors = [
+      ...doctors,
+      // Someone it is shared with who isn't in the care team any more.
+      for (final id in shared)
+        if (!doctors.any((d) => d.id == id)) P3Doctor(id, 'Shared doctor', ''),
+    ];
+    _shared = shared;
+    return rec;
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _share(Set<String> next) async {
+    final before = _shared;
+    setState(() => _shared = next);
+    final ok = await runAction(context, () => Api.I.post('/api/patient/records/$_id/share', {'userIds': next.toList()}), busy: _busy);
+    if (!mounted) return;
+    if (ok == null) {
+      setState(() => _shared = before);
+      return;
+    }
+    p3RecordsChanged.value++;
+    toast(context, next.isEmpty ? 'Not shared with anyone' : 'Sharing updated');
+  }
+
+  Future<void> _delete() async {
+    final yes = await p3Confirm(
+      context,
+      title: 'Delete this record?',
+      body: 'It is removed from your records and from the doctors you shared it with.',
+      confirm: 'Delete record',
+    );
+    if (!yes || !mounted) return;
+    final ok = await runAction(context, () => Api.I.delete('/api/patient/records/$_id'), busy: _busy);
+    if (ok == null || !mounted) return;
+    p3RecordsChanged.value++;
+    toast(context, 'Record deleted');
+    Navigator.of(context).pop();
+  }
+
+  String? get _fileUrl {
+    final d = data ?? widget.record;
+    final files = d.list('files');
+    if (files.isNotEmpty) return files.first['url'] as String?;
+    return d.obj('prescription').obj('file')['url'] as String?;
+  }
+
+  static String _pattern(Map<String, dynamic> m) {
+    if (m.str('frequency') == 'weekly') return 'Once a week';
+    final d = m.obj('dose');
+    return '${d.numOr('morning').toInt()}-${d.numOr('afternoon').toInt()}-${d.numOr('night').toInt()}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = data ?? widget.record;
+    final at = F.date(r['recordDate']);
+    final meta = [if (at != null) p3Date(at), r.str('sourceName')].where((s) => s.isNotEmpty).join(' · ');
+    final values = [for (final res in r.list('results')) ...res.list('values')];
+    final meds = r.obj('prescription').list('items');
+    final url = _fileUrl;
+
+    return MpSheet(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Gap(20),
+          P2SheetHeader(title: r.str('title', 'Record'), subtitle: meta),
+          if (r.str('aiSummary').isNotEmpty) ...[
+            const Gap(16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(padding: EdgeInsets.only(top: 3), child: Ico(I.sparkle, size: 16, color: MP.primary, stroke: 2)),
+                const Gap(8),
+                Expanded(child: Text(r.str('aiSummary'), style: tx(14, h: 1.5))),
+              ],
+            ),
+          ],
+          if (values.isNotEmpty) ...[
+            const Gap(12),
+            for (final v in values) _ApiValueRow(v),
+          ],
+          if (meds.isNotEmpty) ...[
+            const Gap(12),
+            for (var i = 0; i < meds.length; i++)
+              P3Row(
+                p3MedName(meds[i]),
+                [_pattern(meds[i]), p3Food(meds[i].str('foodRelation')) ?? ''].where((s) => s.isNotEmpty).join(' · '),
+                first: i == 0,
+              ),
+          ],
+          if (data == null && isLive)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: MP.primary))),
+            ),
+          const Gap(20),
+          if (url != null) ...[
+            MpButton('Open file', icon: I.download, onTap: () => p3Open(context, url, what: r.str('title', 'the file'))),
+            const Gap(20),
+          ],
+          if (data != null) ...[
+            P3ShareDoctors(
+              title: 'Shared with',
+              doctors: _doctors,
+              selected: _shared,
+              onChanged: _share,
+              onAdd: (d) {
+                setState(() => _doctors = [..._doctors.where((x) => x.id != d.id), d]);
+                _share({..._shared, d.id});
+              },
+            ),
+            const Gap(20),
+          ],
+          MpButton('Delete record', kind: MpBtn.dangerSoft, onTap: _delete),
+        ],
+      ),
+    );
+  }
+}
+
+/// One analyte from the API: name, normal range, value and flag.
+class _ApiValueRow extends StatelessWidget {
+  final Map<String, dynamic> v;
+  const _ApiValueRow(this.v);
+
+  @override
+  Widget build(BuildContext context) {
+    final flag = v.str('flag', 'normal');
+    final color = switch (flag) { 'critical' => MP.red, 'high' || 'low' => MP.amber, _ => MP.green };
+    final value = [v.str('value', v.str('valueText')), v.str('unit')].where((s) => s.isNotEmpty).join(' ');
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(v.str('analyte'), style: tx(14, w: w600)),
+                if (v.str('refText').isNotEmpty) ...[const Gap(1), Text('Normal ${v.str('refText')}', style: tx(12, c: MP.ink3))],
+              ],
+            ),
+          ),
+          const Gap(12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(value, style: tx(15, w: w800, tab: true)),
+              const Gap(1),
+              Text(p3Cap(flag), style: tx(12, w: w700, c: color)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }

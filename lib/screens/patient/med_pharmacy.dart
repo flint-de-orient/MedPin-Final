@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import 'common_p3.dart';
 
 /// Design: Med-Pharmacy.dc.html — "Medicines · choose pharmacy".
 class MedPharmacyScreen extends StatefulWidget {
@@ -45,16 +48,106 @@ const _nearby = [
   _Shop('Purbachal Pharmacy', '₹140', 'Ready in 1 hour · 1.4 km away', 'All items in stock', true),
 ];
 
-class _MedPharmacyScreenState extends State<MedPharmacyScreen> {
+/// Live data: GET /api/patient/cart and /api/patient/pharmacies/quotes for
+/// delivery and pick up. Place order posts /api/patient/orders; there is no
+/// online payment, so it is paid on delivery or at the pharmacy.
+/// Args (optional): {'addressId'} from Med-Cart.
+class _MedPharmacyScreenState extends State<MedPharmacyScreen> with LiveData {
   int _tab = 0;
   final _selected = [0, 0];
+  final _busy = ValueNotifier(false);
+
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([
+      Api.I.get('/api/patient/cart'),
+      Api.I.get('/api/patient/pharmacies/quotes', query: {'mode': 'delivery'}),
+      Api.I.get('/api/patient/pharmacies/quotes', query: {'mode': 'pickup'}),
+    ]);
+    return {'cart': r[0], 'delivery': r[1], 'pickup': r[2]};
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
 
   List<_Shop> get _shops => _tab == 0 ? _online : _nearby;
 
-  void _placeOrder() {
-    final shop = _shops[_selected[_tab]];
-    toast(context, 'Order placed with ${shop.name}');
-    // Back past the cart to wherever the order started (Medicines).
+  List<Map<String, dynamic>> get _quotes => data!.obj(_tab == 0 ? 'delivery' : 'pickup').list('items');
+
+  _Shop _shopFrom(Map<String, dynamic> q) {
+    final ph = q.obj('pharmacy');
+    final fee = q.numOr('deliveryFee');
+    final String when;
+    if (_tab == 0) {
+      final eta = ph.str('etaText', 'Home delivery');
+      when = fee > 0 ? '$eta · ${p3Rupees(fee)} delivery' : (eta.contains('free delivery') ? eta : '$eta · free delivery');
+    } else {
+      when = [
+        if (ph['pickupEtaMin'] != null) 'Ready in ${ph.numOr('pickupEtaMin').toInt()} min',
+        if (ph['km'] != null) '${ph['km']} km away',
+        if (ph.str('type') == 'clinic') 'your clinic',
+      ].join(' · ');
+    }
+    final lines = q.list('lines');
+    final missing = [for (final l in lines) if (l['inStock'] == false) l.str('name')];
+    final priced = q['priced'] != false;
+    return _Shop(
+      ph.str('name'),
+      priced ? p3Rupees(q.numOr('total')) : (q.numOr('total') > 0 ? '${p3Rupees(q.numOr('total'))}+' : 'At shop'),
+      when.isEmpty ? (_tab == 0 ? 'Home delivery' : 'Pick up') : when,
+      missing.isEmpty ? (priced ? 'All items in stock' : 'Some prices are set at the shop') : 'Not in stock: ${missing.join(', ')}',
+      missing.isEmpty && priced,
+    );
+  }
+
+  /// "For 3 strips Metformin, 2 strips Atorvastatin"
+  String get _forLine {
+    if (data == null) return 'For 3 strips Metformin, 2 strips Atorvastatin';
+    final items = data!.obj('cart').list('items');
+    if (items.isEmpty) return 'Your cart is empty';
+    return 'For ${[
+      for (final i in items)
+        '${i.numOr('strips', 1).toInt()} ${i.numOr('strips', 1) == 1 ? 'strip' : 'strips'} ${i.str('name').replaceFirst(RegExp(r'\s+\d.*$'), '')}',
+    ].join(', ')}';
+  }
+
+  Future<void> _placeOrder() async {
+    if (data == null) {
+      if (isLive) return;
+      final shop = _shops[_selected[_tab]];
+      toast(context, 'Order placed with ${shop.name}');
+      _backToStart();
+      return;
+    }
+    final quotes = _quotes;
+    if (quotes.isEmpty) {
+      toast(context, 'No pharmacy to order from yet');
+      return;
+    }
+    final q = quotes[_selected[_tab].clamp(0, quotes.length - 1)];
+    final args = (Nav.args<Map>(context) ?? const {}).cast<String, dynamic>();
+    final mode = _tab == 0 ? 'delivery' : 'pickup';
+    final res = await runAction(
+      context,
+      () => Api.I.post('/api/patient/orders', {
+        'pharmacyId': q.obj('pharmacy').str('id'),
+        'mode': mode,
+        if (args['addressId'] != null) 'addressId': args['addressId'],
+      }),
+      busy: _busy,
+    );
+    if (res == null || !mounted) return;
+    p3CartChanged.value++;
+    final name = q.obj('pharmacy').str('name');
+    toast(context, mode == 'delivery' ? 'Order placed with $name · pay on delivery' : 'Order placed with $name · pay at the pharmacy');
+    _backToStart();
+  }
+
+  /// Back past the cart to wherever the order started (Medicines).
+  void _backToStart() {
     Navigator.of(
       context,
     ).popUntil((r) => r.isFirst || (r.settings.name != 'Med-Pharmacy' && r.settings.name != 'Med-Cart'));
@@ -62,8 +155,10 @@ class _MedPharmacyScreenState extends State<MedPharmacyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final shops = _shops;
-    final sel = _selected[_tab];
+    final placeholder = livePlaceholder();
+    final live = data != null;
+    final shops = live ? [for (final q in _quotes) _shopFrom(q)] : _shops;
+    final sel = shops.isEmpty ? 0 : _selected[_tab].clamp(0, shops.length - 1);
 
     return MpPage(
         header: Container(
@@ -84,32 +179,43 @@ class _MedPharmacyScreenState extends State<MedPharmacyScreen> {
             ],
           ),
         ),
-        bottom: MpBottomBar(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-          child: Row(
-            children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Total', style: tx(12, c: MP.ink2)),
-                  Text(shops[sel].price, style: tx(20, w: w800, tab: true)),
-                ],
+        bottom: placeholder != null
+            ? null
+            : MpBottomBar(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                child: Row(
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Total', style: tx(12, c: MP.ink2)),
+                        Text(shops.isEmpty ? '—' : shops[sel].price, style: tx(20, w: w800, tab: true)),
+                      ],
+                    ),
+                    const Gap(16),
+                    Expanded(child: MpButton('Place order', onTap: _placeOrder)),
+                  ],
+                ),
               ),
-              const Gap(16),
-              Expanded(child: MpButton('Place order', onTap: _placeOrder)),
-            ],
-          ),
-        ),
         // main: padding 16 20 120 — the pinned bar (97px) takes the rest.
-        body: VGap(
+        body: placeholder ?? VGap(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 23),
           gap: 10,
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-              child: Text('For 3 strips Metformin, 2 strips Atorvastatin', style: tx(13, c: MP.ink2)),
+              child: Text(_forLine, style: tx(13, c: MP.ink2)),
             ),
+            if (shops.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: MPDeco.card(),
+                child: Text(
+                  _tab == 0 ? 'No pharmacy delivers here yet' : 'No pharmacy nearby yet',
+                  style: tx(15, w: w600, c: MP.ink2),
+                ),
+              ),
             for (var i = 0; i < shops.length; i++)
               _ShopCard(shops[i], on: i == sel, onTap: () => setState(() => _selected[_tab] = i)),
             Padding(

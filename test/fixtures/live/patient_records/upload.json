@@ -1,0 +1,85 @@
+{
+  "record": {
+    "patientId": "6ac8d12d5e6ed8754976cfd9",
+    "kind": "test_result",
+    "title": "Test report",
+    "recordDate": "2026-10-09T11:39:03.822Z",
+    "origin": "shared_by_patient",
+    "sourceName": "uploaded by you",
+    "uploadSource": "pdf",
+    "files": [
+      {
+        "key": "records/2026-10/9316745f-0721-453f-ad18-1234b0ed7739.pdf",
+        "name": "report.pdf",
+        "mimeType": "application/pdf",
+        "sizeBytes": 45,
+        "url": "http://localhost:4103/files/records/2026-10/9316745f-0721-453f-ad18-1234b0ed7739.pdf?exp=1791549543&sig=6e88fc5c6eee00c174118865bd45e9d480e1338eade5e0cd2bf767ba00bfaacd"
+      }
+    ],
+    "status": "processing",
+    "flagLabel": "New",
+    "flagTone": "new",
+    "sharedWith": [],
+    "uploadedBy": "6ac8d12d5e6ed8754976cfba",
+    "createdAt": "2026-10-09T11:39:03.824Z",
+    "updatedAt": "2026-10-09T11:39:03.827Z",
+    "id": "6ac8d257c0d20a47471fe841"
+  },
+  "extracted": {
+    "lab_name": "Suraksha Diagnostics",
+    "collected_on": "2026-09-30",
+    "tests": [
+      {
+        "test_name": "Lipid profile",
+        "page_from": 1,
+        "page_to": 2,
+        "summary": "Bad cholesterol (LDL) and triglycerides are high. Good cholesterol is normal.",
+        "values": [
+          {
+            "analyte": "LDL cholesterol",
+            "value": "158",
+            "unit": "mg/dL",
+            "ref_text": "below 100",
+            "flag": "high"
+          },
+          {
+            "analyte": "Triglycerides",
+            "value": "205",
+            "unit": "mg/dL",
+            "ref_text": "below 150",
+            "flag": "high"
+          },
+          {
+            "analyte": "HDL cholesterol",
+            "value": "46",
+            "unit": "mg/dL",
+            "ref_text": "above 40",
+            "flag": "normal"
+          }
+        ]
+      },
+      {
+        "test_name": "Kidney function (KFT)",
+        "page_from": 3,
+        "page_to": 3,
+        "summary": "Creatinine is slightly high (1.3). Your doctor may want to repeat it.",
+        "values": [
+          {
+            "analyte": "Creatinine",
+            "value": "1.3",
+            "unit": "mg/dL",
+            "ref_text": "0.7–1.2",
+            "flag": "high"
+          },
+          {
+            "analyte": "Urea",
+            "value": "34",
+            "unit": "mg/dL",
+            "ref_text": "15–40",
+            "flag": "normal"
+          }
+        ]
+      }
+    ]
+  }
+}

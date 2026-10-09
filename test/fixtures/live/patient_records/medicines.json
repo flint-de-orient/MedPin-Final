@@ -1,0 +1,172 @@
+{
+  "running": 5,
+  "fromDoctors": 4,
+  "adherence30d": 0,
+  "allergies": [
+    "Sulfa drugs"
+  ],
+  "items": [
+    {
+      "id": "6ac8d12f316d92de32637d6c",
+      "name": "Metformin",
+      "strength": "500 mg",
+      "pattern": "1-0-1",
+      "foodRelation": "after_food",
+      "prescriber": "Dr. Arjun Sen",
+      "doctorId": "6ac8d12d5e6ed8754976cfb1",
+      "startDate": "2026-09-28T18:30:00.000Z",
+      "endDate": "2027-01-05T18:30:00.000Z",
+      "course": {
+        "day": 11,
+        "totalDays": 100
+      },
+      "tracked": true,
+      "adherencePct": 0,
+      "stock": {
+        "units": 6,
+        "daysLeft": 3
+      },
+      "dose": {
+        "morning": 1,
+        "afternoon": 0,
+        "night": 1
+      },
+      "frequency": "daily",
+      "perDay": 2,
+      "unitsPerStrip": 10,
+      "prescriptionId": "6ac8d12f316d92de32637d68",
+      "selfAdded": false,
+      "status": "active"
+    },
+    {
+      "id": "6ac8d24fc0d20a47471fe829",
+      "name": "Atorvastatin",
+      "strength": "10 mg",
+      "pattern": "0-0-1",
+      "foodRelation": "bedtime",
+      "prescriber": "Dr. Rina Mitra",
+      "startDate": "2026-02-01T18:30:00.000Z",
+      "course": {
+        "day": 250,
+        "totalDays": null
+      },
+      "tracked": true,
+      "adherencePct": 0,
+      "stock": {
+        "units": 12,
+        "daysLeft": 12
+      },
+      "dose": {
+        "night": 1
+      },
+      "frequency": "daily",
+      "perDay": 1,
+      "unitsPerStrip": 10,
+      "selfAdded": true,
+      "status": "active"
+    },
+    {
+      "id": "6ac8d24fc0d20a47471fe831",
+      "name": "Vitamin D3",
+      "strength": "60,000 IU",
+      "pattern": "Once a week · sun",
+      "prescriber": "Dr. Arjun Sen",
+      "startDate": "2026-08-22T18:30:00.000Z",
+      "endDate": "2026-10-18T00:00:00.000Z",
+      "course": {
+        "day": 48,
+        "totalDays": 57
+      },
+      "tracked": true,
+      "adherencePct": 0,
+      "stock": {
+        "units": 2,
+        "daysLeft": 14
+      },
+      "dose": {
+        "morning": 1
+      },
+      "frequency": "weekly",
+      "weekday": "sun",
+      "perDay": 0.14285714285714285,
+      "unitsPerStrip": 10,
+      "selfAdded": true,
+      "status": "active"
+    },
+    {
+      "id": "6ac8d250c0d20a47471fe839",
+      "name": "Myo-inositol",
+      "strength": "2 g",
+      "pattern": "1-0-1",
+      "foodRelation": "after_food",
+      "startDate": "2025-11-17T18:30:00.000Z",
+      "course": {
+        "day": 326,
+        "totalDays": null
+      },
+      "tracked": true,
+      "adherencePct": 0,
+      "stock": {
+        "units": 40,
+        "daysLeft": 20
+      },
+      "dose": {
+        "morning": 1,
+        "night": 1
+      },
+      "frequency": "daily",
+      "perDay": 2,
+      "unitsPerStrip": 10,
+      "selfAdded": true,
+      "status": "active"
+    },
+    {
+      "id": "6ac8d12f316d92de32637d6d",
+      "name": "Glimepiride",
+      "strength": "1 mg",
+      "pattern": "1-0-0",
+      "foodRelation": "before_food",
+      "prescriber": "Dr. Arjun Sen",
+      "doctorId": "6ac8d12d5e6ed8754976cfb1",
+      "startDate": "2026-09-28T18:30:00.000Z",
+      "endDate": "2026-11-06T18:30:00.000Z",
+      "course": {
+        "day": 11,
+        "totalDays": 40
+      },
+      "tracked": true,
+      "adherencePct": 0,
+      "stock": {
+        "units": 28,
+        "daysLeft": 28
+      },
+      "dose": {
+        "morning": 1,
+        "afternoon": 0,
+        "night": 0
+      },
+      "frequency": "daily",
+      "perDay": 1,
+      "unitsPerStrip": 10,
+      "prescriptionId": "6ac8d12f316d92de32637d68",
+      "selfAdded": false,
+      "status": "active"
+    }
+  ],
+  "safety": {
+    "checked": 5,
+    "warnings": [
+      {
+        "medicine": "Glimepiride",
+        "text": "Sulfa drugs allergy · sulfonylurea"
+      }
+    ]
+  },
+  "nextVisitAt": null,
+  "pastCount": 0,
+  "reminderTimes": {
+    "morning": "07:30",
+    "afternoon": "13:30",
+    "night": "20:30"
+  }
+}
