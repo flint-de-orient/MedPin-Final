@@ -2,6 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch D4: the doctor's "My profile" hub and its editors
@@ -216,7 +219,10 @@ class D4Field extends StatefulWidget {
   final String value;
   final Widget? trailing;
   final TextInputType keyboard;
-  const D4Field(this.label, this.value, {super.key, this.trailing, this.keyboard = TextInputType.text});
+
+  /// Called with the text as it is edited (live screens collect it to save).
+  final ValueChanged<String>? onChanged;
+  const D4Field(this.label, this.value, {super.key, this.trailing, this.keyboard = TextInputType.text, this.onChanged});
 
   @override
   State<D4Field> createState() => _D4FieldState();
@@ -257,6 +263,7 @@ class _D4FieldState extends State<D4Field> {
             focusNode: _f,
             keyboardType: widget.keyboard,
             textInputAction: TextInputAction.done,
+            onChanged: widget.onChanged,
             maxLines: null,
             style: tx(15, h: 1.4),
             cursorColor: MP.primary,
@@ -348,7 +355,17 @@ class D4TagEditor extends StatefulWidget {
   final String addTitle;
   final String addLabel;
   final String? addHint;
-  const D4TagEditor({super.key, required this.initial, required this.addTitle, required this.addLabel, this.addHint});
+
+  /// Called with the full list after each add or remove.
+  final ValueChanged<List<String>>? onChanged;
+  const D4TagEditor({
+    super.key,
+    required this.initial,
+    required this.addTitle,
+    required this.addLabel,
+    this.addHint,
+    this.onChanged,
+  });
 
   @override
   State<D4TagEditor> createState() => _D4TagEditorState();
@@ -367,6 +384,12 @@ class _D4TagEditorState extends State<D4TagEditor> {
     final v = (r == null || r.isEmpty) ? '' : r.first;
     if (!mounted || v.isEmpty || _tags.contains(v)) return;
     setState(() => _tags.add(v));
+    widget.onChanged?.call([..._tags]);
+  }
+
+  void _remove(String t) {
+    setState(() => _tags.remove(t));
+    widget.onChanged?.call([..._tags]);
   }
 
   @override
@@ -374,7 +397,7 @@ class _D4TagEditorState extends State<D4TagEditor> {
     spacing: 8,
     runSpacing: 8,
     children: [
-      for (final t in _tags) D4Tag(t, onRemove: () => setState(() => _tags.remove(t))),
+      for (final t in _tags) D4Tag(t, onRemove: () => _remove(t)),
       D4DashedButton('+ Add', onTap: _add),
     ],
   );
@@ -630,23 +653,47 @@ class D4AbdmCard extends StatefulWidget {
   final String body;
   final String idName;
   final String hint;
-  const D4AbdmCard({super.key, required this.title, required this.body, required this.idName, required this.hint});
+
+  /// The linked ID (live data); null or empty = not linked.
+  final String? linkedId;
+
+  /// Saves the entered ID; resolves true when it was linked. Without it the
+  /// card only marks itself linked (design preview).
+  final Future<bool> Function(String id)? onLink;
+  const D4AbdmCard({
+    super.key,
+    required this.title,
+    required this.body,
+    required this.idName,
+    required this.hint,
+    this.linkedId,
+    this.onLink,
+  });
 
   @override
   State<D4AbdmCard> createState() => _D4AbdmCardState();
 }
 
 class _D4AbdmCardState extends State<D4AbdmCard> {
-  bool _linked = false;
+  late bool _linked = (widget.linkedId ?? '').isNotEmpty;
+
+  @override
+  void didUpdateWidget(D4AbdmCard old) {
+    super.didUpdateWidget(old);
+    if (old.linkedId != widget.linkedId) _linked = (widget.linkedId ?? '').isNotEmpty;
+  }
 
   Future<void> _link() async {
     final r = await d4FormSheet(
       context,
       title: 'Link ${widget.idName}',
-      fields: [D4FormField(widget.idName, hint: widget.hint)],
+      fields: [D4FormField(widget.idName, value: widget.linkedId ?? '', hint: widget.hint)],
       confirm: 'Link',
     );
     if (!mounted || r == null || r.isEmpty || r.first.isEmpty) return;
+    final save = widget.onLink;
+    if (save != null && !await save(r.first)) return;
+    if (!mounted) return;
     setState(() => _linked = true);
     toast(context, '${widget.idName} linked');
   }
@@ -838,3 +885,25 @@ Future<bool> d4Confirm(
   );
   return ok ?? false;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live-data helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// "1 location", "3 locations".
+String d4Plural(num n, String one, [String? many]) => '${n.round()} ${n == 1 ? one : (many ?? '${one}s')}';
+
+/// Leave/closure dates: "19 Oct", "19 – 23 Oct", "30 Oct – 2 Nov".
+String d4DateRange(DateTime start, DateTime end) {
+  if (F.sameDay(start, end) || end.isBefore(start)) return F.dayMonth(start);
+  if (start.year == end.year && start.month == end.month) return '${start.day} – ${F.dayMonth(end)}';
+  return '${F.dayMonth(start)} – ${F.dayMonth(end)}';
+}
+
+/// `Api.I.get` for a part of a screen that may fail on its own (e.g. a
+/// member without access to billing): resolves null instead of throwing.
+Future<Object?> d4Optional(String path, {Map<String, Object?>? query}) =>
+    Api.I.get(path, query: query).then<Object?>((v) => v, onError: (Object _) => null);
+
+/// A location's display name ("City Care Clinic — Salt Lake" → "City Care Clinic · Salt Lake").
+String d4LocationName(Map<String, dynamic> loc) => loc.str('name', loc.str('shortName')).replaceAll(' — ', ' · ');

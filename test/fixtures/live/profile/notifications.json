@@ -1,0 +1,24 @@
+{
+  "items": [
+    {
+      "userId": "6ac8bbcee42c9f0836e9855b",
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "type": "message",
+      "title": "New message from Clinic",
+      "body": "Should I take the tablet before or after food?",
+      "screen": "Patient-Thread",
+      "params": {
+        "conversationId": "6ac8bbcee42c9f0836e9858b"
+      },
+      "channels": [
+        "in_app",
+        "push"
+      ],
+      "sentAt": "2026-10-09T10:02:57.033Z",
+      "createdAt": "2026-10-09T10:02:57.034Z",
+      "updatedAt": "2026-10-09T10:02:57.034Z",
+      "id": "6ac8bbd18adea6a429a73452"
+    }
+  ],
+  "unread": 13
+}

@@ -2,6 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch D8: the clinician tabs (Doctor-Home, Care,
@@ -9,11 +13,27 @@ import '../../widgets/mp.dart';
 
 /// Clinician-tab top bar (`padding: 12px 20px 0`): logo, 44px bell with a red
 /// dot, 40px "AS" avatar that opens the Profile tab.
-class D8TabHeader extends StatelessWidget {
-  const D8TabHeader({super.key});
+///
+/// Live: the dot shows while GET /api/notifications?unread=true has unread
+/// items ([unread] overrides it when the screen already knows the count) and
+/// the avatar shows the signed-in user's initials.
+class D8TabHeader extends StatefulWidget {
+  final int? unread;
+  const D8TabHeader({super.key, this.unread});
+
+  @override
+  State<D8TabHeader> createState() => _D8TabHeaderState();
+}
+
+class _D8TabHeaderState extends State<D8TabHeader> with LiveData {
+  @override
+  Future<Object?> fetch() =>
+      widget.unread != null ? Future.value(const <String, dynamic>{}) : Api.I.get('/api/notifications', query: {'unread': true, 'limit': 1});
 
   @override
   Widget build(BuildContext context) {
+    final unread = !isLive ? 2 : (widget.unread ?? data?.numOr('unread').toInt() ?? 0);
+    final initials = !isLive || Session.I.name.isEmpty ? 'AS' : F.initials(Session.I.name);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       child: Row(
@@ -23,8 +43,12 @@ class D8TabHeader extends StatelessWidget {
           Stack(
             clipBehavior: Clip.none,
             children: [
-              MpIconButton(I.bell, label: 'Notifications, 2 new', onTap: () => Nav.go(context, 'Alerts')),
-              Positioned(
+              MpIconButton(
+                I.bell,
+                label: unread > 0 ? 'Notifications, $unread new' : 'Notifications',
+                onTap: () => Nav.go(context, 'Alerts'),
+              ),
+              if (unread > 0) Positioned(
                 top: 10,
                 right: 11,
                 child: IgnorePointer(
@@ -54,7 +78,7 @@ class D8TabHeader extends StatelessWidget {
               child: SizedBox(
                 width: 40,
                 height: 40,
-                child: Center(child: Text('AS', style: tx(15, w: w700, c: MP.primary, h: 1))),
+                child: Center(child: Text(initials, style: tx(15, w: w700, c: MP.primary, h: 1))),
               ),
             ),
           ),
@@ -328,3 +352,56 @@ class _DashedRRectPainter extends CustomPainter {
   bool shouldRepaint(_DashedRRectPainter old) =>
       old.radius != radius || old.strokeWidth != strokeWidth || old.color != color;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live-data helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// List times as in the design: "9:12 AM" today, "Yesterday", "Sun" within
+/// the week, otherwise "28 Sep".
+String d8ListTime(DateTime d, {DateTime? now}) {
+  final n = now ?? DateTime.now();
+  if (F.sameDay(d, n)) return F.time(d);
+  if (F.sameDay(d, n.subtract(const Duration(days: 1)))) return 'Yesterday';
+  final days = DateTime(n.year, n.month, n.day).difference(DateTime(d.year, d.month, d.day)).inDays;
+  if (days > 0 && days < 7) return const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1];
+  return F.dayMonth(d);
+}
+
+/// "Who:" of a conversation preview from the inbox row's `lastMessage`.
+String d8Who(Map<String, dynamic> row) {
+  final m = row.obj('lastMessage');
+  final label = m.str('senderLabel');
+  return switch (m.str('senderType')) {
+    'patient' => F.firstName(row.obj('patient').str('name', label)),
+    'ai' => 'AI',
+    'dietician' => label.isEmpty ? 'Dietician' : label,
+    // The label is the sender's first word, so doctors come through as "Dr.".
+    'doctor' => label.isEmpty || label.startsWith('Dr') ? 'Doctor' : label,
+    _ => label.isEmpty ? 'Clinic' : label,
+  };
+}
+
+/// Triage chip text for an inbox row (empty = no chip).
+String d8Triage(Object? key) => switch (key) {
+  'needs_attention' => 'Needs attention',
+  'check_in_due' => 'Check-in due',
+  'review_due' => 'Review due',
+  _ => '',
+};
+
+/// "Updated 4s ago", "Updated 3 min ago".
+String d8Updated(DateTime at, {DateTime? now}) {
+  final s = (now ?? DateTime.now()).difference(at).inSeconds;
+  if (s < 60) return 'Updated ${s < 0 ? 0 : s}s ago';
+  if (s < 3600) return 'Updated ${s ~/ 60} min ago';
+  return 'Updated ${F.ago(at).toLowerCase()}';
+}
+
+/// `Api.I.get` for one card's data: resolves null instead of throwing, so
+/// that card can show its own error while the rest of the screen loads.
+Future<Object?> d8Optional(String path, {Map<String, Object?>? query}) =>
+    Api.I.get(path, query: query).then<Object?>((v) => v, onError: (Object _) => null);
+
+/// "1 item", "4 items".
+String d8Plural(num n, String one, [String? many]) => '${n.round()} ${n == 1 ? one : (many ?? '${one}s')}';

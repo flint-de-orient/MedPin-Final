@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 
@@ -17,10 +19,15 @@ class _Qualification {
   final String name;
   final String meta;
   _Proof proof;
-  _Qualification(this.name, this.meta, this.proof);
+
+  /// Server id (live data only).
+  final String? id;
+  _Qualification(this.name, this.meta, this.proof, [this.id]);
 }
 
-class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> {
+class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> with LiveData {
+  /// API values for [_professions], in the same order.
+  static const _professionKeys = ['doctor', 'psychologist', 'physiotherapist', 'dietician', 'fitness_coach', 'other'];
   static const _professions = [
     ('Doctor', 'MBBS, MD, MS…'),
     ('Psychologist', 'Counsellor, therapist'),
@@ -30,12 +37,114 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> {
     ('Other', 'Dentist, AYUSH…'),
   ];
 
-  int _profession = 0;
-  final List<_Qualification> _qualifications = [
+  int? _pickedProfession;
+  final List<_Qualification> _sampleQualifications = [
     _Qualification('MBBS', 'Calcutta Medical College · 2008', _Proof.verified),
     _Qualification('MD, Internal Medicine', 'IPGMER, Kolkata · 2012', _Proof.verified),
     _Qualification('Fellowship in Diabetology', 'RSSDI · 2014', _Proof.upload),
   ];
+
+  /// Edited fields, sent with PATCH /api/doctor/profile on Save.
+  final Map<String, Object?> _changes = {};
+  final Map<String, Object?> _registration = {};
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/doctor/profile');
+
+  int get _profession {
+    if (_pickedProfession != null) return _pickedProfession!;
+    if (data == null) return 0;
+    final i = _professionKeys.indexOf(data!.str('profession', 'doctor'));
+    return i < 0 ? 0 : i;
+  }
+
+  List<_Qualification> get _qualifications {
+    if (data == null) return _sampleQualifications;
+    return [
+      for (final q in data!.list('qualifications'))
+        _Qualification(
+          q.str('name'),
+          [q.str('institution'), q.str('year')].where((s) => s.isNotEmpty).join(' · '),
+          switch (q['proofStatus']) {
+            'verified' => _Proof.verified,
+            'review' => _Proof.review,
+            _ => _Proof.upload,
+          },
+          q.str('id', q.str('_id')),
+        ),
+    ];
+  }
+
+  Map<String, dynamic> get _reg => data?.obj('registration') ?? const {};
+  String _v(String sample, String Function(Map<String, dynamic> d) live) => data == null ? sample : live(data!);
+  List<String> _tags(List<String> sample, String key) =>
+      data == null ? sample : [for (final t in (data![key] as List? ?? const [])) '$t'];
+
+  Widget? get _registrationPill {
+    final status = data == null ? 'verified' : _reg.str('status');
+    if (_reg.str('number').isEmpty && data != null) return null;
+    return switch (status) {
+      'verified' => const D4Pill.green('Verified'),
+      'in_review' => const D4Pill.blue('In review'),
+      'rejected' => const D4Pill.amber('Not verified'),
+      _ => null,
+    };
+  }
+
+  Future<void> _save() async {
+    if (!isLive) {
+      d4Save(context);
+      return;
+    }
+    final body = {..._changes, if (_registration.isNotEmpty) 'registration': {..._registration}};
+    for (final k in ['practisingSince']) {
+      if (body[k] is String) {
+        final n = int.tryParse('${body[k]}'.trim());
+        if (n == null || n < 1950 || n > DateTime.now().year) {
+          toast(context, 'Enter the year you started practising, like 2010');
+          return;
+        }
+        body[k] = n;
+      }
+    }
+    final reg = body['registration'];
+    if (reg is Map && reg['year'] is String) {
+      final y = int.tryParse('${reg['year']}'.trim());
+      if (y == null) {
+        toast(context, 'Enter the registration year, like 2008');
+        return;
+      }
+      reg['year'] = y;
+    }
+    if (body.isEmpty) {
+      d4Save(context);
+      return;
+    }
+    final ok = await runAction(context, () => Api.I.patch('/api/doctor/profile', body));
+    if (ok == null || !mounted) return;
+    d4Save(context);
+  }
+
+  Future<bool> _linkHpr(String id) async {
+    if (!isLive) return true;
+    final ok = await runAction(context, () => Api.I.patch('/api/doctor/profile', {'hprId': id}));
+    if (ok != null && mounted) reload(quiet: true);
+    return ok != null;
+  }
+
+  Future<void> _removeQualification(_Qualification q) async {
+    final ok = await d4Confirm(
+      context,
+      title: 'Remove ${q.name}?',
+      body: 'It will no longer show on your profile.',
+      confirm: 'Remove qualification',
+    );
+    if (!ok || !mounted || q.id == null) return;
+    final r = await runAction(context, () => Api.I.delete('/api/doctor/qualifications/${q.id}'));
+    if (r == null || !mounted) return;
+    toast(context, '${q.name} removed');
+    reload(quiet: true);
+  }
 
   Future<void> _addQualification() async {
     final r = await d4FormSheet(
@@ -49,19 +158,43 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> {
       confirm: 'Add qualification',
     );
     if (!mounted || r == null || r.length < 3 || r[0].isEmpty) return;
-    final meta = [r[1], r[2]].where((s) => s.isNotEmpty).join(' · ');
-    setState(() => _qualifications.add(_Qualification(r[0], meta, _Proof.upload)));
+    if (!isLive) {
+      final meta = [r[1], r[2]].where((s) => s.isNotEmpty).join(' · ');
+      setState(() => _sampleQualifications.add(_Qualification(r[0], meta, _Proof.upload)));
+      return;
+    }
+    final year = int.tryParse(r[2]);
+    final ok = await runAction(
+      context,
+      () => Api.I.post('/api/doctor/qualifications', {
+        'name': r[0],
+        if (r[1].isNotEmpty) 'institution': r[1],
+        if (year != null) 'year': year,
+      }),
+    );
+    if (ok == null || !mounted) return;
+    toast(context, '${r[0]} added');
+    reload(quiet: true);
   }
 
   void _uploadProof(_Qualification q) {
+    if (isLive) {
+      // POST /api/doctor/qualifications/:qid/proof is a file upload, which the app's API client can't send yet.
+      toast(context, 'Proof upload is coming soon');
+      return;
+    }
     setState(() => q.proof = _Proof.review);
     toast(context, 'Proof sent for verification');
   }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    if (placeholder != null) return MpPage(header: const D4Header('Professional details'), body: placeholder);
+    final qualifications = _qualifications;
+    final years = data?['yearsExperience'];
     return MpPage(
-      header: D4Header('Professional details', onSave: () => d4Save(context)),
+      header: D4Header('Professional details', onSave: _save),
       body: VGap(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
         gap: 16,
@@ -82,37 +215,52 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> {
                       title: _professions[i].$1,
                       sub: _professions[i].$2,
                       selected: i == _profession,
-                      onTap: () => setState(() => _profession = i),
+                      onTap: () => setState(() {
+                        _pickedProfession = i;
+                        _changes['profession'] = _professionKeys[i];
+                      }),
                     ),
                 ],
               ),
             ],
           ),
-          const D4Card(
+          D4Card(
             children: [
-              D4CardTitle('Registration'),
+              const D4CardTitle('Registration'),
               VGap(
                 gap: 12,
                 children: [
-                  D4Field('Council', 'West Bengal Medical Council'),
+                  D4Field(
+                    'Council',
+                    _v('West Bengal Medical Council', (_) => _reg.str('council')),
+                    onChanged: (v) => _registration['council'] = v.trim(),
+                  ),
                   D4Field(
                     'Registration number',
-                    '64213',
+                    _v('64213', (_) => _reg.str('number')),
                     keyboard: TextInputType.number,
-                    trailing: D4Pill.green('Verified'),
+                    trailing: _registrationPill,
+                    onChanged: (v) => _registration['number'] = v.trim(),
                   ),
-                  D4Field('Year', '2008', keyboard: TextInputType.number),
+                  D4Field(
+                    'Year',
+                    _v('2008', (_) => _reg.str('year')),
+                    keyboard: TextInputType.number,
+                    onChanged: (v) => _registration['year'] = v,
+                  ),
                 ],
               ),
             ],
           ),
-          const D4AbdmCard(
+          D4AbdmCard(
             title: 'Healthcare Professionals Registry',
             body:
                 'Link your HPR ID to be verified through ABDM and to share records with patients’ ABHA accounts, '
                 'with their consent.',
             idName: 'HPR ID',
             hint: 'e.g. 71-1234-5678-9012',
+            linkedId: data?.str('hprId'),
+            onLink: isLive ? _linkHpr : null,
           ),
           D4Card(
             children: [
@@ -120,9 +268,9 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  for (var i = 0; i < _qualifications.length; i++) ...[
+                  for (var i = 0; i < qualifications.length; i++) ...[
                     if (i > 0) ...[const SizedBox(height: 14), const MpDivider(), const SizedBox(height: 14)],
-                    _qualificationRow(_qualifications[i]),
+                    _qualificationRow(qualifications[i]),
                   ],
                 ],
               ),
@@ -136,26 +284,28 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> {
               ),
             ],
           ),
-          const D4Card(
+          D4Card(
             children: [
-              D4CardTitle('Specialisations'),
+              const D4CardTitle('Specialisations'),
               D4TagEditor(
-                initial: ['Diabetology', 'Internal medicine'],
+                initial: _tags(const ['Diabetology', 'Internal medicine'], 'specialisations'),
                 addTitle: 'Add specialisation',
                 addLabel: 'Specialisation',
                 addHint: 'e.g. Endocrinology',
+                onChanged: (v) => _changes['specialisations'] = v,
               ),
             ],
           ),
-          const D4Card(
+          D4Card(
             children: [
-              D4CardTitle('Conditions you treat'),
-              D4Note('Patients find you when they search these.'),
+              const D4CardTitle('Conditions you treat'),
+              const D4Note('Patients find you when they search these.'),
               D4TagEditor(
-                initial: ['Type 2 diabetes', 'Hypertension', 'Thyroid disorders', 'PCOS', 'Obesity'],
+                initial: _tags(const ['Type 2 diabetes', 'Hypertension', 'Thyroid disorders', 'PCOS', 'Obesity'], 'conditionsTreated'),
                 addTitle: 'Add condition',
                 addLabel: 'Condition',
                 addHint: 'e.g. Type 1 diabetes',
+                onChanged: (v) => _changes['conditionsTreated'] = v,
               ),
             ],
           ),
@@ -165,28 +315,41 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Expanded(child: D4Field('Practising since', '2010', keyboard: TextInputType.number)),
+                  Expanded(
+                    child: D4Field(
+                      'Practising since',
+                      _v('2010', (d) => d.str('practisingSince')),
+                      keyboard: TextInputType.number,
+                      onChanged: (v) => _changes['practisingSince'] = v,
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: D4Field(
                       'Years',
-                      '14',
+                      data == null ? '14' : (years is num ? '${years.round()}' : ''),
                       keyboard: TextInputType.number,
                       trailing: Text('yrs', style: tx(14, c: MP.ink3)),
+                      // Years is derived from "Practising since" unless that was edited too.
+                      onChanged: (v) {
+                        final n = int.tryParse(v.trim());
+                        if (n != null && n >= 0 && n < 80) _changes['practisingSince'] ??= '${DateTime.now().year - n}';
+                      },
                     ),
                   ),
                 ],
               ),
             ],
           ),
-          const D4Card(
+          D4Card(
             children: [
-              D4CardTitle('Memberships and awards'),
+              const D4CardTitle('Memberships and awards'),
               D4TagEditor(
-                initial: ['RSSDI member', 'API member'],
+                initial: _tags(const ['RSSDI member', 'API member'], 'memberships'),
                 addTitle: 'Add membership or award',
                 addLabel: 'Membership or award',
                 addHint: 'e.g. ESI member',
+                onChanged: (v) => _changes['memberships'] = v,
               ),
             ],
           ),
@@ -199,7 +362,14 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: D4TitleSub(q.name, q.meta, weight: w700)),
+        Expanded(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            // Live: tap a qualification to remove it (DELETE /api/doctor/qualifications/:qid).
+            onTap: isLive && q.id != null ? () => _removeQualification(q) : null,
+            child: D4TitleSub(q.name, data != null && q.meta.isEmpty ? null : q.meta, weight: w700),
+          ),
+        ),
         const SizedBox(width: 12),
         switch (q.proof) {
           _Proof.verified => const D4Pill.green('Verified'),

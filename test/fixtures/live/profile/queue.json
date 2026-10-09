@@ -1,0 +1,419 @@
+{
+  "updatedAt": "2026-10-09T10:10:58.290Z",
+  "stats": {
+    "all": 8,
+    "notArrived": 3,
+    "waiting": 2,
+    "inConsultation": 1,
+    "completed": 2,
+    "missed": 0,
+    "avgWaitMin": 17
+  },
+  "items": [
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "locationId": "6ac8bbcee42c9f0836e98563",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8bbcee42c9f0836e9857c",
+      "date": "2026-10-08T18:30:00.000Z",
+      "startAt": "2026-10-09T11:30:00.000Z",
+      "tokenNo": 4,
+      "isWalkIn": false,
+      "visitType": "follow_up",
+      "mode": "in_clinic",
+      "status": "confirmed",
+      "channel": "app",
+      "fee": 600,
+      "feeStatus": "pending",
+      "todos": [
+        {
+          "text": "Upload HbA1c report",
+          "done": false,
+          "_id": "6ac8bbcee42c9f0836e98587"
+        },
+        {
+          "text": "Log today's fasting sugar",
+          "done": false,
+          "_id": "6ac8bbcee42c9f0836e98588"
+        },
+        {
+          "text": "Note down questions for Dr. Sen",
+          "done": false,
+          "_id": "6ac8bbcee42c9f0836e98589"
+        }
+      ],
+      "createdAt": "2026-10-09T10:02:54.983Z",
+      "updatedAt": "2026-10-09T10:02:54.983Z",
+      "id": "6ac8bbcee42c9f0836e98586",
+      "token": "04",
+      "patient": {
+        "id": "6ac8bbcee42c9f0836e9857c",
+        "name": "Priya Sharma",
+        "age": 29,
+        "gender": "female",
+        "phone": "9876543210",
+        "conditions": [
+          "Type 2 diabetes",
+          "PCOS"
+        ]
+      },
+      "doctor": {
+        "id": "6ac8bbcee42c9f0836e9855b",
+        "name": "Dr. Arjun Sen"
+      },
+      "location": {
+        "id": "6ac8bbcee42c9f0836e98563",
+        "name": "Salt Lake"
+      },
+      "waitingMin": null,
+      "hasVitals": false,
+      "documents": 1,
+      "aiBrief": false,
+      "isNext": false,
+      "longWait": false,
+      "consultMin": null
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "locationId": "6ac8bbcee42c9f0836e98563",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8bbd08adea6a429a731e5",
+      "date": "2026-10-08T18:30:00.000Z",
+      "startAt": "2026-10-09T03:00:00.000Z",
+      "endAt": "2026-10-09T03:15:00.000Z",
+      "tokenNo": 5,
+      "isWalkIn": false,
+      "visitType": "follow_up",
+      "mode": "in_clinic",
+      "status": "completed",
+      "arrivedAt": "2026-10-09T02:45:00.000Z",
+      "consultStartedAt": "2026-10-09T03:02:00.000Z",
+      "completedAt": "2026-10-09T03:11:00.000Z",
+      "channel": "desk",
+      "fee": 600,
+      "feeStatus": "paid",
+      "todos": [],
+      "createdAt": "2026-10-09T10:02:56.836Z",
+      "updatedAt": "2026-10-09T10:02:56.836Z",
+      "id": "6ac8bbd08adea6a429a73390",
+      "token": "05",
+      "patient": {
+        "id": "6ac8bbd08adea6a429a731e5",
+        "name": "Amit Pal",
+        "age": 42,
+        "gender": "male",
+        "phone": "9831120770",
+        "conditions": [
+          "Type 2 diabetes"
+        ]
+      },
+      "doctor": {
+        "id": "6ac8bbcee42c9f0836e9855b",
+        "name": "Dr. Arjun Sen"
+      },
+      "location": {
+        "id": "6ac8bbcee42c9f0836e98563",
+        "name": "Salt Lake"
+      },
+      "waitingMin": null,
+      "hasVitals": false,
+      "documents": 1,
+      "aiBrief": false,
+      "isNext": false,
+      "longWait": false,
+      "consultMin": 9
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "locationId": "6ac8bbcee42c9f0836e98563",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8bbd08adea6a429a731be",
+      "date": "2026-10-08T18:30:00.000Z",
+      "startAt": "2026-10-09T03:30:00.000Z",
+      "endAt": "2026-10-09T03:45:00.000Z",
+      "tokenNo": 6,
+      "isWalkIn": false,
+      "visitType": "follow_up",
+      "mode": "in_clinic",
+      "status": "completed",
+      "arrivedAt": "2026-10-09T03:15:00.000Z",
+      "consultStartedAt": "2026-10-09T03:32:00.000Z",
+      "completedAt": "2026-10-09T03:41:00.000Z",
+      "channel": "desk",
+      "fee": 600,
+      "feeStatus": "paid",
+      "todos": [],
+      "createdAt": "2026-10-09T10:02:56.846Z",
+      "updatedAt": "2026-10-09T10:02:56.846Z",
+      "id": "6ac8bbd08adea6a429a73397",
+      "token": "06",
+      "patient": {
+        "id": "6ac8bbd08adea6a429a731be",
+        "name": "Aisha Khan",
+        "age": 34,
+        "gender": "female",
+        "phone": "9831120765",
+        "conditions": [
+          "Type 2 diabetes"
+        ]
+      },
+      "doctor": {
+        "id": "6ac8bbcee42c9f0836e9855b",
+        "name": "Dr. Arjun Sen"
+      },
+      "location": {
+        "id": "6ac8bbcee42c9f0836e98563",
+        "name": "Salt Lake"
+      },
+      "waitingMin": null,
+      "hasVitals": false,
+      "documents": 1,
+      "aiBrief": false,
+      "isNext": false,
+      "longWait": false,
+      "consultMin": 9
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "locationId": "6ac8bbcee42c9f0836e98563",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8bbd08adea6a429a731b7",
+      "date": "2026-10-08T18:30:00.000Z",
+      "startAt": "2026-10-09T04:00:00.000Z",
+      "endAt": "2026-10-09T04:15:00.000Z",
+      "tokenNo": 7,
+      "isWalkIn": false,
+      "visitType": "follow_up",
+      "mode": "in_clinic",
+      "status": "in_consultation",
+      "arrivedAt": "2026-10-09T03:45:00.000Z",
+      "consultStartedAt": "2026-10-09T04:02:00.000Z",
+      "channel": "desk",
+      "fee": 600,
+      "feeStatus": "pending",
+      "todos": [],
+      "createdAt": "2026-10-09T10:02:56.852Z",
+      "updatedAt": "2026-10-09T10:02:56.852Z",
+      "id": "6ac8bbd08adea6a429a7339e",
+      "token": "07",
+      "patient": {
+        "id": "6ac8bbd08adea6a429a731b7",
+        "name": "Rahul Das",
+        "age": 45,
+        "gender": "male",
+        "phone": "9831120764",
+        "conditions": [
+          "Hypertension"
+        ]
+      },
+      "doctor": {
+        "id": "6ac8bbcee42c9f0836e9855b",
+        "name": "Dr. Arjun Sen"
+      },
+      "location": {
+        "id": "6ac8bbcee42c9f0836e98563",
+        "name": "Salt Lake"
+      },
+      "waitingMin": null,
+      "hasVitals": true,
+      "documents": 2,
+      "aiBrief": false,
+      "isNext": false,
+      "longWait": false,
+      "consultMin": 369
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "locationId": "6ac8bbcee42c9f0836e98563",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8bbd08adea6a429a731dd",
+      "date": "2026-10-08T18:30:00.000Z",
+      "startAt": "2026-10-09T04:30:00.000Z",
+      "endAt": "2026-10-09T04:45:00.000Z",
+      "tokenNo": 8,
+      "isWalkIn": false,
+      "visitType": "follow_up",
+      "mode": "in_clinic",
+      "status": "waiting",
+      "arrivedAt": "2026-10-09T04:15:00.000Z",
+      "channel": "desk",
+      "fee": 600,
+      "feeStatus": "pending",
+      "todos": [],
+      "createdAt": "2026-10-09T10:02:56.859Z",
+      "updatedAt": "2026-10-09T10:02:56.859Z",
+      "id": "6ac8bbd08adea6a429a733a7",
+      "token": "08",
+      "patient": {
+        "id": "6ac8bbd08adea6a429a731dd",
+        "name": "Debasish Bose",
+        "age": 57,
+        "gender": "male",
+        "phone": "9831120769",
+        "conditions": [
+          "Type 2 diabetes",
+          "Hypertension"
+        ]
+      },
+      "doctor": {
+        "id": "6ac8bbcee42c9f0836e9855b",
+        "name": "Dr. Arjun Sen"
+      },
+      "location": {
+        "id": "6ac8bbcee42c9f0836e98563",
+        "name": "Salt Lake"
+      },
+      "waitingMin": 356,
+      "hasVitals": true,
+      "documents": 1,
+      "aiBrief": false,
+      "isNext": true,
+      "longWait": true,
+      "consultMin": null
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "locationId": "6ac8bbcee42c9f0836e98563",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8bbd08adea6a429a731d6",
+      "date": "2026-10-08T18:30:00.000Z",
+      "startAt": "2026-10-09T05:00:00.000Z",
+      "endAt": "2026-10-09T05:15:00.000Z",
+      "tokenNo": 9,
+      "isWalkIn": false,
+      "visitType": "report_review",
+      "mode": "in_clinic",
+      "status": "waiting",
+      "arrivedAt": "2026-10-09T04:45:00.000Z",
+      "channel": "desk",
+      "fee": 0,
+      "feeStatus": "free",
+      "todos": [],
+      "createdAt": "2026-10-09T10:02:56.864Z",
+      "updatedAt": "2026-10-09T10:02:56.864Z",
+      "id": "6ac8bbd08adea6a429a733b0",
+      "token": "09",
+      "patient": {
+        "id": "6ac8bbd08adea6a429a731d6",
+        "name": "Farhana Islam",
+        "age": 38,
+        "gender": "female",
+        "phone": "9831120768",
+        "conditions": [
+          "Hypothyroidism"
+        ]
+      },
+      "doctor": {
+        "id": "6ac8bbcee42c9f0836e9855b",
+        "name": "Dr. Arjun Sen"
+      },
+      "location": {
+        "id": "6ac8bbcee42c9f0836e98563",
+        "name": "Salt Lake"
+      },
+      "waitingMin": 326,
+      "hasVitals": false,
+      "documents": 1,
+      "aiBrief": false,
+      "isNext": false,
+      "longWait": true,
+      "consultMin": null
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "locationId": "6ac8bbcee42c9f0836e98563",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8bbd08adea6a429a731ce",
+      "date": "2026-10-08T18:30:00.000Z",
+      "startAt": "2026-10-09T05:30:00.000Z",
+      "endAt": "2026-10-09T05:45:00.000Z",
+      "tokenNo": 10,
+      "isWalkIn": false,
+      "visitType": "follow_up",
+      "mode": "in_clinic",
+      "status": "booked",
+      "channel": "desk",
+      "fee": 600,
+      "feeStatus": "pending",
+      "todos": [],
+      "createdAt": "2026-10-09T10:02:56.868Z",
+      "updatedAt": "2026-10-09T10:02:56.868Z",
+      "id": "6ac8bbd08adea6a429a733b5",
+      "token": "10",
+      "patient": {
+        "id": "6ac8bbd08adea6a429a731ce",
+        "name": "Sujit Mondal",
+        "age": 61,
+        "gender": "male",
+        "phone": "9831120767",
+        "conditions": [
+          "Chronic kidney disease",
+          "Hypertension"
+        ]
+      },
+      "doctor": {
+        "id": "6ac8bbcee42c9f0836e9855b",
+        "name": "Dr. Arjun Sen"
+      },
+      "location": {
+        "id": "6ac8bbcee42c9f0836e98563",
+        "name": "Salt Lake"
+      },
+      "waitingMin": null,
+      "hasVitals": false,
+      "documents": 1,
+      "aiBrief": false,
+      "isNext": false,
+      "longWait": false,
+      "consultMin": null
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "locationId": "6ac8bbcee42c9f0836e98563",
+      "doctorId": "6ac8bbcee42c9f0836e9855b",
+      "patientId": "6ac8bbd08adea6a429a731c5",
+      "date": "2026-10-08T18:30:00.000Z",
+      "startAt": "2026-10-09T06:00:00.000Z",
+      "endAt": "2026-10-09T06:15:00.000Z",
+      "tokenNo": 11,
+      "isWalkIn": false,
+      "visitType": "new",
+      "mode": "in_clinic",
+      "status": "confirmed",
+      "channel": "desk",
+      "fee": 600,
+      "feeStatus": "pending",
+      "todos": [],
+      "createdAt": "2026-10-09T10:02:56.873Z",
+      "updatedAt": "2026-10-09T10:02:56.873Z",
+      "id": "6ac8bbd08adea6a429a733bc",
+      "token": "11",
+      "patient": {
+        "id": "6ac8bbd08adea6a429a731c5",
+        "name": "Moumita Roy",
+        "age": 52,
+        "gender": "female",
+        "phone": "9831120766",
+        "conditions": [
+          "Coronary artery disease",
+          "Dyslipidaemia"
+        ]
+      },
+      "doctor": {
+        "id": "6ac8bbcee42c9f0836e9855b",
+        "name": "Dr. Arjun Sen"
+      },
+      "location": {
+        "id": "6ac8bbcee42c9f0836e98563",
+        "name": "Salt Lake"
+      },
+      "waitingMin": null,
+      "hasVitals": false,
+      "documents": 1,
+      "aiBrief": false,
+      "isNext": false,
+      "longWait": false,
+      "consultMin": null
+    }
+  ]
+}

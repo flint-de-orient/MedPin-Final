@@ -1,0 +1,138 @@
+{
+  "seats": {
+    "used": 5,
+    "limit": 8,
+    "plan": "Clinic"
+  },
+  "items": [
+    {
+      "id": "6ac8bbcee42c9f0836e98569",
+      "userId": "6ac8bbcee42c9f0836e9855b",
+      "name": "Dr. Arjun Sen",
+      "phone": "9330414463",
+      "role": "doctor",
+      "department": {
+        "id": "6ac8bbcee42c9f0836e98565",
+        "name": "Endocrinology"
+      },
+      "locations": [],
+      "allLocations": true,
+      "isOwner": true,
+      "status": "active",
+      "joinedAt": "2026-10-09T10:02:54.951Z",
+      "qualifications": "MBBS, MD (Medicine)",
+      "registrationNo": "WBMC 64213",
+      "permissions": {
+        "viewPatients": true,
+        "editRecords": true,
+        "chats": true,
+        "prescribe": true
+      }
+    },
+    {
+      "id": "6ac8bbcee42c9f0836e9856a",
+      "userId": "6ac8bbcee42c9f0836e9855d",
+      "name": "Tania Ghosh",
+      "phone": "9876518210",
+      "role": "front_desk",
+      "department": {
+        "id": "6ac8bbcee42c9f0836e98565",
+        "name": "Endocrinology"
+      },
+      "locations": [
+        {
+          "id": "6ac8bbcee42c9f0836e98563",
+          "name": "City Care Clinic — Salt Lake"
+        }
+      ],
+      "allLocations": false,
+      "isOwner": false,
+      "status": "active",
+      "joinedAt": "2026-10-09T10:02:54.952Z",
+      "permissions": {
+        "viewPatients": true,
+        "editRecords": false,
+        "chats": true,
+        "prescribe": false
+      }
+    },
+    {
+      "id": "6ac8bbd08adea6a429a731a5",
+      "userId": "6ac8bbd08adea6a429a73197",
+      "name": "Dr. Rina Mitra",
+      "phone": "9811122233",
+      "role": "doctor",
+      "department": {
+        "id": "6ac8bbcebfcb2f5a9d64d518",
+        "name": "Cardiology"
+      },
+      "locations": [
+        {
+          "id": "6ac8bbcee42c9f0836e98563",
+          "name": "City Care Clinic — Salt Lake"
+        }
+      ],
+      "allLocations": false,
+      "isOwner": false,
+      "status": "active",
+      "joinedAt": "2026-10-09T10:02:56.136Z",
+      "qualifications": "MBBS, DM (Cardiology)",
+      "registrationNo": "WBMC 58210",
+      "permissions": {
+        "viewPatients": true,
+        "editRecords": true,
+        "chats": true,
+        "prescribe": true
+      }
+    },
+    {
+      "id": "6ac8bbd08adea6a429a731a6",
+      "userId": "6ac8bbd08adea6a429a7319b",
+      "name": "Mou Banerjee",
+      "phone": "9811122244",
+      "role": "dietician",
+      "department": {
+        "id": "6ac8bbcee42c9f0836e98567",
+        "name": "Diabetology"
+      },
+      "locations": [],
+      "allLocations": true,
+      "isOwner": false,
+      "status": "active",
+      "joinedAt": "2026-10-09T10:02:56.136Z",
+      "permissions": {
+        "viewPatients": true,
+        "editRecords": true,
+        "chats": true,
+        "prescribe": false
+      }
+    },
+    {
+      "id": "6ac8bbd08adea6a429a731a7",
+      "userId": "6ac8bbd08adea6a429a7319f",
+      "name": "Rohit Saha",
+      "phone": "9831120486",
+      "role": "doctor_assistant",
+      "department": {
+        "id": "6ac8bbcee42c9f0836e98565",
+        "name": "Endocrinology"
+      },
+      "locations": [
+        {
+          "id": "6ac8bbcee42c9f0836e98563",
+          "name": "City Care Clinic — Salt Lake"
+        }
+      ],
+      "allLocations": false,
+      "isOwner": false,
+      "status": "active",
+      "joinedAt": "2026-10-09T10:02:56.137Z",
+      "permissions": {
+        "viewPatients": true,
+        "editRecords": true,
+        "chats": true,
+        "prescribe": false
+      }
+    }
+  ]
+}

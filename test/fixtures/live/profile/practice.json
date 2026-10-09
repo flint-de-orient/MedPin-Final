@@ -1,0 +1,64 @@
+{
+  "practice": {
+    "name": "City Care Clinic",
+    "tagline": "Diabetes and heart care since 2011",
+    "registrationNo": "WB/CE/2011/0412",
+    "patientCallNumber": "+91 33 4000 1234",
+    "foodLogReviewCadence": "every_3_days",
+    "ownerUserId": "6ac8bbcee42c9f0836e9855b",
+    "createdAt": "2026-10-09T10:02:54.940Z",
+    "updatedAt": "2026-10-09T10:02:57.122Z",
+    "id": "6ac8bbcee42c9f0836e98561"
+  },
+  "tiles": {
+    "locations": 2,
+    "people": 5,
+    "departments": 2
+  },
+  "readiness": [
+    {
+      "key": "signature",
+      "label": "Add your digital signature",
+      "blocking": true,
+      "done": false
+    },
+    {
+      "key": "map",
+      "label": "Add a map link",
+      "blocking": false,
+      "done": false
+    },
+    {
+      "key": "closures",
+      "label": "Set holiday closures",
+      "blocking": false,
+      "done": true
+    },
+    {
+      "key": "hours",
+      "label": "Clinic hours",
+      "blocking": false,
+      "done": true
+    },
+    {
+      "key": "letterhead",
+      "label": "Letterhead",
+      "blocking": false,
+      "done": true
+    },
+    {
+      "key": "team",
+      "label": "Team",
+      "blocking": false,
+      "done": true
+    }
+  ],
+  "role": "doctor",
+  "isOwner": true,
+  "permissions": {
+    "viewPatients": true,
+    "editRecords": true,
+    "chats": true,
+    "prescribe": true
+  }
+}

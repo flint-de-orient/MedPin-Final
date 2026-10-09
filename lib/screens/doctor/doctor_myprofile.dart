@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 
@@ -13,44 +16,225 @@ class DoctorMyprofileScreen extends StatefulWidget {
   State<DoctorMyprofileScreen> createState() => _DoctorMyprofileScreenState();
 }
 
-class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
+class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with LiveData {
   static const _spoken = ['English', 'Bengali', 'Hindi', 'Urdu', 'Odia', 'Assamese'];
   static const _appLanguages = ['English', 'Bengali', 'Hindi'];
+  static const _languageCodes = {'English': 'en', 'Bengali': 'bn', 'Hindi': 'hi'};
 
-  List<String> _languages = const ['English', 'Bengali'];
-  String _appLanguage = 'English';
+  List<String> _sampleLanguages = const ['English', 'Bengali'];
+  String _sampleAppLanguage = 'English';
 
-  void _go(String stem) => Nav.go(context, stem);
+  /// GET /api/doctor/profile, /api/me, /api/doctor/locations, plus the team
+  /// and plan rows (optional: they stay blank if the member can't see them).
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([
+      Api.I.get('/api/doctor/profile'),
+      Api.I.get('/api/me'),
+      Api.I.get('/api/doctor/locations'),
+      d4Optional('/api/members'),
+      d4Optional('/api/billing'),
+    ]);
+    return {'profile': r[0], 'me': r[1], 'locations': r[2], 'members': r[3], 'billing': r[4]};
+  }
+
+  Map<String, dynamic> get _p => data!.obj('profile');
+  Map<String, dynamic> get _user => data!.obj('me').obj('user');
+
+  List<String> get _languages =>
+      data == null ? _sampleLanguages : [for (final l in (_p['languagesSpoken'] as List? ?? const [])) '$l'];
+
+  String get _appLanguage {
+    if (data == null) return _sampleAppLanguage;
+    final code = _user.str('language', 'en');
+    return _languageCodes.entries.firstWhere((e) => e.value == code, orElse: () => _languageCodes.entries.first).key;
+  }
+
+  String get _name => data == null ? 'Dr. Arjun Sen' : _p.str('displayName', Session.I.name);
+  String get _headline => data == null ? 'Diabetologist · Internal medicine' : _p.str('headline');
+  bool get _verified => data == null || _p['isVerified'] == true;
+
+  /// "MBBS, MD · WBMC 64213 · 14 yrs"
+  String get _credentials {
+    if (data == null) return 'MBBS, MD · WBMC 64213 · 14 yrs';
+    final years = _p['yearsExperience'];
+    return [
+      _p.str('degreesSummary'),
+      _p.str('registrationDisplay'),
+      if (years is num) '${years.round()} ${years == 1 ? 'yr' : 'yrs'}',
+    ].where((s) => s.isNotEmpty).join(' · ');
+  }
+
+  int get _completion => data == null ? 85 : _p.numOr('completionPct').round();
+
+  /// What's still missing, in the order the completion check counts it.
+  String get _completionHint {
+    if (data == null) return 'Add your languages and a clinic photo to appear higher in patient search.';
+    final missing = [
+      if (_p['photo'] == null) 'a photo',
+      if (_p.str('bio').isEmpty) 'a short bio',
+      if (_languages.isEmpty) 'your languages',
+      if (_p.list('qualifications').isEmpty) 'your qualifications',
+      if (_p.obj('registration').str('number').isEmpty) 'your registration',
+      if ((_p['specialisations'] as List? ?? const []).isEmpty) 'your specialisations',
+      if (_p['signature'] == null) 'your signature',
+    ];
+    if (missing.isEmpty) return 'Your profile is complete.';
+    return 'Add ${F.joinAnd(missing.take(2).toList())} to appear higher in patient search.';
+  }
+
+  bool get _taking => data == null || _p['acceptingBookings'] != false;
+
+  /// "Next free slot: today, 12:15 PM · Salt Lake"
+  String get _nextSlot {
+    if (data == null) return 'Next free slot: today, 12:15 PM · Salt Lake';
+    final s = _p.obj('nextFreeSlot');
+    final at = F.date(s['startAt']);
+    if (at == null) return 'No free slots open for booking';
+    var when = F.when(at);
+    if (when.startsWith('Today') || when.startsWith('Tomorrow')) when = when[0].toLowerCase() + when.substring(1);
+    final where = s.str('location');
+    return 'Next free slot: $when${where.isEmpty ? '' : ' · $where'}';
+  }
+
+  int get _locationCount => data == null ? 3 : _p.numOr('locations').toInt();
+
+  List<Map<String, dynamic>> get _activeLocations => [
+    for (final l in data!.list('locations'))
+      if (l['status'] != 'ended') l,
+  ];
+
+  /// "5 services · in clinic and video"
+  String get _servicesLine {
+    if (data == null) return '5 services · in clinic and video';
+    final modes = <String>{
+      for (final l in _activeLocations)
+        for (final s in l.list('services')) s.str('mode', 'in_clinic') == 'video' ? 'video' : 'in clinic',
+    };
+    final n = _p.numOr('services');
+    final order = [for (final m in const ['in clinic', 'video']) if (modes.contains(m)) m];
+    return order.isEmpty ? d4Plural(n, 'service') : '${d4Plural(n, 'service')} · ${F.joinAnd(order)}';
+  }
+
+  /// "Durga Puja · 19 – 23 Oct"
+  String get _leaveLine {
+    if (data == null) return 'Durga Puja · 19 – 23 Oct';
+    final l = _p.obj('upcomingLeave');
+    final start = F.date(l['startDate']), end = F.date(l['endDate']);
+    if (start == null) return 'No leave planned';
+    return '${l.str('reason', 'Leave')} · ${d4DateRange(start, end ?? start)}';
+  }
+
+  /// "Sent 3 days before · WhatsApp and app"
+  String get _reminderLine {
+    if (data == null) return 'Sent 3 days before · WhatsApp and app';
+    final r = _p.obj('followUpReminder');
+    final days = r.numOr('daysBefore', 3);
+    const names = {'whatsapp': 'WhatsApp', 'app': 'app', 'sms': 'SMS'};
+    final channels = [for (final c in (r['channels'] as List? ?? const [])) names['$c'] ?? '$c'];
+    final when = 'Sent ${d4Plural(days, 'day')} before';
+    if (channels.isEmpty) return when;
+    final via = F.joinAnd(channels);
+    return '$when · ${via[0].toUpperCase()}${via.substring(1)}';
+  }
+
+  bool get _signatureMissing => data == null || _p['signature'] == null;
+  bool get _hprLinked => data != null && _p.str('hprId').isNotEmpty;
+
+  List<Map<String, dynamic>> get _team => [
+    for (final m in data?.obj('members').list('items') ?? const <Map<String, dynamic>>[])
+      if (m['status'] == 'active' && m.str('userId') != _user.str('id')) m,
+  ];
+
+  static const _supportRoles = {'front_desk', 'doctor_assistant', 'practice_manager', 'lab_manager', 'lab_technician'};
+
+  /// "Front desk at City Care · 2 people"
+  String? get _staffLine {
+    if (data == null) return 'Front desk at City Care · 2 people';
+    if (data!['members'] == null) return null;
+    final n = _team.where((m) => _supportRoles.contains(m['role'])).length;
+    final practice = Session.I.activeMembership?['practiceName'] as String? ?? '';
+    return practice.isEmpty ? d4Plural(n, 'person', 'people') : 'Front desk at $practice · ${d4Plural(n, 'person', 'people')}';
+  }
+
+  /// "Dietician, cardiologist and 4 more" — live: the clinicians' names.
+  String? get _colleaguesLine {
+    if (data == null) return 'Dietician, cardiologist and 4 more';
+    if (data!['members'] == null) return null;
+    final names = [
+      for (final m in _team)
+        if (!_supportRoles.contains(m['role'])) m.str('name'),
+    ];
+    if (names.isEmpty) return 'No colleagues added yet';
+    if (names.length <= 2) return F.joinAnd(names);
+    return '${names.take(2).join(', ')} and ${names.length - 2} more';
+  }
+
+  /// "MedPin Pro · renews 12 Jan"
+  String? get _planLine {
+    if (data == null) return 'MedPin Pro · renews 12 Jan';
+    final b = data!.obj('billing');
+    final plan = b.obj('plan').str('name');
+    if (plan.isEmpty) return null;
+    final renews = F.date(b.obj('subscription')['currentPeriodEnd']);
+    return renews == null ? 'MedPin $plan' : 'MedPin $plan · renews ${F.dayMonth(renews)}';
+  }
+
+  String? get _firstLocationId {
+    if (data == null) return null;
+    final l = _activeLocations;
+    return l.isEmpty ? null : (l.first['locationId'] is Map ? l.first.obj('locationId').str('id') : l.first.str('locationId'));
+  }
+
+  void _go(String stem, [Object? args]) => Nav.go(context, stem, args: args);
 
   /// Rows whose editor is not part of the design yet.
   void _soon(String what) => toast(context, '$what — coming soon');
 
-  Future<void> _editLanguages() async {
-    final r = await openSheet<List<String>>(context, (_) => _LanguagesSheet(options: _spoken, selected: _languages));
-    if (r != null && mounted) setState(() => _languages = r);
+  Future<void> _saveLanguages(List<String> langs, String done) async {
+    if (!isLive) {
+      setState(() => _sampleLanguages = langs);
+      if (done.isNotEmpty) toast(context, done);
+      return;
+    }
+    final ok = await runAction(context, () => Api.I.patch('/api/doctor/profile', {'languagesSpoken': langs}));
+    if (ok == null || !mounted) return;
+    toast(context, done.isEmpty ? 'Languages saved' : done);
+    reload(quiet: true);
   }
 
-  void _addHindi() {
-    setState(() => _languages = [..._languages, 'Hindi']);
-    toast(context, 'Hindi added');
+  Future<void> _editLanguages() async {
+    final r = await openSheet<List<String>>(context, (_) => _LanguagesSheet(options: _spoken, selected: _languages));
+    if (r != null && mounted) await _saveLanguages(r, '');
   }
+
+  void _addHindi() => _saveLanguages([..._languages, 'Hindi'], 'Hindi added');
 
   Future<void> _pickAppLanguage() async {
     final r = await d4PickOne(context, title: 'App language', options: _appLanguages, value: _appLanguage);
-    if (r != null && mounted) setState(() => _appLanguage = r);
+    if (r == null || !mounted) return;
+    if (!isLive) {
+      setState(() => _sampleAppLanguage = r);
+      return;
+    }
+    final ok = await runAction(context, () => Api.I.patch('/api/me', {'language': _languageCodes[r]}));
+    if (ok == null || !mounted) return;
+    toast(context, 'App language: $r');
+    reload(quiet: true);
   }
 
   void _share() {
-    Clipboard.setData(
-      const ClipboardData(
-        text: 'Dr. Arjun Sen · Diabetologist · Internal medicine · MBBS, MD · WBMC 64213 — book on MedPin',
-      ),
-    );
+    final text = data == null
+        ? 'Dr. Arjun Sen · Diabetologist · Internal medicine · MBBS, MD · WBMC 64213 — book on MedPin'
+        : '${[_name, _headline, _p.str('degreesSummary'), _p.str('registrationDisplay')].where((s) => s.isNotEmpty).join(' · ')} — book on MedPin';
+    Clipboard.setData(ClipboardData(text: text));
     toast(context, 'Profile copied to share');
   }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    if (placeholder != null) return MpPage(header: const D4Header('My profile'), body: placeholder);
     final languages = _languages.isEmpty ? 'Add the languages you speak' : _languages.join(', ');
     return MpPage(
       header: const D4Header('My profile'),
@@ -70,8 +254,8 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
             _SettingRow(
               'ABDM · HPR ID',
               sub: 'Ayushman Bharat Digital Mission',
-              value: 'Link',
-              valueColor: MP.primary,
+              value: _hprLinked ? 'Linked' : 'Link',
+              valueColor: _hprLinked ? MP.green : MP.primary,
               onTap: () => _go('Profile-Professional'),
             ),
             _SettingRow(
@@ -91,8 +275,8 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
           _Group('Practice', [
             _SettingRow(
               'Locations',
-              sub: '3 locations · map, address, contact',
-              value: '3',
+              sub: '${d4Plural(_locationCount, 'location')} · map, address, contact',
+              value: '$_locationCount',
               onTap: () => _go('Clinics'),
             ),
             _SettingRow(
@@ -102,10 +286,10 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
             ),
             _SettingRow(
               'Services and fees',
-              sub: '5 services · in clinic and video',
-              onTap: () => _go('Profile-Location'),
+              sub: _servicesLine,
+              onTap: () => _go('Profile-Location', _firstLocationId == null ? null : {'locationId': _firstLocationId}),
             ),
-            _SettingRow('Leave and holidays', sub: 'Durga Puja · 19 – 23 Oct', onTap: () => _go('Profile-Schedule')),
+            _SettingRow('Leave and holidays', sub: _leaveLine, onTap: () => _go('Profile-Schedule')),
           ]),
           _Group('Patients and care', [
             _SettingRow(
@@ -115,7 +299,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
             ),
             _SettingRow(
               'Follow-up reminders',
-              sub: 'Sent 3 days before · WhatsApp and app',
+              sub: _reminderLine,
               onTap: () => _go('Doctor-FollowUps'),
             ),
             _SettingRow(
@@ -126,16 +310,16 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
             _SettingRow(
               'Prescription letterhead and signature',
               sub: 'Printed on every prescription',
-              value: 'Signature missing',
+              value: _signatureMissing ? 'Signature missing' : null,
               valueColor: MP.amber,
               onTap: () => _go('Clinic-Editor'),
             ),
           ]),
           _Group('Team', [
-            _SettingRow('Staff and assistants', sub: 'Front desk at City Care · 2 people', onTap: () => _go('People')),
+            _SettingRow('Staff and assistants', sub: _staffLine, onTap: () => _go('People')),
             _SettingRow(
               'Colleagues you work with',
-              sub: 'Dietician, cardiologist and 4 more',
+              sub: _colleaguesLine,
               onTap: () => _go('People'),
             ),
           ]),
@@ -146,7 +330,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
               sub: 'UPI and bank for online fees',
               onTap: () => _soon('Payouts and bank account'),
             ),
-            _SettingRow('Plan and billing', sub: 'MedPin Pro · renews 12 Jan', onTap: () => _go('Billing')),
+            _SettingRow('Plan and billing', sub: _planLine, onTap: () => _go('Billing')),
             _SettingRow('Privacy and data', onTap: () => _soon('Privacy and data')),
             _SettingRow('App language', sub: _appLanguage, onTap: _pickAppLanguage),
             _SettingRow('Help and support', onTap: () => _soon('Help and support')),
@@ -176,7 +360,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
                       height: 72,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(color: MP.primarySoft, shape: BoxShape.circle),
-                      child: Text('AS', style: tx(24, w: w800, c: MP.primary)),
+                      child: Text(F.initials(_name), style: tx(24, w: w800, c: MP.primary)),
                     ),
                     Positioned(
                       right: -2,
@@ -211,20 +395,22 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
                       children: [
                         Flexible(
                           child: Text(
-                            'Dr. Arjun Sen',
+                            _name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: tx(20, w: w800, em: -0.01),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Semantics(label: 'Verified', child: const Svg(I.verifiedSvg, width: 18, height: 18)),
+                        if (_verified) ...[
+                          const SizedBox(width: 6),
+                          Semantics(label: 'Verified', child: const Svg(I.verifiedSvg, width: 18, height: 18)),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 3),
-                    Text('Diabetologist · Internal medicine', style: tx(14, c: MP.ink2)),
+                    Text(_headline, style: tx(14, c: MP.ink2)),
                     const SizedBox(height: 3),
-                    Text('MBBS, MD · WBMC 64213 · 14 yrs', style: tx(13, c: MP.ink3)),
+                    Text(_credentials, style: tx(13, c: MP.ink3)),
                   ],
                 ),
               ),
@@ -237,17 +423,17 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Expanded(child: Text('Profile 85% complete', style: tx(14, w: w600))),
-                  D4TextLink('Finish', onTap: _editLanguages),
+                  Expanded(child: Text('Profile $_completion% complete', style: tx(14, w: w600))),
+                  D4TextLink(
+                    'Finish',
+                    onTap: data == null || _languages.isEmpty ? _editLanguages : () => _go('Profile-Professional'),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
-              const MpProgress(0.85, height: 6),
+              MpProgress(_completion / 100, height: 6),
               const SizedBox(height: 8),
-              Text(
-                'Add your languages and a clinic photo to appear higher in patient search.',
-                style: tx(13, c: MP.ink2),
-              ),
+              Text(_completionHint, style: tx(13, c: MP.ink2)),
             ],
           ),
           // Grid 1fr 1fr: the bordered link is 44 + 2px tall, the tonal one 44px.
@@ -288,15 +474,15 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> {
     return MpCard(
       child: Row(
         children: [
-          Container(width: 10, height: 10, decoration: const BoxDecoration(color: MP.green, shape: BoxShape.circle)),
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: _taking ? MP.green : MP.ink3, shape: BoxShape.circle)),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Taking bookings', style: tx(15, w: w700)),
+                Text(_taking ? 'Taking bookings' : 'Not taking bookings', style: tx(15, w: w700)),
                 const SizedBox(height: 2),
-                Text('Next free slot: today, 12:15 PM · Salt Lake', style: tx(13, c: MP.ink2)),
+                Text(_nextSlot, style: tx(13, c: MP.ink2)),
               ],
             ),
           ),

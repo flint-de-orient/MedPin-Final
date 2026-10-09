@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
 
@@ -19,7 +22,11 @@ class _Conv {
   final String who;
   final String text;
   final String chip;
-  const _Conv(this.initials, this.name, this.time, this.unread, this.who, this.text, this.chip);
+
+  /// Thread to open (live data only).
+  final String? conversationId;
+  final String? patientId;
+  const _Conv(this.initials, this.name, this.time, this.unread, this.who, this.text, this.chip, {this.conversationId, this.patientId});
 }
 
 const _rows = [
@@ -63,24 +70,73 @@ const _rows = [
   _ => (MP.fill, MP.ink2),
 };
 
-class _CareScreenState extends State<CareScreen> {
+class _CareScreenState extends State<CareScreen> with LiveData {
   /// 0 = "Unread (6)", 1 = "All" (selected in the design).
   int _filter = 1;
   String _query = '';
 
-  List<_Conv> get _visible {
+  /// Live rows shown before "Show more".
+  static const _page = 20;
+  int _shown = _page;
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/inbox', query: {'type': 'care'});
+
+  @override
+  Duration? get refreshEvery => const Duration(seconds: 60);
+
+  List<_Conv> get _all {
+    final d = data;
+    if (d == null) return _rows;
+    return [
+      for (final c in d.list('items'))
+        _Conv(
+          F.initials(c.obj('patient').str('name', '?')),
+          c.obj('patient').str('name', 'Patient'),
+          switch (F.date(c.obj('lastMessage')['at'])) {
+            final at? => d8ListTime(at),
+            null => '',
+          },
+          c.numOr('unread').toInt(),
+          d8Who(c),
+          c.obj('lastMessage').str('text'),
+          d8Triage(c['triage']),
+          conversationId: c.str('id'),
+          patientId: c.obj('patient').str('id'),
+        ),
+    ];
+  }
+
+  int get _unreadCount => data == null ? 6 : data!.numOr('unread').toInt();
+  int get _pending => data == null ? 2 : data!.numOr('pendingEnrolments').toInt();
+
+  List<_Conv> get _matching {
     final q = _query.trim().toLowerCase();
     return [
-      for (final r in _rows)
+      for (final r in _all)
         if ((_filter == 1 || r.unread > 0) && (q.isEmpty || '${r.name} ${r.who} ${r.text}'.toLowerCase().contains(q)))
           r,
     ];
   }
 
+  List<_Conv> get _visible {
+    final rows = _matching;
+    return data == null || rows.length <= _shown ? rows : rows.sublist(0, _shown);
+  }
+
+  void _showMore() {
+    if (data == null || _matching.length <= _shown) {
+      toast(context, 'No more conversations');
+      return;
+    }
+    setState(() => _shown += _page);
+  }
+
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
-    final rows = _visible;
+    final placeholder = livePlaceholder();
+    final rows = placeholder == null ? _visible : const <_Conv>[];
     return MpPage(
       nav: const ClinicianNav(current: 1),
       overlays: [Positioned(right: 20, bottom: 104 + safeBottom, child: const _AddPatientButton())],
@@ -88,7 +144,7 @@ class _CareScreenState extends State<CareScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const D8TabHeader(),
-          VGap(
+          if (placeholder != null) placeholder else VGap(
             // Design bottom padding is 176px; MpPage already reserves 112px.
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 64),
             gap: 16,
@@ -98,13 +154,22 @@ class _CareScreenState extends State<CareScreen> {
                 container: true,
                 label: 'Filter conversations',
                 child: MpSegmented(
-                  options: const ['Unread (6)', 'All'],
+                  options: ['Unread ($_unreadCount)', 'All'],
                   index: _filter,
-                  onChanged: (i) => setState(() => _filter = i),
+                  onChanged: (i) => setState(() {
+                    _filter = i;
+                    _shown = _page;
+                  }),
                 ),
               ),
-              D8SearchField(hint: 'Search patients or messages', onChanged: (v) => setState(() => _query = v)),
-              _enrolmentBanner(context),
+              D8SearchField(
+                hint: 'Search patients or messages',
+                onChanged: (v) => setState(() {
+                  _query = v;
+                  _shown = _page;
+                }),
+              ),
+              if (_pending > 0) _enrolmentBanner(context),
               MpCard(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 child: Column(
@@ -119,7 +184,7 @@ class _CareScreenState extends State<CareScreen> {
                   ],
                 ),
               ),
-              MpButton('Show more', kind: MpBtn.secondary, onTap: () => toast(context, 'No more conversations')),
+              MpButton('Show more', kind: MpBtn.secondary, onTap: _showMore),
             ],
           ),
         ],
@@ -135,7 +200,12 @@ class _CareScreenState extends State<CareScreen> {
         children: [
           const Ico(I.clock, size: 20, color: MP.primary),
           const Gap(12),
-          Expanded(child: Text("2 enrolments waiting on the patient's confirmation code", style: tx(14, h: 1.45))),
+          Expanded(
+            child: Text(
+              "${_pending == 1 ? '1 enrolment' : '$_pending enrolments'} waiting on the patient's confirmation code",
+              style: tx(14, h: 1.45),
+            ),
+          ),
           const Gap(12),
           D8Link(
             'View',
@@ -164,7 +234,11 @@ class _CareRow extends StatelessWidget {
       label: aria,
       excludeSemantics: true,
       child: Tap(
-        onTap: () => Nav.go(context, 'Patient-Thread'),
+        onTap: () => Nav.go(
+          context,
+          'Patient-Thread',
+          args: r.conversationId == null ? null : {'conversationId': r.conversationId, 'patientId': r.patientId},
+        ),
         radius: 0,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
 
@@ -21,7 +24,22 @@ class _Conv {
   final String text;
   final String chip;
   final String meta;
-  const _Conv(this.initials, this.name, this.time, this.unread, this.who, this.text, this.chip, this.meta);
+
+  /// Thread to open (live data only).
+  final String? conversationId;
+  final String? patientId;
+  const _Conv(
+    this.initials,
+    this.name,
+    this.time,
+    this.unread,
+    this.who,
+    this.text,
+    this.chip,
+    this.meta, {
+    this.conversationId,
+    this.patientId,
+  });
 }
 
 const _rows = [
@@ -97,30 +115,90 @@ const _rows = [
   ),
 ];
 
-class _NutritionScreenState extends State<NutritionScreen> {
+class _NutritionScreenState extends State<NutritionScreen> with LiveData {
   /// 0 = "Unread (3)", 1 = "All" (selected in the design).
   int _filter = 1;
   String _query = '';
 
-  List<_Conv> get _visible {
+  /// Live rows shown before "Show more".
+  static const _page = 20;
+  int _shown = _page;
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/inbox', query: {'type': 'nutrition'});
+
+  @override
+  Duration? get refreshEvery => const Duration(seconds: 60);
+
+  /// "Meal logged 8:10 AM", "Meal logged yesterday 1:20 PM", "Meal logged Sun 1:30 PM".
+  static String _mealLogged(DateTime? at) {
+    if (at == null) return '';
+    final t = d8ListTime(at);
+    if (t == 'Yesterday') return 'Meal logged yesterday ${F.time(at)}';
+    if (t.length == 3) return 'Meal logged $t ${F.time(at)}';
+    if (F.sameDay(at, DateTime.now())) return 'Meal logged $t';
+    return 'Meal logged ${F.dayMonth(at)}';
+  }
+
+  List<_Conv> get _all {
+    final d = data;
+    if (d == null) return _rows;
+    return [
+      for (final c in d.list('items'))
+        _Conv(
+          F.initials(c.obj('patient').str('name', '?')),
+          c.obj('patient').str('name', 'Patient'),
+          switch (F.date(c.obj('lastMessage')['at'])) {
+            final at? => d8ListTime(at),
+            null => '',
+          },
+          c.numOr('unread').toInt(),
+          d8Who(c),
+          c.obj('lastMessage').str('text'),
+          d8Triage(c['triage']),
+          // `lastMealAt` is not in the inbox response yet; shown when the API adds it.
+          _mealLogged(F.date(c['lastMealAt'])),
+          conversationId: c.str('id'),
+          patientId: c.obj('patient').str('id'),
+        ),
+    ];
+  }
+
+  int get _unreadCount => data == null ? 3 : data!.numOr('unread').toInt();
+
+  List<_Conv> get _matching {
     final q = _query.trim().toLowerCase();
     return [
-      for (final r in _rows)
+      for (final r in _all)
         if ((_filter == 1 || r.unread > 0) && (q.isEmpty || '${r.name} ${r.who} ${r.text}'.toLowerCase().contains(q)))
           r,
     ];
   }
 
+  List<_Conv> get _visible {
+    final rows = _matching;
+    return data == null || rows.length <= _shown ? rows : rows.sublist(0, _shown);
+  }
+
+  void _showMore() {
+    if (data == null || _matching.length <= _shown) {
+      toast(context, 'No more conversations');
+      return;
+    }
+    setState(() => _shown += _page);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final rows = _visible;
+    final placeholder = livePlaceholder();
+    final rows = placeholder == null ? _visible : const <_Conv>[];
     return MpPage(
       nav: const ClinicianNav(current: 2),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const D8TabHeader(),
-          VGap(
+          if (placeholder != null) placeholder else VGap(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             gap: 16,
             children: [
@@ -136,12 +214,21 @@ class _NutritionScreenState extends State<NutritionScreen> {
                 container: true,
                 label: 'Filter conversations',
                 child: MpSegmented(
-                  options: const ['Unread (3)', 'All'],
+                  options: ['Unread ($_unreadCount)', 'All'],
                   index: _filter,
-                  onChanged: (i) => setState(() => _filter = i),
+                  onChanged: (i) => setState(() {
+                    _filter = i;
+                    _shown = _page;
+                  }),
                 ),
               ),
-              D8SearchField(hint: 'Search patients or messages', onChanged: (v) => setState(() => _query = v)),
+              D8SearchField(
+                hint: 'Search patients or messages',
+                onChanged: (v) => setState(() {
+                  _query = v;
+                  _shown = _page;
+                }),
+              ),
               MpCard(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 child: Column(
@@ -151,12 +238,15 @@ class _NutritionScreenState extends State<NutritionScreen> {
                     if (rows.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        child: Text('No conversations found', style: tx(14, c: MP.ink3, h: 20 / 14)),
+                        child: Text(
+                          data != null && _all.isEmpty ? 'No nutrition conversations yet' : 'No conversations found',
+                          style: tx(14, c: MP.ink3, h: 20 / 14),
+                        ),
                       ),
                   ],
                 ),
               ),
-              MpButton('Show more', kind: MpBtn.secondary, onTap: () => toast(context, 'No more conversations')),
+              MpButton('Show more', kind: MpBtn.secondary, onTap: _showMore),
             ],
           ),
         ],
@@ -180,7 +270,10 @@ class _NutritionRow extends StatelessWidget {
       label: aria,
       excludeSemantics: true,
       child: Tap(
-        onTap: () => Nav.go(context, 'Chat-Review-Detail'),
+        // Live: the conversation itself (Patient-Thread); the design opens its chat review.
+        onTap: () => r.conversationId == null
+            ? Nav.go(context, 'Chat-Review-Detail')
+            : Nav.go(context, 'Patient-Thread', args: {'conversationId': r.conversationId, 'patientId': r.patientId}),
         radius: 0,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -207,7 +300,7 @@ class _NutritionRow extends StatelessWidget {
                                 MpBadge(r.chip, bg: MP.fill, fg: MP.ink2, weight: w600),
                                 const Gap(8),
                               ],
-                              Flexible(
+                              if (r.meta.isNotEmpty) Flexible(
                                 child: Text(
                                   r.meta,
                                   style: tx(13, c: MP.ink3, tab: true),
