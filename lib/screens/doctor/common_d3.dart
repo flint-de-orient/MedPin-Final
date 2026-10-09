@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch D3 — Doctor · Reports tab (report registers).
@@ -110,11 +114,26 @@ class D3ReportHeader extends StatelessWidget {
   final String subtitle;
   final String? searchHint;
   final ValueChanged<String>? onSearch;
-  const D3ReportHeader({super.key, required this.title, required this.subtitle, this.searchHint, this.onSearch});
+
+  /// Live: the period and location shown in the pills, and what the pills
+  /// do (open the filter sheet with the current filters).
+  final String rangeLabel;
+  final String locationLabel;
+  final VoidCallback? onFilters;
+  const D3ReportHeader({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    this.searchHint,
+    this.onSearch,
+    this.rangeLabel = '1 – 30 Sep',
+    this.locationLabel = 'All locations',
+    this.onFilters,
+  });
 
   @override
   Widget build(BuildContext context) {
-    void filters() => Nav.go(context, 'Doctor-Reports-Filter');
+    void filters() => onFilters != null ? onFilters!() : Nav.go(context, 'Doctor-Reports-Filter');
     return Container(
       padding: const EdgeInsets.only(bottom: 14),
       decoration: const BoxDecoration(color: MP.white, border: Border(bottom: BorderSide(color: MP.line))),
@@ -155,12 +174,18 @@ class D3ReportHeader extends StatelessWidget {
                     children: [
                       const Ico(I.calendar, size: 16, color: MP.ink),
                       const SizedBox(width: 6),
-                      Text('1 – 30 Sep', style: tx(14, w: w600)),
+                      Text(rangeLabel, style: tx(14, w: w600)),
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                _Pill(onTap: filters, child: Text('All locations', style: tx(14, w: w600))),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 170),
+                  child: _Pill(
+                    onTap: filters,
+                    child: Text(locationLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, w: w600)),
+                  ),
+                ),
                 const SizedBox(width: 8),
                 const Spacer(),
                 const SizedBox(width: 8),
@@ -463,7 +488,32 @@ class D3ShowMore extends StatelessWidget {
 /// Download opens the 'Report-Download' sheet.
 class D3DownloadBar extends StatelessWidget {
   final String label;
-  const D3DownloadBar(this.label, {super.key});
+
+  /// Live: the report being shown (`reportType` + its filters), passed to
+  /// the 'Report-Download' sheet and used by the email button.
+  final String? reportType;
+  final D3Filters? filters;
+  const D3DownloadBar(this.label, {super.key, this.reportType, this.filters});
+
+  Future<void> _email(BuildContext context) async {
+    if (!isLive || reportType == null) {
+      toast(context, 'Report sent to your email');
+      return;
+    }
+    final f = filters ?? const D3Filters();
+    final res = await runAction(
+      context,
+      () => Api.I.post('/api/exports', {
+        'kind': 'report',
+        'reportType': reportType,
+        'format': 'pdf',
+        'filters': f.exportFilters,
+        'includeMobiles': false,
+        'emailCopy': true,
+      }),
+    );
+    if (res != null && context.mounted) toast(context, 'Report sent to your email');
+  }
 
   @override
   Widget build(BuildContext context) => MpBottomBar(
@@ -478,7 +528,7 @@ class D3DownloadBar extends StatelessWidget {
           radius: 16,
           background: MP.white,
           borderColor: MP.lineStrong,
-          onTap: () => toast(context, 'Report sent to your email'),
+          onTap: () => _email(context),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -486,7 +536,11 @@ class D3DownloadBar extends StatelessWidget {
             label,
             icon: I.downloadAlt,
             iconStroke: 1.75,
-            onTap: () => Nav.go(context, 'Report-Download'),
+            onTap: () => Nav.go(
+              context,
+              'Report-Download',
+              args: reportType == null ? null : (filters ?? const D3Filters()).downloadArgs(reportType!),
+            ),
           ),
         ),
       ],
@@ -507,4 +561,258 @@ String d3Rupees(int v) {
   }
   if (rest.isNotEmpty) parts.insert(0, rest);
   return '₹${parts.join(',')},$last3';
+}
+
+/// Short rupees for tiles: ₹1.57L from one lakh up, else ₹4,300.
+String d3RupeesShort(num v) => v.abs() >= 100000 ? '₹${(v / 100000).toStringAsFixed(2)}L' : d3Rupees(v.round());
+
+// ── Live report helpers ──
+
+/// Opens a link outside the app (tests replace it).
+Future<bool> Function(Uri uri) d3Launch = (uri) async {
+  try {
+    return await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    return false;
+  }
+};
+
+const _wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const _wdLong = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const _monthsLong = [
+  'January', 'February', 'March', 'April', 'May', 'June', //
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/// Today as an IST calendar day (the practice's day, as the API counts it).
+DateTime d3Today() {
+  final n = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+  return DateTime(n.year, n.month, n.day);
+}
+
+/// API timestamp → its IST calendar day ("2026-09-29T18:30:00Z" → 30 Sep);
+/// a plain "2026-09-30" is taken as is.
+DateTime? d3Day(Object? v) {
+  if (v is! String) return null;
+  final t = DateTime.tryParse(v);
+  if (t == null) return null;
+  if (!v.contains('T')) return DateTime(t.year, t.month, t.day);
+  final n = t.toUtc().add(const Duration(hours: 5, minutes: 30));
+  return DateTime(n.year, n.month, n.day);
+}
+
+DateTime d3AddDays(DateTime d, int n) => DateTime(d.year, d.month, d.day + n);
+
+/// "2026-09-30"
+String d3DayKey(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// "Wed, 30 Sep"
+String d3DayHead(DateTime d) => '${_wd[d.weekday - 1]}, ${F.dayMonth(d)}';
+
+String d3Weekday(DateTime d) => _wd[d.weekday - 1];
+String d3WeekdayLong(DateTime d) => _wdLong[d.weekday - 1];
+String d3MonthLong(DateTime d) => _monthsLong[d.month - 1];
+
+/// "1 – 30 Sep", "10 Sep – 9 Oct", "28 Dec 2025 – 3 Jan 2026" (optionally
+/// with the year: "1 – 30 Sep 2026").
+String d3RangeLabel(DateTime from, DateTime to, {bool year = false}) {
+  final y = year ? ' ${to.year}' : '';
+  if (F.sameDay(from, to)) return '${F.dayMonth(to)}$y';
+  if (from.year != to.year) return '${F.dayMonth(from)} ${from.year} – ${F.dayMonth(to)} ${to.year}';
+  if (from.month == to.month) return '${from.day} – ${F.dayMonth(to)}$y';
+  return '${F.dayMonth(from)} – ${F.dayMonth(to)}$y';
+}
+
+/// "58 M", "29 F", "58", ""
+String d3AgeSex(Object? age, Object? gender) {
+  final g = switch (gender) {
+    'male' => 'M',
+    'female' => 'F',
+    _ => '',
+  };
+  return [if (age != null) '$age', if (g.isNotEmpty) g].join(' ');
+}
+
+String d3VisitType(String k) => switch (k) {
+  'follow_up' => 'Follow-up',
+  'new' => 'New patient',
+  'report_review' => 'Report review',
+  _ => k,
+};
+
+String d3Mode(String k) => switch (k) {
+  'in_clinic' => 'In clinic',
+  'video' => 'Video',
+  _ => k,
+};
+
+String d3AgeGroup(String k) => switch (k) {
+  'under_18' => 'Under 18',
+  '18_40' => '18 – 40',
+  '41_60' => '41 – 60',
+  'over_60' => 'Over 60',
+  _ => k,
+};
+
+String d3Method(String k) => switch (k) {
+  'upi' => 'UPI',
+  'cash' => 'Cash',
+  'card' => 'Card',
+  'net_banking' => 'Net banking',
+  'online' => 'Online',
+  _ => k,
+};
+
+/// "City Care Clinic — Salt Lake" → "City Care Clinic · Salt Lake".
+String d3LocationName(Map<String, dynamic> l) => l.str('name', l.str('shortName')).replaceAll(' — ', ' · ');
+
+/// "1 consultation", "1,204 consultations"
+String d3Plural(num n, String one, [String? many]) => '${F.count(n)} ${n == 1 ? one : (many ?? '${one}s')}';
+
+/// The report period and filters (Doctor-Reports-Filter). Doctor-Reports
+/// keeps them and passes them on as `args: {'filters': f}`; the filter
+/// sheet returns a new one with `Navigator.pop`.
+class D3Filters {
+  /// today / 7_days / 30_days / this_month / this_year / custom
+  final String range;
+
+  /// Custom range (IST calendar days, both inclusive).
+  final DateTime? from;
+  final DateTime? to;
+  final List<String> locationIds;
+  final List<String> visitTypes;
+  final List<String> modes;
+  final List<String> ageGroups;
+  final bool compare;
+  final String locationLabel;
+
+  const D3Filters({
+    this.range = '30_days',
+    this.from,
+    this.to,
+    this.locationIds = const [],
+    this.visitTypes = const [],
+    this.modes = const [],
+    this.ageGroups = const [],
+    this.compare = true,
+    this.locationLabel = 'All locations',
+  });
+
+  /// From screen args: `{'filters': D3Filters}` or `{'from', 'to'}` days.
+  static D3Filters of(Object? args) {
+    if (args is D3Filters) return args;
+    if (args is Map) {
+      final f = args['filters'];
+      if (f is D3Filters) return f;
+      final from = d3Day(args['from']);
+      final to = d3Day(args['to']);
+      if (from != null && to != null) return D3Filters(range: 'custom', from: from, to: to);
+    }
+    return const D3Filters();
+  }
+
+  /// The sheet's date chips, in order.
+  static const presets = ['today', '7_days', '30_days', 'this_month', 'this_year'];
+
+  D3Filters copyWith({String? range, DateTime? from, DateTime? to}) => D3Filters(
+    range: range ?? this.range,
+    from: from ?? this.from,
+    to: to ?? this.to,
+    locationIds: locationIds,
+    visitTypes: visitTypes,
+    modes: modes,
+    ageGroups: ageGroups,
+    compare: compare,
+    locationLabel: locationLabel,
+  );
+
+  /// The period as IST days, both inclusive (as the API's rangeOf).
+  (DateTime, DateTime) get days {
+    final t = d3Today();
+    if (range == 'custom' && from != null) return (from!, to ?? t);
+    return switch (range) {
+      'today' => (t, t),
+      '7_days' => (d3AddDays(t, -6), t),
+      'this_month' => (DateTime(t.year, t.month, 1), t),
+      'this_year' => (DateTime(t.year, 1, 1), t),
+      _ => (d3AddDays(t, -29), t),
+    };
+  }
+
+  /// Days in the period.
+  int get length {
+    final (a, b) = days;
+    return DateTime.utc(b.year, b.month, b.day).difference(DateTime.utc(a.year, a.month, a.day)).inDays + 1;
+  }
+
+  /// The previous period of the same length (what "compare" uses).
+  (DateTime, DateTime) get previousDays => (d3AddDays(days.$1, -length), d3AddDays(days.$1, -1));
+
+  /// "1 – 30 Sep"
+  String get label => d3RangeLabel(days.$1, days.$2);
+
+  /// "1 – 30 Sep 2026 · compared with 1 – 31 Aug"
+  String get longLabel {
+    final now = d3RangeLabel(days.$1, days.$2, year: true);
+    if (!compare) return now;
+    final (a, b) = previousDays;
+    return '$now · compared with ${d3RangeLabel(a, b, year: a.year != days.$2.year)}';
+  }
+
+  /// What "vs …" refers to: "August", "yesterday", "previous 30 days".
+  String get previousName {
+    final (a, b) = previousDays;
+    if (a.day == 1 && a.month == b.month && d3AddDays(b, 1).day == 1) return d3MonthLong(a);
+    if (length == 1) return range == 'today' ? 'yesterday' : 'previous day';
+    return 'previous $length days';
+  }
+
+  /// Query for the /api/reports/* endpoints.
+  Map<String, Object?> get query => {
+    if (range == 'custom' && from != null) ...{'from': d3DayKey(days.$1), 'to': d3DayKey(days.$2)} else 'range': range,
+    if (locationIds.isNotEmpty) 'locationIds': locationIds.join(','),
+    if (visitTypes.isNotEmpty) 'visitTypes': visitTypes.join(','),
+    if (modes.isNotEmpty) 'modes': modes.join(','),
+    if (ageGroups.isNotEmpty) 'ageGroups': ageGroups.join(','),
+    if (!compare) 'compare': 'false',
+  };
+
+  /// `filters` for POST /api/exports.
+  Map<String, Object?> get exportFilters => {
+    'from': d3DayKey(days.$1),
+    'to': d3DayKey(days.$2),
+    if (locationIds.isNotEmpty) 'locationIds': locationIds,
+    if (visitTypes.isNotEmpty) 'visitTypes': visitTypes,
+    if (modes.isNotEmpty) 'modes': modes,
+    if (ageGroups.isNotEmpty) 'ageGroups': ageGroups,
+  };
+
+  /// Args for the 'Report-Download' sheet.
+  Map<String, Object?> downloadArgs(String reportType) => {
+    'reportType': reportType,
+    'from': d3DayKey(days.$1),
+    'to': d3DayKey(days.$2),
+    'filters': this,
+  };
+}
+
+/// Live register screens: the filters come from the args and are changed
+/// with the header pills (which open the filter sheet, then re-fetch).
+mixin D3FilterState<W extends StatefulWidget> on LiveData<W> {
+  D3Filters? _filters;
+  D3Filters get filters => _filters ??= D3Filters.of(Nav.args<Object>(context));
+
+  /// Call first in fetch(): the first fetch starts inside initState, where
+  /// the route args can't be read yet.
+  Future<D3Filters> loadFilters() async {
+    if (_filters == null) await Future<void>.value();
+    return filters;
+  }
+
+  Future<void> pickFilters() async {
+    final f = await Nav.go<D3Filters>(context, 'Doctor-Reports-Filter', args: {'filters': filters});
+    if (f == null || !mounted) return;
+    setState(() => _filters = f);
+    reload();
+  }
 }

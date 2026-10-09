@@ -1,0 +1,51 @@
+{
+ "path": "/api/reports/follow-ups",
+ "query": {
+  "range": "30_days"
+ },
+ "data": {
+  "due": 2,
+  "onTime": 0,
+  "late": 0,
+  "missed": 2,
+  "onTimePct": 0,
+  "byCondition": [
+   {
+    "condition": "Hypertension",
+    "onTimePct": 0,
+    "total": 2
+   },
+   {
+    "condition": "Chronic kidney disease",
+    "onTimePct": 0,
+    "total": 1
+   }
+  ],
+  "missedList": [
+   {
+    "id": "6ac8bbd08adea6a429a73265",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731b7",
+     "name": "Rahul Das",
+     "age": 45,
+     "gender": "male",
+     "condition": "Hypertension"
+    },
+    "dueDate": "2026-09-28T18:30:00.000Z",
+    "daysLate": 10
+   },
+   {
+    "id": "6ac8bbd08adea6a429a73309",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731ce",
+     "name": "Sujit Mondal",
+     "age": 61,
+     "gender": "male",
+     "condition": "Chronic kidney disease"
+    },
+    "dueDate": "2026-09-29T18:30:00.000Z",
+    "daysLate": 9
+   }
+  ]
+ }
+}

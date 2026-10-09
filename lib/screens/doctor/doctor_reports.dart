@@ -2,10 +2,14 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d3.dart';
 
 /// Design: Doctor-Reports.dc.html — "Doctor · Reports (consultation MIS)".
+/// Live data: GET /api/reports/summary (range + filters) and /api/locations.
 class DoctorReportsScreen extends StatefulWidget {
   const DoctorReportsScreen({super.key});
 
@@ -27,7 +31,6 @@ const _kpis = [
   ('Fees collected', '₹1.57L', '+10% vs August', _up, 'Report-Fees'),
 ];
 
-const _total = 286;
 
 // (title, note, rows of (label, count))
 const _splits = [
@@ -53,52 +56,222 @@ const _detail = [
   ('Referrals', 'Sent to and received from other doctors', 'Report-Referrals'),
 ];
 
-int _pct(int n) => (n / _total * 100).round();
+int _pctOf(int n, int total) => total == 0 ? 0 : (n / total * 100).round();
 
-class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
+class _DoctorReportsScreenState extends State<DoctorReportsScreen> with LiveData {
   static const _ranges = ['Today', '7 days', '30 days', 'Custom'];
   int _range = 2;
 
-  void _filters() => Nav.go(context, 'Doctor-Reports-Filter');
+  /// Live filter state (the filter sheet returns a new one).
+  D3Filters _f = const D3Filters();
+
+  static int _tabOf(String range) => switch (range) {
+    'today' => 0,
+    '7_days' => 1,
+    '30_days' => 2,
+    _ => 3,
+  };
+
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([
+      Api.I.get('/api/reports/summary', query: _f.query),
+      Api.I.get('/api/locations'),
+    ]);
+    return {'summary': r[0], 'locations': (r[1] as Map?)?['items'] ?? const []};
+  }
+
+  Future<void> _filters() async {
+    if (!isLive) {
+      Nav.go(context, 'Doctor-Reports-Filter');
+      return;
+    }
+    final f = await Nav.go<D3Filters>(context, 'Doctor-Reports-Filter', args: {'filters': _f});
+    if (!mounted) return;
+    if (f == null) {
+      setState(() => _range = _tabOf(_f.range));
+      return;
+    }
+    setState(() {
+      _f = f;
+      _range = _tabOf(f.range);
+    });
+    reload();
+  }
+
+  void _pickRange(int i) {
+    setState(() => _range = i);
+    if (i == 3) {
+      _filters();
+      return;
+    }
+    if (!isLive) return;
+    _f = _f.copyWith(range: const ['today', '7_days', '30_days'][i]);
+    reload();
+  }
+
+  Map<String, dynamic> get _s => data!.obj('summary');
+  Map<String, dynamic> get _k => _s.obj('kpis');
+  int get _total => data == null ? 286 : _k.obj('consultations').numOr('value').toInt();
+
+  /// "+12% vs August", "Same as August", "−3 vs previous 7 days".
+  (String, Color) _delta(num? change, {String unit = '', bool pct = false, bool tone = true}) {
+    if (!_f.compare || change == null) return ('', _flat);
+    final vs = _f.previousName;
+    if (change == 0) return (vs == 'yesterday' ? 'Same as yesterday' : 'Same as $vs', _flat);
+    final sign = change > 0 ? '+' : '−';
+    return ('$sign${F.count(change.abs())}${pct ? '%' : unit} vs $vs', !tone ? _flat : (change > 0 ? _up : _down));
+  }
+
+  List<(String, String, String, Color, String)> get _kpiRows {
+    if (data == null) return _kpis;
+    final k = _k;
+    final c = k.obj('consultations');
+    final cd = c['changePct'] is num
+        ? _delta(c['changePct'] as num, pct: true)
+        : _delta(c['previous'] is num ? c.numOr('value') - c.numOr('previous') : null);
+    final n = k.obj('newPatients');
+    final nd = _delta(n['change'] is num ? n['change'] as num : null);
+    final a = k.obj('avgConsultMin');
+    final ad = _delta(a['value'] is num && a['previous'] is num ? a.numOr('value') - a.numOr('previous') : null, unit: ' min', tone: false);
+    final m = k.obj('missed');
+    final p = k.obj('prescriptions');
+    final fees = k.obj('feesCollected');
+    final fd = fees['changePct'] is num
+        ? _delta(fees['changePct'] as num, pct: true)
+        : (fees['previous'] is num ? _delta(fees.numOr('value') - fees.numOr('previous')) : ('', _flat));
+    return [
+      ('Consultations', F.count(c.numOr('value')), cd.$1, cd.$2, 'Report-Consultations'),
+      ('New patients', F.count(n.numOr('value')), nd.$1, nd.$2, 'Report-Consultations'),
+      ('Avg. consult time', a['value'] is num ? '${a['value']} min' : '–', ad.$1, ad.$2, 'Report-Consultations'),
+      (
+        'Missed appointments',
+        F.count(m.numOr('value')),
+        'Booked, didn’t come · ${m.numOr('pct')}%',
+        m.numOr('value') > 0 ? _down : _flat,
+        'Doctor-History',
+      ),
+      ('Prescriptions', F.count(p.numOr('value')), '${p.numOr('pctOfConsultations')}% of consultations', _flat, 'Report-Prescriptions'),
+      ('Fees collected', d3RupeesShort(fees.numOr('value')), fd.$1, fd.$2, 'Report-Fees'),
+    ];
+  }
+
+  List<Map<String, dynamic>> get _locations => data == null ? const [] : data!.list('locations');
+
+  String _locationLabel(String key) {
+    for (final l in _locations) {
+      if (l['shortName'] == key || l['name'] == key || l['id'] == key) return d3LocationName(l);
+    }
+    return key == 'other' ? 'Other' : key;
+  }
+
+  List<(String, String, List<(String, int)>)> get _splitRows {
+    if (data == null) return _splits;
+    final s = _s;
+    final total = '${F.count(_total)} total';
+    List<(String, int)> rows(String k, String Function(String) label, [int max = 8]) => [
+      for (final r in s.list(k).take(max)) (label(r.str('key')), r.numOr('count').toInt()),
+    ];
+    return [
+      ('By location', total, rows('byLocation', _locationLabel)),
+      ('By visit type', total, rows('byVisitType', d3VisitType)),
+      ('Top diagnoses', 'Share of consultations', rows('topDiagnoses', (k) => k, 5)),
+    ];
+  }
+
+  List<(String, String, String)> get _detailRows {
+    if (data == null) return _detail;
+    final pct = _s['followUpCompliancePct'];
+    return [
+      for (final d in _detail)
+        if (d.$3 == 'Report-FollowUps')
+          (d.$1, pct is num ? '$pct% came back on time · who missed' : 'Who came back on time · who missed', d.$3)
+        else
+          d,
+    ];
+  }
+
+  /// Weekdays (1 = Mon) on which no chosen location is open.
+  Set<int> get _closedWeekdays {
+    const keys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    final locs = _locations.where((l) => l['status'] == 'active' && (_f.locationIds.isEmpty || _f.locationIds.contains(l['id']))).toList();
+    if (locs.isEmpty) return const {};
+    return {
+      for (var i = 0; i < 7; i++)
+        if (!locs.any((l) => l.list('weeklyHours').any((h) => h['weekday'] == keys[i] && h['isOpen'] == true))) i + 1,
+    };
+  }
+
+  String get _dateLine => data == null ? '1 – 30 Sep 2026 · compared with 1 – 31 Aug' : _f.longLabel;
+
+  void _open(String stem) {
+    if (!isLive) {
+      Nav.go(context, stem);
+      return;
+    }
+    Nav.go(context, stem, args: stem == 'Doctor-History' ? null : {'filters': _f});
+  }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
     return MpPage(
       header: _header(),
       nav: const DoctorNav(current: 3),
-      body: VGap(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-        gap: 16,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text('1 – 30 Sep 2026 · compared with 1 – 31 Aug', style: tx(13, c: MP.ink2)),
-          ),
-
-          // Key numbers
-          MpGrid(columns: 2, gap: 8, children: [for (final k in _kpis) _kpi(k)]),
-
-          // Consultations per day
-          const _DailyCard(),
-
-          // Splits
-          for (final g in _splits)
-            D3BarCard(
-              title: g.$1,
-              note: g.$2,
-              rows: [for (final r in g.$3) D3BarRow(r.$1, '${r.$2}', _pct(r.$2) / 100, suffix: '· ${_pct(r.$2)}%')],
-            ),
-
-          // Detailed reports
+      body:
+          placeholder ??
           VGap(
-            gap: 12,
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+            gap: 16,
             children: [
-              const D3SectionHead('Detailed reports', padding: EdgeInsets.symmetric(horizontal: 4)),
-              D3ListCard(shadow: false, children: [for (final d in _detail) _detailRow(d)]),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(_dateLine, style: tx(13, c: MP.ink2)),
+              ),
+
+              // Key numbers
+              MpGrid(columns: 2, gap: 8, children: [for (final k in _kpiRows) _kpi(k)]),
+
+              // Consultations per day
+              data == null
+                  ? const _DailyCard()
+                  : _DailyCard(
+                    key: ValueKey(_f.query.toString()),
+                    days: [
+                      for (final d in _s.list('perDay'))
+                        if (d3Day(d['date']) != null) (d3Day(d['date'])!, d.numOr('count').toInt()),
+                    ],
+                    closed: _closedWeekdays,
+                    onTable: () => _open('Report-Consultations'),
+                  ),
+
+              // Splits
+              for (final g in _splitRows)
+                if (g.$3.isNotEmpty)
+                  D3BarCard(
+                    title: g.$1,
+                    note: g.$2,
+                    rows: [
+                      for (final r in g.$3)
+                        D3BarRow(
+                          r.$1,
+                          F.count(r.$2),
+                          _pctOf(r.$2, _total) / 100,
+                          suffix: '· ${_pctOf(r.$2, _total)}%',
+                        ),
+                    ],
+                  ),
+
+              // Detailed reports
+              VGap(
+                gap: 12,
+                children: [
+                  const D3SectionHead('Detailed reports', padding: EdgeInsets.symmetric(horizontal: 4)),
+                  D3ListCard(shadow: false, children: [for (final d in _detailRows) _detailRow(d)]),
+                ],
+              ),
             ],
           ),
-        ],
-      ),
     );
   }
 
@@ -126,7 +299,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
               SizedBox(
                 height: 44,
                 child: Tap(
-                  onTap: () => Nav.go(context, 'Report-Download'),
+                  onTap: () => Nav.go(context, 'Report-Download', args: isLive ? _f.downloadArgs('consultations') : null),
                   radius: 12,
                   color: MP.white,
                   border: MP.lineStrong,
@@ -146,10 +319,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
           D3Tabs(
             options: _ranges,
             index: _range,
-            onChanged: (i) {
-              setState(() => _range = i);
-              if (i == 3) _filters();
-            },
+            onChanged: _pickRange,
           ),
           Row(
             children: [
@@ -184,7 +354,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: MP.lineStrong),
                   ),
-                  child: Text('All locations', maxLines: 1, softWrap: false, style: tx(14, w: w500)),
+                  child: Text(_f.locationLabel, maxLines: 1, softWrap: false, style: tx(14, w: w500)),
                 ),
               ),
             ],
@@ -195,7 +365,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
   }
 
   Widget _kpi((String, String, String, Color, String) k) => MpCard(
-    onTap: () => Nav.go(context, k.$5),
+    onTap: () => _open(k.$5),
     radius: 20,
     padding: const EdgeInsets.all(16),
     child: Column(
@@ -211,7 +381,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
   );
 
   Widget _detailRow((String, String, String) d) => Tap(
-    onTap: () => Nav.go(context, d.$3),
+    onTap: () => _open(d.$3),
     radius: 0,
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     child: Row(
@@ -236,14 +406,104 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> {
 /// "Consultations per day" bar chart. Tap or drag across the bars to move
 /// the highlight and the tooltip (design state: Mon, 28 Sep).
 class _DailyCard extends StatefulWidget {
-  const _DailyCard();
+  /// Live: (IST day, completed consultations) for every day of the period.
+  final List<(DateTime, int)>? days;
+
+  /// Live: weekdays (1 = Mon) when no chosen location is open.
+  final Set<int> closed;
+  final VoidCallback? onTable;
+  const _DailyCard({super.key, this.days, this.closed = const {}, this.onTable});
 
   @override
   State<_DailyCard> createState() => _DailyCardState();
 }
 
 class _DailyCardState extends State<_DailyCard> {
-  static const _vals = [
+  List<int> get _vals => widget.days == null ? _sample : [for (final d in widget.days!) d.$2];
+
+  /// Top of the y axis: 14 in the design; live the busiest day, rounded up
+  /// to an even number so the middle line is a whole number.
+  int get _top {
+    if (widget.days == null) return 14;
+    final m = _vals.fold<int>(0, math.max);
+    return math.max(2, m.isOdd ? m + 1 : m);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final v = _vals;
+    if (widget.days != null && v.isNotEmpty) {
+      final m = v.fold<int>(0, math.max);
+      _sel = v.lastIndexOf(m);
+    }
+  }
+
+  bool _isClosed(int i) => widget.days != null && widget.closed.contains(widget.days![i].$1.weekday);
+
+  String _dayLabel(int i) => widget.days == null ? '${_week[i % 7]}, ${i + 1} Sep' : d3DayHead(widget.days![i].$1);
+
+  /// x-axis labels: first, last and three in between ("1 Sep", "8", … "30 Sep").
+  List<String> get _ticks {
+    final days = widget.days;
+    if (days == null) return const ['1 Sep', '8', '15', '22', '30 Sep'];
+    if (days.isEmpty) return const [];
+    final idx = <int>{for (var k = 0; k <= 4; k++) ((days.length - 1) * k / 4).round()}.toList()..sort();
+    final out = <String>[];
+    for (var j = 0; j < idx.length; j++) {
+      final d = days[idx[j]].$1;
+      final edge = j == 0 || j == idx.length - 1 || d.month != days[idx[j - 1]].$1.month;
+      out.add(edge ? F.dayMonth(d) : '${d.day}');
+    }
+    return out;
+  }
+
+  String _plural(int weekday) => '${d3WeekdayLong(DateTime(2026, 9, 6 + weekday))}s';
+
+  String get _closedText {
+    final c = widget.closed.toList()..sort();
+    if (c.isEmpty || (widget.days?.length ?? 0) < 7) return '';
+    return 'Closed on ${F.joinAnd([for (final w in c) _plural(w)])}.';
+  }
+
+  String get _semantics {
+    final days = widget.days;
+    if (days == null) {
+      return 'Daily consultations, 1 to 30 September. Highest 14 on Monday 28 September. Closed on Sundays.';
+    }
+    if (days.isEmpty) return 'Daily consultations';
+    String long(DateTime d) => '${d.day} ${d3MonthLong(d)}';
+    final m = _vals.fold<int>(0, math.max);
+    final at = days[_vals.lastIndexOf(m)].$1;
+    return [
+      'Daily consultations, ${long(days.first.$1)} to ${long(days.last.$1)}.',
+      if (m > 0) 'Highest $m on ${d3WeekdayLong(at)} ${long(at)}.',
+      if (_closedText.isNotEmpty) _closedText,
+    ].join(' ');
+  }
+
+  String get _footer {
+    final days = widget.days;
+    if (days == null) return 'Busiest on Mondays and Thursdays. Closed on Sundays.';
+    final total = _vals.fold<int>(0, (s, v) => s + v);
+    if (total == 0) return 'No consultations in this period.';
+    String busiest;
+    if (days.length < 7) {
+      final m = _vals.fold<int>(0, math.max);
+      busiest = 'Busiest on ${d3DayHead(days[_vals.lastIndexOf(m)].$1)}.';
+    } else {
+      final byDay = List.filled(8, 0);
+      for (final d in days) {
+        byDay[d.$1.weekday] += d.$2;
+      }
+      final m = byDay.fold<int>(0, math.max);
+      final top = [for (var w = 1; w <= 7; w++) if (byDay[w] == m) w];
+      busiest = top.length <= 2 ? 'Busiest on ${F.joinAnd([for (final w in top) _plural(w)])}.' : '';
+    }
+    return [busiest, _closedText].where((s) => s.isNotEmpty).join(' ');
+  }
+
+  static const _sample = [
     10,
     12,
     12,
@@ -302,7 +562,7 @@ class _DailyCardState extends State<_DailyCard> {
             children: [
               Expanded(child: Text('Consultations per day', style: tx(17, w: w700))),
               const SizedBox(width: 8),
-              D3TextLink('Table', onTap: () => Nav.go(context, 'Report-Consultations')),
+              D3TextLink('Table', onTap: widget.onTable ?? () => Nav.go(context, 'Report-Consultations')),
             ],
           ),
           const SizedBox(height: 16),
@@ -312,22 +572,21 @@ class _DailyCardState extends State<_DailyCard> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Semantics(
-                  label:
-                      'Daily consultations, 1 to 30 September. Highest 14 on Monday 28 September. Closed on Sundays.',
+                  label: _semantics,
                   child: SizedBox(height: _plotH, child: LayoutBuilder(builder: (context, box) => _plot(box.maxWidth))),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    for (final t in const ['1 Sep', '8', '15', '22', '30 Sep']) Text(t, style: tx(11, c: MP.ink3)),
+                    for (final t in _ticks) Text(t, style: tx(11, c: MP.ink3)),
                   ],
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          Text('Busiest on Mondays and Thursdays. Closed on Sundays.', style: tx(13, h: 1.45, c: MP.ink2)),
+          Text(_footer, style: tx(13, h: 1.45, c: MP.ink2)),
         ],
       ),
     );
@@ -335,6 +594,8 @@ class _DailyCardState extends State<_DailyCard> {
 
   Widget _plot(double w) {
     final n = _vals.length;
+    if (n == 0) return const SizedBox();
+    final top = _top;
     final bw = (w - _gap * (n - 1)) / n;
     // Tooltip box spans from the axis-label column (-24) to 6px past the plot.
     final anchor = 24 + _sel * (bw + _gap) + bw / 2;
@@ -355,7 +616,7 @@ class _DailyCardState extends State<_DailyCard> {
                   Expanded(
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 160),
-                      height: _vals[i] == 0 ? 2 : (_vals[i] / 14 * _plotH).roundToDouble(),
+                      height: _vals[i] == 0 ? 2 : (_vals[i] / top * _plotH).roundToDouble(),
                       decoration: BoxDecoration(
                         color: _vals[i] == 0 ? MP.lineStrong : (i == _sel ? MP.primary : MP.primaryMid),
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
@@ -368,8 +629,8 @@ class _DailyCardState extends State<_DailyCard> {
           ),
           // Y axis: 14 / 7 / 0 — 11px labels (13px line box) in a 132px
           // space-between column with -6px end margins.
-          for (final (label, top) in const [('14', -6.0), ('7', 59.5), ('0', 125.0)])
-            Positioned(left: -24, top: top, child: Text(label, style: tx(11, c: MP.ink3, tab: true))),
+          for (final (label, y) in [('$top', -6.0), ('${top ~/ 2}', 59.5), ('0', 125.0)])
+            Positioned(left: -24, top: y, child: Text(label, style: tx(11, c: MP.ink3, tab: true))),
           Positioned(
             left: -24,
             right: -6,
@@ -391,9 +652,14 @@ class _DailyCardState extends State<_DailyCard> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${_week[_sel % 7]}, ${_sel + 1} Sep', style: tx(11, c: MP.white.withValues(alpha: 0.72))),
+          Text(_dayLabel(_sel), style: tx(11, c: MP.white.withValues(alpha: 0.72))),
           const SizedBox(height: 1),
-          Text(v == 0 ? 'Closed' : '$v consultations', style: tx(13, w: w700, c: MP.white)),
+          Text(
+            widget.days == null
+                ? (v == 0 ? 'Closed' : '$v consultations')
+                : (v == 0 ? (_isClosed(_sel) ? 'Closed' : 'No consultations') : d3Plural(v, 'consultation')),
+            style: tx(13, w: w700, c: MP.white),
+          ),
         ],
       ),
     );

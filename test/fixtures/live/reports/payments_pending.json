@@ -1,0 +1,152 @@
+{
+ "path": "/api/payments",
+ "query": {
+  "status": "pending"
+ },
+ "data": [
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "patientId": {
+    "name": "Moumita Roy",
+    "phone": "9831120766",
+    "id": "6ac8bbd08adea6a429a731c5"
+   },
+   "appointmentId": {
+    "startAt": "2026-10-09T06:00:00.000Z",
+    "mode": "in_clinic",
+    "status": "confirmed",
+    "id": "6ac8bbd08adea6a429a733bc"
+   },
+   "amount": 600,
+   "status": "pending",
+   "createdAt": "2026-10-09T10:02:56.874Z",
+   "updatedAt": "2026-10-09T10:02:56.874Z",
+   "id": "6ac8bbd08adea6a429a733be"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "patientId": {
+    "name": "Sujit Mondal",
+    "phone": "9831120767",
+    "id": "6ac8bbd08adea6a429a731ce"
+   },
+   "appointmentId": {
+    "startAt": "2026-10-09T05:30:00.000Z",
+    "mode": "in_clinic",
+    "status": "booked",
+    "id": "6ac8bbd08adea6a429a733b5"
+   },
+   "amount": 600,
+   "status": "pending",
+   "createdAt": "2026-10-09T10:02:56.869Z",
+   "updatedAt": "2026-10-09T10:02:56.869Z",
+   "id": "6ac8bbd08adea6a429a733b7"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "patientId": {
+    "name": "Debasish Bose",
+    "phone": "9831120769",
+    "id": "6ac8bbd08adea6a429a731dd"
+   },
+   "appointmentId": {
+    "startAt": "2026-10-09T04:30:00.000Z",
+    "mode": "in_clinic",
+    "status": "waiting",
+    "id": "6ac8bbd08adea6a429a733a7"
+   },
+   "amount": 600,
+   "status": "pending",
+   "createdAt": "2026-10-09T10:02:56.860Z",
+   "updatedAt": "2026-10-09T10:02:56.860Z",
+   "id": "6ac8bbd08adea6a429a733a9"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "patientId": {
+    "name": "Rahul Das",
+    "phone": "9831120764",
+    "id": "6ac8bbd08adea6a429a731b7"
+   },
+   "appointmentId": {
+    "startAt": "2026-10-09T04:00:00.000Z",
+    "mode": "in_clinic",
+    "status": "in_consultation",
+    "id": "6ac8bbd08adea6a429a7339e"
+   },
+   "amount": 600,
+   "status": "pending",
+   "createdAt": "2026-10-09T10:02:56.853Z",
+   "updatedAt": "2026-10-09T10:02:56.853Z",
+   "id": "6ac8bbd08adea6a429a733a0"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "patientId": {
+    "name": "Aisha Khan",
+    "phone": "9831120765",
+    "id": "6ac8bbd08adea6a429a731be"
+   },
+   "appointmentId": {
+    "startAt": "2026-10-03T05:00:00.000Z",
+    "mode": "in_clinic",
+    "status": "completed",
+    "id": "6ac8bbd08adea6a429a73317"
+   },
+   "amount": 600,
+   "status": "pending",
+   "createdAt": "2026-10-03T05:00:00.000Z",
+   "updatedAt": "2026-10-03T05:00:00.000Z",
+   "id": "6ac8bbd08adea6a429a73319"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "patientId": {
+    "name": "Debasish Bose",
+    "phone": "9831120769",
+    "id": "6ac8bbd08adea6a429a731dd"
+   },
+   "appointmentId": {
+    "startAt": "2026-09-21T04:30:00.000Z",
+    "mode": "in_clinic",
+    "status": "completed",
+    "id": "6ac8bbd08adea6a429a73273"
+   },
+   "amount": 600,
+   "status": "pending",
+   "createdAt": "2026-09-21T04:30:00.000Z",
+   "updatedAt": "2026-09-21T04:30:00.000Z",
+   "id": "6ac8bbd08adea6a429a73275"
+  }
+ ]
+}

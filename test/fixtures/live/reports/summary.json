@@ -1,0 +1,240 @@
+{
+ "path": "/api/reports/summary",
+ "query": {
+  "range": "30_days"
+ },
+ "data": {
+  "range": {
+   "from": "2026-09-09T18:30:00.000Z",
+   "to": "2026-10-09T18:30:00.000Z",
+   "previousFrom": "2026-08-10T18:30:00.000Z",
+   "previousTo": "2026-09-09T18:30:00.000Z"
+  },
+  "kpis": {
+   "consultations": {
+    "value": 10,
+    "previous": 1,
+    "changePct": 900
+   },
+   "newPatients": {
+    "value": 3,
+    "previous": 0,
+    "change": 3
+   },
+   "avgConsultMin": {
+    "value": 11,
+    "previous": 9
+   },
+   "missed": {
+    "value": 1,
+    "pct": 9
+   },
+   "prescriptions": {
+    "value": 9,
+    "pctOfConsultations": 90
+   },
+   "feesCollected": {
+    "value": 4300,
+    "previous": 600,
+    "changePct": 617
+   }
+  },
+  "byLocation": [
+   {
+    "key": "Salt Lake",
+    "count": 8
+   },
+   {
+    "key": "New Town",
+    "count": 2
+   }
+  ],
+  "byVisitType": [
+   {
+    "key": "follow_up",
+    "count": 6
+   },
+   {
+    "key": "new",
+    "count": 3
+   },
+   {
+    "key": "report_review",
+    "count": 1
+   }
+  ],
+  "byMode": [
+   {
+    "key": "in_clinic",
+    "count": 9
+   },
+   {
+    "key": "video",
+    "count": 1
+   }
+  ],
+  "byAgeGroup": [
+   {
+    "key": "41_60",
+    "count": 6
+   },
+   {
+    "key": "18_40",
+    "count": 4
+   }
+  ],
+  "topDiagnoses": [
+   {
+    "key": "Type 2 diabetes mellitus",
+    "count": 4
+   },
+   {
+    "key": "Essential hypertension",
+    "count": 3
+   },
+   {
+    "key": "Polycystic ovary syndrome",
+    "count": 1
+   },
+   {
+    "key": "Hypothyroidism",
+    "count": 1
+   },
+   {
+    "key": "Coronary artery disease",
+    "count": 1
+   },
+   {
+    "key": "Dyslipidaemia",
+    "count": 1
+   },
+   {
+    "key": "Iron deficiency anaemia",
+    "count": 1
+   }
+  ],
+  "perDay": [
+   {
+    "date": "2026-09-10",
+    "count": 0
+   },
+   {
+    "date": "2026-09-11",
+    "count": 0
+   },
+   {
+    "date": "2026-09-12",
+    "count": 0
+   },
+   {
+    "date": "2026-09-13",
+    "count": 0
+   },
+   {
+    "date": "2026-09-14",
+    "count": 0
+   },
+   {
+    "date": "2026-09-15",
+    "count": 1
+   },
+   {
+    "date": "2026-09-16",
+    "count": 0
+   },
+   {
+    "date": "2026-09-17",
+    "count": 0
+   },
+   {
+    "date": "2026-09-18",
+    "count": 0
+   },
+   {
+    "date": "2026-09-19",
+    "count": 0
+   },
+   {
+    "date": "2026-09-20",
+    "count": 0
+   },
+   {
+    "date": "2026-09-21",
+    "count": 1
+   },
+   {
+    "date": "2026-09-22",
+    "count": 0
+   },
+   {
+    "date": "2026-09-23",
+    "count": 0
+   },
+   {
+    "date": "2026-09-24",
+    "count": 1
+   },
+   {
+    "date": "2026-09-25",
+    "count": 0
+   },
+   {
+    "date": "2026-09-26",
+    "count": 0
+   },
+   {
+    "date": "2026-09-27",
+    "count": 1
+   },
+   {
+    "date": "2026-09-28",
+    "count": 0
+   },
+   {
+    "date": "2026-09-29",
+    "count": 1
+   },
+   {
+    "date": "2026-09-30",
+    "count": 0
+   },
+   {
+    "date": "2026-10-01",
+    "count": 0
+   },
+   {
+    "date": "2026-10-02",
+    "count": 0
+   },
+   {
+    "date": "2026-10-03",
+    "count": 1
+   },
+   {
+    "date": "2026-10-04",
+    "count": 0
+   },
+   {
+    "date": "2026-10-05",
+    "count": 0
+   },
+   {
+    "date": "2026-10-06",
+    "count": 1
+   },
+   {
+    "date": "2026-10-07",
+    "count": 1
+   },
+   {
+    "date": "2026-10-08",
+    "count": 0
+   },
+   {
+    "date": "2026-10-09",
+    "count": 2
+   }
+  ],
+  "followUpCompliancePct": null
+ }
+}

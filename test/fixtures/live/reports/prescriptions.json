@@ -1,0 +1,171 @@
+{
+ "path": "/api/reports/prescriptions",
+ "query": {
+  "range": "30_days"
+ },
+ "data": {
+  "totals": {
+   "prescriptions": 9,
+   "medicines": 13,
+   "labTests": 8
+  },
+  "topMedicines": [
+   {
+    "key": "Metformin 500 mg",
+    "count": 5
+   },
+   {
+    "key": "Telmisartan 40 mg",
+    "count": 3
+   },
+   {
+    "key": "Glimepiride 1 mg",
+    "count": 2
+   },
+   {
+    "key": "Metformin 750 mg",
+    "count": 1
+   },
+   {
+    "key": "Atorvastatin 10 mg",
+    "count": 1
+   },
+   {
+    "key": "Levothyroxine 50 mcg",
+    "count": 1
+   }
+  ],
+  "topTests": [
+   {
+    "key": "HbA1c",
+    "count": 3
+   },
+   {
+    "key": "Lipid profile",
+    "count": 2
+   },
+   {
+    "key": "CBC",
+    "count": 1
+   },
+   {
+    "key": "ECG",
+    "count": 1
+   },
+   {
+    "key": "TSH",
+    "count": 1
+   }
+  ],
+  "items": [
+   {
+    "id": "6ac8be2a0640a42493dc55a6",
+    "rxNumber": "0010",
+    "issuedAt": "2026-10-09T10:12:58.901Z",
+    "patient": "Test Consult",
+    "medicines": [
+     "Metformin 500 mg",
+     "Glimepiride 1 mg",
+     "Metformin 750 mg"
+    ],
+    "tests": [
+     "HbA1c"
+    ]
+   },
+   {
+    "id": "6ac8bbd08adea6a429a73375",
+    "rxNumber": "0009",
+    "issuedAt": "2026-10-07T12:50:00.000Z",
+    "patient": "Rahul Das",
+    "medicines": [
+     "Telmisartan 40 mg"
+    ],
+    "tests": []
+   },
+   {
+    "id": "6ac8bbd08adea6a429a73351",
+    "rxNumber": "0008",
+    "issuedAt": "2026-10-06T04:15:00.000Z",
+    "patient": "Amit Pal",
+    "medicines": [
+     "Metformin 500 mg"
+    ],
+    "tests": []
+   },
+   {
+    "id": "6ac8bbd08adea6a429a7332b",
+    "rxNumber": "0007",
+    "issuedAt": "2026-10-03T05:00:00.000Z",
+    "patient": "Aisha Khan",
+    "medicines": [
+     "Metformin 500 mg"
+    ],
+    "tests": [
+     "CBC"
+    ]
+   },
+   {
+    "id": "6ac8bbd08adea6a429a73237",
+    "rxNumber": "0001",
+    "issuedAt": "2026-09-29T03:34:00.000Z",
+    "patient": "Priya Sharma",
+    "medicines": [
+     "Metformin 500 mg",
+     "Glimepiride 1 mg"
+    ],
+    "tests": [
+     "HbA1c",
+     "Lipid profile"
+    ]
+   },
+   {
+    "id": "6ac8bbd08adea6a429a732da",
+    "rxNumber": "0005",
+    "issuedAt": "2026-09-27T11:45:00.000Z",
+    "patient": "Moumita Roy",
+    "medicines": [
+     "Atorvastatin 10 mg"
+    ],
+    "tests": [
+     "ECG",
+     "Lipid profile"
+    ]
+   },
+   {
+    "id": "6ac8bbd08adea6a429a732b2",
+    "rxNumber": "0004",
+    "issuedAt": "2026-09-24T05:30:00.000Z",
+    "patient": "Farhana Islam",
+    "medicines": [
+     "Levothyroxine 50 mcg"
+    ],
+    "tests": [
+     "TSH"
+    ]
+   },
+   {
+    "id": "6ac8bbd08adea6a429a73289",
+    "rxNumber": "0003",
+    "issuedAt": "2026-09-21T04:30:00.000Z",
+    "patient": "Debasish Bose",
+    "medicines": [
+     "Metformin 500 mg",
+     "Telmisartan 40 mg"
+    ],
+    "tests": [
+     "HbA1c"
+    ]
+   },
+   {
+    "id": "6ac8bbd08adea6a429a7325f",
+    "rxNumber": "0002",
+    "issuedAt": "2026-09-15T04:00:00.000Z",
+    "patient": "Rahul Das",
+    "medicines": [
+     "Telmisartan 40 mg"
+    ],
+    "tests": []
+   }
+  ]
+ }
+}

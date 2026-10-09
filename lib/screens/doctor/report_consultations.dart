@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d3.dart';
 
 /// Design: Report-Consultations.dc.html — "Report · Consultation register".
+/// Live data: GET /api/reports/consultations (range, filters, q).
 class ReportConsultationsScreen extends StatefulWidget {
   const ReportConsultationsScreen({super.key});
 
@@ -76,9 +82,34 @@ const _day29 = [
   ),
 ];
 
-class _ReportConsultationsScreenState extends State<ReportConsultationsScreen> {
+class _ReportConsultationsScreenState extends State<ReportConsultationsScreen> with LiveData, D3FilterState {
   String _q = '';
   bool _more = false;
+
+  /// Live: days whose rows are all shown ("Show 6 more from 30 Sep").
+  final _open = <String>{};
+  static const _perDay = 5;
+  Timer? _debounce;
+
+  @override
+  Future<Object?> fetch() async {
+    final f = await loadFilters();
+    final q = _q.trim();
+    return await Api.I.get('/api/reports/consultations', query: {...f.query, if (q.isNotEmpty) 'q': q});
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _search(String s) {
+    setState(() => _q = s);
+    if (!isLive) return;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () => reload(quiet: true));
+  }
 
   bool _hit(_Visit v, String q) =>
       q.isEmpty ||
@@ -86,20 +117,110 @@ class _ReportConsultationsScreenState extends State<ReportConsultationsScreen> {
       v.detail.toLowerCase().contains(q) ||
       v.meta.toLowerCase().contains(q);
 
+  _Visit _visit(Map<String, dynamic> a) {
+    final p = a.obj('patient');
+    final at = F.date(a['startAt']);
+    final type = a.str('visitType');
+    final fee = a.numOr('fee');
+    final free = fee == 0 || a['feeStatus'] == 'free';
+    final dx = [for (final d in (a['diagnoses'] as List? ?? const [])) '$d'];
+    final detail = [
+      if (at != null) F.time(at),
+      d3AgeSex(p['age'], p['gender']),
+      type == 'new' ? 'New' : d3VisitType(type),
+      if (dx.isNotEmpty) dx.join(', '),
+    ].where((s) => s.isNotEmpty).join(' · ');
+    final meta = [
+      a.str('location'),
+      d3Mode(a.str('mode')),
+      if (a['durationMin'] is num) '${a['durationMin']} min',
+    ].where((s) => s.isNotEmpty).join(' · ');
+    final (String?, D3Tone) badge = a['feeStatus'] == 'pending'
+        ? ('Fee pending', D3Tone.amber)
+        : type == 'new'
+        ? ('New patient', D3Tone.blue)
+        : free
+        ? (type == 'report_review' ? 'Free review' : 'Free visit', D3Tone.grey)
+        : (null, D3Tone.blue);
+    return _Visit(p.str('name', 'Patient'), free ? 'Free' : d3Rupees(fee.round()), detail, meta, badge.$1, badge.$2);
+  }
+
+  /// Live rows grouped by IST day, newest first.
+  List<(DateTime, List<(_Visit, Map<String, dynamic>)>)> get _days {
+    final out = <(DateTime, List<(_Visit, Map<String, dynamic>)>)>[];
+    for (final a in data!.list('items')) {
+      final d = d3Day(a['date']) ?? d3Day(a['startAt']);
+      if (d == null) continue;
+      if (out.isEmpty || !F.sameDay(out.last.$1, d)) out.add((d, []));
+      out.last.$2.add((_visit(a), a));
+    }
+    return out;
+  }
+
+  Widget _liveBody() {
+    final t = data!.obj('totals');
+    final q = _q.trim();
+    final days = _days;
+    return VGap(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 23),
+      gap: 12,
+      children: [
+        D3StatTiles([
+          (F.count(t.numOr('consultations')), 'Consultations', MP.ink),
+          (t['avgMin'] is num ? '${t['avgMin']} min' : '–', 'Average time', MP.ink),
+          (d3RupeesShort(t.numOr('feesBilled')), 'Fees billed', MP.ink),
+        ]),
+        for (final (day, rows) in days) ...[
+          D3SectionHead(d3DayHead(day), trailing: d3Plural(rows.length, 'consultation')),
+          D3ListCard(
+            children: [
+              for (final r in (q.isNotEmpty || _open.contains(d3DayKey(day)) ? rows : rows.take(_perDay)))
+                _row(r.$1, r.$2),
+            ],
+          ),
+          if (q.isEmpty && !_open.contains(d3DayKey(day)) && rows.length > _perDay)
+            D3ShowMore(
+              'Show ${rows.length - _perDay} more from ${F.dayMonth(day)}',
+              onTap: () => setState(() => _open.add(d3DayKey(day))),
+            ),
+        ],
+        if (days.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              q.isEmpty ? 'No consultations in this period' : 'No consultations match “$q”',
+              textAlign: TextAlign.center,
+              style: tx(15, c: MP.ink2),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    final live = isLive;
     final q = _q.trim().toLowerCase();
     final d30 = [..._day30, if (_more || q.isNotEmpty) ..._day30More].where((v) => _hit(v, q)).toList();
     final d29 = _day29.where((v) => _hit(v, q)).toList();
+    final total = data?.obj('totals').numOr('consultations') ?? 0;
     return MpPage(
       header: D3ReportHeader(
         title: 'Consultation register',
-        subtitle: '286 consultations · 1 – 30 Sep',
+        subtitle: !live
+            ? '286 consultations · 1 – 30 Sep'
+            : (data == null ? filters.label : '${d3Plural(total, 'consultation')} · ${filters.label}'),
         searchHint: 'Search patient, diagnosis or mobile',
-        onSearch: (s) => setState(() => _q = s),
+        onSearch: _search,
+        rangeLabel: live ? filters.label : '1 – 30 Sep',
+        locationLabel: live ? filters.locationLabel : 'All locations',
+        onFilters: live ? pickFilters : null,
       ),
-      bottom: const D3DownloadBar('Download register'),
-      body: VGap(
+      bottom: live
+          ? D3DownloadBar('Download register', reportType: 'consultations', filters: filters)
+          : const D3DownloadBar('Download register'),
+      body: placeholder ?? (data != null ? _liveBody() : VGap(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 23),
         gap: 12,
         children: [
@@ -127,11 +248,11 @@ class _ReportConsultationsScreenState extends State<ReportConsultationsScreen> {
               ),
             ),
         ],
-      ),
+      )),
     );
   }
 
-  Widget _row(_Visit v) => D3RegisterRow(
+  Widget _row(_Visit v, [Map<String, dynamic>? a]) => D3RegisterRow(
     name: v.name,
     trailing: D3Amount(v.fee),
     detail: v.detail,
@@ -141,6 +262,10 @@ class _ReportConsultationsScreenState extends State<ReportConsultationsScreen> {
         if (v.badge != null) ...[const SizedBox(width: 8), D3Badge(v.badge!, tone: v.tone)],
       ],
     ),
-    onTap: () => Nav.go(context, 'PP-Summary'),
+    onTap: () => Nav.go(
+      context,
+      'PP-Summary',
+      args: a == null ? null : {'patientId': a.obj('patient')['id'], 'appointmentId': a['appointmentId']},
+    ),
   );
 }

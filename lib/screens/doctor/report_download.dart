@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'common_d3.dart';
 
 /// Design: Report-Download.dc.html — "Report · download options".
+/// Live: POST /api/exports {kind: 'report', reportType, format, filters,
+/// includeMobiles, emailCopy}, then opens the returned file link.
+/// Args: {'reportType', 'from', 'to'} (+ 'filters': D3Filters).
 /// Sheet over 'Doctor-Reports' (also opened from the report registers).
 class ReportDownloadSheet extends StatefulWidget {
   const ReportDownloadSheet({super.key});
@@ -18,14 +24,71 @@ const _formats = [
   ('CSV', 'Plain data for other software', 'CSV'),
 ];
 
+const _formatKeys = ['pdf', 'xlsx', 'csv'];
+
+/// Report names for the subtitle, by `reportType`.
+const _reportNames = {
+  'consultations': 'Consultation register',
+  'prescriptions': 'Prescription register',
+  'fees': 'Fees and collections',
+  'follow_ups': 'Follow-up compliance',
+  'referrals': 'Referrals',
+};
+
 class _ReportDownloadSheetState extends State<ReportDownloadSheet> {
   int _fmt = 0;
   bool _mobiles = false;
   bool _email = true;
+  final _busy = ValueNotifier(false);
 
-  void _download() {
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Map _args(BuildContext context) => Nav.args<Map>(context) ?? const {};
+
+  String get _reportType => '${_args(context)['reportType'] ?? 'consultations'}';
+
+  D3Filters get _filters => D3Filters.of(_args(context));
+
+  /// "Consultation register · 1 – 30 Sep · all locations"
+  String get _subtitle {
+    if (!isLive) return 'Consultation register · 1 – 30 Sep · all locations';
+    final f = _filters;
+    final name = _reportNames[_reportType] ?? 'Report';
+    return '$name · ${f.label} · ${f.locationLabel == 'All locations' ? 'all locations' : f.locationLabel}';
+  }
+
+  Future<void> _download() async {
     final name = _formats[_fmt].$3;
-    toast(context, _email ? '$name downloaded · copy sent to your email' : '$name downloaded');
+    if (!isLive) {
+      toast(context, _email ? '$name downloaded · copy sent to your email' : '$name downloaded');
+      Navigator.pop(context);
+      return;
+    }
+    final res = await runAction(
+      context,
+      () => Api.I.post('/api/exports', {
+        'kind': 'report',
+        'reportType': _reportType,
+        'format': _formatKeys[_fmt],
+        'filters': _filters.exportFilters,
+        'includeMobiles': _mobiles,
+        'emailCopy': _email,
+      }),
+      busy: _busy,
+    );
+    if (res == null || !mounted) return;
+    final url = res is Map ? res['url'] as String? : null;
+    final opened = url != null && await d3Launch(Uri.parse(url));
+    if (!mounted) return;
+    if (!opened) {
+      toast(context, _email ? 'Report ready · copy sent to your email' : "Couldn't open the $name file");
+    } else {
+      toast(context, _email ? '$name downloaded · copy sent to your email' : '$name downloaded');
+    }
     Navigator.pop(context);
   }
 
@@ -42,7 +105,7 @@ class _ReportDownloadSheetState extends State<ReportDownloadSheet> {
             children: [
               Text('Download report', style: tx(20, w: w700, h: 1.25)),
               const SizedBox(height: 4),
-              Text('Consultation register · 1 – 30 Sep · all locations', style: tx(14, c: MP.ink2)),
+              Text(_subtitle, style: tx(14, c: MP.ink2)),
             ],
           ),
           const SizedBox(height: 18),
