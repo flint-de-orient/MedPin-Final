@@ -137,6 +137,34 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
     reload(quiet: true);
   }
 
+  /// Opens [stem] with [args] when live (the design preview just navigates),
+  /// then refreshes the day.
+  Future<void> _go(String stem, Map<String, Object?> args) async {
+    await Nav.go(context, stem, args: isLive ? args : null);
+    if (mounted && isLive) reload(quiet: true);
+  }
+
+  Map<String, dynamic>? _request(int i) {
+    final list = data?.list('requests') ?? const [];
+    return i < list.length ? list[i] : null;
+  }
+
+  void _openRequest(int i) {
+    final r = _request(i);
+    _go('Patient-Profile-Desk', {if (r != null) 'patientId': r.obj('patientId').str('id')});
+  }
+
+  void _assignRequest(int i) {
+    final r = _request(i);
+    _go('Appointments-Manage', {if (r != null) 'requestId': r.str('id'), if (r != null) 'patientId': r.obj('patientId').str('id')});
+  }
+
+  void _openAppointment(int i) {
+    final id = _apptRows[i].$5;
+    final a = data?.list('items').where((x) => x.str('id') == id).firstOrNull;
+    _go('Patient-Profile-Desk', {if (a != null) 'patientId': a.obj('patient').str('id'), if (id != null) 'appointmentId': id});
+  }
+
   String get _greeting {
     if (data == null) return 'Good morning, Tania';
     return '${F.greeting()}, ${F.firstName(data!.str('userName', Session.I.name))}';
@@ -233,7 +261,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
               ],
             ),
           ),
-          for (final r in _requestRows)
+          for (final (i, r) in _requestRows.indexed)
             Container(
               padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
@@ -241,7 +269,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                 children: [
                   Expanded(
                     child: Tap(
-                      onTap: () => Nav.go(context, 'Patient-Profile-Desk'),
+                      onTap: () => _openRequest(i),
                       radius: 8,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -259,7 +287,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                   MpButton.small(
                     'Assign time',
                     expand: false,
-                    onTap: () => Nav.go(context, 'Appointments-Manage'),
+                    onTap: () => _assignRequest(i),
                   ),
                 ],
               ),
@@ -292,7 +320,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                   ),
                 ),
                 Tap(
-                  onTap: () => Nav.go(context, 'Appointments'),
+                  onTap: () => _go('Appointments', const {}),
                   radius: 6,
                   child: Padding(
                     padding: const EdgeInsets.only(top: 3),
@@ -319,7 +347,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
         children: [
           Expanded(
             child: Tap(
-              onTap: () => Nav.go(context, 'Patient-Profile-Desk'),
+              onTap: () => _openAppointment(i),
               radius: 8,
               child: Row(
                 children: [

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
 
@@ -20,6 +24,9 @@ const _chipColors = <String, (Color, Color)>{
 /// (initials, name, time, unread, who, text, chip ('' = none))
 typedef _Conv = (String, String, String, int, String, String, String);
 
+/// API triage → chip label.
+const _triageLabels = {'needs_attention': 'Needs attention', 'check_in_due': 'Check-in due', 'review_due': 'Review due'};
+
 const List<_Conv> _rows = [
   ('PS', 'Priya Sharma', '9:12 AM', 2, 'Priya', 'Chest feels tight since morning, should I come in?', 'Needs attention'),
   ('RD', 'Rahul Das', '8:40 AM', 1, 'Rahul', 'BP was 172/104 this morning, feeling a bit dizzy', 'Needs attention'),
@@ -32,11 +39,11 @@ const List<_Conv> _rows = [
 ];
 
 /// Front-desk tabs with the unread count on Patients (as in this design).
-const _nav = FloatingNav(
+FloatingNav _nav(int? badge) => FloatingNav(
   items: [
-    NavItem('Today', I.calendar, 'Staff-Today'),
-    NavItem('Patients', I.users, 'Staff-Patients', badge: 6),
-    NavItem('Profile', I.user, 'Staff-Profile'),
+    const NavItem('Today', I.calendar, 'Staff-Today'),
+    NavItem('Patients', I.users, 'Staff-Patients', badge: badge),
+    const NavItem('Profile', I.user, 'Staff-Profile'),
   ],
   current: 1,
   fontSize: 12,
@@ -44,32 +51,99 @@ const _nav = FloatingNav(
   badgeTop: 4,
 );
 
-class _StaffPatientsScreenState extends State<StaffPatientsScreen> {
+/// Live data: GET /api/inbox?type=all (care + nutrition chats, unread counts,
+/// pending enrolments) and the notification count, refreshed every 30 s.
+class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData {
   int _tab = 1;
   String _query = '';
+  int _limit = 20;
+
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([
+      Api.I.get('/api/inbox', query: {'type': 'all'}),
+      Api.I.get('/api/notifications', query: {'limit': '1'}),
+    ]);
+    return {...(r[0] as Map).cast<String, dynamic>(), 'unreadNotifications': (r[1] as Map)['unread'] ?? 0};
+  }
+
+  @override
+  Duration? get refreshEvery => const Duration(seconds: 30);
+
+  /// "9:12 AM" today, "Yesterday", "Sun" this week, else "28 Sep".
+  static String _when(DateTime? at) {
+    if (at == null) return '';
+    final now = DateTime.now();
+    if (F.sameDay(at, now)) return F.time(at);
+    if (F.sameDay(at, now.subtract(const Duration(days: 1)))) return 'Yesterday';
+    if (now.difference(at).inDays < 7) return const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][at.weekday - 1];
+    return F.dayMonth(at);
+  }
+
+  /// Who wrote the last message, as the row's bold prefix.
+  static String _who(Map<String, dynamic> c) {
+    final m = c.obj('lastMessage');
+    if (m['senderId'] != null && '${m['senderId']}' == '${Session.I.user['id']}') return 'You';
+    return switch (m['senderType']) {
+      'patient' => F.firstName(c.obj('patient').str('name')),
+      'ai' => 'AI',
+      _ => m.str('senderLabel', 'Clinic'),
+    };
+  }
+
+  /// Rows with their conversation id (null in the design preview).
+  List<(_Conv, String?)> get _all {
+    if (data == null) return [for (final r in _rows) (r, null)];
+    return [
+      for (final c in data!.list('items'))
+        (
+          (
+            F.initials(c.obj('patient').str('name', '?')),
+            c.obj('patient').str('name', 'Patient'),
+            _when(F.date(c.obj('lastMessage')['at'])),
+            c.numOr('unread').toInt(),
+            _who(c),
+            c.obj('lastMessage').str('text'),
+            _triageLabels[c['triage']] ?? '',
+          ),
+          c.str('id'),
+        ),
+    ];
+  }
+
+  int get _unread => data == null ? 6 : data!.numOr('unread').toInt();
+  int get _pending => data == null ? 2 : data!.numOr('pendingEnrolments').toInt();
+  int get _notes => data == null ? 2 : data!.numOr('unreadNotifications').toInt();
+
+  Future<void> _open(String? conversationId) async {
+    await Nav.go(context, 'Patient-Thread', args: conversationId == null ? null : {'conversationId': conversationId});
+    if (mounted && isLive) reload(quiet: true);
+  }
 
   @override
   Widget build(BuildContext context) {
     final q = _query.trim().toLowerCase();
-    final shown = [
-      for (final r in _rows)
-        if ((_tab == 1 || r.$4 > 0) &&
-            (q.isEmpty || '${r.$2} ${r.$5} ${r.$6}'.toLowerCase().contains(q)))
+    final matching = [
+      for (final r in _all)
+        if ((_tab == 1 || r.$1.$4 > 0) &&
+            (q.isEmpty || '${r.$1.$2} ${r.$1.$5} ${r.$1.$6}'.toLowerCase().contains(q)))
           r,
     ];
+    final shown = data == null ? matching : matching.take(_limit).toList();
+    final placeholder = livePlaceholder();
     return MpPage(
-      nav: _nav,
+      nav: _nav(data == null ? 6 : (_unread > 0 ? _unread : null)),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const D10StaffHeader(bellLabel: 'Notifications, 2 new', dot: MP.red),
-          VGap(
+          D10StaffHeader(bellLabel: _notes > 0 ? 'Notifications, $_notes new' : 'Notifications', dot: _notes > 0 ? MP.red : MP.line),
+          if (placeholder != null) placeholder else VGap(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             gap: 16,
             children: [
               Text('Patients', style: tx(28, w: w800, h: 1.15, em: -0.02)),
               MpSegmented(
-                options: const ['Unread (6)', 'All'],
+                options: ['Unread ($_unread)', 'All'],
                 index: _tab,
                 onChanged: (i) => setState(() => _tab = i),
               ),
@@ -78,12 +152,12 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> {
                 padLeft: 48,
                 onChanged: (v) => setState(() => _query = v),
               ),
-              _EnrolmentBanner(onView: () => Nav.go(context, 'Add-Patient-Existing')),
+              if (_pending > 0) _EnrolmentBanner(count: _pending, onView: () => Nav.go(context, 'Add-Patient-Existing')),
               if (shown.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Text(
-                    'No conversations match “${_query.trim()}”',
+                    q.isNotEmpty ? 'No conversations match “${_query.trim()}”' : (_tab == 0 ? 'No unread messages' : 'No conversations yet'),
                     textAlign: TextAlign.center,
                     style: tx(14, c: MP.ink3, h: 20 / 14),
                   ),
@@ -94,15 +168,16 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> {
                   container: true,
                   child: D10ListCard(
                     children: [
-                      for (var i = 0; i < shown.length; i++) _ConvRow(shown[i], divider: i > 0),
+                      for (var i = 0; i < shown.length; i++) _ConvRow(shown[i].$1, divider: i > 0, onTap: () => _open(shown[i].$2)),
                     ],
                   ),
                 ),
-              MpButton(
-                'Show more',
-                kind: MpBtn.secondary,
-                onTap: () => toast(context, 'No more conversations'),
-              ),
+              if (data == null || matching.length > shown.length)
+                MpButton(
+                  'Show more',
+                  kind: MpBtn.secondary,
+                  onTap: data == null ? () => toast(context, 'No more conversations') : () => setState(() => _limit += 20),
+                ),
             ],
           ),
         ],
@@ -113,8 +188,9 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> {
 
 /// #EBF1FB note: pending enrolments + "View".
 class _EnrolmentBanner extends StatelessWidget {
+  final int count;
   final VoidCallback onView;
-  const _EnrolmentBanner({required this.onView});
+  const _EnrolmentBanner({required this.count, required this.onView});
 
   @override
   Widget build(BuildContext context) {
@@ -127,7 +203,7 @@ class _EnrolmentBanner extends StatelessWidget {
           const Gap(12),
           Expanded(
             child: Text(
-              "2 enrolments waiting on the patient's confirmation code",
+              "$count ${count == 1 ? 'enrolment' : 'enrolments'} waiting on the patient's confirmation code",
               style: tx(14, h: 1.45),
             ),
           ),
@@ -151,7 +227,8 @@ class _EnrolmentBanner extends StatelessWidget {
 class _ConvRow extends StatelessWidget {
   final _Conv r;
   final bool divider;
-  const _ConvRow(this.r, {required this.divider});
+  final VoidCallback onTap;
+  const _ConvRow(this.r, {required this.divider, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -165,7 +242,7 @@ class _ConvRow extends StatelessWidget {
       child: D10ListRow(
         divider: divider,
         vPad: 14,
-        onTap: () => Nav.go(context, 'Patient-Thread'),
+        onTap: onTap,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

@@ -1,0 +1,24 @@
+{
+ "items": [
+  {
+   "userId": "6ac8cfc20fd26bd4a0327bf1",
+   "practiceId": "6ac8cfc20fd26bd4a0327bf5",
+   "type": "message",
+   "title": "New message from Dr. Sen",
+   "body": "Please take it with water, at least an hour away from tea.",
+   "screen": "Patient-Thread",
+   "params": {
+    "conversationId": "6ac8cfc5c83d6a8669ad4de3"
+   },
+   "channels": [
+    "in_app",
+    "push"
+   ],
+   "sentAt": "2026-10-09T11:28:05.534Z",
+   "createdAt": "2026-10-09T11:28:05.534Z",
+   "updatedAt": "2026-10-09T11:28:05.534Z",
+   "id": "6ac8cfc5c83d6a8669ad4df2"
+  }
+ ],
+ "unread": 10
+}

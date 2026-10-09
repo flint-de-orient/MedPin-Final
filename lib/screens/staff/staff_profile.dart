@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
+import '../doctor/common_d4.dart';
 
 /// Design: Staff-Profile.dc.html — "Profile" (front desk).
 class StaffProfileScreen extends StatefulWidget {
@@ -21,26 +25,128 @@ const _building =
 
 const _languages = ['English', 'Bengali', 'Hindi'];
 
-class _StaffProfileScreenState extends State<StaffProfileScreen> {
+/// App language name ↔ API code.
+const _languageCodes = {'English': 'en', 'Bengali': 'bn', 'Hindi': 'hi'};
+
+const _roleLabels = {'front_desk': 'Front desk', 'doctor': 'Doctor', 'nurse': 'Nurse', 'dietician': 'Dietician', 'admin': 'Admin'};
+
+/// Live data: GET /api/me (name, phone, language, app lock, membership),
+/// GET /api/locations (clinic line), unread notifications.
+/// Saves: PATCH /api/me.
+class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
   String _language = 'English';
   bool _appLock = true;
 
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([
+      Api.I.get('/api/me'),
+      Api.I.get('/api/locations'),
+      Api.I.get('/api/notifications', query: {'limit': '1'}),
+    ]);
+    final me = (r[0] as Map).cast<String, dynamic>();
+    final user = me.obj('user');
+    _language = _languageCodes.entries.firstWhere((e) => e.value == user['language'], orElse: () => _languageCodes.entries.first).key;
+    _appLock = user['appLock'] != false;
+    final locs = r[1] is List ? r[1] as List : ((r[1] as Map)['items'] as List? ?? const []);
+    return {...me, 'location': locs.isEmpty ? null : locs.first, 'unreadNotifications': (r[2] as Map)['unread'] ?? 0};
+  }
+
+  Map<String, dynamic> get _user => data?.obj('user') ?? const {};
+  Map<String, dynamic> get _membership {
+    final list = data?.list('memberships') ?? const [];
+    return list.where((m) => m['status'] == 'active').firstOrNull ?? (list.isEmpty ? const {} : list.first);
+  }
+
+  String get _name => data == null ? 'Tania Ghosh' : _user.str('name', 'Your name');
+
+  /// "+91 98765 18210"
+  String get _phone {
+    if (data == null) return '+91 98765 18210';
+    final p = _user.str('phone');
+    return p.length == 10 ? '+91 ${p.substring(0, 5)} ${p.substring(5)}' : p;
+  }
+
+  String get _role => data == null ? 'Front desk' : (_roleLabels[_membership['role']] ?? 'Team member');
+
+  String get _clinicLine {
+    if (data == null) return 'City Care Clinic · Salt Lake';
+    final loc = data!.obj('location');
+    final place = loc.str('shortName', loc.str('name'));
+    return [_membership.str('practiceName'), if (place.isNotEmpty) place].where((x) => x.isNotEmpty).join(' · ');
+  }
+
+  int get _notes => data == null ? 3 : data!.numOr('unreadNotifications').toInt();
+
+  /// Saves account fields; returns false (after a toast) when it fails.
+  Future<bool> _save(Map<String, Object?> body) async {
+    final r = await runAction(context, () => Api.I.patch('/api/me', body));
+    if (r == null) return false;
+    await Session.I.reloadAccount();
+    return true;
+  }
+
   Future<void> _pickLanguage() async {
     final v = await D10Picker.show(context, title: 'Language', options: _languages, value: _language);
-    if (v != null && mounted) setState(() => _language = v);
+    if (v == null || !mounted || v == _language) return;
+    final before = _language;
+    setState(() => _language = v);
+    if (!isLive) return;
+    if (!await _save({'language': _languageCodes[v]}) && mounted) setState(() => _language = before);
+  }
+
+  Future<void> _setAppLock(bool v) async {
+    setState(() => _appLock = v);
+    if (!isLive) return;
+    if (!await _save({'appLock': v}) && mounted) setState(() => _appLock = !v);
+  }
+
+  Future<void> _editAccount() async {
+    if (!isLive) {
+      toast(context, 'Account settings are not in the design yet');
+      return;
+    }
+    final v = await d4FormSheet(
+      context,
+      title: 'Account',
+      subtitle: 'Your phone number is how you sign in. To change it, ask the practice owner.',
+      fields: [
+        D4FormField('Name', value: _user.str('name')),
+        D4FormField('Email (optional)', value: _user.str('email'), hint: 'name@example.com', keyboard: TextInputType.emailAddress),
+      ],
+    );
+    if (v == null || v.isEmpty || !mounted) return;
+    if (v[0].isEmpty) {
+      toast(context, 'Enter your name');
+      return;
+    }
+    if (v[1].isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v[1])) {
+      toast(context, 'Enter a valid email');
+      return;
+    }
+    if (!await _save({'name': v[0], 'email': v[1]}) || !mounted) return;
+    toast(context, 'Account updated');
+    reload(quiet: true);
+  }
+
+  Future<void> _openClinic() async {
+    final id = data?.obj('location')['id'];
+    await Nav.go(context, 'Clinic-Editor', args: isLive && id != null ? {'locationId': '$id'} : null);
+    if (mounted && isLive) reload(quiet: true);
   }
 
   @override
   Widget build(BuildContext context) {
     final title = tx(16, w: w600, h: _lh);
     final sub = tx(14, c: MP.ink2, h: _lh);
+    final placeholder = livePlaceholder();
     return MpPage(
       nav: const StaffNav(current: 2),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const D10StaffHeader(bellLabel: 'Notifications, 3 new', dot: MP.primary, showAvatar: false),
-          VGap(
+          D10StaffHeader(bellLabel: _notes > 0 ? 'Notifications, $_notes new' : 'Notifications', dot: _notes > 0 ? MP.primary : MP.line, showAvatar: false),
+          if (placeholder != null) placeholder else VGap(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             gap: 24,
             children: [
@@ -49,17 +155,17 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
-                    const ExcludeSemantics(child: MpAvatar('TG', size: 72, fontSize: 24)),
+                    ExcludeSemantics(child: MpAvatar(data == null ? 'TG' : F.initials(_name), size: 72, fontSize: 24)),
                     const Gap(16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Tania Ghosh', style: tx(28, w: w800, h: 1.15, em: -0.02)),
+                          Text(_name, style: tx(28, w: w800, h: 1.15, em: -0.02)),
                           const Gap(4),
-                          Text('+91 98765 18210', style: tx(14, c: MP.ink2, h: _lh, tab: true)),
+                          Text(_phone, style: tx(14, c: MP.ink2, h: _lh, tab: true)),
                           const Gap(6),
-                          const MpBadge('Front desk', weight: w600),
+                          MpBadge(_role, weight: w600),
                         ],
                       ),
                     ),
@@ -92,7 +198,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                   D10ListRow(
                     divider: true,
                     vPad: 12,
-                    onTap: () => Nav.go(context, 'Clinic-Editor'),
+                    onTap: _openClinic,
                     child: Row(
                       children: [
                         const Ico(_building, size: 22, color: MP.ink2),
@@ -104,7 +210,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                               Text('Clinic details', style: title),
                               const Gap(2),
                               Text(
-                                'City Care Clinic · Salt Lake',
+                                _clinicLine,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: sub,
@@ -122,8 +228,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                   D10ListRow(
                     divider: true,
                     vPad: 12,
-                    // No account editor for front-desk staff in the design yet.
-                    onTap: () => toast(context, 'Account settings are not in the design yet'),
+                    onTap: _editAccount,
                     child: Row(
                       children: [
                         const Ico(I.user, size: 22, color: MP.ink2),
@@ -170,7 +275,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                         _Switch(
                           value: _appLock,
                           label: 'App lock',
-                          onChanged: (v) => setState(() => _appLock = v),
+                          onChanged: _setAppLock,
                         ),
                       ],
                     ),
