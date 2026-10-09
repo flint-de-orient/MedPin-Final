@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 
 /// Design: Clinic-Editor.dc.html — "Location editor" (Edit location).
+/// Live: args {'locationId'} → GET /api/locations/:id, saved with PATCH;
+/// without it a new location is added (POST /api/locations). Closures:
+/// POST / DELETE /api/locations/:id/closures; deactivate / activate:
+/// POST /api/locations/:id/deactivate (409 HAS_UPCOMING → tap again to confirm).
 class ClinicEditorScreen extends StatefulWidget {
   const ClinicEditorScreen({super.key});
 
@@ -11,8 +18,127 @@ class ClinicEditorScreen extends StatefulWidget {
   State<ClinicEditorScreen> createState() => _ClinicEditorScreenState();
 }
 
-class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
+class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
   static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  final _name = TextEditingController(text: 'City Care Clinic — Salt Lake');
+  final _address = TextEditingController(text: 'DD-24, Sector 1, Salt Lake, Kolkata 700064');
+  final _phone = TextEditingController(text: '033 4012 5678');
+  final _tagline = TextEditingController(text: 'Diabetes, thyroid and heart care');
+  final _printedName = TextEditingController(text: 'Dr. Arjun Sen, MBBS, MD (Medicine)');
+  final _regNo = TextEditingController(text: 'WBMC 64213');
+  final _mapUrl = TextEditingController(text: 'https://maps.app.goo.gl/Qx7bR2mLk9');
+
+  /// Live: the location being edited (null = adding a new one).
+  String? _locationId;
+
+  /// Closure ids, parallel to [_closures] (live); dates picked for a new
+  /// location are posted after it is created.
+  final _closureIds = <String?>[];
+  final _pendingClosures = <DateTime>[];
+
+  /// Opening / closing minute per day (live).
+  final _mins = [for (var i = 0; i < 7; i++) (540, 1200)];
+
+  bool _confirmDeactivate = false;
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    for (final c in [_name, _address, _phone, _tagline, _printedName, _regNo, _mapUrl]) {
+      c.dispose();
+    }
+    _busy.dispose();
+    super.dispose();
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    final args = Nav.args<Map>(context) ?? const {};
+    _locationId = args['locationId'] as String?;
+    if (_locationId == null) {
+      if (data == null) {
+        for (final c in [_name, _address, _phone, _tagline, _printedName, _regNo, _mapUrl]) {
+          c.clear();
+        }
+        _closures.clear();
+        _closureIds.clear();
+        _doctorsLive = const [];
+        for (var i = 0; i < 7; i++) {
+          _open[i] = i < 6;
+          _mins[i] = (540, 1200);
+          _ranges[i] = '${d7Minutes(540)} – ${d7Minutes(1200)}';
+        }
+      }
+      return {'new': true};
+    }
+    final r = await Future.wait([Api.I.get('/api/locations/$_locationId'), Api.I.get('/api/locations')]);
+    final l = (r[0] as Map).cast<String, dynamic>();
+    final row = (r[1] as Map).cast<String, dynamic>().list('items').where((x) => x.str('id') == _locationId).firstOrNull;
+    final lh = l.obj('letterhead');
+    _name.text = l.str('name');
+    _address.text = l.str('address');
+    _phone.text = l.str('phone');
+    _tagline.text = lh.str('tagline');
+    _printedName.text = lh.str('doctorNamePrinted');
+    _regNo.text = lh.str('registrationNo');
+    _mapUrl.text = l.str('googleMapsUrl');
+    final hours = l.list('weeklyHours');
+    for (var i = 0; i < 7; i++) {
+      final h = hours.where((x) => x['weekday'] == d7Weekdays[i]).firstOrNull;
+      _open[i] = h != null && h['isOpen'] != false;
+      _mins[i] = (h?.numOr('opensAt', 540).toInt() ?? 540, h?.numOr('closesAt', 1200).toInt() ?? 1200);
+      _ranges[i] = '${d7Minutes(_mins[i].$1)} – ${d7Minutes(_mins[i].$2)}';
+    }
+    _closures
+      ..clear()
+      ..addAll([for (final c in l.list('closures')) (_closureLabel(c), c.str('reason', 'Closed all day'))]);
+    _closureIds
+      ..clear()
+      ..addAll([for (final c in l.list('closures')) c.str('id')]);
+    _doctorsLive = [
+      for (final d in l.list('doctors'))
+        (F.initials(d.str('name')), d.str('name'), _weekLine(d.list('week'))),
+    ];
+    _confirmDeactivate = false;
+    return {...l, 'upcomingBookings': row?['upcomingBookings'] ?? 0};
+  }
+
+  /// 'Fri, 2 Oct 2026' or 'Tue 20 – Fri 23 Oct 2026'.
+  static String _closureLabel(Map<String, dynamic> c) {
+    final a = F.date(c['startDate']);
+    final b = F.date(c['endDate']) ?? a;
+    if (a == null || b == null) return '';
+    if (F.sameDay(a, b)) return d7Date(a);
+    final end = d7Date(b).replaceFirst(',', '');
+    final start = a.month == b.month && a.year == b.year ? d7DayShort(a).substring(0, d7DayShort(a).lastIndexOf(' ')) : d7Date(a).replaceFirst(',', '');
+    return '$start – $end';
+  }
+
+  /// 'Mon–Sat · 9:00 AM – 1:00 PM', 'Tue · Thu · 5:00 – 8:00 PM'.
+  static String _weekLine(List<Map<String, dynamic>> week) {
+    final open = [
+      for (final w in week)
+        if ((w['sessions'] as List? ?? const []).isNotEmpty) {'weekday': w['weekday'], 'isOpen': true},
+    ];
+    if (open.isEmpty) return 'No hours here yet';
+    // The most common session pattern.
+    final counts = <String, int>{};
+    for (final w in week) {
+      final s = [for (final x in (w['sessions'] as List? ?? const [])) (x as Map).cast<String, dynamic>()];
+      if (s.isEmpty) continue;
+      final label = s.map((x) => d7Range(x.numOr('startMin'), x.numOr('endMin'))).join(', ');
+      counts[label] = (counts[label] ?? 0) + 1;
+    }
+    final common = counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+    return '${d7OpenDays(open)} · $common';
+  }
+
+  List<(String, String, String)>? _doctorsLive;
+
+  List<(String, String, String)> get _doctorRows => _doctorsLive ?? _doctors;
+
+  bool get _isNew => isLive && _locationId == null;
 
   /// Hours per day (renderVals().hours). Sunday is closed; its range is the
   /// default used when it is switched on.
@@ -38,7 +164,47 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
     ('RM', 'Dr. Rina Mitra', 'Tue · Thu · 5:00 – 8:00 PM'),
   ];
 
-  void _save() {
+  Future<void> _save() async {
+    if (isLive) {
+      if (_name.text.trim().isEmpty) {
+        toast(context, 'Enter the location name');
+        return;
+      }
+      final d = data;
+      if (d == null) return;
+      final body = {
+        'name': _name.text.trim(),
+        'address': _address.text.trim(),
+        'phone': _phone.text.trim(),
+        'googleMapsUrl': _mapUrl.text.trim(),
+        'letterhead': {
+          ...d.obj('letterhead'),
+          'tagline': _tagline.text.trim(),
+          'doctorNamePrinted': _printedName.text.trim(),
+          'registrationNo': _regNo.text.trim(),
+        },
+        'weeklyHours': [
+          for (var i = 0; i < 7; i++)
+            {'weekday': d7Weekdays[i], 'isOpen': _open[i], 'opensAt': _mins[i].$1, 'closesAt': _mins[i].$2},
+        ],
+      };
+      final ok = await runAction(context, busy: _busy, () async {
+        if (_locationId != null) return Api.I.patch('/api/locations/$_locationId', body);
+        final created = (await Api.I.post('/api/locations', body) as Map).cast<String, dynamic>();
+        for (final day in _pendingClosures) {
+          await Api.I.post('/api/locations/${created.str('id')}/closures', {
+            'startDate': d7Key(day),
+            'endDate': d7Key(day),
+            'reason': 'Closed all day',
+          });
+        }
+        return created;
+      });
+      if (ok == null || !mounted) return;
+      toast(context, _locationId == null ? 'Location added' : 'Location saved');
+      Nav.back(context);
+      return;
+    }
     toast(context, 'Location saved');
     Nav.back(context);
   }
@@ -49,31 +215,119 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
     setState(() {
       _ranges[i] = r;
       _open[i] = true;
+      final parts = r.split(' – ');
+      final from = d7ParseTime(parts.first);
+      final to = d7ParseTime(parts.last);
+      if (from != null && to != null) _mins[i] = (from, to);
     });
   }
 
   Future<void> _addClosure() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final d = await showDatePicker(
       context: context,
-      initialDate: DateTime(2026, 10, 1),
-      firstDate: DateTime(2026, 9, 29),
-      lastDate: DateTime(2027, 12, 31),
+      initialDate: isLive ? today : DateTime(2026, 10, 1),
+      firstDate: isLive ? today : DateTime(2026, 9, 29),
+      lastDate: isLive ? DateTime(today.year + 2, 12, 31) : DateTime(2027, 12, 31),
       helpText: 'Closed on',
     );
     if (d == null || !mounted) return;
-    setState(() => _closures.add((d7Date(d), 'Closed all day')));
+    if (isLive && _locationId != null) {
+      final ok = await runAction(
+        context,
+        () => Api.I.post('/api/locations/$_locationId/closures', {
+          'startDate': d7Key(d),
+          'endDate': d7Key(d),
+          'reason': 'Closed all day',
+        }),
+        busy: _busy,
+      );
+      if (ok == null || !mounted) return;
+      toast(context, 'Closure added');
+      reload(quiet: true);
+      return;
+    }
+    if (isLive) _pendingClosures.add(d);
+    setState(() {
+      _closures.add((d7Date(d), 'Closed all day'));
+      _closureIds.add(null);
+    });
+  }
+
+  Future<void> _removeClosure((String, String) c) async {
+    final i = _closures.indexOf(c);
+    final id = isLive && i >= 0 && i < _closureIds.length ? _closureIds[i] : null;
+    if (id != null) {
+      final ok = await runAction(context, () => Api.I.delete('/api/locations/$_locationId/closures/$id'), busy: _busy);
+      if (ok == null || !mounted) return;
+      toast(context, 'Closure removed');
+      reload(quiet: true);
+      return;
+    }
+    setState(() {
+      // Adding a new location: every closure is still pending, in order.
+      if (isLive && i >= 0 && i < _closureIds.length) _closureIds.removeAt(i);
+      if (isLive && i >= 0 && i < _pendingClosures.length) _pendingClosures.removeAt(i);
+      _closures.remove(c);
+    });
+  }
+
+  bool get _inactive => data?.str('status') == 'inactive';
+
+  Future<void> _deactivate() async {
+    if (!isLive) {
+      toast(context, 'Location deactivated · history kept');
+      Nav.back(context);
+      return;
+    }
+    if (_busy.value) return;
+    _busy.value = true;
+    try {
+      if (_inactive) {
+        await Api.I.post('/api/locations/$_locationId/activate', const {});
+        if (!mounted) return;
+        toast(context, 'Location activated');
+        reload(quiet: true);
+        return;
+      }
+      await Api.I.post('/api/locations/$_locationId/deactivate', _confirmDeactivate ? const {'confirm': true} : const {});
+      if (!mounted) return;
+      toast(context, 'Location deactivated · history kept');
+      Nav.back(context);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.code == 'HAS_UPCOMING') {
+        setState(() => _confirmDeactivate = true);
+        toast(context, '${e.message}. Tap again to deactivate.');
+      } else {
+        toast(context, e.message);
+      }
+    } finally {
+      _busy.value = false;
+    }
+  }
+
+  String get _deactivateNote {
+    final d = data;
+    if (d == null) return '3 patients have upcoming bookings here. Deactivating keeps their history.';
+    if (_inactive) return 'No new bookings here. Every patient\'s history is kept.';
+    final n = d.numOr('upcomingBookings').toInt();
+    if (n == 0) return "No upcoming bookings here. Deactivating keeps every patient's history.";
+    return '$n ${n == 1 ? 'patient has an upcoming booking' : 'patients have upcoming bookings'} here. Deactivating keeps their history.';
   }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
     return MpPage(
       header: MpHeader(
-        'Edit location',
+        _isNew ? 'Add location' : 'Edit location',
         actions: [
           D7Btn('Save', height: 44, size: 16, padding: const EdgeInsets.symmetric(horizontal: 12), onTap: _save),
         ],
       ),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         gap: 16,
         children: [
@@ -83,8 +337,8 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
           _weeklyHours(),
           _closuresCard(),
           _perDoctor(),
-          Padding(padding: const EdgeInsets.only(top: 8), child: MpButton('Save changes', onTap: _save)),
-          Padding(
+          Padding(padding: const EdgeInsets.only(top: 8), child: MpButton(_isNew ? 'Add location' : 'Save changes', onTap: _save)),
+          if (!_isNew) Padding(
             padding: const EdgeInsets.only(top: 16),
             child: D7Ruled(
               padding: const EdgeInsets.only(top: 24),
@@ -92,20 +346,14 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   D7Btn(
-                    'Deactivate location',
-                    fg: MP.red,
+                    _inactive ? 'Activate location' : 'Deactivate location',
+                    fg: _inactive ? MP.primary : MP.red,
                     size: 16,
                     padding: EdgeInsets.zero,
-                    onTap: () {
-                      toast(context, 'Location deactivated · history kept');
-                      Nav.back(context);
-                    },
+                    onTap: _deactivate,
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    '3 patients have upcoming bookings here. Deactivating keeps their history.',
-                    style: tx(14, c: MP.ink2, h: 1.45),
-                  ),
+                  Text(_deactivateNote, style: tx(14, c: MP.ink2, h: 1.45)),
                 ],
               ),
             ),
@@ -116,22 +364,22 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
   }
 
   Widget _details() {
-    return const MpCard(
+    return MpCard(
       child: VGap(
         gap: 16,
         children: [
-          D7Title('Details'),
-          D7Labeled('Location name', child: D7Field(value: 'City Care Clinic — Salt Lake')),
+          const D7Title('Details'),
+          D7Labeled('Location name', child: D7Field(controller: _name)),
           D7Labeled(
             'Address',
             child: D7Field(
-              value: 'DD-24, Sector 1, Salt Lake, Kolkata 700064',
+              controller: _address,
               lines: 2,
               height: 80,
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
           ),
-          D7Labeled('Clinic phone', child: D7Field(value: '033 4012 5678', tab: true, keyboard: TextInputType.phone)),
+          D7Labeled('Clinic phone', child: D7Field(controller: _phone, tab: true, keyboard: TextInputType.phone)),
         ],
       ),
     );
@@ -143,12 +391,12 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
         gap: 16,
         children: [
           const D7Title('Letterhead', sub: 'Printed on prescriptions from this location', subHeight: null),
-          const D7Labeled('Tagline', child: D7Field(value: 'Diabetes, thyroid and heart care')),
-          const D7Labeled(
+          D7Labeled('Tagline', child: D7Field(controller: _tagline)),
+          D7Labeled(
             'Doctor name as printed',
-            child: D7Field(value: 'Dr. Arjun Sen, MBBS, MD (Medicine)', ellipsis: true),
+            child: D7Field(controller: _printedName, ellipsis: true),
           ),
-          const D7Labeled('Registration number', child: D7Field(value: 'WBMC 64213', tab: true)),
+          D7Labeled('Registration number', child: D7Field(controller: _regNo, tab: true)),
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -228,20 +476,20 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
   }
 
   Widget _mapLink() {
-    return const MpCard(
+    return MpCard(
       child: VGap(
         gap: 16,
         children: [
-          D7Title('Map link'),
+          const D7Title('Map link'),
           D7Labeled(
             'Google Maps link',
             help: 'Patients get this with every booking confirmation.',
             child: D7Field(
-              value: 'https://maps.app.goo.gl/Qx7bR2mLk9',
+              controller: _mapUrl,
               keyboard: TextInputType.url,
               ellipsis: true,
-              padding: EdgeInsets.only(left: 46, right: 16),
-              overlays: [
+              padding: const EdgeInsets.only(left: 46, right: 16),
+              overlays: const [
                 Positioned(left: 17, top: 18, child: IgnorePointer(child: Ico(I.pin, size: 20, color: MP.ink3))),
               ],
             ),
@@ -345,7 +593,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
                         label: 'Remove closure on ${c.$1}',
                         color: MP.ink2,
                         iconSize: 20,
-                        onTap: () => setState(() => _closures.remove(c)),
+                        onTap: () => _removeClosure(c),
                       ),
                     ),
                   ),
@@ -373,9 +621,14 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> {
             padding: EdgeInsets.only(bottom: 8),
             child: D7Title('Per-doctor hours', sub: "Within the clinic's weekly hours", subHeight: null),
           ),
-          for (final d in _doctors)
+          if (_doctorRows.isEmpty)
+            D7Ruled(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Text('No doctors practise here yet', style: tx(14, c: MP.ink2)),
+            ),
+          for (final d in _doctorRows)
             Tap(
-              onTap: () => Nav.go(context, 'Profile-Schedule'),
+              onTap: () => Nav.go(context, 'Profile-Schedule', args: _locationId == null ? null : {'locationId': _locationId}),
               radius: 12,
               child: D7Ruled(
                 padding: const EdgeInsets.symmetric(vertical: 14),

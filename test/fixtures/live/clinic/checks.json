@@ -1,0 +1,23 @@
+{
+ "path": "/api/consultations/6ac8bbd08adea6a429a73224/checks",
+ "query": {},
+ "data": [
+  {
+   "name": "Metformin",
+   "strength": "500 mg",
+   "medicineId": "6ac8bbcebfcb2f5a9d64d500",
+   "warnings": []
+  },
+  {
+   "name": "Glimepiride",
+   "strength": "1 mg",
+   "medicineId": "6ac8bbcebfcb2f5a9d64d501",
+   "warnings": [
+    {
+     "type": "allergy",
+     "text": "Sulfa drugs allergy · sulfonylurea"
+    }
+   ]
+  }
+ ]
+}

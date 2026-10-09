@@ -1,0 +1,169 @@
+{
+ "path": "/api/alerts",
+ "query": {
+  "status": "all"
+ },
+ "data": {
+  "counts": {
+   "open": 3,
+   "acknowledged": 1
+  },
+  "items": [
+   {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "patientId": {
+     "name": "Priya Sharma",
+     "ageYears": 29,
+     "ageRecordedAt": "2026-10-09T10:02:54.927Z",
+     "gender": "female",
+     "conditions": [
+      {
+       "name": "Type 2 diabetes",
+       "icdCode": "E11.9",
+       "_id": "6ac8bbcee42c9f0836e9857d"
+      },
+      {
+       "name": "PCOS",
+       "icdCode": "E28.2",
+       "_id": "6ac8bbcee42c9f0836e9857e"
+      }
+     ],
+     "id": "6ac8bbcee42c9f0836e9857c"
+    },
+    "doctorId": "6ac8bbcee42c9f0836e9855b",
+    "severity": "emergency",
+    "kind": "urgent_chat",
+    "status": "open",
+    "detail": "Chest tightness, hard to breathe.",
+    "sourceModel": "Message",
+    "sourceId": "6ac8bbd08adea6a429a733c5",
+    "conversationId": "6ac8bbcee42c9f0836e9858b",
+    "createdAt": "2026-10-09T10:02:56.924Z",
+    "updatedAt": "2026-10-09T10:02:56.924Z",
+    "id": "6ac8bbd08adea6a429a733cb",
+    "patient": {
+     "id": "6ac8bbcee42c9f0836e9857c",
+     "name": "Priya Sharma",
+     "age": 29,
+     "gender": "female",
+     "conditions": [
+      "Type 2 diabetes",
+      "PCOS"
+     ]
+    }
+   },
+   {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "patientId": {
+     "name": "Sujit Mondal",
+     "ageYears": 61,
+     "ageRecordedAt": "2026-10-09T10:02:56.169Z",
+     "gender": "male",
+     "conditions": [
+      {
+       "name": "Chronic kidney disease",
+       "_id": "6ac8bbd08adea6a429a731cf"
+      },
+      {
+       "name": "Hypertension",
+       "_id": "6ac8bbd08adea6a429a731d0"
+      }
+     ],
+     "id": "6ac8bbd08adea6a429a731ce"
+    },
+    "severity": "urgent",
+    "kind": "lab",
+    "status": "open",
+    "detail": "Potassium 6.1 mmol/L · ref 3.5–5.1 (critical).",
+    "createdAt": "2026-10-09T10:02:56.939Z",
+    "updatedAt": "2026-10-09T10:02:56.939Z",
+    "id": "6ac8bbd08adea6a429a733dd",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731ce",
+     "name": "Sujit Mondal",
+     "age": 61,
+     "gender": "male",
+     "conditions": [
+      "Chronic kidney disease",
+      "Hypertension"
+     ]
+    }
+   },
+   {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "patientId": {
+     "name": "Rahul Das",
+     "ageYears": 45,
+     "ageRecordedAt": "2026-10-09T10:02:56.157Z",
+     "gender": "male",
+     "conditions": [
+      {
+       "name": "Hypertension",
+       "_id": "6ac8bbd08adea6a429a731b8"
+      }
+     ],
+     "id": "6ac8bbd08adea6a429a731b7"
+    },
+    "severity": "urgent",
+    "kind": "reading",
+    "status": "open",
+    "detail": "Home BP reading 172/104 mmHg, above his alert limit.",
+    "createdAt": "2026-10-09T10:02:56.933Z",
+    "updatedAt": "2026-10-09T10:02:56.933Z",
+    "id": "6ac8bbd08adea6a429a733d4",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731b7",
+     "name": "Rahul Das",
+     "age": 45,
+     "gender": "male",
+     "conditions": [
+      "Hypertension"
+     ]
+    }
+   },
+   {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "patientId": {
+     "name": "Farhana Islam",
+     "ageYears": 38,
+     "ageRecordedAt": "2026-10-09T10:02:56.174Z",
+     "gender": "female",
+     "conditions": [
+      {
+       "name": "Hypothyroidism",
+       "_id": "6ac8bbd08adea6a429a731d7"
+      }
+     ],
+     "id": "6ac8bbd08adea6a429a731d6"
+    },
+    "severity": "watch",
+    "kind": "lab",
+    "status": "acknowledged",
+    "detail": "TSH 9.8 mIU/L, up from 6.2 in July.",
+    "createdAt": "2026-10-09T10:02:56.947Z",
+    "updatedAt": "2026-10-09T10:02:56.952Z",
+    "acknowledged": {
+     "by": "6ac8bbcee42c9f0836e9855b",
+     "at": "2026-10-09T03:50:00.000Z"
+    },
+    "note": "Called patient, advised to come in",
+    "noteAt": "2026-10-09T03:50:00.000Z",
+    "noteBy": {
+     "name": "Dr. Arjun Sen",
+     "id": "6ac8bbcee42c9f0836e9855b"
+    },
+    "id": "6ac8bbd08adea6a429a733e6",
+    "patient": {
+     "id": "6ac8bbd08adea6a429a731d6",
+     "name": "Farhana Islam",
+     "age": 38,
+     "gender": "female",
+     "conditions": [
+      "Hypothyroidism"
+     ]
+    },
+    "acknowledgedToday": true
+   }
+  ]
+ }
+}

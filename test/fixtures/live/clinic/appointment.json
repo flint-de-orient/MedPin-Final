@@ -1,0 +1,46 @@
+{
+ "path": "/api/appointments/6ac8bbd08adea6a429a733b5",
+ "query": {},
+ "data": {
+  "practiceId": "6ac8bbcee42c9f0836e98561",
+  "locationId": "6ac8bbcee42c9f0836e98563",
+  "doctorId": "6ac8bbcee42c9f0836e9855b",
+  "patientId": "6ac8bbd08adea6a429a731ce",
+  "date": "2026-10-08T18:30:00.000Z",
+  "startAt": "2026-10-09T05:30:00.000Z",
+  "endAt": "2026-10-09T05:45:00.000Z",
+  "tokenNo": 10,
+  "isWalkIn": false,
+  "visitType": "follow_up",
+  "mode": "in_clinic",
+  "status": "booked",
+  "channel": "desk",
+  "fee": 600,
+  "feeStatus": "pending",
+  "todos": [],
+  "createdAt": "2026-10-09T10:02:56.868Z",
+  "updatedAt": "2026-10-09T10:02:56.868Z",
+  "id": "6ac8bbd08adea6a429a733b5",
+  "token": "10",
+  "patient": {
+   "id": "6ac8bbd08adea6a429a731ce",
+   "name": "Sujit Mondal",
+   "age": 61,
+   "gender": "male",
+   "phone": "9831120767",
+   "conditions": [
+    "Chronic kidney disease",
+    "Hypertension"
+   ]
+  },
+  "doctor": {
+   "id": "6ac8bbcee42c9f0836e9855b",
+   "name": "Dr. Arjun Sen"
+  },
+  "location": {
+   "id": "6ac8bbcee42c9f0836e98563",
+   "name": "Salt Lake"
+  },
+  "waitingMin": null
+ }
+}

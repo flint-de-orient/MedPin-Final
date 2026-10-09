@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 
 /// Design: Consult-Vitals.dc.html — "Consult 1 · Vitals".
+/// Live: args {'consultationId'} → GET /api/consultations/:id, saved with
+/// POST /api/consultations/:id/vitals + PATCH (complaint, print switch); or
+/// {'patientId'} / {'appointmentId'} → POST /api/patients/:id/vitals. Values
+/// are prefilled from this visit's vitals, else the latest reading.
 class ConsultVitalsScreen extends StatefulWidget {
   const ConsultVitalsScreen({super.key});
 
@@ -11,7 +19,150 @@ class ConsultVitalsScreen extends StatefulWidget {
   State<ConsultVitalsScreen> createState() => _ConsultVitalsScreenState();
 }
 
-class _ConsultVitalsScreenState extends State<ConsultVitalsScreen> {
+class _ConsultVitalsScreenState extends State<ConsultVitalsScreen> with LiveData {
+  /// Field id → API key.
+  static const _keys = {
+    'v-sys': 'bpSystolic',
+    'v-dia': 'bpDiastolic',
+    'v-pulse': 'pulse',
+    'v-spo2': 'spo2',
+    'v-temp': 'temperatureF',
+    'v-wt': 'weightKg',
+    'v-ht': 'heightCm',
+    'v-fbs': 'bloodSugar',
+  };
+
+  final _complaint = TextEditingController(
+    text: 'Chest tightness since morning with mild sweating. Tired for about two weeks.',
+  );
+  Map<String, String> _initial = const {};
+  String? _consultationId;
+  String? _patientId;
+  String? _appointmentId;
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _complaint.dispose();
+    _busy.dispose();
+    super.dispose();
+  }
+
+  static String _num(Object? v) {
+    if (v is! num) return '';
+    return v == v.roundToDouble() ? '${v.round()}' : '$v';
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    final args = Nav.args<Map>(context) ?? const {};
+    _consultationId = args['consultationId'] as String?;
+    _appointmentId = args['appointmentId'] as String?;
+    _patientId = args['patientId'] as String?;
+    Map<String, dynamic> summary;
+    Map<String, dynamic>? consultation;
+    Map<String, dynamic>? vitals;
+    if (_consultationId != null) {
+      final c = (await Api.I.get('/api/consultations/$_consultationId') as Map).cast<String, dynamic>();
+      consultation = c.obj('consultation');
+      summary = c.obj('summary');
+      if (c['vitals'] is Map) vitals = c.obj('vitals');
+      _patientId = consultation.str('patientId');
+    } else {
+      if (_patientId == null && _appointmentId != null) {
+        final a = (await Api.I.get('/api/appointments/$_appointmentId') as Map).cast<String, dynamic>();
+        _patientId = a.str('patientId');
+      }
+      if (_patientId == null) throw const ApiException(400, 'NO_PATIENT', 'Choose a patient first');
+      summary = (await Api.I.get('/api/patients/$_patientId') as Map).cast<String, dynamic>();
+    }
+    vitals ??= summary['latestVitals'] is Map ? summary.obj('latestVitals') : null;
+    final p = summary.obj('patient');
+    final v = vitals ?? const <String, dynamic>{};
+    final values = {
+      for (final e in _keys.entries) e.key: _num(v[e.value]),
+    };
+    if (values['v-wt']!.isEmpty) values['v-wt'] = _num(p['weightKg']);
+    if (values['v-ht']!.isEmpty) values['v-ht'] = _num(p['heightCm']);
+    if (v['sugarType'] != null && v['sugarType'] != 'fasting') values['v-fbs'] = '';
+    if (data == null) {
+      _values
+        ..clear()
+        ..addAll(values);
+      _initial = Map.of(values);
+      _complaint.text = consultation?.str('chiefComplaint') ?? '';
+      _onPrescription = consultation?['printVitalsOnRx'] != false;
+    }
+    return {'summary': summary, 'consultation': consultation, 'vitals': vitals};
+  }
+
+  /// 'Recorded at the front desk, 8:52 AM'.
+  String get _recorded {
+    final d = data;
+    if (d == null) return 'Recorded at the front desk, 8:52 AM';
+    final v = d['vitals'] is Map ? d.obj('vitals') : null;
+    final at = F.date(v?['recordedAt']);
+    if (v == null || at == null) return 'Not recorded yet for this visit';
+    final when = F.sameDay(at, DateTime.now()) ? F.time(at) : '${F.dayMonth(at)}, ${F.time(at)}';
+    return switch (v.str('recordedByRole')) {
+      'front_desk' => 'Recorded at the front desk, $when',
+      'patient' => 'Home reading by the patient, $when',
+      _ => v.str('source') == 'home' ? 'Home reading, $when' : 'Recorded in the clinic, $when',
+    };
+  }
+
+  Map<String, Object> get _vitalsBody {
+    final out = <String, Object>{};
+    for (final e in _keys.entries) {
+      final n = num.tryParse((_values[e.key] ?? '').trim());
+      if (n != null) out[e.value] = n;
+    }
+    if (out.containsKey('bloodSugar')) out['sugarType'] = 'fasting';
+    return out;
+  }
+
+  Future<void> _next() async {
+    if (!isLive) {
+      Nav.go(context, 'Consult-Diagnosis');
+      return;
+    }
+    final d = data;
+    if (d == null) return;
+    final body = _vitalsBody;
+    final linked = d['vitals'] is Map && (d.obj('vitals')['consultationId'] != null || d.obj('vitals')['appointmentId'] != null);
+    final changed = _keys.keys.any((k) => (_values[k] ?? '').trim() != (_initial[k] ?? '').trim());
+    final post = body.isNotEmpty && (changed || !linked);
+    final isDoctor = Session.I.role == 'doctor';
+    final id = await runAction(context, busy: _busy, () async {
+      var cid = _consultationId;
+      if (cid == null) {
+        if (post) {
+          await Api.I.post('/api/patients/$_patientId/vitals', {...body, if (_appointmentId != null) 'appointmentId': _appointmentId!});
+        }
+        if (!isDoctor) return '';
+        final c = (await Api.I.post('/api/consultations', {
+          if (_appointmentId != null) 'appointmentId': _appointmentId else 'patientId': _patientId,
+        }) as Map).cast<String, dynamic>();
+        cid = c.str('id');
+      } else if (post) {
+        await Api.I.post('/api/consultations/$cid/vitals', body);
+      }
+      await Api.I.patch('/api/consultations/$cid', {
+        'chiefComplaint': _complaint.text.trim(),
+        'printVitalsOnRx': _onPrescription,
+      });
+      return cid;
+    });
+    if (id == null || !mounted) return;
+    if (id.isEmpty) {
+      toast(context, 'Vitals saved');
+      Nav.back(context);
+      return;
+    }
+    _consultationId = id;
+    _initial = Map.of(_values);
+    Nav.go(context, 'Consult-Diagnosis', args: {'consultationId': id});
+  }
   /// id, label, value, unit — renderVals().fields.
   static const _fields = [
     ('v-sys', 'BP systolic', '128', 'mmHg'),
@@ -45,12 +196,13 @@ class _ConsultVitalsScreenState extends State<ConsultVitalsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
     return MpPage(
       header: const MpHeader('Consultation'),
-      body: Column(
+      body: placeholder ?? Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const D7ConsultTop(step: 0),
+          D7ConsultTop(step: 0, summary: data?.obj('summary')),
           VGap(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
             gap: 16,
@@ -60,7 +212,7 @@ class _ConsultVitalsScreenState extends State<ConsultVitalsScreen> {
       ),
       bottom: MpBottomBar(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-        child: MpButton('Next: Diagnosis', onTap: () => Nav.go(context, 'Consult-Diagnosis')),
+        child: MpButton('Next: Diagnosis', onTap: _next),
       ),
     );
   }
@@ -95,7 +247,7 @@ class _ConsultVitalsScreenState extends State<ConsultVitalsScreen> {
                 children: [
                   const Ico(I.check, size: 16, color: MP.green, stroke: 2.25),
                   const SizedBox(width: 6),
-                  Expanded(child: Text('Recorded at the front desk, 8:52 AM', style: tx(14, c: MP.ink2, h: 1.45))),
+                  Expanded(child: Text(_recorded, style: tx(14, c: MP.ink2, h: 1.45))),
                 ],
               ),
             ],
@@ -135,7 +287,7 @@ class _ConsultVitalsScreenState extends State<ConsultVitalsScreen> {
     return D7Labeled(
       f.$2,
       child: D7Field(
-        value: f.$3,
+        value: _values[f.$1] ?? f.$3,
         tab: true,
         keyboard: const TextInputType.numberWithOptions(decimal: true),
         action: TextInputAction.next,
@@ -152,11 +304,12 @@ class _ConsultVitalsScreenState extends State<ConsultVitalsScreen> {
         gap: 16,
         children: [
           const D7Title('Chief complaint'),
-          const D7Field(
-            value: 'Chest tightness since morning with mild sweating. Tired for about two weeks.',
+          D7Field(
+            controller: _complaint,
+            hint: data == null ? null : 'What brings the patient in today?',
             lines: 3,
             height: 104,
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           ),
           D7Ruled(
             padding: const EdgeInsets.only(top: 16),

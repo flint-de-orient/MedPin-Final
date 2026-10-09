@@ -1,9 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 
 /// Design: Consult-Diagnosis.dc.html — "Consult 2 · Diagnosis".
+/// Live: args {'consultationId'} → GET /api/consultations/:id (draft
+/// diagnoses, previousDiagnoses); search GET /api/catalog/icd?q=; "Next"
+/// saves the full list with PATCH /api/consultations/:id {diagnoses}.
 class ConsultDiagnosisScreen extends StatefulWidget {
   const ConsultDiagnosisScreen({super.key});
 
@@ -11,9 +19,9 @@ class ConsultDiagnosisScreen extends StatefulWidget {
   State<ConsultDiagnosisScreen> createState() => _ConsultDiagnosisScreenState();
 }
 
-class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> {
+class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> with LiveData {
   /// Previous diagnoses: label, note shown once reused (renderVals().previous).
-  static const _previous = [
+  static const _samplePrevious = [
     ('Type 2 diabetes mellitus', 'Reused from 12 Mar 2026'),
     ('PCOS', 'Reused from 12 Jan 2026'),
     ('Obesity', 'Reused from 12 Jan 2026'),
@@ -36,33 +44,143 @@ class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> {
     ('Asthma', 'J45.9'),
   ];
 
-  final _query = TextEditingController(text: 'hyper');
+  late final _query = TextEditingController(text: isLive ? '' : 'hyper');
 
   /// Selected diagnoses (name, note) — the design starts with the two reused ones.
-  final List<(String, String)> _selected = [_previous[0], _previous[1]];
+  final List<(String, String)> _selected = [_samplePrevious[0], _samplePrevious[1]];
+
+  /// Live: API fields of each selected diagnosis by name (icdCode, source, reusedFrom).
+  final _meta = <String, Map<String, dynamic>>{};
+
+  /// Live previous diagnoses (label, note) and their API records.
+  List<(String, String)> _livePrevious = const [];
+  List<Map<String, dynamic>> _previousRows = const [];
+
+  /// Live ICD search results (name, code).
+  List<(String, String)> _icd = const [];
+  Timer? _debounce;
+  int _searchSeq = 0;
+  final _busy = ValueNotifier(false);
+
+  String? get _consultationId => (Nav.args<Map>(context) ?? const {})['consultationId'] as String?;
+
+  @override
+  Future<Object?> fetch() async {
+    final id = _consultationId;
+    if (id == null) throw const ApiException(400, 'NO_CONSULTATION', 'Start the consultation first');
+    final r = (await Api.I.get('/api/consultations/$id') as Map).cast<String, dynamic>();
+    final at = F.date(r['previousVisitAt']);
+    final reused = at == null ? 'Reused from the last visit' : 'Reused from ${d7Date(at).substring(5)}';
+    _previousRows = r.list('previousDiagnoses');
+    _livePrevious = [for (final d in _previousRows) (d.str('name'), reused)];
+    if (data == null) {
+      _selected.clear();
+      _meta.clear();
+      for (final d in r.obj('consultation').list('diagnoses')) {
+        final name = d.str('name');
+        if (name.isEmpty || _isSelected(name)) continue;
+        _selected.add((name, _noteFor(d)));
+        _meta[name] = {'icdCode': d['icdCode'], 'source': d['source'], 'reusedFrom': d['reusedFrom']};
+      }
+    }
+    return r;
+  }
+
+  static String _noteFor(Map<String, dynamic> d) {
+    final from = F.date(d['reusedFrom']);
+    return switch (d.str('source')) {
+      'reused' => from == null ? 'Reused from the last visit' : 'Reused from ${d7Date(from).substring(5)}',
+      'custom' => 'Custom diagnosis',
+      'ai' => d.str('reason', 'Suggested by MedPin AI'),
+      _ => d['icdCode'] == null ? 'From the catalog' : 'ICD-10 ${d['icdCode']}',
+    };
+  }
+
+  List<(String, String)> get _previous => data == null ? _samplePrevious : _livePrevious;
+
+  void _search(String _) {
+    setState(() {});
+    if (!isLive) return;
+    _debounce?.cancel();
+    final q = _query.text.trim();
+    if (q.isEmpty) {
+      setState(() => _icd = const []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 250), () async {
+      final seq = ++_searchSeq;
+      try {
+        final res = await Api.I.get('/api/catalog/icd', query: {'q': q}) as List? ?? const [];
+        if (!mounted || seq != _searchSeq) return;
+        setState(() {
+          _icd = [
+            for (final x in res)
+              if (x is Map) ('${x['name'] ?? ''}', '${x['code'] ?? ''}'),
+          ];
+        });
+      } on ApiException catch (e) {
+        if (mounted) toast(context, e.message);
+      }
+    });
+  }
+
+  Future<void> _next() async {
+    if (!isLive) {
+      Nav.go(context, 'Consult-Advice');
+      return;
+    }
+    final id = _consultationId;
+    final diagnoses = [
+      for (final s in _selected)
+        {
+          'name': s.$1,
+          if (_meta[s.$1]?['icdCode'] != null) 'icdCode': _meta[s.$1]!['icdCode'],
+          'source': _meta[s.$1]?['source'] ?? 'catalog',
+          if (_meta[s.$1]?['reusedFrom'] != null) 'reusedFrom': _meta[s.$1]!['reusedFrom'],
+        },
+    ];
+    final ok = await runAction(context, () => Api.I.patch('/api/consultations/$id', {'diagnoses': diagnoses}), busy: _busy);
+    if (ok == null || !mounted) return;
+    Nav.go(context, 'Consult-Advice', args: {'consultationId': id});
+  }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _query.dispose();
+    _busy.dispose();
     super.dispose();
   }
 
   bool _isSelected(String name) => _selected.any((s) => s.$1 == name);
 
-  void _toggle(String name, String note) {
+  void _toggle(String name, String note, [Map<String, dynamic>? meta]) {
     setState(() {
       final i = _selected.indexWhere((s) => s.$1 == name);
       if (i >= 0) {
         _selected.removeAt(i);
+        _meta.remove(name);
       } else {
         _selected.add((name, note));
+        if (meta != null) _meta[name] = meta;
       }
     });
+  }
+
+  void _togglePrevious(int i) {
+    final p = _previous[i];
+    if (data == null || i >= _previousRows.length) {
+      _toggle(p.$1, p.$2);
+      return;
+    }
+    final d = _previousRows[i];
+    _toggle(p.$1, p.$2, {'icdCode': d['icdCode'], 'source': 'reused', 'reusedFrom': data!['previousVisitAt']});
   }
 
   List<(String, String)> get _results {
     final q = _query.text.trim().toLowerCase();
     if (q.isEmpty) return const [];
+    if (data != null) return _icd;
     return [
       for (final c in _catalog)
         if (c.$1.toLowerCase().contains(q)) c,
@@ -77,19 +195,24 @@ class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> {
     }
     final name = q[0].toUpperCase() + q.substring(1);
     setState(() {
-      if (!_isSelected(name)) _selected.add((name, 'Custom diagnosis'));
+      if (!_isSelected(name)) {
+        _selected.add((name, 'Custom diagnosis'));
+        _meta[name] = {'source': 'custom'};
+      }
       _query.clear();
+      _icd = const [];
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
     return MpPage(
       header: const MpHeader('Consultation'),
-      body: Column(
+      body: placeholder ?? Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const D7ConsultTop(step: 1),
+          D7ConsultTop(step: 1, summary: data?.obj('summary')),
           VGap(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
             gap: 16,
@@ -103,7 +226,7 @@ class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> {
           children: [
             Expanded(child: MpButton('Back', kind: MpBtn.secondary, onTap: () => Nav.back(context))),
             const SizedBox(width: 12),
-            Expanded(flex: 2, child: MpButton('Next: Advice', onTap: () => Nav.go(context, 'Consult-Advice'))),
+            Expanded(flex: 2, child: MpButton('Next: Advice', onTap: _next)),
           ],
         ),
       ),
@@ -116,14 +239,17 @@ class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> {
         gap: 16,
         children: [
           const D7Title('Previous diagnoses', sub: 'Tap to reuse on this prescription'),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final p in _previous)
-                D7Pill(p.$1, on: _isSelected(p.$1), check: true, onTap: () => _toggle(p.$1, p.$2)),
-            ],
-          ),
+          if (_previous.isEmpty)
+            Text('No previous diagnoses for this patient yet', style: tx(14, c: MP.ink2))
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (var i = 0; i < _previous.length; i++)
+                  D7Pill(_previous[i].$1, on: _isSelected(_previous[i].$1), check: true, onTap: () => _togglePrevious(i)),
+              ],
+            ),
         ],
       ),
     );
@@ -141,7 +267,7 @@ class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> {
             border: MP.primary,
             padding: const EdgeInsets.only(left: 48, right: 56),
             action: TextInputAction.search,
-            onChanged: (_) => setState(() {}),
+            onChanged: _search,
             overlays: [
               const Positioned(left: 16, top: 18, child: IgnorePointer(child: Ico(I.search, size: 20, color: MP.ink2))),
               if (_query.text.isNotEmpty)
@@ -153,7 +279,10 @@ class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> {
                     label: 'Clear search',
                     color: MP.ink2,
                     iconSize: 18,
-                    onTap: () => setState(_query.clear),
+                    onTap: () => setState(() {
+                      _query.clear();
+                      _icd = const [];
+                    }),
                   ),
                 ),
             ],
@@ -219,7 +348,7 @@ class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> {
             background: MP.primarySoft,
             iconSize: 20,
             stroke: 2,
-            onTap: () => _toggle(r.$1, 'ICD-10 ${r.$2}'),
+            onTap: () => _toggle(r.$1, 'ICD-10 ${r.$2}', {'icdCode': r.$2, 'source': 'catalog'}),
           ),
         ],
       ),

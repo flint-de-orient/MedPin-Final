@@ -1,0 +1,286 @@
+{
+ "path": "/api/consultations/6ac8bbd08adea6a429a73224",
+ "query": {},
+ "data": {
+  "consultation": {
+   "advice": {
+    "items": [
+     {
+      "text": "Walk 30 minutes, 5 days a week",
+      "category": "activity",
+      "included": true,
+      "_id": "6ac8bbd08adea6a429a7322b"
+     }
+    ],
+    "freeText": "Come back with fasting sugar."
+   },
+   "validity": {
+    "preset": "1_month"
+   },
+   "followUp": {
+    "enabled": true,
+    "date": "2026-10-12T18:30:00.000Z",
+    "remindPatient": true
+   },
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "locationId": "6ac8bbcee42c9f0836e98563",
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "patientId": "6ac8bbcee42c9f0836e9857c",
+   "appointmentId": "6ac8bbd08adea6a429a7321e",
+   "status": "issued",
+   "startedAt": "2026-09-29T03:34:00.000Z",
+   "chiefComplaint": "Tiredness and excess thirst, 2 weeks",
+   "vitalsId": "6ac8bbd08adea6a429a73222",
+   "printVitalsOnRx": true,
+   "diagnoses": [
+    {
+     "name": "Type 2 diabetes mellitus",
+     "source": "catalog",
+     "_id": "6ac8bbd08adea6a429a73225"
+    },
+    {
+     "name": "Polycystic ovary syndrome",
+     "source": "catalog",
+     "_id": "6ac8bbd08adea6a429a73226"
+    }
+   ],
+   "medications": [
+    {
+     "dose": {
+      "morning": 1,
+      "night": 1,
+      "afternoon": 0
+     },
+     "duration": {
+      "value": 3,
+      "unit": "months"
+     },
+     "name": "Metformin",
+     "strength": "500 mg",
+     "frequency": "daily",
+     "foodRelation": "after_food",
+     "change": "new",
+     "entrySource": "typed",
+     "_id": "6ac8bbd08adea6a429a73227"
+    },
+    {
+     "dose": {
+      "morning": 1,
+      "afternoon": 0,
+      "night": 0
+     },
+     "duration": {
+      "value": 1,
+      "unit": "months"
+     },
+     "name": "Glimepiride",
+     "strength": "1 mg",
+     "frequency": "daily",
+     "foodRelation": "before_food",
+     "change": "new",
+     "entrySource": "typed",
+     "_id": "6ac8bbd08adea6a429a73228"
+    }
+   ],
+   "labOrders": [
+    {
+     "testName": "HbA1c",
+     "source": "typed",
+     "selected": true,
+     "_id": "6ac8bbd08adea6a429a73229"
+    },
+    {
+     "testName": "Lipid profile",
+     "source": "typed",
+     "selected": true,
+     "_id": "6ac8bbd08adea6a429a7322a"
+    }
+   ],
+   "createdAt": "2026-10-09T10:02:56.419Z",
+   "updatedAt": "2026-10-09T10:02:56.470Z",
+   "completedAt": "2026-09-29T03:43:00.000Z",
+   "durationSec": 540,
+   "prescriptionId": "6ac8bbd08adea6a429a73237",
+   "id": "6ac8bbd08adea6a429a73224"
+  },
+  "vitals": {
+   "patientId": "6ac8bbcee42c9f0836e9857c",
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "appointmentId": "6ac8bbd08adea6a429a7321e",
+   "recordedAt": "2026-09-29T03:26:00.000Z",
+   "recordedBy": "6ac8bbcee42c9f0836e9855d",
+   "recordedByRole": "front_desk",
+   "source": "clinic",
+   "bpSystolic": 130,
+   "bpDiastolic": 88,
+   "pulse": 82,
+   "spo2": 98,
+   "weightKg": 68.5,
+   "createdAt": "2026-10-09T10:02:56.415Z",
+   "updatedAt": "2026-10-09T10:02:56.415Z",
+   "id": "6ac8bbd08adea6a429a73222"
+  },
+  "summary": {
+   "patient": {
+    "id": "6ac8bbcee42c9f0836e9857c",
+    "name": "Priya Sharma",
+    "phone": "9876543210",
+    "gender": "female",
+    "age": 29,
+    "heightCm": 158,
+    "weightKg": 68.5,
+    "bmi": 27.4,
+    "healthScore": {
+     "value": 74,
+     "weeklyDelta": 3,
+     "computedAt": "2026-10-09T10:02:54.927Z"
+    },
+    "hasApp": true
+   },
+   "conditions": [
+    {
+     "name": "Type 2 diabetes",
+     "icdCode": "E11.9",
+     "_id": "6ac8bbcee42c9f0836e9857d"
+    },
+    {
+     "name": "PCOS",
+     "icdCode": "E28.2",
+     "_id": "6ac8bbcee42c9f0836e9857e"
+    }
+   ],
+   "allergies": [
+    {
+     "allergen": "Sulfa drugs",
+     "drugClass": "sulfonamide",
+     "_id": "6ac8bbcee42c9f0836e9857f"
+    }
+   ],
+   "latestVitals": {
+    "patientId": "6ac8bbcee42c9f0836e9857c",
+    "recordedAt": "2026-10-09T02:15:00.000Z",
+    "recordedByRole": "patient",
+    "source": "home",
+    "bpSystolic": 128,
+    "bpDiastolic": 82,
+    "bloodSugar": 142,
+    "sugarType": "fasting",
+    "createdAt": "2026-10-09T10:02:56.212Z",
+    "updatedAt": "2026-10-09T10:02:56.212Z",
+    "id": "6ac8bbd08adea6a429a7321a"
+   },
+   "currentMedicines": [
+    {
+     "id": "6ac8bbd08adea6a429a7323b",
+     "name": "Metformin",
+     "strength": "500 mg",
+     "pattern": "1-0-1",
+     "frequency": "daily",
+     "prescriber": "Dr. Arjun Sen",
+     "doctorId": "6ac8bbcee42c9f0836e9855b",
+     "since": "2026-09-28T18:30:00.000Z",
+     "endDate": "2027-01-05T18:30:00.000Z"
+    },
+    {
+     "id": "6ac8bbd08adea6a429a7323c",
+     "name": "Glimepiride",
+     "strength": "1 mg",
+     "pattern": "1-0-0",
+     "frequency": "daily",
+     "prescriber": "Dr. Arjun Sen",
+     "doctorId": "6ac8bbcee42c9f0836e9855b",
+     "since": "2026-09-28T18:30:00.000Z",
+     "endDate": "2026-11-06T18:30:00.000Z"
+    }
+   ],
+   "abnormalResults": [
+    {
+     "test": "Lipid profile",
+     "analyte": "LDL cholesterol",
+     "value": 162,
+     "unit": "mg/dL",
+     "flag": "high",
+     "collectedAt": "2026-09-29T18:30:00.000Z",
+     "labResultId": "6ac8bbd08adea6a429a731f9"
+    },
+    {
+     "test": "Lipid profile",
+     "analyte": "Triglycerides",
+     "value": 210,
+     "unit": "mg/dL",
+     "flag": "high",
+     "collectedAt": "2026-09-29T18:30:00.000Z",
+     "labResultId": "6ac8bbd08adea6a429a731f9"
+    },
+    {
+     "test": "Diabetes panel",
+     "analyte": "HbA1c",
+     "value": 7.2,
+     "unit": "%",
+     "flag": "high",
+     "collectedAt": "2026-07-17T18:30:00.000Z",
+     "labResultId": "6ac8bbd08adea6a429a731f5"
+    },
+    {
+     "test": "Diabetes panel",
+     "analyte": "Fasting glucose",
+     "value": 138,
+     "unit": "mg/dL",
+     "flag": "high",
+     "collectedAt": "2026-07-17T18:30:00.000Z",
+     "labResultId": "6ac8bbd08adea6a429a731f5"
+    },
+    {
+     "test": "Vitamin D",
+     "analyte": "Vitamin D",
+     "value": 14,
+     "unit": "ng/mL",
+     "flag": "low",
+     "collectedAt": "2026-07-17T18:30:00.000Z",
+     "labResultId": "6ac8bbd08adea6a429a731fe"
+    }
+   ],
+   "nextVisit": {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "locationId": "6ac8bbcee42c9f0836e98563",
+    "doctorId": "6ac8bbcee42c9f0836e9855b",
+    "patientId": "6ac8bbcee42c9f0836e9857c",
+    "date": "2026-10-08T18:30:00.000Z",
+    "startAt": "2026-10-09T11:30:00.000Z",
+    "tokenNo": 4,
+    "isWalkIn": false,
+    "visitType": "follow_up",
+    "mode": "in_clinic",
+    "status": "confirmed",
+    "channel": "app",
+    "fee": 600,
+    "feeStatus": "pending",
+    "todos": [
+     {
+      "text": "Upload HbA1c report",
+      "done": false,
+      "_id": "6ac8bbcee42c9f0836e98587"
+     },
+     {
+      "text": "Log today's fasting sugar",
+      "done": false,
+      "_id": "6ac8bbcee42c9f0836e98588"
+     },
+     {
+      "text": "Note down questions for Dr. Sen",
+      "done": false,
+      "_id": "6ac8bbcee42c9f0836e98589"
+     }
+    ],
+    "createdAt": "2026-10-09T10:02:54.983Z",
+    "updatedAt": "2026-10-09T10:02:54.983Z",
+    "id": "6ac8bbcee42c9f0836e98586"
+   },
+   "lastVisitAt": "2026-09-29T03:43:00.000Z",
+   "openAlerts": 1,
+   "aiSummary": null
+  },
+  "previousDiagnoses": [],
+  "previousVisitAt": null
+ }
+}

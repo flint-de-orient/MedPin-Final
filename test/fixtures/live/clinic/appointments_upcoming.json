@@ -1,0 +1,16 @@
+{
+ "path": "/api/appointments",
+ "query": {
+  "view": "upcoming"
+ },
+ "data": {
+  "total": 0,
+  "stats": {
+   "booked": 8,
+   "waitingRequests": 2,
+   "freedUp": 0,
+   "completed": 2
+  },
+  "items": []
+ }
+}

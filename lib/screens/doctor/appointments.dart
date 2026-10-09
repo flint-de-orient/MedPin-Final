@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'appointments_manage.dart';
 import 'common_d7.dart';
 
 /// Design: Appointments.dc.html — "Appointments".
+/// Live data: GET /api/appointments?view=today|upcoming|past and
+/// GET /api/appointment-requests (pending + declined). Manage / assign open
+/// the Appointments-Manage sheet; decline: POST /api/appointment-requests/:id/decline.
 class AppointmentsScreen extends StatefulWidget {
   const AppointmentsScreen({super.key});
 
@@ -14,26 +20,148 @@ class AppointmentsScreen extends StatefulWidget {
 
 /// A booking request that has no slot yet.
 class _Request {
-  const _Request(this.initials, this.name, this.when, this.reason, this.pref);
+  const _Request(this.initials, this.name, this.when, this.reason, this.pref, {this.id, this.patientId});
   final String initials;
   final String name;
   final String when;
   final String reason;
   final String pref;
+
+  /// Live record ids (null in the design preview).
+  final String? id;
+  final String? patientId;
 }
 
 class _Appt {
-  _Appt(this.day, this.time, this.name, this.where, this.status);
+  _Appt(this.day, this.time, this.name, this.where, this.status, {this.id, this.at});
   String day;
   String time;
   final String name;
   final String where;
   final String status;
+
+  /// Live appointment id and start (null in the design preview).
+  final String? id;
+  final DateTime? at;
 }
 
 typedef _SheetResult = ({String action, String day, String time});
 
-class _AppointmentsScreenState extends State<AppointmentsScreen> {
+class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([
+      Api.I.get('/api/appointments', query: {'view': 'today'}),
+      Api.I.get('/api/appointments', query: {'view': 'upcoming'}),
+      Api.I.get('/api/appointments', query: {'view': 'past'}),
+      Api.I.get('/api/appointment-requests', query: {'status': 'pending'}),
+      Api.I.get('/api/appointment-requests', query: {'status': 'declined'}),
+    ]);
+    return {'today': r[0], 'upcoming': r[1], 'past': r[2], 'requests': r[3], 'declined': r[4]};
+  }
+
+  static const _statusLabels = {
+    'booked': 'Booked',
+    'confirmed': 'Confirmed',
+    'waiting': 'Checked in',
+    'in_consultation': 'In consultation',
+    'completed': 'Completed',
+    'missed': 'Missed',
+    'cancelled': 'Cancelled',
+    'rescheduled': 'Rescheduled',
+  };
+
+  /// "Today · Tue 29 Sep", "Wed 30 Sep".
+  static String _dayLabel(DateTime d) {
+    final label = d7DayShort(d);
+    return F.sameDay(d, DateTime.now()) ? 'Today · $label' : label;
+  }
+
+  static List<Map<String, dynamic>> _rows(Object? v) => [
+    for (final x in (v as List? ?? const [])) (x as Map).cast<String, dynamic>(),
+  ];
+
+  static _Appt _apptFrom(Map<String, dynamic> a) {
+    final at = F.date(a['startAt']) ?? DateTime.now();
+    final doctor = a.obj('doctor').str('name');
+    final where = a.obj('location').str('name');
+    return _Appt(
+      _dayLabel(at),
+      F.time(at),
+      a.obj('patient').str('name', 'Patient'),
+      [if (doctor.isNotEmpty) F.doctorShort(doctor), if (where.isNotEmpty) where].join(' · '),
+      _statusLabels[a.str('status')] ?? a.str('status'),
+      id: a.str('id'),
+      at: at,
+    );
+  }
+
+  static _Request _requestFrom(Map<String, dynamic> q) {
+    final p = q['patientId'] is Map ? q.obj('patientId') : const <String, dynamic>{};
+    final name = p.str('name', 'Patient');
+    final at = F.date(q['createdAt']);
+    return _Request(
+      F.initials(name),
+      name,
+      at == null ? '' : 'Asked ${d7DayTime(at)}',
+      q.str('reason', 'Visit request'),
+      q.str('preferredTime', 'Any time'),
+      id: q.str('id'),
+      patientId: p['id'] == null ? null : p.str('id'),
+    );
+  }
+
+  static (String, String, String, String) _declinedFrom(Map<String, dynamic> q) {
+    final r = _requestFrom(q);
+    final at = F.date(q['handledAt'] ?? q['updatedAt']);
+    final why = q.str('declineReason');
+    return (r.initials, r.name, at == null ? 'Declined' : 'Declined ${d7DayTime(at)}', why.isEmpty ? r.reason : why);
+  }
+
+  Map<String, dynamic>? _mappedFrom;
+  List<_Appt> _liveToday = const [], _liveUpcoming = const [], _livePast = const [];
+  List<_Request> _liveRequests = const [];
+  List<(String, String, String, String)> _liveDeclined = const [];
+
+  void _map() {
+    final d = data;
+    if (d == null || identical(d, _mappedFrom)) return;
+    _mappedFrom = d;
+    _liveToday = [for (final a in d.obj('today').list('items')) _apptFrom(a)];
+    _liveUpcoming = [for (final a in d.obj('upcoming').list('items')) _apptFrom(a)];
+    _livePast = [for (final a in d.obj('past').list('items')) _apptFrom(a)];
+    _liveRequests = [for (final q in _rows(d['requests'])) _requestFrom(q)];
+    _liveDeclined = [for (final q in _rows(d['declined'])) _declinedFrom(q)];
+  }
+
+  List<_Request> get _requests {
+    _map();
+    return data == null ? _sampleRequests : _liveRequests;
+  }
+
+  List<(String, String, String, String)> get _declined {
+    _map();
+    return data == null ? _sampleDeclined : _liveDeclined;
+  }
+
+  List<_Appt> get _appts {
+    _map();
+    if (data == null) return _sampleAppts;
+    return switch (_range) {
+      0 => _liveToday,
+      1 => [..._liveToday, ..._liveUpcoming],
+      _ => _livePast,
+    };
+  }
+
+  /// Day sections of the live view, in list order (past: newest first).
+  List<String> get _liveDays {
+    final out = <String>[];
+    for (final a in _appts) {
+      if (!out.contains(a.day)) out.add(a.day);
+    }
+    return out;
+  }
   /// Day sections, in order (the manage sheet offers Wed 30 – Sat 3 Oct).
   static const _days = ['Today · Tue 29 Sep', 'Wed 30 Sep', 'Thu 1 Oct', 'Fri 2 Oct', 'Sat 3 Oct'];
 
@@ -45,7 +173,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   };
 
   /// Oldest first. The card shows two until "View all" (badge: 3 waiting).
-  final _requests = <_Request>[
+  final _sampleRequests = <_Request>[
     const _Request(
       'SM',
       'Sujit Mondal',
@@ -70,12 +198,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   ];
 
   /// Declined requests: initials, name, when, reason.
-  final _declined = <(String, String, String, String)>[
+  final _sampleDeclined = <(String, String, String, String)>[
     ('KG', 'Kaushik Ghosh', 'Declined yesterday, 7:10 PM', 'Asked for a home visit'),
     ('NB', 'Nandini Basu', 'Declined 27 Sep, 11:00 AM', 'Duplicate of an existing booking'),
   ];
 
-  final _appts = <_Appt>[
+  final _sampleAppts = <_Appt>[
     _Appt('Today · Tue 29 Sep', '9:30 AM', 'Rahul Das', 'Dr. Sen · Salt Lake', 'Checked in'),
     _Appt('Today · Tue 29 Sep', '10:00 AM', 'Aisha Khan', 'Dr. Sen · Salt Lake', 'Confirmed'),
     _Appt('Today · Tue 29 Sep', '11:30 AM', 'Moumita Roy', 'Dr. Mitra · Salt Lake', 'Booked'),
@@ -101,6 +229,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       where.endsWith('New Town') ? 'City Care — New Town' : 'City Care Clinic — Salt Lake';
 
   Future<void> _manage(_Appt a) async {
+    if (isLive) {
+      final r = await openSheet<Object>(context, (_) => AppointmentsManageSheet(appointmentId: a.id));
+      if (r != null && mounted) reload(quiet: true);
+      return;
+    }
     final r = await openSheet<_SheetResult>(
       context,
       (_) => AppointmentsManageSheet(
@@ -124,6 +257,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   }
 
   Future<void> _assign(_Request q) async {
+    if (isLive) {
+      final r = await openSheet<Object>(context, (_) => AppointmentsManageSheet(requestId: q.id));
+      if (r != null && mounted) reload(quiet: true);
+      return;
+    }
     final r = await openSheet<_SheetResult>(
       context,
       (_) => AppointmentsManageSheet(name: q.name, when: 'Requested: ${q.pref}', assign: true),
@@ -136,7 +274,26 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     });
   }
 
-  void _decline(_Request q) {
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _decline(_Request q) async {
+    if (isLive) {
+      final ok = await runAction(
+        context,
+        () => Api.I.post('/api/appointment-requests/${q.id}/decline', const {}),
+        busy: _busy,
+      );
+      if (ok == null || !mounted) return;
+      toast(context, 'Request declined');
+      reload(quiet: true);
+      return;
+    }
     setState(() {
       _requests.remove(q);
       _declined.insert(0, (q.initials, q.name, 'Declined just now', q.reason));
@@ -146,16 +303,28 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final days = switch (_range) {
-      0 => [_days.first],
-      1 => _days,
-      _ => const <String>[],
-    };
-    final stats = [('$_booked', 'Booked'), ('${_requests.length}', 'Waiting'), ('$_freed', 'Freed up')];
+    final placeholder = livePlaceholder();
+    final days =
+        data != null
+            ? _liveDays
+            : switch (_range) {
+              0 => [_days.first],
+              1 => _days,
+              _ => const <String>[],
+            };
+    final st = data?.obj('today').obj('stats');
+    final stats =
+        st == null
+            ? [('$_booked', 'Booked'), ('${_requests.length}', 'Waiting'), ('$_freed', 'Freed up')]
+            : [
+              ('${st.numOr('booked')}', 'Booked'),
+              ('${st.numOr('waitingRequests', _requests.length)}', 'Waiting'),
+              ('${st.numOr('freedUp')}', 'Freed up'),
+            ];
 
     return MpPage(
       header: const MpHeader('Appointments'),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         gap: 16,
         children: [
@@ -206,10 +375,13 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           // Day sections
           for (final day in days)
             if (_appts.any((a) => a.day == day)) _daySection(day),
-          if (_range == 2)
+          if (data == null ? _range == 2 : days.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text('No past appointments in this view.', style: tx(14, c: MP.ink2)),
+              child: Text(
+                _range == 2 ? 'No past appointments in this view.' : 'No appointments in this view.',
+                style: tx(14, c: MP.ink2),
+              ),
             ),
 
           // Declined requests (expandable)
@@ -309,7 +481,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         gap: 12,
         children: [
           Tap(
-            onTap: () => Nav.go(context, 'PP-Summary'),
+            onTap: () => Nav.go(context, 'PP-Summary', args: q.patientId == null ? null : {'patientId': q.patientId}),
             radius: 12,
             child: Row(
               children: [
@@ -361,7 +533,9 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
   Widget _daySection(String day) {
     final rows =
-        _appts.where((a) => a.day == day).toList()..sort((a, b) => _minutes(a.time).compareTo(_minutes(b.time)));
+        _appts.where((a) => a.day == day).toList()..sort(
+          (a, b) => a.at != null && b.at != null ? a.at!.compareTo(b.at!) : _minutes(a.time).compareTo(_minutes(b.time)),
+        );
     return Semantics(
       container: true,
       label: day,

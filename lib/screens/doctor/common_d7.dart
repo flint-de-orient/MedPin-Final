@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/format.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch D7: the three consultation steps (Consult-Vitals,
@@ -339,10 +340,29 @@ class D7Ruled extends StatelessWidget {
 class D7ConsultTop extends StatelessWidget {
   /// 0 = Vitals, 1 = Diagnosis, 2 = Advice.
   final int step;
-  const D7ConsultTop({super.key, required this.step});
+
+  /// Live: the patient summary from the API (`{patient: {name, age, gender},
+  /// allergies: [{allergen}]}`); null shows the design's patient.
+  final Map<String, dynamic>? summary;
+  const D7ConsultTop({super.key, required this.step, this.summary});
 
   @override
   Widget build(BuildContext context) {
+    final s = summary;
+    final p = s?['patient'] is Map ? (s!['patient'] as Map).cast<String, dynamic>() : null;
+    final name = p == null ? 'Priya Sharma' : '${p['name'] ?? 'Patient'}';
+    final g = p == null ? 'F' : '${p['gender'] ?? ''}';
+    final who =
+        p == null
+            ? '29 F'
+            : [if (p['age'] != null) '${p['age']}', if (g.isNotEmpty) g[0].toUpperCase()].join(' ');
+    final allergies =
+        s == null
+            ? 'Sulfa drugs'
+            : [
+              for (final a in (s['allergies'] as List? ?? const []))
+                if (a is Map && a['allergen'] != null) '${a['allergen']}',
+            ].join(', ');
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
@@ -350,20 +370,21 @@ class D7ConsultTop extends StatelessWidget {
         children: [
           Row(
             children: [
-              const MpAvatar('PS', size: 40, fontSize: 14),
+              MpAvatar(F.initials(name), size: 40, fontSize: 14),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Priya Sharma', style: tx(16, w: w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(name, style: tx(16, w: w600), maxLines: 1, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 2),
                     Text.rich(
                       TextSpan(
-                        text: '29 F · ',
+                        text: allergies.isEmpty ? who : '$who · ',
                         style: tx(14, c: MP.ink2, h: 1.45),
                         children: [
-                          TextSpan(text: 'Allergy: Sulfa drugs', style: tx(14, w: w600, c: MP.amber, h: 1.45)),
+                          if (allergies.isNotEmpty)
+                            TextSpan(text: 'Allergy: $allergies', style: tx(14, w: w600, c: MP.amber, h: 1.45)),
                         ],
                       ),
                     ),
@@ -477,3 +498,75 @@ String d7Date(DateTime d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]} ${d.year}';
 }
+
+/// 'Tue 29 Sep'.
+String d7DayShort(DateTime d) {
+  final long = d7Date(d);
+  return long.substring(0, long.lastIndexOf(' ')).replaceFirst(',', '');
+}
+
+/// 'today, 8:15 AM', 'yesterday, 6:40 PM', '27 Sep, 11:00 AM'.
+String d7DayTime(DateTime d, {DateTime? now}) {
+  final n = now ?? DateTime.now();
+  final day =
+      F.sameDay(d, n)
+          ? 'today'
+          : F.sameDay(d, n.subtract(const Duration(days: 1)))
+          ? 'yesterday'
+          : F.dayMonth(d);
+  return '$day, ${F.time(d)}';
+}
+
+const d7Weekdays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const d7WeekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/// Open days of a location's `weeklyHours`: 'Mon–Sat', 'Tue · Thu · Sat'.
+String d7OpenDays(List<Map<String, dynamic>> hours) {
+  final open = [
+    for (var i = 0; i < 7; i++)
+      if (hours.any((h) => h['weekday'] == d7Weekdays[i] && h['isOpen'] != false)) i,
+  ];
+  if (open.isEmpty) return '';
+  final run = open.length >= 3 && open.last - open.first == open.length - 1;
+  if (run) return '${d7WeekdayNames[open.first]}–${d7WeekdayNames[open.last]}';
+  return open.map((i) => d7WeekdayNames[i]).join(' · ');
+}
+
+/// The street part of a location's address ("DD-24, Sector 1, Salt Lake"),
+/// without the city and PIN code.
+String d7ShortAddress(Map<String, dynamic> l) {
+  final city = (l['city'] as String? ?? '').toLowerCase();
+  final parts = (l['address'] as String? ?? '').split(',').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+  while (parts.length > 1 && city.isNotEmpty && parts.last.toLowerCase().startsWith(city)) {
+    parts.removeLast();
+  }
+  return parts.join(', ');
+}
+
+/// "9:00 AM" for minutes after midnight.
+String d7Minutes(num m) {
+  final h = m ~/ 60;
+  final min = (m % 60).toInt();
+  return F.time(DateTime(2000, 1, 1, h.toInt(), min));
+}
+
+/// "9:00 AM – 1:00 PM", or "5:00 – 8:00 PM" when both are in the afternoon
+/// (or both in the morning).
+String d7Range(num from, num to) {
+  final a = d7Minutes(from);
+  final b = d7Minutes(to);
+  final same = a.substring(a.length - 2) == b.substring(b.length - 2);
+  return same ? '${a.substring(0, a.length - 3)} – $b' : '$a – $b';
+}
+
+/// "9:30 AM" → 570 (minutes after midnight); null if it isn't a time.
+int? d7ParseTime(String t) {
+  final m = RegExp(r'^(\d{1,2}):(\d{2})\s*(AM|PM)$').firstMatch(t.trim());
+  if (m == null) return null;
+  var h = int.parse(m.group(1)!) % 12;
+  if (m.group(3) == 'PM') h += 12;
+  return h * 60 + int.parse(m.group(2)!);
+}
+
+/// YYYY-MM-DD of a local date (the API's `date` parameter).
+String d7Key(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
