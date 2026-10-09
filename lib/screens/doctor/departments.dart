@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 
 /// Design: Departments.dc.html — "Departments".
+/// Live data: GET /api/departments; add: POST /api/departments {name};
+/// rename: PATCH /api/departments/:id {name}.
 class DepartmentsScreen extends StatefulWidget {
   const DepartmentsScreen({super.key});
 
@@ -11,12 +16,38 @@ class DepartmentsScreen extends StatefulWidget {
   State<DepartmentsScreen> createState() => _DepartmentsScreenState();
 }
 
-class _DepartmentsScreenState extends State<DepartmentsScreen> {
+class _DepartmentsScreenState extends State<DepartmentsScreen> with LiveData {
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/departments');
+
   /// This practice's departments: name, dashboard panels using it.
-  final _own = <(String, int)>[('Endocrinology', 3), ('Diabetology', 2)];
+  final _sampleOwn = <(String, int)>[('Endocrinology', 3), ('Diabetology', 2)];
 
   /// Read-only specialties defined by MedPin.
-  static const _shared = [('Cardiology', 4), ('General medicine', 2), ('Gynaecology', 1), ('Nephrology', 0)];
+  static const _sampleShared = [('Cardiology', 4), ('General medicine', 2), ('Gynaecology', 1), ('Nephrology', 0)];
+
+  List<Map<String, dynamic>> _live(bool shared) => [
+    for (final d in data?.list('items') ?? const <Map<String, dynamic>>[])
+      if ((d['shared'] == true) == shared) d,
+  ];
+
+  List<(String, int)> _rows(bool shared) => [
+    for (final d in _live(shared)) (d.str('name'), d.numOr('panels').toInt()),
+  ];
+
+  List<(String, int)> get _own => data == null ? _sampleOwn : _rows(false);
+  List<(String, int)> get _shared => data == null ? _sampleShared : _rows(true);
+
+  String get _practice =>
+      data == null ? 'City Care Clinic' : (Session.I.activeMembership?['practiceName'] as String? ?? 'This practice');
+
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
 
   static String _usage(int n) =>
       n == 0
@@ -31,7 +62,15 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
       (_) => _NameSheet(title: 'Edit department', action: 'Save', name: _own[i].$1),
     );
     if (name == null || !mounted) return;
-    setState(() => _own[i] = (name, _own[i].$2));
+    if (isLive) {
+      final id = _live(false)[i].str('id');
+      final ok = await runAction(context, () => Api.I.patch('/api/departments/$id', {'name': name}), busy: _busy);
+      if (ok == null || !mounted) return;
+      toast(context, 'Department saved');
+      reload(quiet: true);
+      return;
+    }
+    setState(() => _sampleOwn[i] = (name, _sampleOwn[i].$2));
     toast(context, 'Department saved');
   }
 
@@ -41,15 +80,25 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
       (_) => const _NameSheet(title: 'Add department', action: 'Add department'),
     );
     if (name == null || !mounted) return;
-    setState(() => _own.add((name, 0)));
+    if (isLive) {
+      final ok = await runAction(context, () => Api.I.post('/api/departments', {'name': name}), busy: _busy);
+      if (ok == null || !mounted) return;
+      toast(context, 'Department added');
+      reload(quiet: true);
+      return;
+    }
+    setState(() => _sampleOwn.add((name, 0)));
     toast(context, 'Department added');
   }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    final own = _own;
+    final shared = _shared;
     return MpPage(
       header: const MpHeader('Departments'),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         gap: 16,
         children: [
@@ -58,22 +107,27 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 12),
-                  child: D7Title('This practice', sub: 'Specialties City Care Clinic has added'),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: D7Title('This practice', sub: 'Specialties $_practice has added'),
                 ),
-                for (var i = 0; i < _own.length; i++)
+                for (var i = 0; i < own.length; i++)
                   _row(
-                    _own[i].$1,
-                    _own[i].$2,
+                    own[i].$1,
+                    own[i].$2,
                     MpIconButton(
                       I.edit,
-                      label: 'Edit ${_own[i].$1}',
+                      label: 'Edit ${own[i].$1}',
                       color: MP.primary,
                       iconSize: 20,
                       onTap: () => _edit(i),
                     ),
-                    plainUsage: _own[i].$2 > 0,
+                    plainUsage: own[i].$2 > 0,
+                  ),
+                if (own.isEmpty)
+                  D7Ruled(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: Text('No departments added yet', style: tx(14, c: MP.ink2)),
                   ),
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
@@ -99,7 +153,7 @@ class _DepartmentsScreenState extends State<DepartmentsScreen> {
                   padding: EdgeInsets.only(bottom: 12),
                   child: D7Title('Shared specialties', sub: 'Defined by MedPin for every practice'),
                 ),
-                for (final s in _shared)
+                for (final s in shared)
                   _row(
                     s.$1,
                     s.$2,

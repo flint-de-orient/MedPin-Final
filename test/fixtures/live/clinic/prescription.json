@@ -1,0 +1,75 @@
+{
+ "path": "/api/prescriptions/6ac8bbd08adea6a429a73237",
+ "query": {},
+ "data": {
+  "practiceId": "6ac8bbcee42c9f0836e98561",
+  "locationId": "6ac8bbcee42c9f0836e98563",
+  "doctorId": "6ac8bbcee42c9f0836e9855b",
+  "doctorName": "Dr. Arjun Sen",
+  "patientId": "6ac8bbcee42c9f0836e9857c",
+  "consultationId": "6ac8bbd08adea6a429a73224",
+  "rxNumber": 1,
+  "kind": "digital",
+  "source": "this_clinic",
+  "issuedAt": "2026-09-29T03:34:00.000Z",
+  "validUntil": "2026-11-07T18:30:00.000Z",
+  "diagnosisSummary": "Type 2 diabetes mellitus, Polycystic ovary syndrome",
+  "items": [
+   {
+    "dose": {
+     "morning": 1,
+     "afternoon": 0,
+     "night": 1
+    },
+    "duration": {
+     "value": 3,
+     "unit": "months"
+    },
+    "name": "Metformin",
+    "strength": "500 mg",
+    "frequency": "daily",
+    "foodRelation": "after_food",
+    "quantity": 180,
+    "change": "new",
+    "entrySource": "typed",
+    "_id": "6ac8bbd08adea6a429a73227"
+   },
+   {
+    "dose": {
+     "morning": 1,
+     "afternoon": 0,
+     "night": 0
+    },
+    "duration": {
+     "value": 1,
+     "unit": "months"
+    },
+    "name": "Glimepiride",
+    "strength": "1 mg",
+    "frequency": "daily",
+    "foodRelation": "before_food",
+    "quantity": 30,
+    "change": "new",
+    "entrySource": "typed",
+    "_id": "6ac8bbd08adea6a429a73228"
+   }
+  ],
+  "tests": [
+   "HbA1c",
+   "Lipid profile"
+  ],
+  "advice": "Walk 30 minutes, 5 days a week\nCome back with fasting sugar.",
+  "followUpDate": "2026-10-12T18:30:00.000Z",
+  "createdAt": "2026-10-09T10:02:56.429Z",
+  "updatedAt": "2026-10-09T10:02:56.469Z",
+  "file": {
+   "key": "prescriptions/2026-10/e8d430dd-4503-4374-be28-2b57493e2bd9.pdf",
+   "name": "Rx-0001.pdf",
+   "mimeType": "application/pdf",
+   "sizeBytes": 2150,
+   "pages": 1,
+   "url": "http://localhost:4000/files/prescriptions/2026-10/e8d430dd-4503-4374-be28-2b57493e2bd9.pdf?exp=1791545270&sig=9b7a99ed589bb6320e2e854042afe661d05805c2da9d56d405f4cc001cd8ed99"
+  },
+  "id": "6ac8bbd08adea6a429a73237"
+ }
+}

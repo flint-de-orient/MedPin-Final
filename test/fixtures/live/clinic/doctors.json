@@ -1,0 +1,105 @@
+{
+ "path": "/api/doctors",
+ "query": {},
+ "data": [
+  {
+   "userId": "6ac8bbcee42c9f0836e9855b",
+   "name": "Dr. Arjun Sen",
+   "locations": [
+    {
+     "id": "6ac8bbcee42c9f0836e98563",
+     "name": "Salt Lake",
+     "services": [
+      {
+       "name": "New consultation",
+       "details": "15 min · in clinic",
+       "durationMin": 15,
+       "mode": "in_clinic",
+       "visitType": "new",
+       "fee": 600,
+       "_id": "6ac8bbcee42c9f0836e98577"
+      },
+      {
+       "name": "Follow-up",
+       "details": "Repeat visit for the same problem",
+       "mode": "in_clinic",
+       "visitType": "follow_up",
+       "fee": 600,
+       "_id": "6ac8bbcee42c9f0836e98578"
+      },
+      {
+       "name": "Report review",
+       "details": "Within 7 days of a visit",
+       "mode": "in_clinic",
+       "visitType": "report_review",
+       "fee": 0,
+       "freeWithinDays": 7,
+       "_id": "6ac8bbcee42c9f0836e98579"
+      },
+      {
+       "name": "Video consultation",
+       "details": "15 min",
+       "mode": "video",
+       "fee": 600,
+       "_id": "6ac8bbcee42c9f0836e9857a"
+      }
+     ]
+    },
+    {
+     "id": "6ac8bbd08adea6a429a73189",
+     "name": "New Town",
+     "services": [
+      {
+       "name": "New consultation",
+       "mode": "in_clinic",
+       "visitType": "new",
+       "fee": 500,
+       "_id": "6ac8bbd08adea6a429a731b1"
+      },
+      {
+       "name": "Follow-up",
+       "mode": "in_clinic",
+       "visitType": "follow_up",
+       "fee": 500,
+       "_id": "6ac8bbd08adea6a429a731b2"
+      },
+      {
+       "name": "Report review",
+       "mode": "in_clinic",
+       "visitType": "report_review",
+       "fee": 0,
+       "freeWithinDays": 7,
+       "_id": "6ac8bbd08adea6a429a731b3"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "userId": "6ac8bbd08adea6a429a73197",
+   "name": "Dr. Rina Mitra",
+   "locations": [
+    {
+     "id": "6ac8bbcee42c9f0836e98563",
+     "name": "Salt Lake",
+     "services": [
+      {
+       "name": "New consultation",
+       "mode": "in_clinic",
+       "visitType": "new",
+       "fee": 800,
+       "_id": "6ac8bbd08adea6a429a731ae"
+      },
+      {
+       "name": "Follow-up",
+       "mode": "in_clinic",
+       "visitType": "follow_up",
+       "fee": 600,
+       "_id": "6ac8bbd08adea6a429a731af"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -1,13 +1,28 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 
 /// Design: Clinics.dc.html — "Locations".
-class ClinicsScreen extends StatelessWidget {
+/// Live data: GET /api/locations; rows open Clinic-Editor {'locationId'}.
+class ClinicsScreen extends StatefulWidget {
   const ClinicsScreen({super.key});
 
-  static const _locations = [
+  @override
+  State<ClinicsScreen> createState() => _ClinicsScreenState();
+}
+
+typedef _Location = ({String name, String status, String days, String meta});
+
+class _ClinicsScreenState extends State<ClinicsScreen> with LiveData {
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/locations');
+
+  static const _sample = [
     (
       name: 'City Care Clinic — Salt Lake',
       status: 'Active',
@@ -34,6 +49,60 @@ class ClinicsScreen extends StatelessWidget {
     ),
   ];
 
+  List<Map<String, dynamic>> get _items => data?.list('items') ?? const [];
+
+  List<_Location> get _locations {
+    if (data == null) return _sample;
+    return [for (final l in _items) _fromApi(l)];
+  }
+
+  static _Location _fromApi(Map<String, dynamic> l) {
+    final status = switch (l.str('status')) {
+      'inactive' => 'Inactive',
+      'view_only' => 'View only',
+      _ => 'Active',
+    };
+    final doctors = l.numOr('doctors').toInt();
+    final off = F.date(l['deactivatedAt']);
+    final slot = l['slotMinutes'] is num ? ' · ${l['slotMinutes']}-min slots' : '';
+    final open = d7OpenDays(l.list('weeklyHours'));
+    return (
+      name: l.str('name'),
+      status: status,
+      days: switch (status) {
+        'Inactive' => 'No new bookings',
+        'View only' => 'Shared ${l.str('type', 'location').replaceAll('_', ' ')}',
+        _ => open.isEmpty ? 'No opening hours yet' : '$open$slot',
+      },
+      meta: switch (status) {
+        'Inactive' => off == null ? 'History kept' : 'Deactivated ${d7Date(off).substring(5)} · history kept',
+        'View only' => 'Managed by another organisation, not editable',
+        _ => [
+          d7ShortAddress(l),
+          '$doctors ${doctors == 1 ? 'doctor' : 'doctors'}',
+        ].where((s) => s.isNotEmpty).join(' · '),
+      },
+    );
+  }
+
+  String get _summary {
+    final d = data;
+    if (d == null) return 'City Care Clinic · 2 active, 1 inactive, 1 shared';
+    final s = d.obj('summary');
+    final practice = Session.I.activeMembership?['practiceName'] as String? ?? '';
+    final counts = [
+      '${s.numOr('active')} active',
+      if (s.numOr('inactive') > 0) '${s.numOr('inactive')} inactive',
+      if (s.numOr('shared') > 0) '${s.numOr('shared')} shared',
+    ].join(', ');
+    return practice.isEmpty ? counts : '$practice · $counts';
+  }
+
+  Future<void> _open(String? locationId) async {
+    await Nav.go(context, 'Clinic-Editor', args: locationId == null ? null : {'locationId': locationId});
+    if (mounted && isLive) reload(quiet: true);
+  }
+
   /// Status pill fill / text (renderVals() ACTIVE, INACTIVE, SHARED).
   static (Color, Color) _tone(String status) => switch (status) {
     'Active' => (MP.greenSoft, MP.green),
@@ -43,18 +112,20 @@ class ClinicsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    void addLocation() => Nav.go(context, 'Clinic-Editor');
+    void addLocation() => _open(null);
+    final placeholder = livePlaceholder();
+    final locations = _locations;
 
     return MpPage(
       header: MpHeader(
         'Locations',
         actions: [MpIconButton(I.plus, label: 'Add location', color: MP.primary, onTap: addLocation)],
       ),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         gap: 16,
         children: [
-          Text('City Care Clinic · 2 active, 1 inactive, 1 shared', style: tx(14, c: MP.ink2)),
+          Text(_summary, style: tx(14, c: MP.ink2)),
           Semantics(
             container: true,
             label: 'Locations',
@@ -63,7 +134,14 @@ class ClinicsScreen extends StatelessWidget {
               decoration: MPDeco.card(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [for (var i = 0; i < _locations.length; i++) _row(context, i)],
+                children: [
+                  for (var i = 0; i < locations.length; i++) _row(context, locations, i),
+                  if (locations.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Text('No locations yet', style: tx(14, c: MP.ink2)),
+                    ),
+                ],
               ),
             ),
           ),
@@ -92,15 +170,19 @@ class ClinicsScreen extends StatelessWidget {
     );
   }
 
-  Widget _row(BuildContext context, int i) {
-    final l = _locations[i];
+  Widget _row(BuildContext context, List<_Location> locations, int i) {
+    final l = locations[i];
     final tone = _tone(l.status);
     final shared = l.status == 'View only';
+    final id = data == null || i >= _items.length ? null : _items[i].str('id');
     return Tap(
       onTap:
           shared
-              ? () => toast(context, 'View only · managed by Apollo Diagnostics')
-              : () => Nav.go(context, 'Clinic-Editor'),
+              ? () => toast(
+                context,
+                data == null ? 'View only · managed by Apollo Diagnostics' : 'View only · managed by another organisation',
+              )
+              : () => data == null ? Nav.go(context, 'Clinic-Editor') : _open(id),
       radius: 12,
       child: D7Ruled(
         top: i > 0,

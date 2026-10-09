@@ -1,0 +1,188 @@
+{
+ "path": "/api/locations",
+ "query": {},
+ "data": {
+  "summary": {
+   "active": 2,
+   "inactive": 0,
+   "shared": 0
+  },
+  "items": [
+   {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "type": "clinic",
+    "status": "active",
+    "address": "DD-24, Sector 1, Salt Lake, Kolkata 700064",
+    "area": "Salt Lake",
+    "city": "Kolkata",
+    "pincode": "700064",
+    "landmark": "Opposite Tank 9, near City Centre",
+    "phone": "033 4012 5678",
+    "geo": {
+     "type": "Point",
+     "coordinates": [
+      88.4116,
+      22.5867
+     ]
+    },
+    "facilities": [
+     "Wheelchair access",
+     "Parking",
+     "Lab sample collection",
+     "Pharmacy"
+    ],
+    "paymentMethods": [
+     "upi",
+     "cash",
+     "card"
+    ],
+    "collectFeeAtBooking": false,
+    "slotMinutes": 15,
+    "weeklyHours": [
+     {
+      "weekday": "mon",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+     },
+     {
+      "weekday": "tue",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+     },
+     {
+      "weekday": "wed",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+     },
+     {
+      "weekday": "thu",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+     },
+     {
+      "weekday": "fri",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 1200
+     },
+     {
+      "weekday": "sat",
+      "isOpen": true,
+      "opensAt": 540,
+      "closesAt": 840
+     },
+     {
+      "weekday": "sun",
+      "isOpen": false,
+      "opensAt": 540,
+      "closesAt": 840
+     }
+    ],
+    "letterhead": {
+     "tagline": "Diabetes, thyroid and heart care",
+     "doctorNamePrinted": "Dr. Arjun Sen, MBBS, MD (Medicine)",
+     "registrationNo": "WBMC 64213"
+    },
+    "createdAt": "2026-10-09T10:02:54.946Z",
+    "updatedAt": "2026-10-09T10:02:54.946Z",
+    "id": "6ac8bbcee42c9f0836e98563",
+    "doctors": 2,
+    "upcomingBookings": 1,
+    "today": {
+     "openNow": true,
+     "opensAt": 540,
+     "closesAt": 1200,
+     "booked": 8,
+     "waiting": 2
+    }
+   },
+   {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "name": "City Care — New Town",
+    "shortName": "New Town",
+    "type": "clinic",
+    "status": "active",
+    "address": "AA-II, Action Area 2, New Town, Kolkata 700161",
+    "area": "New Town",
+    "city": "Kolkata",
+    "phone": "033 4012 9900",
+    "geo": {
+     "type": "Point",
+     "coordinates": [
+      88.4795,
+      22.5958
+     ]
+    },
+    "facilities": [],
+    "paymentMethods": [
+     "upi",
+     "cash"
+    ],
+    "collectFeeAtBooking": false,
+    "slotMinutes": 20,
+    "weeklyHours": [
+     {
+      "weekday": "mon",
+      "isOpen": false,
+      "opensAt": 1020,
+      "closesAt": 1230
+     },
+     {
+      "weekday": "tue",
+      "isOpen": true,
+      "opensAt": 1020,
+      "closesAt": 1230
+     },
+     {
+      "weekday": "wed",
+      "isOpen": false,
+      "opensAt": 1020,
+      "closesAt": 1230
+     },
+     {
+      "weekday": "thu",
+      "isOpen": true,
+      "opensAt": 1020,
+      "closesAt": 1230
+     },
+     {
+      "weekday": "fri",
+      "isOpen": false,
+      "opensAt": 1020,
+      "closesAt": 1230
+     },
+     {
+      "weekday": "sat",
+      "isOpen": true,
+      "opensAt": 1020,
+      "closesAt": 1230
+     },
+     {
+      "weekday": "sun",
+      "isOpen": false,
+      "opensAt": 1020,
+      "closesAt": 1230
+     }
+    ],
+    "createdAt": "2026-10-09T10:02:56.119Z",
+    "updatedAt": "2026-10-09T10:02:56.119Z",
+    "id": "6ac8bbd08adea6a429a73189",
+    "doctors": 1,
+    "upcomingBookings": 0,
+    "today": {
+     "openNow": false,
+     "opensAt": null,
+     "closesAt": null,
+     "booked": 0,
+     "waiting": 0
+    }
+   }
+  ]
+ }
+}

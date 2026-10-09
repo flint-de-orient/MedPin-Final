@@ -1,12 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 
 /// Design: Prescriptions.dc.html — "Prescriptions" (Priya Sharma's list).
-class PrescriptionsScreen extends StatelessWidget {
+/// Live: args {'prescriptionId'} and/or {'patientId'} → GET /api/prescriptions/:id
+/// and GET /api/patients/:id/prescriptions (latest first). "Download PDF"
+/// opens the signed file link; an unsent prescription from this clinic can be
+/// sent with POST /api/prescriptions/:id/send.
+class PrescriptionsScreen extends StatefulWidget {
   const PrescriptionsScreen({super.key});
 
+  @override
+  State<PrescriptionsScreen> createState() => _PrescriptionsScreenState();
+}
+
+/// One prescription card.
+typedef _Rx =
+    ({
+      String? id,
+      String date,
+      bool scanned,
+      String byline,
+      String dx,
+      String meds,
+      String labs,
+      String follow,
+      String list,
+      String fileTitle,
+      String fileMeta,
+      String? url,
+      bool sendable,
+    });
+
+class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData {
   static const _issued = [
     (
       date: '29 Sep 2026',
@@ -26,11 +58,154 @@ class PrescriptionsScreen extends StatelessWidget {
     ),
   ];
 
+  static final List<_Rx> _sample = [
+    for (final rx in _issued)
+      (
+        id: null,
+        date: rx.date,
+        scanned: false,
+        byline: 'Dr. Arjun Sen · City Care Clinic, Salt Lake',
+        dx: rx.dx,
+        meds: rx.meds,
+        labs: rx.labs,
+        follow: rx.follow,
+        list: rx.list,
+        fileTitle: '',
+        fileMeta: '',
+        url: null,
+        sendable: false,
+      ),
+    (
+      id: null,
+      date: '12 Jan 2026',
+      scanned: true,
+      byline: 'Paper prescription · filed by Dr. Arjun Sen',
+      dx: '',
+      meds: '',
+      labs: '',
+      follow: '',
+      list: '',
+      fileTitle: 'Prescription, 12 Jan 2026',
+      fileMeta: 'Photo from camera · 1 page',
+      url: null,
+      sendable: false,
+    ),
+  ];
+
+  @override
+  Future<Object?> fetch() async {
+    final args = Nav.args<Map>(context) ?? const {};
+    final rxId = args['prescriptionId'] as String?;
+    var patientId = args['patientId'] as String?;
+    Map<String, dynamic>? rx;
+    if (rxId != null) {
+      rx = (await Api.I.get('/api/prescriptions/$rxId') as Map).cast<String, dynamic>();
+      patientId ??= rx.str('patientId');
+    }
+    if (patientId == null) throw const ApiException(400, 'NO_PATIENT', 'Choose a patient first');
+    final r = await Future.wait([
+      Api.I.get('/api/patients/$patientId/prescriptions'),
+      Api.I.get('/api/patients/$patientId'),
+      Api.I.get('/api/locations').catchError((_) => const {}),
+    ]);
+    final list = (r[0] as Map).cast<String, dynamic>();
+    var items = list.list('items');
+    // The one just opened, in case the list was read before it was saved.
+    if (rx != null && !items.any((x) => x.str('id') == rxId)) items = [rx, ...items];
+    return {
+      'items': items,
+      'patient': (r[1] as Map).cast<String, dynamic>().obj('patient'),
+      'locations': r[2] is Map ? (r[2] as Map).cast<String, dynamic>().list('items') : const [],
+    };
+  }
+
+  String get _patientName => data == null ? 'Priya Sharma' : data!.obj('patient').str('name');
+
+  List<_Rx> get _rows {
+    final d = data;
+    if (d == null) return _sample;
+    final places = {for (final l in d.list('locations')) l.str('id'): l.str('shortName', l.str('name'))};
+    final practice = Session.I.activeMembership?['practiceName'] as String? ?? '';
+    return [for (final x in d.list('items')) _fromApi(x, places, practice)];
+  }
+
+  _Rx _fromApi(Map<String, dynamic> x, Map<String, String> places, String practice) {
+    final at = F.date(x['issuedAt']) ?? F.date(x['createdAt']);
+    final date = at == null ? '' : d7Date(at).substring(5);
+    final ours = x.str('practiceId') == Session.I.practiceId;
+    final doctor = x.str('doctorName');
+    final loc = places[x.str('locationId')] ?? '';
+    final place = ours ? [practice, loc].where((s) => s.isNotEmpty).join(', ') : '';
+    final file = x['file'] is Map ? x.obj('file') : const <String, dynamic>{};
+    final scanned = x.str('kind') == 'scanned';
+    final items = x.list('items');
+    final follow = F.date(x['followUpDate']);
+    final pages = file.numOr('pages', 1).toInt();
+    return (
+      id: x.str('id'),
+      date: date,
+      scanned: scanned,
+      byline:
+          scanned
+              ? [
+                x.str('source') == 'this_clinic' ? 'Paper prescription' : 'Shared by the patient',
+                if (doctor.isNotEmpty) 'filed by $doctor',
+              ].join(' · ')
+              : [
+                if (doctor.isNotEmpty) doctor,
+                if (place.isNotEmpty) place else if (!ours) 'Another clinic',
+              ].join(' · '),
+      dx: x.str('diagnosisSummary', '–'),
+      meds: '${items.length}',
+      labs: '${(x['tests'] as List? ?? const []).length}',
+      follow: follow == null ? '–' : F.dayMonth(follow),
+      list: [for (final i in items) [i.str('name'), i.str('strength')].where((s) => s.isNotEmpty).join(' ')].join(', '),
+      fileTitle: 'Prescription, $date',
+      fileMeta: [
+        file.str('mimeType').contains('pdf') ? 'PDF' : 'Photo',
+        '$pages ${pages == 1 ? 'page' : 'pages'}',
+      ].join(' · '),
+      url: file['url'] is String ? file.str('url') : null,
+      sendable: ours && !scanned && x['sentAt'] == null,
+    );
+  }
+
+  Future<void> _download(_Rx rx) async {
+    if (!isLive) {
+      toast(context, 'Downloading PDF · ${rx.date}');
+      return;
+    }
+    final url = rx.url;
+    if (url == null) {
+      toast(context, 'No PDF for this prescription yet');
+      return;
+    }
+    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication).catchError((_) => false);
+    if (!ok && mounted) toast(context, "Couldn't open the PDF");
+  }
+
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send(_Rx rx) async {
+    final ok = await runAction(context, () => Api.I.post('/api/prescriptions/${rx.id}/send', const {}), busy: _busy);
+    if (ok == null || !mounted) return;
+    toast(context, 'Prescription sent to ${F.firstName(_patientName)}');
+    reload(quiet: true);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    final rows = _rows;
     return MpPage(
-      header: const _Header(),
-      body: VGap(
+      header: _Header(name: placeholder == null ? _patientName : ''),
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         gap: 16,
         children: [
@@ -57,73 +232,79 @@ class PrescriptionsScreen extends StatelessWidget {
 
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text('3 PRESCRIPTIONS · LATEST FIRST', style: tx(12, w: w600, h: 1.35, em: 0.06, c: MP.ink3)),
+            child: Text(
+              rows.isEmpty
+                  ? 'NO PRESCRIPTIONS YET'
+                  : '${rows.length} ${rows.length == 1 ? 'PRESCRIPTION' : 'PRESCRIPTIONS'} · LATEST FIRST',
+              style: tx(12, w: w600, h: 1.35, em: 0.06, c: MP.ink3),
+            ),
           ),
 
-          for (final rx in _issued)
-            _RxCard(
-              date: rx.date,
-              byline: 'Dr. Arjun Sen · City Care Clinic, Salt Lake',
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('DIAGNOSIS', style: tx(12, w: w600, h: 1.35, em: 0.06, c: MP.ink3)),
-                    const SizedBox(height: 4),
-                    Text(rx.dx, style: tx(16, h: 1.5)),
-                  ],
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    MpGrid(
-                      columns: 3,
-                      children: [
-                        _Stat(rx.meds, 'Medicines'),
-                        _Stat(rx.labs, 'Lab tests'),
-                        _Stat(rx.follow, 'Follow-up'),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(rx.list, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, c: MP.ink2, h: 1.45)),
-                  ],
-                ),
-              ],
-            ),
-
-          // Scanned paper prescription
-          _RxCard(
-            date: '12 Jan 2026',
-            scanned: true,
-            byline: 'Paper prescription · filed by Dr. Arjun Sen',
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(12)),
-                child: Row(
-                  children: [
-                    const Ico(I.fileText, size: 22, color: MP.ink2),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+          for (final rx in rows)
+            if (!rx.scanned)
+              _RxCard(
+                date: rx.date,
+                byline: rx.byline,
+                onDownload: () => _download(rx),
+                onSend: rx.sendable ? () => _send(rx) : null,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('DIAGNOSIS', style: tx(12, w: w600, h: 1.35, em: 0.06, c: MP.ink3)),
+                      const SizedBox(height: 4),
+                      Text(rx.dx, style: tx(16, h: 1.5)),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      MpGrid(
+                        columns: 3,
                         children: [
-                          Text(
-                            'Prescription, 12 Jan 2026',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: tx(15, w: w600),
-                          ),
-                          const SizedBox(height: 2),
-                          Text('Photo from camera · 1 page', style: tx(13, c: MP.ink3)),
+                          _Stat(rx.meds, 'Medicines'),
+                          _Stat(rx.labs, 'Lab tests'),
+                          _Stat(rx.follow, 'Follow-up'),
                         ],
                       ),
+                      if (rx.list.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(rx.list, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, c: MP.ink2, h: 1.45)),
+                      ],
+                    ],
+                  ),
+                ],
+              )
+            else
+              // Scanned paper prescription
+              _RxCard(
+                date: rx.date,
+                scanned: true,
+                byline: rx.byline,
+                onDownload: () => _download(rx),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      children: [
+                        const Ico(I.fileText, size: 22, color: MP.ink2),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(rx.fileTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(15, w: w600)),
+                              const SizedBox(height: 2),
+                              Text(rx.fileMeta, style: tx(13, c: MP.ink3)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
         ],
       ),
     );
@@ -132,7 +313,8 @@ class PrescriptionsScreen extends StatelessWidget {
 
 /// 64px bar: back + "Prescriptions" (20/700) over "Priya Sharma" (14/1.45).
 class _Header extends StatelessWidget {
-  const _Header();
+  final String name;
+  const _Header({required this.name});
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +332,7 @@ class _Header extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Prescriptions', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(20, w: w700, h: 1.25)),
-                Text('Priya Sharma', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, c: MP.ink2, h: 1.45)),
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, c: MP.ink2, h: 1.45)),
               ],
             ),
           ),
@@ -202,7 +384,18 @@ class _RxCard extends StatelessWidget {
   final String byline;
   final bool scanned;
   final List<Widget> children;
-  const _RxCard({required this.date, required this.byline, this.scanned = false, required this.children});
+  final VoidCallback onDownload;
+
+  /// Live: send an unsent prescription to the patient's chat.
+  final VoidCallback? onSend;
+  const _RxCard({
+    required this.date,
+    required this.byline,
+    this.scanned = false,
+    required this.children,
+    required this.onDownload,
+    this.onSend,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -230,16 +423,21 @@ class _RxCard extends StatelessWidget {
             ...children,
             D7Ruled(
               padding: const EdgeInsets.only(top: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: D7Btn(
-                  'Download PDF',
-                  icon: I.download,
-                  height: 44,
-                  radius: 8,
-                  padding: EdgeInsets.zero,
-                  onTap: () => toast(context, 'Downloading PDF · $date'),
-                ),
+              child: Row(
+                children: [
+                  D7Btn(
+                    'Download PDF',
+                    icon: I.download,
+                    height: 44,
+                    radius: 8,
+                    padding: EdgeInsets.zero,
+                    onTap: onDownload,
+                  ),
+                  if (onSend != null) ...[
+                    const Spacer(),
+                    D7Btn('Send to patient', height: 44, radius: 8, padding: EdgeInsets.zero, onTap: onSend),
+                  ],
+                ],
               ),
             ),
           ],

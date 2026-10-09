@@ -1,0 +1,94 @@
+{
+ "path": "/api/doctors/6ac8bbcee42c9f0836e9855b/slots",
+ "query": {
+  "locationId": "6ac8bbcee42c9f0836e98563",
+  "date": "2026-10-10"
+ },
+ "data": {
+  "open": true,
+  "slotLengthMin": 15,
+  "patientsPerSlot": 1,
+  "slots": [
+   {
+    "minute": 540,
+    "time": "9:00 AM",
+    "startAt": "2026-10-10T03:30:00.000Z",
+    "booked": 0,
+    "walkIn": false,
+    "available": true
+   },
+   {
+    "minute": 555,
+    "time": "9:15 AM",
+    "startAt": "2026-10-10T03:45:00.000Z",
+    "booked": 0,
+    "walkIn": false,
+    "available": true
+   },
+   {
+    "minute": 570,
+    "time": "9:30 AM",
+    "startAt": "2026-10-10T04:00:00.000Z",
+    "booked": 0,
+    "walkIn": false,
+    "available": true
+   },
+   {
+    "minute": 585,
+    "time": "9:45 AM",
+    "startAt": "2026-10-10T04:15:00.000Z",
+    "booked": 0,
+    "walkIn": false,
+    "available": true
+   },
+   {
+    "minute": 600,
+    "time": "10:00 AM",
+    "startAt": "2026-10-10T04:30:00.000Z",
+    "booked": 0,
+    "walkIn": false,
+    "available": true
+   },
+   {
+    "minute": 615,
+    "time": "10:15 AM",
+    "startAt": "2026-10-10T04:45:00.000Z",
+    "booked": 0,
+    "walkIn": false,
+    "available": true
+   },
+   {
+    "minute": 630,
+    "time": "10:30 AM",
+    "startAt": "2026-10-10T05:00:00.000Z",
+    "booked": 0,
+    "walkIn": true,
+    "available": true
+   },
+   {
+    "minute": 645,
+    "time": "10:45 AM",
+    "startAt": "2026-10-10T05:15:00.000Z",
+    "booked": 0,
+    "walkIn": true,
+    "available": true
+   },
+   {
+    "minute": 660,
+    "time": "11:00 AM",
+    "startAt": "2026-10-10T05:30:00.000Z",
+    "booked": 0,
+    "walkIn": true,
+    "available": true
+   },
+   {
+    "minute": 675,
+    "time": "11:15 AM",
+    "startAt": "2026-10-10T05:45:00.000Z",
+    "booked": 0,
+    "walkIn": true,
+    "available": true
+   }
+  ]
+ }
+}

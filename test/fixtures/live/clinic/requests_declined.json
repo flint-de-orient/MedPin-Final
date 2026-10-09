@@ -1,0 +1,7 @@
+{
+ "path": "/api/appointment-requests",
+ "query": {
+  "status": "declined"
+ },
+ "data": []
+}

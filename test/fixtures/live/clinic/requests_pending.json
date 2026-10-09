@@ -1,0 +1,58 @@
+{
+ "path": "/api/appointment-requests",
+ "query": {
+  "status": "pending"
+ },
+ "data": [
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Farhana Islam",
+    "phone": "9831120768",
+    "ageYears": 38,
+    "ageRecordedAt": "2026-10-09T10:02:56.174Z",
+    "gender": "female",
+    "id": "6ac8bbd08adea6a429a731d6"
+   },
+   "doctorId": {
+    "name": "Dr. Arjun Sen",
+    "id": "6ac8bbcee42c9f0836e9855b"
+   },
+   "visitType": "new",
+   "mode": "in_clinic",
+   "reason": "New consultation: fever and body ache for 3 days",
+   "preferredTime": "Thu or Fri, after 5 PM",
+   "preferredSlots": [],
+   "channel": "whatsapp",
+   "status": "pending",
+   "createdAt": "2026-10-08T13:10:00.000Z",
+   "updatedAt": "2026-10-08T13:10:00.000Z",
+   "id": "6ac8bbd08adea6a429a733c1"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Debasish Bose",
+    "phone": "9831120769",
+    "ageYears": 57,
+    "ageRecordedAt": "2026-10-09T10:02:56.178Z",
+    "gender": "male",
+    "id": "6ac8bbd08adea6a429a731dd"
+   },
+   "doctorId": {
+    "name": "Dr. Arjun Sen",
+    "id": "6ac8bbcee42c9f0836e9855b"
+   },
+   "visitType": "follow_up",
+   "mode": "in_clinic",
+   "reason": "Follow-up for sugar",
+   "preferredTime": "Any morning this week",
+   "preferredSlots": [],
+   "channel": "app",
+   "status": "pending",
+   "createdAt": "2026-10-09T02:50:00.000Z",
+   "updatedAt": "2026-10-09T02:50:00.000Z",
+   "id": "6ac8bbd08adea6a429a733c0"
+  }
+ ]
+}

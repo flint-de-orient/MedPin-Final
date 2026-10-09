@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 
 /// Design: Alerts.dc.html — "Alerts" (Clinical alerts).
+/// Live data: GET /api/alerts?status=all (filtered here like the server does);
+/// acknowledge / resolve: POST /api/alerts/:id/acknowledge | resolve.
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
 
@@ -24,7 +29,15 @@ class _Alert {
     this.status = _Status.open,
     this.note,
     this.noteBy,
+    this.id,
+    this.patientId,
+    this.acknowledgedToday = true,
   });
+
+  /// Live record ids (null in the design preview).
+  final String? id;
+  final String? patientId;
+  final bool acknowledgedToday;
 
   /// Index into the severities: 0 Emergency, 1 Urgent, 2 Watch.
   final int sev;
@@ -38,8 +51,59 @@ class _Alert {
   final String? noteBy;
 }
 
-class _AlertsScreenState extends State<AlertsScreen> {
+class _AlertsScreenState extends State<AlertsScreen> with LiveData {
   static const _tabs = ['Open', 'Acknowledged', 'Resolved', 'All'];
+  static const _sevKeys = ['emergency', 'urgent', 'watch'];
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/alerts', query: {'status': 'all'});
+
+  Map<String, dynamic>? _mappedFrom;
+  List<_Alert> _live = const [];
+
+  /// The design's sample, or the practice's alerts.
+  List<_Alert> get _alerts {
+    final d = data;
+    if (d == null) return _sample;
+    if (!identical(d, _mappedFrom)) {
+      _mappedFrom = d;
+      _live = [for (final a in d.list('items')) _fromApi(a)];
+    }
+    return _live;
+  }
+
+  static _Alert _fromApi(Map<String, dynamic> a) {
+    final p = a.obj('patient');
+    final name = p.str('name', 'Patient');
+    final at = F.date(a['createdAt']);
+    final g = p.str('gender');
+    final who = [
+      if (p['age'] != null) '${p['age']}',
+      if (g.isNotEmpty) g[0].toUpperCase(),
+    ].join(' ');
+    final conditions = [for (final c in (p['conditions'] as List? ?? const [])) '$c'].join(', ');
+    final noteAt = F.date(a['noteAt']);
+    final noteByName = a['noteBy'] is Map ? a.obj('noteBy').str('name') : '';
+    final ackAt = a['acknowledged'] is Map ? F.date(a.obj('acknowledged')['at']) : null;
+    return _Alert(
+      id: a.str('id'),
+      patientId: p['id'] == null ? null : p.str('id'),
+      sev: _sevKeys.indexOf(a.str('severity')).clamp(0, 2),
+      time: at == null ? '' : F.askedAt(at),
+      initials: F.initials(name),
+      name: name,
+      meta: [who, conditions].where((s) => s.isNotEmpty).join(' · '),
+      detail: a.str('detail', a.str('title')),
+      status: switch (a.str('status')) {
+        'acknowledged' => _Status.acknowledged,
+        'resolved' => _Status.resolved,
+        _ => _Status.open,
+      },
+      note: a['note'] == null || a.str('note').isEmpty ? null : a.str('note'),
+      noteBy: [if (noteByName.isNotEmpty) F.doctorShort(noteByName), if (noteAt != null) F.askedAt(noteAt)].join(', '),
+      acknowledgedToday: ackAt != null && F.sameDay(ackAt, DateTime.now()),
+    );
+  }
 
   /// Severity: label, filter dot, badge text / fill, border of an open card.
   static const _sevs = [
@@ -48,7 +112,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     (label: 'Watch', dot: MP.ink3, fg: MP.ink2, bg: MP.fill, border: MP.line),
   ];
 
-  final _alerts = [
+  final _sample = [
     _Alert(
       sev: 0,
       time: '9:12 AM',
@@ -105,12 +169,35 @@ class _AlertsScreenState extends State<AlertsScreen> {
     });
   }
 
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _act(_Alert a, String action, String done) async {
+    final ok = await runAction(context, () => Api.I.post('/api/alerts/${a.id}/$action', const {}), busy: _busy);
+    if (ok == null || !mounted) return;
+    toast(context, done);
+    reload(quiet: true);
+  }
+
   void _acknowledge(_Alert a) {
+    if (isLive) {
+      _act(a, 'acknowledge', 'Alert acknowledged');
+      return;
+    }
     setState(() => a.status = _Status.acknowledged);
     toast(context, 'Alert acknowledged');
   }
 
   void _resolve(_Alert a) {
+    if (isLive) {
+      _act(a, 'resolve', 'Alert resolved');
+      return;
+    }
     setState(() => a.status = _Status.resolved);
     toast(context, 'Alert resolved');
   }
@@ -120,6 +207,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
     final openTotal = _alerts.where((a) => a.status == _Status.open).length;
     final open = _list(_Status.open);
     final acknowledged = _list(_Status.acknowledged);
+    final ackToday = acknowledged.where((a) => a.acknowledgedToday).toList();
+    final placeholder = livePlaceholder();
     final resolved = _list(_Status.resolved);
     final all = _list(null);
     final (String summary, List<_Alert> shown) = switch (_tab) {
@@ -169,7 +258,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
               ],
             ),
           ),
-          VGap(
+          if (placeholder != null) placeholder else VGap(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
             gap: 16,
             children: [
@@ -184,12 +273,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
               ),
               Text(summary, style: tx(14, c: MP.ink2)),
               for (final a in shown) _card(a),
-              if (_tab == 0 && acknowledged.isNotEmpty) ...[
+              if (_tab == 0 && ackToday.isNotEmpty) ...[
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text('ACKNOWLEDGED TODAY', style: tx(12, w: w600, em: 0.06, c: MP.ink3)),
                 ),
-                for (final a in acknowledged) _card(a),
+                for (final a in ackToday) _card(a),
               ],
             ],
           ),
@@ -221,7 +310,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
             ],
           ),
           Tap(
-            onTap: () => Nav.go(context, 'PP-Summary'),
+            onTap: () => Nav.go(context, 'PP-Summary', args: a.patientId == null ? null : {'patientId': a.patientId}),
             radius: 12,
             child: Row(
               children: [

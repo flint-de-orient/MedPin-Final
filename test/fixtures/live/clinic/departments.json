@@ -1,0 +1,60 @@
+{
+ "path": "/api/departments",
+ "query": {},
+ "data": [
+  {
+   "name": "Cardiology",
+   "practiceId": null,
+   "createdAt": "2026-10-09T10:02:54.918Z",
+   "updatedAt": "2026-10-09T10:02:54.918Z",
+   "id": "6ac8bbcebfcb2f5a9d64d518",
+   "shared": true,
+   "panels": 0
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "name": "Diabetology",
+   "createdAt": "2026-10-09T10:02:54.950Z",
+   "updatedAt": "2026-10-09T10:02:54.950Z",
+   "id": "6ac8bbcee42c9f0836e98567",
+   "shared": false,
+   "panels": 0
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "name": "Endocrinology",
+   "createdAt": "2026-10-09T10:02:54.949Z",
+   "updatedAt": "2026-10-09T10:02:54.949Z",
+   "id": "6ac8bbcee42c9f0836e98565",
+   "shared": false,
+   "panels": 0
+  },
+  {
+   "name": "General medicine",
+   "practiceId": null,
+   "createdAt": "2026-10-09T10:02:54.918Z",
+   "updatedAt": "2026-10-09T10:02:54.918Z",
+   "id": "6ac8bbcebfcb2f5a9d64d519",
+   "shared": true,
+   "panels": 0
+  },
+  {
+   "name": "Gynaecology",
+   "practiceId": null,
+   "createdAt": "2026-10-09T10:02:54.918Z",
+   "updatedAt": "2026-10-09T10:02:54.918Z",
+   "id": "6ac8bbcebfcb2f5a9d64d51a",
+   "shared": true,
+   "panels": 0
+  },
+  {
+   "practiceId": null,
+   "name": "Nephrology",
+   "createdAt": "2026-10-09T10:02:54.918Z",
+   "updatedAt": "2026-10-09T10:02:54.918Z",
+   "id": "6ac8bbcebfcb2f5a9d64d51b",
+   "shared": true,
+   "panels": 0
+  }
+ ]
+}

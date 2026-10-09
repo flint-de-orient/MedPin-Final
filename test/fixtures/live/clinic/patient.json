@@ -1,0 +1,242 @@
+{
+ "path": "/api/patients/6ac8bbcee42c9f0836e9857c",
+ "query": {},
+ "data": {
+  "patient": {
+   "id": "6ac8bbcee42c9f0836e9857c",
+   "name": "Priya Sharma",
+   "phone": "9876543210",
+   "gender": "female",
+   "age": 29,
+   "heightCm": 158,
+   "weightKg": 68.5,
+   "bmi": 27.4,
+   "healthScore": {
+    "value": 74,
+    "weeklyDelta": 3,
+    "computedAt": "2026-10-09T10:02:54.927Z"
+   },
+   "hasApp": true
+  },
+  "conditions": [
+   {
+    "name": "Type 2 diabetes",
+    "icdCode": "E11.9",
+    "_id": "6ac8bbcee42c9f0836e9857d"
+   },
+   {
+    "name": "PCOS",
+    "icdCode": "E28.2",
+    "_id": "6ac8bbcee42c9f0836e9857e"
+   }
+  ],
+  "allergies": [
+   {
+    "allergen": "Sulfa drugs",
+    "drugClass": "sulfonamide",
+    "_id": "6ac8bbcee42c9f0836e9857f"
+   }
+  ],
+  "latestVitals": {
+   "patientId": "6ac8bbcee42c9f0836e9857c",
+   "recordedAt": "2026-10-09T02:15:00.000Z",
+   "recordedByRole": "patient",
+   "source": "home",
+   "bpSystolic": 128,
+   "bpDiastolic": 82,
+   "bloodSugar": 142,
+   "sugarType": "fasting",
+   "createdAt": "2026-10-09T10:02:56.212Z",
+   "updatedAt": "2026-10-09T10:02:56.212Z",
+   "id": "6ac8bbd08adea6a429a7321a"
+  },
+  "currentMedicines": [
+   {
+    "id": "6ac8bbd08adea6a429a7323b",
+    "name": "Metformin",
+    "strength": "500 mg",
+    "pattern": "1-0-1",
+    "frequency": "daily",
+    "prescriber": "Dr. Arjun Sen",
+    "doctorId": "6ac8bbcee42c9f0836e9855b",
+    "since": "2026-09-28T18:30:00.000Z",
+    "endDate": "2027-01-05T18:30:00.000Z"
+   },
+   {
+    "id": "6ac8bbd08adea6a429a7323c",
+    "name": "Glimepiride",
+    "strength": "1 mg",
+    "pattern": "1-0-0",
+    "frequency": "daily",
+    "prescriber": "Dr. Arjun Sen",
+    "doctorId": "6ac8bbcee42c9f0836e9855b",
+    "since": "2026-09-28T18:30:00.000Z",
+    "endDate": "2026-11-06T18:30:00.000Z"
+   }
+  ],
+  "abnormalResults": [
+   {
+    "test": "Lipid profile",
+    "analyte": "LDL cholesterol",
+    "value": 162,
+    "unit": "mg/dL",
+    "flag": "high",
+    "collectedAt": "2026-09-29T18:30:00.000Z",
+    "labResultId": "6ac8bbd08adea6a429a731f9"
+   },
+   {
+    "test": "Lipid profile",
+    "analyte": "Triglycerides",
+    "value": 210,
+    "unit": "mg/dL",
+    "flag": "high",
+    "collectedAt": "2026-09-29T18:30:00.000Z",
+    "labResultId": "6ac8bbd08adea6a429a731f9"
+   },
+   {
+    "test": "Diabetes panel",
+    "analyte": "HbA1c",
+    "value": 7.2,
+    "unit": "%",
+    "flag": "high",
+    "collectedAt": "2026-07-17T18:30:00.000Z",
+    "labResultId": "6ac8bbd08adea6a429a731f5"
+   },
+   {
+    "test": "Diabetes panel",
+    "analyte": "Fasting glucose",
+    "value": 138,
+    "unit": "mg/dL",
+    "flag": "high",
+    "collectedAt": "2026-07-17T18:30:00.000Z",
+    "labResultId": "6ac8bbd08adea6a429a731f5"
+   },
+   {
+    "test": "Vitamin D",
+    "analyte": "Vitamin D",
+    "value": 14,
+    "unit": "ng/mL",
+    "flag": "low",
+    "collectedAt": "2026-07-17T18:30:00.000Z",
+    "labResultId": "6ac8bbd08adea6a429a731fe"
+   }
+  ],
+  "nextVisit": {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "locationId": "6ac8bbcee42c9f0836e98563",
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "patientId": "6ac8bbcee42c9f0836e9857c",
+   "date": "2026-10-08T18:30:00.000Z",
+   "startAt": "2026-10-09T11:30:00.000Z",
+   "tokenNo": 4,
+   "isWalkIn": false,
+   "visitType": "follow_up",
+   "mode": "in_clinic",
+   "status": "confirmed",
+   "channel": "app",
+   "fee": 600,
+   "feeStatus": "pending",
+   "todos": [
+    {
+     "text": "Upload HbA1c report",
+     "done": false,
+     "_id": "6ac8bbcee42c9f0836e98587"
+    },
+    {
+     "text": "Log today's fasting sugar",
+     "done": false,
+     "_id": "6ac8bbcee42c9f0836e98588"
+    },
+    {
+     "text": "Note down questions for Dr. Sen",
+     "done": false,
+     "_id": "6ac8bbcee42c9f0836e98589"
+    }
+   ],
+   "createdAt": "2026-10-09T10:02:54.983Z",
+   "updatedAt": "2026-10-09T10:02:54.983Z",
+   "id": "6ac8bbcee42c9f0836e98586"
+  },
+  "lastVisitAt": "2026-09-29T03:43:00.000Z",
+  "openAlerts": 1,
+  "aiSummary": null,
+  "adherence": {
+   "days": 30,
+   "overallPct": 0,
+   "perMedicine": [
+    {
+     "courseId": "6ac8bbd08adea6a429a7323b",
+     "name": "Metformin",
+     "strength": "500 mg",
+     "doctorId": "6ac8bbcee42c9f0836e9855b",
+     "prescriber": "Dr. Arjun Sen",
+     "tracked": true,
+     "pct": 0,
+     "isNew": false
+    },
+    {
+     "courseId": "6ac8bbd08adea6a429a7323c",
+     "name": "Glimepiride",
+     "strength": "1 mg",
+     "doctorId": "6ac8bbcee42c9f0836e9855b",
+     "prescriber": "Dr. Arjun Sen",
+     "tracked": true,
+     "pct": 0,
+     "isNew": false
+    }
+   ],
+   "perDoctor": [
+    {
+     "doctor": "6ac8bbcee42c9f0836e9855b",
+     "pct": 0
+    }
+   ],
+   "mostMissedSlot": {
+    "slot": "morning",
+    "misses": 22
+   }
+  },
+  "careTeam": [
+   {
+    "userId": "6ac8bbcee42c9f0836e9855b",
+    "name": "Dr. Arjun Sen",
+    "role": "doctor",
+    "accessLevel": "full_with_logs",
+    "since": "2025-06-01T00:00:00.000Z"
+   },
+   {
+    "userId": "6ac8bbd08adea6a429a7319b",
+    "name": "Mou Banerjee",
+    "role": "dietician",
+    "accessLevel": "full_with_logs",
+    "since": "2026-07-10T18:30:00.000Z"
+   },
+   {
+    "userId": "6ac8bbd08adea6a429a73197",
+    "name": "Dr. Rina Mitra",
+    "role": "doctor",
+    "accessLevel": "full_record",
+    "since": "2026-08-09T18:30:00.000Z"
+   }
+  ],
+  "treatmentPlan": null,
+  "shareScope": "full",
+  "addresses": [
+   {
+    "label": "Home",
+    "line": "Flat 3B, 12 Purbachal Rd, Salt Lake",
+    "area": "Salt Lake",
+    "city": "Kolkata",
+    "isDefault": true,
+    "_id": "6ac8bbcee42c9f0836e98580"
+   }
+  ],
+  "emergencyContact": {},
+  "alertLimits": {},
+  "targets": {
+   "sugarFasting": 130,
+   "hba1c": 7,
+   "stepsPerDay": 8000
+  }
+ }
+}

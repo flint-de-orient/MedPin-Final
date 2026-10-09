@@ -1,0 +1,29 @@
+{
+ "path": "/api/catalog/icd",
+ "query": {
+  "q": "hyper"
+ },
+ "data": [
+  {
+   "code": "I10",
+   "createdAt": "2026-10-09T10:02:54.894Z",
+   "name": "Essential hypertension",
+   "updatedAt": "2026-10-09T10:02:54.894Z",
+   "id": "6ac8bbcebfcb2f5a9d64d4ee"
+  },
+  {
+   "code": "E78.1",
+   "createdAt": "2026-10-09T10:02:54.894Z",
+   "name": "Hypertriglyceridaemia",
+   "updatedAt": "2026-10-09T10:02:54.894Z",
+   "id": "6ac8bbcebfcb2f5a9d64d4ef"
+  },
+  {
+   "code": "E05.9",
+   "createdAt": "2026-10-09T10:02:54.894Z",
+   "name": "Hyperthyroidism",
+   "updatedAt": "2026-10-09T10:02:54.894Z",
+   "id": "6ac8bbcebfcb2f5a9d64d4f2"
+  }
+ ]
+}
