@@ -1,19 +1,65 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d9.dart';
 
 /// Design: Cards-Analytics.dc.html — "Cards · analytics".
-class CardsAnalyticsScreen extends StatelessWidget {
+/// Live data: GET /api/dashboard/cards (heart rate flags, ECGs, LDL),
+/// /api/dashboard (nutrition reviews due), /api/inbox/summaries?date=today
+/// (chat summaries). The clinic snapshot trend, live activity feed and the
+/// per-patient lists (heart rate, highest LDL, meal logs) have no endpoint
+/// yet, so they are hidden live.
+class CardsAnalyticsScreen extends StatefulWidget {
   const CardsAnalyticsScreen({super.key});
 
   @override
+  State<CardsAnalyticsScreen> createState() => _CardsAnalyticsScreenState();
+}
+
+class _CardsAnalyticsScreenState extends State<CardsAnalyticsScreen> with LiveData {
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([
+      Api.I.get('/api/dashboard/cards'),
+      Api.I.get('/api/dashboard'),
+      // Needs the "chats" permission; the card is hidden without it.
+      Api.I.get('/api/inbox/summaries', query: {'date': 'today'}).catchError((Object e) => e is ApiException && e.status == 403 ? null : throw e),
+    ]);
+    return {'cards': r[0], 'dashboard': r[1], 'summaries': r[2]};
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const MpPage(
+    final placeholder = livePlaceholder();
+    final d = data;
+    if (d == null) {
+      return MpPage(
+        body: placeholder ??
+            const VGap(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 24),
+              gap: 16,
+              children: [_HeartRate(), _Ecgs(), _Lipids(), _Snapshot(), _Chats(), _Activity(), _NutritionReviews()],
+            ),
+      );
+    }
+    final cards = d.obj('cards');
+    final ecgTotal = cards.obj('ecg180d').values.fold<num>(0, (s, v) => s + (v is num ? v : 0));
+    final hr = cards.numOr('heartRateFlags30d');
+    final nutrition = d.obj('dashboard').obj('actionQueue').numOr('nutritionReviewsDue');
+    return MpPage(
       body: VGap(
-        padding: EdgeInsets.fromLTRB(20, 20, 20, 24),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
         gap: 16,
-        children: [_HeartRate(), _Ecgs(), _Lipids(), _Snapshot(), _Chats(), _Activity(), _NutritionReviews()],
+        children: [
+          if (hr > 0) _HeartRate(live: hr.toInt()),
+          if (ecgTotal > 0) _Ecgs(live: cards),
+          _Lipids(live: cards),
+          if (d['summaries'] is Map) _Chats(live: d.obj('summaries')),
+          if (nutrition > 0) _NutritionReviews(due: nutrition.toInt()),
+        ],
       ),
     );
   }
@@ -30,10 +76,20 @@ const _hr = [
 ];
 
 class _HeartRate extends StatelessWidget {
-  const _HeartRate();
+  /// Live: readings outside range (per-patient rows aren't in the API yet).
+  final int? live;
+  const _HeartRate({this.live});
 
   @override
   Widget build(BuildContext context) {
+    if (live != null) {
+      return D9Card(
+        children: [
+          const D9Head('Heart rate flags', sub: 'Last 30 days · outside 50–100 bpm', bottom: 12),
+          Text('${D9Fmt.plural(live!, 'reading')} outside 50–100 bpm', style: tx(14, c: MP.ink2)),
+        ],
+      );
+    }
     return D9Card(
       children: [
         const D9Head('Heart rate flags', sub: 'Last 30 days · outside 50–100 bpm', bottom: 12),
@@ -78,39 +134,59 @@ const List<(String, String, Color, Color?)> _ecg = [
 ];
 
 class _Ecgs extends StatelessWidget {
-  const _Ecgs();
+  /// Live: the /api/dashboard/cards response.
+  final Map<String, dynamic>? live;
+  const _Ecgs({this.live});
 
   @override
   Widget build(BuildContext context) {
     void openTests() => Nav.go(context, 'PP-Tests');
+    final ecg = live?.obj('ecg180d');
+    int n(String k) => ecg?.numOr(k).toInt() ?? 0;
+    final total = n('normal') + n('borderline') + n('abnormal') + n('unread');
+    final rows = ecg == null ? _ecg : [for (final e in _ecg) (e.$1, F.count(n(e.$1.toLowerCase())), e.$3, e.$4)];
+    final unread = ecg == null ? 5 : n('unread');
     return D9Card(
       gap: 16,
       children: [
         D9Head('Recent ECGs', sub: 'Last 180 days', trailing: D9Link('View all', top: 3, onTap: openTests)),
-        const Column(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            D9Label('ECGs on file'),
-            Gap(4),
-            D9Big('64', suffix: ' of 412 patients in caseload', suffixH: 30 / 16),
+            const D9Label('ECGs on file'),
+            const Gap(4),
+            ecg == null
+                ? const D9Big('64', suffix: ' of 412 patients in caseload', suffixH: 30 / 16)
+                : D9Big(
+                    F.count(total),
+                    suffix: ' of ${D9Fmt.plural(live!.numOr('patients'), 'patient')} in caseload',
+                    suffixH: 30 / 16,
+                  ),
           ],
         ),
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const D9Bar([
-              D9Seg(41, MP.green),
-              D9Seg(12, MP.amberSoft, ring: MP.amber),
-              D9Seg(6, MP.amber),
-              D9Seg(5, MP.lineStrong),
-            ], label: 'Of 64 ECGs: 41 normal, 12 borderline, 6 abnormal, 5 unread'),
+            ecg == null
+                ? const D9Bar([
+                    D9Seg(41, MP.green),
+                    D9Seg(12, MP.amberSoft, ring: MP.amber),
+                    D9Seg(6, MP.amber),
+                    D9Seg(5, MP.lineStrong),
+                  ], label: 'Of 64 ECGs: 41 normal, 12 borderline, 6 abnormal, 5 unread')
+                : D9Bar([
+                    D9Seg(n('normal'), MP.green),
+                    D9Seg(n('borderline'), MP.amberSoft, ring: MP.amber),
+                    D9Seg(n('abnormal'), MP.amber),
+                    D9Seg(n('unread'), MP.lineStrong),
+                  ], label: 'Of ${D9Fmt.plural(total, 'ECG')}: ${n('normal')} normal, ${n('borderline')} borderline, ${n('abnormal')} abnormal, ${n('unread')} unread'),
             const Gap(12),
             MpGrid(
               columns: 2,
               gap: 24,
               rowGap: 8,
               children: [
-                for (final e in _ecg)
+                for (final e in rows)
                   Row(
                     children: [
                       D9Swatch(e.$3, ring: e.$4),
@@ -124,7 +200,13 @@ class _Ecgs extends StatelessWidget {
             ),
           ],
         ),
-        D9Note(strong: '5', text: ' ECGs waiting for your read', action: 'Read now', onAction: openTests),
+        if (unread > 0)
+          D9Note(
+            strong: F.count(unread),
+            text: unread == 1 ? ' ECG waiting for your read' : ' ECGs waiting for your read',
+            action: 'Read now',
+            onAction: openTests,
+          ),
       ],
     );
   }
@@ -144,7 +226,9 @@ const List<(String, String, Color, double, Color?)> _ldl = [
 const _ldlNamed = [('Debasish Bose', 'LDL 182 mg/dL', 'Wed, 12 Aug'), ('Moumita Roy', 'LDL 168 mg/dL', 'Fri, 25 Sep')];
 
 class _Lipids extends StatelessWidget {
-  const _Lipids();
+  /// Live: the /api/dashboard/cards response.
+  final Map<String, dynamic>? live;
+  const _Lipids({this.live});
 
   Widget _stat(String n, String label) => D9Tile(
     children: [
@@ -153,8 +237,75 @@ class _Lipids extends StatelessWidget {
     ],
   );
 
+  /// Live card: each patient's latest LDL (the API doesn't limit it to 365
+  /// days, so the subtitle doesn't claim a period).
+  Widget _live(BuildContext context, Map<String, dynamic> l, int patients) {
+    int n(String k) => l.numOr(k).toInt();
+    final target = F.count(l.numOr('target', 100));
+    const keys = ['under_100', '100_129', '130_159', '160_plus'];
+    final with_ = n('withResult');
+    return D9Card(
+      gap: 16,
+      children: [
+        D9Head('Lipid control', sub: 'Latest result · LDL target <$target mg/dL'),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(padding: EdgeInsets.only(top: 1), child: Ico(I.fileText, size: 16, color: MP.ink3)),
+            const Gap(8),
+            Expanded(
+              child: Text('Read automatically from uploaded lab reports', style: tx(13, c: MP.ink2, h: 18 / 13)),
+            ),
+          ],
+        ),
+        MpGrid(
+          columns: 2,
+          gap: 8,
+          children: [
+            _stat(F.count(with_), 'with an LDL result, of ${F.count(patients)}'),
+            _stat(F.count(n('under_100')), 'at target, below $target mg/dL'),
+          ],
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            D9Bar(
+              [
+                D9Seg(n('under_100'), MP.green),
+                D9Seg(n('100_129'), MP.amberSoft, ring: MP.amber),
+                D9Seg(n('130_159'), MP.amber, opacity: 0.6),
+                D9Seg(n('160_plus'), MP.amber),
+              ],
+              label:
+                  'Latest LDL of ${D9Fmt.plural(with_, 'patient')}: ${n('under_100')} below 100, ${n('100_129')} at 100 to 129, '
+                  '${n('130_159')} at 130 to 159, ${n('160_plus')} at 160 or above',
+            ),
+            const Gap(12),
+            VGap(
+              gap: 8,
+              children: [
+                for (var i = 0; i < _ldl.length; i++)
+                  Row(
+                    children: [
+                      D9Swatch(_ldl[i].$3, opacity: _ldl[i].$4, ring: _ldl[i].$5),
+                      const Gap(8),
+                      Expanded(child: Text(_ldl[i].$1, style: tx(14, c: MP.ink2, h: 20 / 14, tab: true))),
+                      const Gap(8),
+                      Text(F.count(n(keys[i])), style: tx(14, w: w700, h: 20 / 14, tab: true)),
+                    ],
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l = live?.obj('ldl');
+    if (l != null) return _live(context, l, live!.numOr('patients').toInt());
     return D9Card(
       gap: 16,
       children: [
@@ -397,10 +548,27 @@ const _chats = [
 ];
 
 class _Chats extends StatelessWidget {
-  const _Chats();
+  /// Live: GET /api/inbox/summaries?date=today.
+  final Map<String, dynamic>? live;
+  const _Chats({this.live});
 
   @override
   Widget build(BuildContext context) {
+    final s = live;
+    // (initials, name, time, preview, needs reply, conversation id)
+    final rows = s == null
+        ? [for (final c in _chats) (c.$1, c.$2, c.$3, c.$4, true, null)]
+        : [
+            for (final i in s.list('items').take(3))
+              () {
+                final name = i.obj('patientId').str('name');
+                final at = F.date(i['lastMessageAt']);
+                return (F.initials(name), name, at == null ? '' : F.askedAt(at), i.str('summary'), i['needsReply'] == true, i['conversationId']);
+              }(),
+          ];
+    final wrote = s == null ? 9 : s.numOr('patientsWrote').toInt();
+    final needReply = s == null ? 3 : s.numOr('needReply').toInt();
+    final more = wrote - rows.length;
     return D9Card(
       gap: 16,
       children: [
@@ -415,24 +583,24 @@ class _Chats extends StatelessWidget {
           children: [
             D9Tile(
               children: [
-                Text('9', style: tx(30, w: w800, h: 1, em: -0.02, tab: true)),
-                Text('patients wrote', style: tx(14, c: MP.ink2, h: 20 / 14)),
+                Text(F.count(wrote), style: tx(30, w: w800, h: 1, em: -0.02, tab: true)),
+                Text(wrote == 1 ? 'patient wrote' : 'patients wrote', style: tx(14, c: MP.ink2, h: 20 / 14)),
               ],
             ),
             D9Tile(
               children: [
-                Text('3', style: tx(30, w: w800, h: 1, em: -0.02, tab: true, c: MP.amber)),
-                Text('need a reply', style: tx(14, c: MP.ink2, h: 20 / 14)),
+                Text(F.count(needReply), style: tx(30, w: w800, h: 1, em: -0.02, tab: true, c: MP.amber)),
+                Text(needReply == 1 ? 'needs a reply' : 'need a reply', style: tx(14, c: MP.ink2, h: 20 / 14)),
               ],
             ),
           ],
         ),
-        Column(
+        if (rows.isNotEmpty) Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final c in _chats)
+            for (final c in rows)
               D9Row(
-                onTap: () => Nav.go(context, 'Patient-Thread'),
+                onTap: () => Nav.go(context, 'Patient-Thread', args: c.$6 == null ? null : {'conversationId': c.$6}),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -465,15 +633,17 @@ class _Chats extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const Gap(2),
-                          const Padding(padding: EdgeInsets.only(top: 4), child: MpBadge.amber('Needs reply')),
+                          if (c.$5) ...[
+                            const Gap(2),
+                            const Padding(padding: EdgeInsets.only(top: 4), child: MpBadge.amber('Needs reply')),
+                          ],
                         ],
                       ),
                     ),
                   ],
                 ),
               ),
-            D9More('+ 6 more who wrote today', onTap: () => Nav.go(context, 'Doctor-Messages')),
+            if (more > 0) D9More('+ $more more who wrote today', onTap: () => Nav.go(context, 'Doctor-Messages')),
           ],
         ),
       ],
@@ -558,11 +728,29 @@ const _nutrition = [
 ];
 
 class _NutritionReviews extends StatelessWidget {
-  const _NutritionReviews();
+  /// Live: meal logs waiting for review (the logs themselves aren't in the API).
+  final int? due;
+  const _NutritionReviews({this.due});
 
   @override
   Widget build(BuildContext context) {
     void openNutrition() => Nav.go(context, 'Nutrition');
+    if (due != null) {
+      return D9Card(
+        children: [
+          D9Head(
+            'Nutrition reviews',
+            sub: 'Review cadence due',
+            bottom: 12,
+            trailing: D9Link('View all', top: 3, onTap: openNutrition),
+          ),
+          Text(
+            '${D9Fmt.plural(due!, 'meal log')} from the last 7 days ${due == 1 ? 'needs' : 'need'} a review',
+            style: tx(14, c: MP.ink2),
+          ),
+        ],
+      );
+    }
     return D9Card(
       children: [
         D9Head(

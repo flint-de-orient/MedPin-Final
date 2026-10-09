@@ -1,0 +1,29 @@
+{
+ "id": "6ac8bbd08adea6a429a731a5",
+ "userId": "6ac8bbd08adea6a429a73197",
+ "name": "Dr. Rina Mitra",
+ "phone": "9811122233",
+ "role": "doctor",
+ "department": {
+  "id": "6ac8bbcebfcb2f5a9d64d518",
+  "name": "Cardiology"
+ },
+ "locations": [
+  {
+   "id": "6ac8bbcee42c9f0836e98563",
+   "name": "City Care Clinic — Salt Lake"
+  }
+ ],
+ "allLocations": false,
+ "isOwner": false,
+ "status": "active",
+ "joinedAt": "2026-10-09T10:02:56.136Z",
+ "qualifications": "MBBS, DM (Cardiology)",
+ "registrationNo": "WBMC 58210",
+ "permissions": {
+  "viewPatients": true,
+  "editRecords": true,
+  "chats": true,
+  "prescribe": true
+ }
+}

@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d9.dart';
 
 /// Design: Billing.dc.html — "Plan & billing".
+/// Live data: GET /api/billing (`?invoices=50` for "View all"); actions:
+/// POST /api/billing/switch, GET /api/billing/invoices/:id/download.
 class BillingScreen extends StatefulWidget {
   const BillingScreen({super.key});
 
@@ -34,19 +39,145 @@ const List<(String, String, String, String?)> _plans = [
 ];
 const _currentPlan = 'Clinic';
 
-class _BillingScreenState extends State<BillingScreen> {
-  bool _allInvoices = false;
+// (date, description, amount, status, invoice id)
+typedef _Invoice = (String, String, String, String, String?);
 
-  void _switchTo(String plan, String? note) {
-    toast(context, note != null ? 'Remove 4 people first' : 'Switching to $plan on 14 Oct 2026');
+class _BillingScreenState extends State<BillingScreen> with LiveData {
+  bool _allInvoices = false;
+  final _busy = ValueNotifier(false);
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/billing', query: {'invoices': _allInvoices ? 50 : null});
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Map<String, dynamic> get _sub => data!.obj('subscription');
+  Map<String, dynamic> get _plan => data!.obj('plan');
+
+  String _date(Object? iso) {
+    final d = F.date(iso);
+    return d == null ? '' : D9Fmt.date(d);
+  }
+
+  String get _planName => data == null ? 'Clinic' : _plan.str('name', _sub.str('planKey'));
+
+  (String, Color, Color) get _status {
+    final s = data == null ? 'active' : _sub.str('status', 'active');
+    return switch (s) {
+      'trialing' => ('Trial', MP.primarySoft, MP.primary),
+      'past_due' => ('Payment due', MP.amberSoft, MP.amber),
+      'cancelled' => ('Cancelled', MP.fill, MP.ink2),
+      _ => ('Active', MP.greenSoft, MP.green),
+    };
+  }
+
+  String get _price => data == null ? '₹2,499' : D9Fmt.money(_sub.numOr('price', _plan.numOr('priceMonthly')));
+
+  String get _renews {
+    if (data == null) return 'Renews 14 Oct 2026';
+    final end = _date(_sub['currentPeriodEnd']);
+    final pendingKey = _sub.str('pendingPlanKey');
+    final pending = data!.list('plans').where((p) => p['key'] == pendingKey).map((p) => p.str('name')).firstOrNull;
+    if (end.isEmpty) return '';
+    if (_sub.str('status') == 'cancelled') return 'Ends $end';
+    return pending == null ? 'Renews $end' : 'Renews $end on the $pending plan';
+  }
+
+  String get _usageSub {
+    if (data == null) return 'This billing cycle · resets 14 Oct 2026';
+    final reset = _date(data!.obj('usage')['resetsAt']);
+    return reset.isEmpty ? 'This billing cycle' : 'This billing cycle · resets $reset';
+  }
+
+  List<(String, int, int, String, String)> get _liveMeters {
+    if (data == null) return _meters;
+    final u = data!.obj('usage');
+    (String, int, int, String, String) m(String label, Map<String, dynamic> x) {
+      final used = x.numOr('used').toInt();
+      final cap = x.numOr('limit').toInt();
+      return (label, used, cap, F.count(used), x['limit'] == null ? '—' : F.count(cap));
+    }
+
+    return [
+      m('Seats', u.obj('seats')),
+      m('Active patients', u.obj('activePatients')),
+      m('AI chats this month', u.obj('aiChats')),
+    ];
+  }
+
+  List<_Invoice> get _invoiceRows {
+    if (data == null) {
+      return [
+        for (final d in [..._invoices, if (_allInvoices) ..._olderInvoices]) (d, 'Clinic plan · monthly', '₹2,499', 'paid', null),
+      ];
+    }
+    return [
+      for (final i in data!.list('invoices'))
+        (_date(i['issuedAt']), i.str('description'), D9Fmt.money(i.numOr('amount')), i.str('status'), i['id'] as String?),
+    ];
+  }
+
+  /// (name, price, features, note, key)
+  List<(String, String, String, String?, String)> get _planRows {
+    if (data == null) return [for (final p in _plans) (p.$1, p.$2, p.$3, p.$4, p.$1)];
+    final team = data!.obj('usage').obj('seats').numOr('used').toInt();
+    return [
+      for (final p in data!.list('plans'))
+        (
+          p.str('name'),
+          D9Fmt.money(p.numOr('priceMonthly')),
+          '${D9Fmt.plural(p.numOr('seats'), 'seat')} · ${F.count(p.numOr('activePatients'))} active patients · '
+              '${F.count(p.numOr('aiChatsPerMonth'))} AI chats a month',
+          team > p.numOr('seats')
+              ? 'Your team has $team people, so ${team - p.numOr('seats').toInt()} would need to be removed first'
+              : null,
+          p.str('key'),
+        ),
+    ];
+  }
+
+  String get _currentKey => data == null ? _currentPlan : _sub.str('planKey');
+
+  Future<void> _switchTo(String plan, String? note, String key) async {
+    if (!isLive) {
+      toast(context, note != null ? 'Remove 4 people first' : 'Switching to $plan on 14 Oct 2026');
+      return;
+    }
+    final res = await runAction(context, () => Api.I.post('/api/billing/switch', {'planKey': key}), busy: _busy);
+    if (res is! Map || !mounted) return;
+    final from = _date(res['pendingFrom']);
+    toast(context, res['planKey'] == key || from.isEmpty ? 'Switched to the $plan plan' : 'Switching to $plan on $from');
+    reload(quiet: true);
+  }
+
+  Future<void> _download(String? id) async {
+    if (!isLive || id == null) {
+      toast(context, 'Invoice downloaded');
+      return;
+    }
+    final res = await runAction(context, () => Api.I.get('/api/billing/invoices/$id/download'), busy: _busy);
+    if (res is! Map || !mounted) return;
+    await D9Open.url(context, res['url'], failed: "Couldn't open the invoice");
+  }
+
+  void _toggleInvoices() {
+    setState(() => _allInvoices = !_allInvoices);
+    if (isLive) reload(quiet: true);
   }
 
   @override
   Widget build(BuildContext context) {
-    final invoices = [..._invoices, if (_allInvoices) ..._olderInvoices];
+    final placeholder = livePlaceholder();
+    final invoices = _invoiceRows;
+    final status = _status;
+    final renews = _renews;
     return MpPage(
       header: const MpHeader('Plan & billing'),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         gap: 16,
         children: [
@@ -59,17 +190,19 @@ class _BillingScreenState extends State<BillingScreen> {
               const D9Label('Current plan', h: 1.35),
               Row(
                 children: [
-                  Expanded(child: Text('Clinic plan', style: tx(20, w: w700, h: 1.25))),
+                  Expanded(child: Text('$_planName plan', style: tx(20, w: w700, h: 1.25))),
                   const Gap(12),
-                  const MpBadge.green('Active', weight: w600),
+                  MpBadge(status.$1, bg: status.$2, fg: status.$3, weight: w600),
                 ],
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const D9Big('₹2,499', suffix: ' / month'),
-                  const Gap(8),
-                  Text('Renews 14 Oct 2026', style: tx(14, c: MP.ink2, h: 1.45, tab: true)),
+                  D9Big(_price, suffix: data != null && _sub.str('interval') == 'yearly' ? ' / year' : ' / month'),
+                  if (renews.isNotEmpty) ...[
+                    const Gap(8),
+                    Text(renews, style: tx(14, c: MP.ink2, h: 1.45, tab: true)),
+                  ],
                 ],
               ),
             ],
@@ -79,8 +212,8 @@ class _BillingScreenState extends State<BillingScreen> {
           D9Card(
             gap: 20,
             children: [
-              const D9Head('Usage', sub: 'This billing cycle · resets 14 Oct 2026', subH: 1.45, subTab: true),
-              for (final m in _meters) _Meter(m),
+              D9Head('Usage', sub: _usageSub, subH: 1.45, subTab: true),
+              for (final m in _liveMeters) _Meter(m),
             ],
           ),
 
@@ -96,12 +229,13 @@ class _BillingScreenState extends State<BillingScreen> {
                     D9Link(
                       _allInvoices ? 'Show less' : 'View all',
                       h: null,
-                      onTap: () => setState(() => _allInvoices = !_allInvoices),
+                      onTap: _toggleInvoices,
                     ),
                   ],
                 ),
               ),
-              for (final d in invoices) _InvoiceRow(d),
+              for (final d in invoices) _InvoiceRow(d, onDownload: () => _download(d.$5)),
+              if (invoices.isEmpty) Text('No invoices yet', style: tx(14, c: MP.ink2)),
             ],
           ),
 
@@ -109,10 +243,14 @@ class _BillingScreenState extends State<BillingScreen> {
           D9Card(
             children: [
               const D9Head('Plans', sub: 'Changes apply from your next billing cycle', subH: 1.45, bottom: 12),
-              for (final p in _plans)
+              for (final p in _planRows)
                 D9Row(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: _PlanRow(p, onSwitch: () => _switchTo(p.$1, p.$4)),
+                  child: _PlanRow(
+                    (p.$1, p.$2, p.$3, p.$4),
+                    current: p.$5 == _currentKey,
+                    onSwitch: () => _switchTo(p.$1, p.$4, p.$5),
+                  ),
                 ),
               Container(
                 padding: const EdgeInsets.only(top: 14),
@@ -140,7 +278,7 @@ class _Meter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, used, cap, usedText, capText) = m;
-    final pct = (used / cap * 100).round();
+    final pct = cap <= 0 ? 0 : (used / cap * 100).round().clamp(0, 100);
     return Semantics(
       label: '$label: $usedText of $capText used',
       value: '$pct%',
@@ -173,11 +311,20 @@ class _Meter extends StatelessWidget {
 }
 
 class _InvoiceRow extends StatelessWidget {
-  final String date;
-  const _InvoiceRow(this.date);
+  final _Invoice invoice;
+  final VoidCallback onDownload;
+  const _InvoiceRow(this.invoice, {required this.onDownload});
 
   @override
   Widget build(BuildContext context) {
+    final (date, description, amount, status, _) = invoice;
+    final (bg, fg) = switch (status) {
+      'paid' => (MP.greenSoft, MP.green),
+      'refunded' => (MP.fill, MP.ink2),
+      'failed' => (MP.redSoft, MP.red),
+      _ => (MP.amberSoft, MP.amber),
+    };
+    final statusLabel = status.isEmpty ? '' : '${status[0].toUpperCase()}${status.substring(1)}';
     return D9Row(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
@@ -188,7 +335,7 @@ class _InvoiceRow extends StatelessWidget {
               children: [
                 Text(date, style: tx(16, w: w600, h: 1.5, tab: true)),
                 const Gap(2),
-                Text('Clinic plan · monthly', style: tx(14, c: MP.ink2, h: 1.45)),
+                Text(description, style: tx(14, c: MP.ink2, h: 1.45)),
               ],
             ),
           ),
@@ -196,9 +343,9 @@ class _InvoiceRow extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text('₹2,499', style: tx(16, w: w600, h: 1.5, tab: true)),
+              Text(amount, style: tx(16, w: w600, h: 1.5, tab: true)),
               const Gap(4),
-              const MpBadge.green('Paid', weight: w600),
+              MpBadge(statusLabel, bg: bg, fg: fg, weight: w600),
             ],
           ),
           const Gap(12),
@@ -207,7 +354,7 @@ class _InvoiceRow extends StatelessWidget {
             label: 'Download invoice for $date',
             color: MP.primary,
             iconSize: 20,
-            onTap: () => toast(context, 'Invoice downloaded'),
+            onTap: onDownload,
           ),
         ],
       ),
@@ -218,12 +365,12 @@ class _InvoiceRow extends StatelessWidget {
 class _PlanRow extends StatelessWidget {
   final (String, String, String, String?) plan;
   final VoidCallback onSwitch;
-  const _PlanRow(this.plan, {required this.onSwitch});
+  final bool current;
+  const _PlanRow(this.plan, {required this.current, required this.onSwitch});
 
   @override
   Widget build(BuildContext context) {
     final (name, price, features, note) = plan;
-    final current = name == _currentPlan;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

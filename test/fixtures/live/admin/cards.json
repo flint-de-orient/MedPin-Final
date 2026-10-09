@@ -1,0 +1,60 @@
+{
+ "patients": 8,
+ "labFlags30d": {
+  "critical": 1,
+  "high": 4,
+  "low": 1,
+  "normal": 1,
+  "total": 7
+ },
+ "bpControl90d": {
+  "normal": 0,
+  "elevated": 0,
+  "stage1": 6,
+  "stage2": 2,
+  "noReading": 0
+ },
+ "conditionRegistry": [
+  {
+   "key": "Type 2 diabetes",
+   "count": 4
+  },
+  {
+   "key": "Hypertension",
+   "count": 3
+  },
+  {
+   "key": "PCOS",
+   "count": 1
+  },
+  {
+   "key": "Coronary artery disease",
+   "count": 1
+  },
+  {
+   "key": "Dyslipidaemia",
+   "count": 1
+  },
+  {
+   "key": "Chronic kidney disease",
+   "count": 1
+  },
+  {
+   "key": "Hypothyroidism",
+   "count": 1
+  }
+ ],
+ "noCondition": 0,
+ "ldl": {
+  "under_100": 0,
+  "100_129": 0,
+  "130_159": 0,
+  "160_plus": 1,
+  "withResult": 1,
+  "target": 100
+ },
+ "ecg180d": {
+  "borderline": 1
+ },
+ "heartRateFlags30d": 0
+}
