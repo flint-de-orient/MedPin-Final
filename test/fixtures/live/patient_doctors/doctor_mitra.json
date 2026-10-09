@@ -1,0 +1,75 @@
+{
+  "doctorId": "6ac8d0e4fb653f61fa0676a0",
+  "name": "Dr. Rina Mitra",
+  "initials": "RM",
+  "headline": "Cardiologist",
+  "specialtyKeys": [
+    "heart"
+  ],
+  "degrees": "MBBS, DM",
+  "years": 14,
+  "languages": [
+    "English",
+    "Bengali",
+    "Hindi"
+  ],
+  "gender": "female",
+  "video": true,
+  "verified": true,
+  "presence": "available",
+  "clinic": "City Care Clinic",
+  "location": {
+    "id": "6ac8d0e273298218d8b84075",
+    "name": "City Care Clinic — Salt Lake",
+    "area": "Salt Lake"
+  },
+  "km": null,
+  "fee": 800,
+  "nextSlot": {
+    "startAt": "2026-10-13T11:30:00.000Z",
+    "time": "5:00 PM"
+  },
+  "availableToday": false,
+  "mine": true,
+  "specialty": "Heart",
+  "avgReplyMinutes": 10,
+  "qualifications": [],
+  "places": [
+    {
+      "locationId": "6ac8d0e273298218d8b84075",
+      "name": "City Care Clinic — Salt Lake",
+      "address": "DD-24, Sector 1, Salt Lake, Kolkata 700064",
+      "services": [
+        {
+          "name": "New consultation",
+          "mode": "in_clinic",
+          "visitType": "new",
+          "fee": 800,
+          "_id": "6ac8d0e4fb653f61fa0676b6"
+        },
+        {
+          "name": "Follow-up",
+          "mode": "in_clinic",
+          "visitType": "follow_up",
+          "fee": 600,
+          "_id": "6ac8d0e4fb653f61fa0676b7"
+        }
+      ]
+    }
+  ],
+  "access": {
+    "level": "full_record",
+    "since": "2026-08-09T18:30:00.000Z"
+  },
+  "nextVisit": null,
+  "lastVisit": null,
+  "adherencePct": null,
+  "medicines": [],
+  "records": [],
+  "timeline": [],
+  "conversation": {
+    "id": "6ac8d0e273298218d8b8409d",
+    "unread": 3,
+    "latestFromDoctor": null
+  }
+}

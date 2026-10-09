@@ -1,12 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import 'patient_finddoctor.dart' show openDoctorBooking;
 
 /// Design: Patient-Doctors.dc.html — "Patient · Doctor tab: my doctors".
-class PatientDoctorsScreen extends StatelessWidget {
+///
+/// Live data: GET /api/patient/my-doctors (the doctors on the patient's care
+/// team, with their next visit, medicines and unread chat).
+class PatientDoctorsScreen extends StatefulWidget {
   const PatientDoctorsScreen({super.key});
 
+  @override
+  State<PatientDoctorsScreen> createState() => _PatientDoctorsScreenState();
+}
+
+class _PatientDoctorsScreenState extends State<PatientDoctorsScreen> with LiveData {
   static const _doctors = [
     _Doc(
       'AS',
@@ -47,14 +59,93 @@ class PatientDoctorsScreen extends StatelessWidget {
   ];
 
   @override
+  Future<Object?> fetch() => Api.I.get('/api/patient/my-doctors');
+
+  /// Doctors only (the dietician and others are listed on Patient-Me).
+  List<Map<String, dynamic>> get _rows => [
+        for (final d in data?.list('items') ?? const <Map<String, dynamic>>[])
+          if (d.str('role', 'doctor') == 'doctor') d,
+      ];
+
+  /// A clinic's doctors share one care thread: count its unread once.
+  int get _unread {
+    if (data == null) return isLive ? 0 : 2;
+    final seen = <String>{};
+    var n = 0;
+    for (final d in data!.list('items')) {
+      final c = d.str('conversationId');
+      if (c.isEmpty || !seen.add(c)) continue;
+      n += d.numOr('unread').toInt();
+    }
+    return n;
+  }
+
+  List<_Doc> get _docs {
+    if (data == null) return isLive ? const [] : _doctors;
+    final threads = <String>{};
+    return [for (final d in _rows) _docFrom(d, threads)];
+  }
+
+  static Color _presence(String p) => switch (p) {
+        'available' => MP.green,
+        'in_clinic' => MP.amber,
+        _ => MP.lineStrong,
+      };
+
+  _Doc _docFrom(Map<String, dynamic> d, Set<String> threads) {
+    final name = d.str('name', 'Doctor');
+    final what = d.str('specialty', d.str('headline'));
+    final where = [d.str('clinic'), d.str('area')].where((x) => x.isNotEmpty).join(', ');
+    final next = d.obj('nextVisit');
+    final at = F.date(next['startAt']);
+    final due = F.date(d['followUpDue']);
+    final seen = F.date(d['lastSeenAt']);
+    String visit;
+    if (at != null) {
+      final when = F.when(at);
+      final lower = when.startsWith('Today') || when.startsWith('Tomorrow') ? when[0].toLowerCase() + when.substring(1) : when;
+      visit = 'Visit $lower${next.str('token').isEmpty ? '' : ' · Token ${next.str('token')}'}';
+    } else if (due != null) {
+      visit = 'Follow-up due by ${F.dayMonth(due)}';
+    } else if (seen != null) {
+      visit = 'No visit booked · last seen ${F.dayMonth(seen)}';
+    } else {
+      visit = 'No visit booked';
+    }
+    final meds = d.numOr('medicines').toInt();
+    final pct = d['adherencePct'];
+    final medLine = meds == 0
+        ? 'No medicines from this doctor'
+        : '$meds medicine${meds == 1 ? '' : 's'} · ${pct is num ? '${pct.round()}% taken' : 'not tracked'}';
+    final convo = d.str('conversationId');
+    return _Doc(
+      F.initials(name),
+      name,
+      [if (what.isNotEmpty) what, if (where.isNotEmpty) where].join(' · '),
+      _presence(d.str('presence')),
+      visit,
+      at != null,
+      medLine,
+      convo.isNotEmpty && threads.add(convo) ? d.numOr('unread').toInt() : 0,
+      at != null ? 'Visit details' : 'Book a visit',
+      at != null && F.sameDay(at, DateTime.now()),
+      doctorId: d.str('doctorId'),
+      conversationId: convo.isEmpty ? null : convo,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    final docs = _docs;
+    final unread = _unread;
     return MpPage(
-      // Patient nav, Doctor tab active with its "2 unread" badge.
+      // Patient nav, Doctor tab active with its unread badge.
       nav: FloatingNav(
         current: 1,
         items: [
           for (final it in PatientNav.items)
-            it.stem == 'Patient-Doctors' ? NavItem(it.label, it.icon, it.stem, badge: 2) : it,
+            it.stem == 'Patient-Doctors' && unread > 0 ? NavItem(it.label, it.icon, it.stem, badge: unread) : it,
         ],
       ),
       body: Column(
@@ -67,7 +158,12 @@ class PatientDoctorsScreen extends StatelessWidget {
               children: [
                 Text('My doctors', style: tx(28, w: w800, h: 1.15, em: -0.02)),
                 const Gap(4),
-                Text('3 doctors caring for you', style: tx(14, c: MP.ink2)),
+                Text(
+                  placeholder != null
+                      ? 'Doctors caring for you'
+                      : '${docs.length} doctor${docs.length == 1 ? '' : 's'} caring for you',
+                  style: tx(14, c: MP.ink2),
+                ),
               ],
             ),
           ),
@@ -76,8 +172,9 @@ class PatientDoctorsScreen extends StatelessWidget {
             gap: 12,
             children: [
               // Moved up from the end of the list, as a banner.
-              const _FindDoctorBanner(),
-              for (final d in _doctors) _DoctorCard(d),
+              _FindDoctorBanner(showMatch: !isLive),
+              if (placeholder != null) placeholder,
+              for (final d in docs) _DoctorCard(d, onChanged: () => reload(quiet: true)),
             ],
           ),
         ],
@@ -97,6 +194,10 @@ class _Doc {
   final int unread;
   final String second;
   final bool raised;
+
+  /// Live only: the doctor's user id and the clinic's care thread.
+  final String? doctorId;
+  final String? conversationId;
   const _Doc(
     this.initials,
     this.name,
@@ -107,17 +208,44 @@ class _Doc {
     this.meds,
     this.unread,
     this.second,
-    this.raised,
-  );
+    this.raised, {
+    this.doctorId,
+    this.conversationId,
+  });
 }
 
 class _DoctorCard extends StatelessWidget {
   final _Doc d;
-  const _DoctorCard(this.d);
+
+  /// After a visit was booked or the chat read: refresh the list.
+  final VoidCallback onChanged;
+  const _DoctorCard(this.d, {required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    void detail() => Nav.go(context, 'Patient-DoctorDetail');
+    final id = d.doctorId;
+    Future<void> detail() async {
+      await Nav.go(context, 'Patient-DoctorDetail', args: id == null ? null : {'doctorId': id});
+      if (id != null) onChanged();
+    }
+
+    Future<void> chat() async {
+      await Nav.go(
+        context,
+        'Patient-DoctorChat',
+        args: id == null ? null : {'doctorId': id, 'conversationId': d.conversationId},
+      );
+      if (id != null) onChanged();
+    }
+
+    Future<void> book() async {
+      if (id == null) {
+        p2Missing(context, 'Booking a visit');
+        return;
+      }
+      if (await openDoctorBooking(context, id)) onChanged();
+    }
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: MPDeco.card(shadow: d.raised ? MPShadow.float : MPShadow.card),
@@ -187,7 +315,7 @@ class _DoctorCard extends StatelessWidget {
             children: [
               Expanded(
                 child: P2Box(
-                  onTap: () => Nav.go(context, 'Patient-DoctorChat'),
+                  onTap: chat,
                   label: d.unread > 0 ? 'Chat, ${d.unread} unread' : 'Chat',
                   height: 48,
                   radius: 12,
@@ -219,7 +347,7 @@ class _DoctorCard extends StatelessWidget {
               Expanded(
                 // <a> with height 48 + 1px border (content-box) → 50px.
                 child: P2Box(
-                  onTap: d.second == 'Visit details' ? detail : () => p2Missing(context, 'Booking a visit'),
+                  onTap: d.second == 'Visit details' ? detail : book,
                   height: 50,
                   radius: 12,
                   color: MP.white,
@@ -239,7 +367,9 @@ class _DoctorCard extends StatelessWidget {
 /// "Find a new doctor" banner at the top of the Doctor tab. Opens the MedPin
 /// doctor directory with MedPin AI search (Patient-FindDoctor).
 class _FindDoctorBanner extends StatelessWidget {
-  const _FindDoctorBanner();
+  /// The sample "Dr. Ghosh · Available today" match (design preview only).
+  final bool showMatch;
+  const _FindDoctorBanner({this.showMatch = true});
 
   static const _tagBg = Color(0x29FFFFFF); // rgba(255,255,255,.16)
   static const _tagLine = Color(0x47FFFFFF); // rgba(255,255,255,.28)
@@ -295,7 +425,7 @@ class _FindDoctorBanner extends StatelessWidget {
                     ),
                   ),
                   // A doctor match floating over the photo.
-                  if (showChip)
+                  if (showChip && showMatch)
                     Positioned(right: 12, bottom: 20, child: _MatchChip(maxWidth: chipW.clamp(164.0, 180.0))),
                   // Copy and the CTA.
                   Positioned(

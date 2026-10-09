@@ -1,0 +1,246 @@
+{
+  "doctorId": "6ac8d0e273298218d8b84066",
+  "name": "Dr. Arjun Sen",
+  "initials": "AS",
+  "headline": "Diabetologist · Internal medicine",
+  "specialtyKeys": [
+    "diabetes"
+  ],
+  "degrees": "MBBS, MD",
+  "years": 16,
+  "languages": [
+    "English",
+    "Bengali"
+  ],
+  "gender": "male",
+  "video": true,
+  "verified": true,
+  "presence": "in_clinic",
+  "clinic": "City Care Clinic",
+  "location": {
+    "id": "6ac8d0e273298218d8b84075",
+    "name": "City Care Clinic — Salt Lake",
+    "area": "Salt Lake"
+  },
+  "km": null,
+  "fee": 600,
+  "nextSlot": {
+    "startAt": "2026-10-10T03:30:00.000Z",
+    "time": "9:00 AM"
+  },
+  "availableToday": false,
+  "mine": true,
+  "specialty": "Diabetes & thyroid",
+  "avgReplyMinutes": 15,
+  "qualifications": [
+    {
+      "name": "MBBS",
+      "institution": "Calcutta Medical College",
+      "year": 2008
+    },
+    {
+      "name": "MD, Internal Medicine",
+      "institution": "IPGMER, Kolkata",
+      "year": 2012
+    },
+    {
+      "name": "Fellowship in Diabetology",
+      "institution": "RSSDI",
+      "year": 2014
+    }
+  ],
+  "places": [
+    {
+      "locationId": "6ac8d0e273298218d8b84075",
+      "name": "City Care Clinic — Salt Lake",
+      "address": "DD-24, Sector 1, Salt Lake, Kolkata 700064",
+      "services": [
+        {
+          "name": "New consultation",
+          "details": "15 min · in clinic",
+          "durationMin": 15,
+          "mode": "in_clinic",
+          "visitType": "new",
+          "fee": 600,
+          "_id": "6ac8d0e273298218d8b84089"
+        },
+        {
+          "name": "Follow-up",
+          "details": "Repeat visit for the same problem",
+          "mode": "in_clinic",
+          "visitType": "follow_up",
+          "fee": 600,
+          "_id": "6ac8d0e273298218d8b8408a"
+        },
+        {
+          "name": "Report review",
+          "details": "Within 7 days of a visit",
+          "mode": "in_clinic",
+          "visitType": "report_review",
+          "fee": 0,
+          "freeWithinDays": 7,
+          "_id": "6ac8d0e273298218d8b8408b"
+        },
+        {
+          "name": "Video consultation",
+          "details": "15 min",
+          "mode": "video",
+          "fee": 600,
+          "_id": "6ac8d0e273298218d8b8408c"
+        }
+      ]
+    },
+    {
+      "locationId": "6ac8d0e4fb653f61fa06768e",
+      "name": "City Care — New Town",
+      "address": "AA-II, Action Area 2, New Town, Kolkata 700161",
+      "services": [
+        {
+          "name": "New consultation",
+          "mode": "in_clinic",
+          "visitType": "new",
+          "fee": 500,
+          "_id": "6ac8d0e4fb653f61fa0676b9"
+        },
+        {
+          "name": "Follow-up",
+          "mode": "in_clinic",
+          "visitType": "follow_up",
+          "fee": 500,
+          "_id": "6ac8d0e4fb653f61fa0676ba"
+        },
+        {
+          "name": "Report review",
+          "mode": "in_clinic",
+          "visitType": "report_review",
+          "fee": 0,
+          "freeWithinDays": 7,
+          "_id": "6ac8d0e4fb653f61fa0676bb"
+        }
+      ]
+    }
+  ],
+  "access": {
+    "level": "full_with_logs",
+    "since": "2025-06-01T00:00:00.000Z"
+  },
+  "nextVisit": {
+    "practiceId": "6ac8d0e273298218d8b84072",
+    "locationId": {
+      "name": "City Care Clinic — Salt Lake",
+      "shortName": "Salt Lake",
+      "id": "6ac8d0e273298218d8b84075"
+    },
+    "doctorId": "6ac8d0e273298218d8b84066",
+    "patientId": "6ac8d0e273298218d8b8408e",
+    "date": "2026-10-08T18:30:00.000Z",
+    "startAt": "2026-10-09T11:30:00.000Z",
+    "tokenNo": 4,
+    "isWalkIn": false,
+    "visitType": "follow_up",
+    "mode": "in_clinic",
+    "status": "confirmed",
+    "channel": "app",
+    "fee": 600,
+    "feeStatus": "pending",
+    "todos": [
+      {
+        "text": "Upload HbA1c report",
+        "done": false,
+        "_id": "6ac8d0e273298218d8b84099"
+      },
+      {
+        "text": "Log today's fasting sugar",
+        "done": false,
+        "_id": "6ac8d0e273298218d8b8409a"
+      },
+      {
+        "text": "Note down questions for Dr. Sen",
+        "done": false,
+        "_id": "6ac8d0e273298218d8b8409b"
+      }
+    ],
+    "createdAt": "2026-10-09T11:32:50.670Z",
+    "updatedAt": "2026-10-09T11:32:50.670Z",
+    "id": "6ac8d0e273298218d8b84098"
+  },
+  "lastVisit": {
+    "date": "2026-09-29T03:34:00.000Z",
+    "diagnoses": [
+      "Type 2 diabetes mellitus",
+      "Polycystic ovary syndrome"
+    ],
+    "vitals": {
+      "patientId": "6ac8d0e273298218d8b8408e",
+      "practiceId": "6ac8d0e273298218d8b84072",
+      "appointmentId": "6ac8d0e5fb653f61fa067726",
+      "recordedAt": "2026-09-29T03:26:00.000Z",
+      "recordedBy": "6ac8d0e273298218d8b8406b",
+      "recordedByRole": "front_desk",
+      "source": "clinic",
+      "bpSystolic": 130,
+      "bpDiastolic": 88,
+      "pulse": 82,
+      "spo2": 98,
+      "weightKg": 68.5,
+      "createdAt": "2026-10-09T11:32:53.019Z",
+      "updatedAt": "2026-10-09T11:32:53.019Z",
+      "id": "6ac8d0e5fb653f61fa06772a"
+    },
+    "prescriptionId": "6ac8d0e5fb653f61fa06773f",
+    "advice": "Walk 30 minutes, 5 days a week\nCome back with fasting sugar.",
+    "chiefComplaint": "Tiredness and excess thirst, 2 weeks",
+    "prescriptionUrl": "http://localhost:4000/files/prescriptions/2026-10/449cfe8a-fb2a-44c8-88c8-1caa83117761.pdf?exp=1791550419&sig=88ad51935ab6119f755c3933ed4b4f1a2851838aa57945a0562420cda6d36ca7"
+  },
+  "adherencePct": 0,
+  "medicines": [
+    {
+      "id": "6ac8d0e5fb653f61fa067743",
+      "name": "Metformin",
+      "strength": "500 mg",
+      "pattern": "1-0-1",
+      "foodRelation": "after_food",
+      "tracked": true,
+      "adherencePct": 0,
+      "isNew": false
+    },
+    {
+      "id": "6ac8d0e5fb653f61fa067744",
+      "name": "Glimepiride",
+      "strength": "1 mg",
+      "pattern": "1-0-0",
+      "foodRelation": "before_food",
+      "tracked": true,
+      "adherencePct": 0,
+      "isNew": false
+    }
+  ],
+  "records": [
+    {
+      "id": "6ac8d0e5fb653f61fa067749",
+      "kind": "prescription",
+      "title": "Type 2 diabetes mellitus, Polycystic ovary syndrome",
+      "date": "2026-10-09T11:32:53.028Z",
+      "origin": "from_doctor",
+      "sourceName": "Dr. Arjun Sen",
+      "flagLabel": "New",
+      "flagTone": "new",
+      "url": "http://localhost:4000/files/prescriptions/2026-10/449cfe8a-fb2a-44c8-88c8-1caa83117761.pdf?exp=1791550419&sig=88ad51935ab6119f755c3933ed4b4f1a2851838aa57945a0562420cda6d36ca7"
+    }
+  ],
+  "timeline": [
+    {
+      "date": "2026-09-29T03:34:00.000Z",
+      "text": "Type 2 diabetes mellitus, Polycystic ovary syndrome"
+    }
+  ],
+  "conversation": {
+    "id": "6ac8d0e273298218d8b8409d",
+    "unread": 3,
+    "latestFromDoctor": {
+      "text": "Got your report, thanks. We will adjust the dose when you come in.",
+      "kind": "text",
+      "at": "2026-10-09T11:52:15.849Z"
+    }
+  }
+}

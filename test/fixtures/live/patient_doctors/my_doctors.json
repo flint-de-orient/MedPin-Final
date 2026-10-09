@@ -1,0 +1,58 @@
+[
+  {
+    "specialty": "Diabetes & thyroid",
+    "practiceId": "6ac8d0e273298218d8b84072",
+    "area": "Salt Lake",
+    "locationId": "6ac8d0e273298218d8b84075",
+    "doctorId": "6ac8d0e273298218d8b84066",
+    "name": "Dr. Arjun Sen",
+    "role": "doctor",
+    "headline": "Diabetologist · Internal medicine",
+    "clinic": "City Care Clinic",
+    "presence": "in_clinic",
+    "avgReplyMinutes": 15,
+    "nextVisit": {
+      "id": "6ac8d0e273298218d8b84098",
+      "startAt": "2026-10-09T11:30:00.000Z",
+      "token": "04"
+    },
+    "lastSeenAt": "2026-09-29T03:43:00.000Z",
+    "medicines": 2,
+    "adherencePct": 0,
+    "conversationId": "6ac8d0e273298218d8b8409d",
+    "unread": 3
+  },
+  {
+    "specialty": null,
+    "practiceId": "6ac8d0e273298218d8b84072",
+    "area": null,
+    "locationId": null,
+    "doctorId": "6ac8d0e4fb653f61fa0676a4",
+    "name": "Mou Banerjee",
+    "role": "dietician",
+    "clinic": "City Care Clinic",
+    "nextVisit": null,
+    "medicines": 0,
+    "adherencePct": null,
+    "conversationId": "6ac8d0e273298218d8b8409d",
+    "unread": 3
+  },
+  {
+    "specialty": "Heart",
+    "practiceId": "6ac8d0e273298218d8b84072",
+    "area": "Salt Lake",
+    "locationId": "6ac8d0e273298218d8b84075",
+    "doctorId": "6ac8d0e4fb653f61fa0676a0",
+    "name": "Dr. Rina Mitra",
+    "role": "doctor",
+    "headline": "Cardiologist",
+    "clinic": "City Care Clinic",
+    "presence": "available",
+    "avgReplyMinutes": 10,
+    "nextVisit": null,
+    "medicines": 0,
+    "adherencePct": null,
+    "conversationId": "6ac8d0e273298218d8b8409d",
+    "unread": 3
+  }
+]

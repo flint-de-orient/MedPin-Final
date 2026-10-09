@@ -1,7 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch P2 (patient app: records, doctors, medicines).
@@ -34,6 +38,57 @@ void p2SheetThen(BuildContext context, String stem) {
 
 /// Feedback for a control whose screen is not part of the design.
 void p2Missing(BuildContext context, String what) => toast(context, '$what is not in the design yet');
+
+/// Opens a link (file, map, phone) outside the app; toasts [failed] if it can't.
+Future<void> p2Open(BuildContext context, String? url, {String failed = "Couldn't open this"}) async {
+  if (url == null || url.isEmpty) {
+    toast(context, failed);
+    return;
+  }
+  var ok = false;
+  try {
+    ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  } catch (_) {}
+  if (!ok && context.mounted) toast(context, failed);
+}
+
+/// Directions to a clinic: its Google Maps link, or a maps search for the address.
+Future<void> p2Directions(BuildContext context, {String? mapUrl, String? address}) {
+  final url = (mapUrl != null && mapUrl.isNotEmpty)
+      ? mapUrl
+      : (address == null || address.isEmpty ? null : 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}');
+  return p2Open(context, url, failed: "Couldn't open the map");
+}
+
+/// What a care-team member can see (Patient-Me, Patient-DoctorDetail), most to least.
+const p2AccessLevels = <String, String>{
+  'full_with_logs': 'Full record, daily log and tracked vitals',
+  'full_record': 'Full record',
+  'prescriptions_and_tests': 'Prescriptions and test results',
+  'daily_log_only': 'Daily log only',
+  'not_shared': 'Not shared',
+};
+
+/// The doctor a doctor screen is about: `Nav.go(..., args: doctorId)` or
+/// `args: {'doctorId': …, 'conversationId': …, 'appointmentId': …}`.
+Map<String, String> p2DoctorArgs(BuildContext context) {
+  final a = Nav.args<Object>(context);
+  if (a is String) return {'doctorId': a};
+  if (a is Map) {
+    return {
+      for (final e in a.entries)
+        if (e.value != null) '${e.key}': '${e.value}',
+    };
+  }
+  return const {};
+}
+
+/// "Dr. Arjun Sen" / "Mou" → "Dr. Sen" / "Mou" for chat lines.
+String p2ShortName(String name) {
+  final t = name.trim();
+  if (RegExp(r'^Dr\.?\s', caseSensitive: false).hasMatch(t)) return 'Dr. ${t.split(RegExp(r'\s+')).last}';
+  return t.split(RegExp(r'\s+')).first;
+}
 
 BorderRadius _shrink(BorderRadius r, double d) {
   Radius s(Radius x) => Radius.elliptical(math.max(0.0, x.x - d), math.max(0.0, x.y - d));
@@ -594,7 +649,10 @@ class P2Doctor {
   /// Sub line in #003399 (suggested doctors) instead of #545E72.
   final bool suggested;
   final bool on;
-  const P2Doctor(this.name, this.sub, {this.suggested = false, this.on = false});
+
+  /// The doctor's user id when the list comes from the API.
+  final String? id;
+  const P2Doctor(this.name, this.sub, {this.suggested = false, this.on = false, this.id});
 }
 
 /// "Share with … / Pick any doctors" header, checkbox rows (min-height 56,
@@ -602,7 +660,13 @@ class P2Doctor {
 class P2ShareDoctors extends StatefulWidget {
   final String title;
   final List<P2Doctor> doctors;
-  const P2ShareDoctors({super.key, required this.title, required this.doctors});
+
+  /// Called with the ticked state of every row after each change.
+  final ValueChanged<List<bool>>? onChanged;
+
+  /// "Share with another doctor"; defaults to the Find a doctor screen.
+  final VoidCallback? onAnother;
+  const P2ShareDoctors({super.key, required this.title, required this.doctors, this.onChanged, this.onAnother});
 
   @override
   State<P2ShareDoctors> createState() => _P2ShareDoctorsState();
@@ -611,7 +675,10 @@ class P2ShareDoctors extends StatefulWidget {
 class _P2ShareDoctorsState extends State<P2ShareDoctors> {
   late final List<bool> _on = [for (final d in widget.doctors) d.on];
 
-  void _toggle(int i) => setState(() => _on[i] = !_on[i]);
+  void _toggle(int i) {
+    setState(() => _on[i] = !_on[i]);
+    widget.onChanged?.call(List.unmodifiable(_on));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -656,7 +723,7 @@ class _P2ShareDoctorsState extends State<P2ShareDoctors> {
             ),
           ),
         P2Box(
-          onTap: () => p2Missing(context, 'Doctor search'),
+          onTap: widget.onAnother ?? () => Nav.go(context, 'Patient-FindDoctor'),
           topBorder: const BorderSide(color: MP.line),
           minHeight: 53,
           alignment: Alignment.centerLeft,
@@ -669,6 +736,250 @@ class _P2ShareDoctorsState extends State<P2ShareDoctors> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sheets shared by the doctor screens and Patient-Me
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// "What Dr. Sen can see": the access levels plus "Stop sharing". Pops the
+/// chosen label (a value of [p2AccessLevels]).
+class P2SharingSheet extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final String current;
+  const P2SharingSheet({super.key, required this.title, required this.subtitle, required this.current});
+
+  @override
+  State<P2SharingSheet> createState() => _P2SharingSheetState();
+}
+
+class _P2SharingSheetState extends State<P2SharingSheet> {
+  late String _level = widget.current;
+  static final _levels = p2AccessLevels.values.toList();
+
+  @override
+  Widget build(BuildContext context) {
+    return MpSheet(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: P2SheetHeader(title: widget.title, subtitle: widget.subtitle),
+          ),
+          const Gap(16),
+          for (var i = 0; i < _levels.length; i++) ...[
+            if (i > 0) const MpDivider(),
+            _option(_levels[i]),
+          ],
+          const Gap(20),
+          MpButton('Save', onTap: () => Navigator.pop(context, _level)),
+        ],
+      ),
+    );
+  }
+
+  Widget _option(String level) {
+    final stop = level == p2AccessLevels['not_shared'];
+    final on = _level == level;
+    return Tap(
+      onTap: () => setState(() => _level = level),
+      radius: 0,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 56),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  stop ? 'Stop sharing' : level,
+                  style: tx(16, w: on ? w600 : w500, c: stop ? MP.red : MP.ink, h: 1.4),
+                ),
+              ),
+              const Gap(12),
+              P2Radio(on),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A list of actions in a sheet (icon tile + label), like the file-source
+/// picker. Pops the index tapped.
+class P2ActionSheet extends StatelessWidget {
+  final String title;
+  final List<(String, String, bool)> actions;
+  const P2ActionSheet({super.key, required this.title, required this.actions});
+
+  @override
+  Widget build(BuildContext context) => MpSheet(
+    title: title,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < actions.length; i++)
+          Tap(
+            onTap: () => Navigator.pop(context, i),
+            radius: 12,
+            child: Container(
+              height: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  MpIconTile(
+                    actions[i].$1,
+                    size: 40,
+                    iconSize: 20,
+                    radius: 12,
+                    bg: actions[i].$3 ? MP.redSoft : MP.primarySoft,
+                    fg: actions[i].$3 ? MP.red : MP.primary,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(actions[i].$2, style: tx(16, w: w600, c: actions[i].$3 ? MP.red : MP.ink))),
+                ],
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+/// "Log out of MedPin?"-style confirmation. Pops true when confirmed.
+class P2ConfirmSheet extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String confirm;
+  final String cancel;
+  final bool danger;
+  const P2ConfirmSheet({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.confirm,
+    this.cancel = 'Cancel',
+    this.danger = true,
+  });
+
+  @override
+  Widget build(BuildContext context) => MpSheet(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 20),
+          child: P2SheetHeader(title: title, subtitle: subtitle),
+        ),
+        const Gap(24),
+        MpButton(confirm, kind: danger ? MpBtn.danger : MpBtn.primary, onTap: () => Navigator.pop(context, true)),
+        const Gap(12),
+        MpButton(cancel, kind: MpBtn.secondary, onTap: () => Navigator.pop(context, false)),
+      ],
+    ),
+  );
+}
+
+/// Pick a new time with a doctor at one clinic (GET
+/// /api/patient/doctors/:id/slots?next=6). Pops the chosen startAt (ISO).
+class P2SlotSheet extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final String doctorId;
+  final String locationId;
+  final String action;
+  const P2SlotSheet({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.doctorId,
+    required this.locationId,
+    this.action = 'Save',
+  });
+
+  @override
+  State<P2SlotSheet> createState() => _P2SlotSheetState();
+}
+
+class _P2SlotSheetState extends State<P2SlotSheet> {
+  List<Map<String, dynamic>>? _slots;
+  String? _picked;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final res = await Api.I.get(
+        '/api/patient/doctors/${widget.doctorId}/slots',
+        query: {'locationId': widget.locationId, 'next': 6},
+      );
+      if (!mounted) return;
+      setState(() {
+        _slots = (res as Map).cast<String, dynamic>().list('slots');
+        _picked = _slots!.isEmpty ? null : _slots!.first.str('startAt');
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  static String _label(Map<String, dynamic> s) {
+    final at = F.date(s['startAt']);
+    return at == null ? s.str('time') : F.when(at);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final slots = _slots;
+    return MpSheet(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: P2SheetHeader(title: widget.title, subtitle: widget.subtitle),
+          ),
+          const Gap(16),
+          if (_error != null)
+            Text(_error!, style: tx(14, c: MP.ink2, h: 1.45))
+          else if (slots == null)
+            const SizedBox(
+              height: 40,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: MP.primary)),
+              ),
+            )
+          else if (slots.isEmpty)
+            Text('No free times in the next two weeks. Please call the clinic.', style: tx(14, c: MP.ink2, h: 1.45))
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in slots)
+                  MpChip(
+                    _label(s),
+                    selected: _picked == s.str('startAt'),
+                    tonal: true,
+                    onTap: () => setState(() => _picked = s.str('startAt')),
+                  ),
+              ],
+            ),
+          const Gap(20),
+          MpButton(widget.action, onTap: _picked == null ? null : () => Navigator.pop(context, _picked)),
+        ],
+      ),
     );
   }
 }

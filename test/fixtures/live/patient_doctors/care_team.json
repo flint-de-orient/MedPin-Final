@@ -1,0 +1,34 @@
+[
+  {
+    "userId": "6ac8d0e273298218d8b84066",
+    "name": "Dr. Arjun Sen",
+    "role": "doctor",
+    "practiceId": "6ac8d0e273298218d8b84072",
+    "practice": "City Care Clinic",
+    "accessLevel": "full_with_logs",
+    "since": "2025-06-01T00:00:00.000Z",
+    "headline": "Diabetologist · Internal medicine",
+    "specialty": "Diabetes & thyroid"
+  },
+  {
+    "userId": "6ac8d0e4fb653f61fa0676a4",
+    "name": "Mou Banerjee",
+    "role": "dietician",
+    "practiceId": "6ac8d0e273298218d8b84072",
+    "practice": "City Care Clinic",
+    "accessLevel": "full_with_logs",
+    "since": "2026-07-10T18:30:00.000Z",
+    "specialty": null
+  },
+  {
+    "userId": "6ac8d0e4fb653f61fa0676a0",
+    "name": "Dr. Rina Mitra",
+    "role": "doctor",
+    "practiceId": "6ac8d0e273298218d8b84072",
+    "practice": "City Care Clinic",
+    "accessLevel": "full_record",
+    "since": "2026-08-09T18:30:00.000Z",
+    "headline": "Cardiologist",
+    "specialty": "Heart"
+  }
+]

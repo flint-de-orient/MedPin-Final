@@ -1,0 +1,119 @@
+{
+  "conversation": {
+    "lastMessage": {
+      "text": "Shared a record",
+      "senderType": "patient",
+      "senderId": "6ac8d0e273298218d8b8406f",
+      "senderLabel": "Priya",
+      "at": "2026-10-09T11:52:42.010Z"
+    },
+    "type": "care",
+    "practiceId": "6ac8d0e273298218d8b84072",
+    "patientId": "6ac8d0e273298218d8b8408e",
+    "participants": [
+      {
+        "userId": "6ac8d0e273298218d8b8406f",
+        "role": "patient",
+        "unreadCount": 3
+      },
+      {
+        "userId": "6ac8d0e273298218d8b84066",
+        "role": "doctor",
+        "unreadCount": 3
+      }
+    ],
+    "isUrgent": true,
+    "aiEnabled": true,
+    "createdAt": "2026-10-09T11:32:50.672Z",
+    "updatedAt": "2026-10-09T11:52:42.012Z",
+    "urgentSince": "2026-10-09T11:32:54.431Z",
+    "aiPausedAt": "2026-10-09T11:52:15.859Z",
+    "aiPausedBy": "6ac8d0e273298218d8b84066",
+    "triage": "needs_attention",
+    "id": "6ac8d0e273298218d8b8409d",
+    "aiPaused": true,
+    "patient": {
+      "id": "6ac8d0e273298218d8b8408e",
+      "name": "Priya Sharma"
+    },
+    "nextVisit": {
+      "startAt": "2026-10-09T11:30:00.000Z",
+      "token": "04"
+    }
+  },
+  "pinned": null,
+  "items": [
+    {
+      "conversationId": "6ac8d0e273298218d8b8409d",
+      "senderType": "patient",
+      "kind": "text",
+      "text": "Chest tightness, hard to breathe.",
+      "isUrgent": true,
+      "deliveryStatus": "sent",
+      "hiddenFor": [],
+      "createdAt": "2026-10-09T11:32:54.429Z",
+      "updatedAt": "2026-10-09T11:32:54.429Z",
+      "id": "6ac8d0e6fb653f61fa0678cd",
+      "deleted": false,
+      "mine": false
+    },
+    {
+      "conversationId": "6ac8d0e273298218d8b8409d",
+      "senderType": "patient",
+      "kind": "text",
+      "text": "Should I take the tablet before or after food?",
+      "isUrgent": false,
+      "deliveryStatus": "sent",
+      "hiddenFor": [],
+      "createdAt": "2026-10-09T11:32:54.556Z",
+      "updatedAt": "2026-10-09T11:32:54.556Z",
+      "id": "6ac8d0e6fb653f61fa067961",
+      "deleted": false,
+      "mine": false
+    },
+    {
+      "conversationId": "6ac8d0e273298218d8b8409d",
+      "senderId": {
+        "name": "Dr. Arjun Sen",
+        "id": "6ac8d0e273298218d8b84066"
+      },
+      "senderType": "doctor",
+      "kind": "text",
+      "text": "Got your report, thanks. We will adjust the dose when you come in.",
+      "isUrgent": false,
+      "deliveryStatus": "sent",
+      "hiddenFor": [],
+      "createdAt": "2026-10-09T11:52:15.849Z",
+      "updatedAt": "2026-10-09T11:52:15.849Z",
+      "id": "6ac8d56f1c49a51ea2fb6933",
+      "deleted": false,
+      "mine": false
+    },
+    {
+      "conversationId": "6ac8d0e273298218d8b8409d",
+      "senderId": {
+        "name": "Priya Sharma",
+        "id": "6ac8d0e273298218d8b8406f"
+      },
+      "senderType": "patient",
+      "kind": "record",
+      "recordId": "6ac8d0e5fb653f61fa067749",
+      "isUrgent": false,
+      "deliveryStatus": "sent",
+      "hiddenFor": [],
+      "createdAt": "2026-10-09T11:52:42.010Z",
+      "updatedAt": "2026-10-09T11:52:42.010Z",
+      "id": "6ac8d58a1c49a51ea2fb6961",
+      "deleted": false,
+      "mine": false,
+      "record": {
+        "id": "6ac8d0e5fb653f61fa067749",
+        "kind": "prescription",
+        "title": "Type 2 diabetes mellitus, Polycystic ovary syndrome",
+        "date": "2026-10-09T11:32:53.028Z",
+        "sourceName": "Dr. Arjun Sen",
+        "flagLabel": "New"
+      }
+    }
+  ]
+}

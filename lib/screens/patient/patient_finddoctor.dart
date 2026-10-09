@@ -2,11 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'common_p2.dart';
 
 /// Patient app · Find a doctor. Not an artboard in the design canvas: opened
 /// from the "Find a new doctor" banner on the Doctor tab. Lists every doctor
 /// on MedPin and lets the patient describe what they need to MedPin AI.
+///
+/// Live data: GET /api/patient/doctors/search (every doctor taking bookings,
+/// nearest first). MedPin AI matching runs on the device over that list. The
+/// booking sheet reads GET /api/patient/doctors/:id/slots?next=3 and sends
+/// POST /api/patient/visit-requests (booked at once when the doctor allows it).
 class PatientFinddoctorScreen extends StatefulWidget {
   const PatientFinddoctorScreen({super.key});
 
@@ -59,7 +68,7 @@ const _specs = [
   _Spec('ent', 'Ear, nose & throat', 'ENT specialist', _icEar),
 ];
 
-_Spec _spec(String key) => _specs.firstWhere((s) => s.key == key);
+_Spec _spec(String key) => _specs.firstWhere((s) => s.key == key, orElse: () => _specs.first);
 
 class _Doc {
   final String initials;
@@ -68,16 +77,20 @@ class _Doc {
   final String title;
   final String clinic;
   final String area;
-  final double km;
-  final int years;
+  final double? km;
+  final int? years;
   final List<String> langs;
   final bool female;
   final bool video;
   final bool today;
   final String next;
-  final int fee;
+  final int? fee;
   final bool mine;
   final String about;
+
+  /// Live only: the doctor's user id and the clinic location to book at.
+  final String? id;
+  final String? locationId;
   const _Doc({
     required this.initials,
     required this.name,
@@ -95,7 +108,52 @@ class _Doc {
     this.video = false,
     this.today = false,
     this.mine = false,
+    this.id,
+    this.locationId,
   });
+
+  /// A doctor card from the API (search results and the doctor page).
+  factory _Doc.fromJson(Map<String, dynamic> j) {
+    final name = j.str('name', 'Doctor');
+    final keys = [for (final k in (j['specialtyKeys'] as List? ?? const [])) '$k'];
+    final spec = keys.isEmpty ? 'gp' : keys.first;
+    final loc = j.obj('location');
+    final next = F.date(j.obj('nextSlot')['startAt']);
+    return _Doc(
+      initials: j.str('initials', F.initials(name)),
+      name: name,
+      spec: spec,
+      title: j.str('headline', j.str('specialty', _spec(spec).label)),
+      clinic: j.str('clinic', loc.str('name')),
+      area: loc.str('area'),
+      km: (j['km'] as num?)?.toDouble(),
+      years: (j['years'] as num?)?.toInt(),
+      langs: [for (final l in (j['languages'] as List? ?? const [])) '$l'],
+      next: next == null ? 'No online times this week' : F.when(next),
+      fee: (j['fee'] as num?)?.toInt(),
+      about: j.str('bio', j.str('headline')),
+      female: j['gender'] == 'female',
+      video: j['video'] == true,
+      today: j['availableToday'] == true,
+      mine: j['mine'] == true,
+      id: j.str('doctorId'),
+      locationId: loc.str('id').isEmpty ? null : loc.str('id'),
+    );
+  }
+
+  String get feeText => fee == null ? '—' : '₹$fee';
+}
+
+/// Opens the booking sheet for one doctor (Doctor tab "Book a visit",
+/// doctor page "Book"). Returns true when a visit was booked or requested.
+Future<bool> openDoctorBooking(BuildContext context, String doctorId) async {
+  final card = await runAction(context, () => Api.I.get('/api/patient/doctors/$doctorId'));
+  if (card is! Map || !context.mounted) return false;
+  final doc = _Doc.fromJson(card.cast<String, dynamic>());
+  final res = await openSheet<String>(context, (_) => _DoctorSheet(doc: doc, showPage: false));
+  if (res == null || res == '__page' || !context.mounted) return false;
+  toast(context, res);
+  return true;
 }
 
 const _doctors = [
@@ -515,7 +573,7 @@ String _title(String s) => s.split(' ').map((w) => w.isEmpty ? w : w[0].toUpperC
 RegExp _wordRe(String key) =>
     RegExp(key.length <= 4 ? '(?<![a-z])${RegExp.escape(key)}(?![a-z])' : '(?<![a-z])${RegExp.escape(key)}');
 
-_Intent _understand(String raw) {
+_Intent _understand(String raw, {String nearArea = 'Salt Lake'}) {
   final q = ' ${raw.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()} ';
   final specs = <String>[];
   final heard = <String>[];
@@ -548,7 +606,7 @@ _Intent _understand(String raw) {
   for (final a in _areas) {
     if (q.contains(a)) area = _title(a);
   }
-  if (area == null && RegExp(r'near me|nearby|close to me').hasMatch(q)) area = 'Salt Lake';
+  if (area == null && nearArea.isNotEmpty && RegExp(r'near me|nearby|close to me').hasMatch(q)) area = nearArea;
   final emergency = _emergencyWords.any(q.contains) || (q.contains('chest') && RegExp(r'breath|sweat').hasMatch(q));
   return _Intent(
     query: raw.trim(),
@@ -571,7 +629,32 @@ String _joinAnd(List<String> xs) {
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
-class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen> with SingleTickerProviderStateMixin {
+class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
+    with SingleTickerProviderStateMixin, LiveData {
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/patient/doctors/search');
+
+  bool _argsRead = false;
+
+  /// `args: {'specialty': 'heart'}` (Ask AI, home) starts on that specialty.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_argsRead) return;
+    _argsRead = true;
+    final a = Nav.args<Object>(context);
+    final key = a is Map ? a['specialty'] : (a is String ? a : null);
+    if (key is String && _specs.any((s) => s.key == key)) _specKey = key;
+  }
+
+  /// Every doctor: the live directory, or the design sample.
+  List<_Doc> get _all => data == null
+      ? (isLive ? const [] : _doctors)
+      : [for (final d in data!.list('items')) _Doc.fromJson(d)];
+
+  /// The patient's area ("near Salt Lake").
+  String get _area => data == null ? (isLive ? '' : 'Salt Lake') : data!.str('area');
+
   final _ask = TextEditingController();
   final _askFocus = FocusNode();
   final _scroll = ScrollController();
@@ -632,7 +715,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen> with 
       _dots.stop();
       setState(() {
         _thinking = false;
-        _intent = _understand(q);
+        _intent = _understand(q, nearArea: _area);
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final ctx = _resultsKey.currentContext;
@@ -685,7 +768,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen> with 
   /// when the AI's extra wishes (language, gender…) matched nobody and only
   /// the specialty was kept.
   ({List<_Doc> docs, bool relaxed}) _results() {
-    var docs = List<_Doc>.of(_doctors);
+    var docs = List<_Doc>.of(_all);
     var relaxed = false;
     final i = _intent;
     if (i != null) {
@@ -710,24 +793,35 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen> with 
     if (_fVideo) docs = docs.where((d) => d.video).toList();
     if (_fFemale) docs = docs.where((d) => d.female).toList();
     if (_fBengali) docs = docs.where((d) => d.langs.contains('Bengali')).toList();
-    if (_fNear) docs = docs.where((d) => d.km <= 3).toList();
+    if (_fNear) docs = docs.where((d) => d.km != null && d.km! <= 3).toList();
 
-    int byTime(_Doc a, _Doc b) => (a.today == b.today) ? a.km.compareTo(b.km) : (a.today ? -1 : 1);
+    // Unknown distance sorts last; live, the server's order (nearest, then
+    // your doctors first) breaks ties.
+    int byKm(_Doc a, _Doc b) => (a.km ?? 1e9).compareTo(b.km ?? 1e9);
+    int byTime(_Doc a, _Doc b) => (a.today == b.today) ? byKm(a, b) : (a.today ? -1 : 1);
+    final order = {for (var k = 0; k < docs.length; k++) docs[k]: k};
     docs.sort((a, b) {
       if (i != null) {
         final c = _score(b, i).compareTo(_score(a, i));
         if (c != 0) return c;
       }
-      return _soonest ? byTime(a, b) : a.km.compareTo(b.km);
+      final c = _soonest ? byTime(a, b) : byKm(a, b);
+      return c != 0 ? c : order[a]!.compareTo(order[b]!);
     });
     return (docs: docs, relaxed: relaxed);
   }
 
   Future<void> _open(_Doc d) async {
-    final slot = await openSheet<String>(context, (_) => _DoctorSheet(doc: d));
+    final slot = await openSheet<String>(context, (_) => _DoctorSheet(doc: d, showPage: d.id != null ? d.mine : null));
     if (slot == null || !mounted) return;
     if (slot == '__page') {
-      Nav.go(context, 'Patient-DoctorDetail');
+      Nav.go(context, 'Patient-DoctorDetail', args: d.id == null ? null : {'doctorId': d.id});
+      return;
+    }
+    if (d.id != null) {
+      // Live: the sheet already sent the request; [slot] is what happened.
+      toast(context, slot);
+      reload(quiet: true);
       return;
     }
     toast(context, 'Request sent to ${d.name} for $slot. The clinic will confirm.');
@@ -737,8 +831,15 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen> with 
   Widget build(BuildContext context) {
     final r = _results();
     final aiActive = _intent != null || _thinking;
+    final total = _all.length;
+    final placeholder = livePlaceholder();
     return MpPage(
-      header: MpHeader('Find a doctor', subtitle: '${_doctors.length} doctors on MedPin near Salt Lake'),
+      header: MpHeader(
+        'Find a doctor',
+        subtitle: placeholder != null
+            ? 'Doctors on MedPin'
+            : '$total doctor${total == 1 ? '' : 's'} on MedPin${_area.isEmpty ? '' : ' near $_area'}',
+      ),
       body: SingleChildScrollView(
         controller: _scroll,
         padding: const EdgeInsets.only(bottom: 40),
@@ -802,6 +903,8 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen> with 
             ),
             if (_thinking)
               const SizedBox.shrink()
+            else if (placeholder != null)
+              placeholder
             else if (r.docs.isEmpty)
               Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _empty())
             else
@@ -1003,7 +1106,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen> with 
                   height: 48,
                   radius: 12,
                   fontSize: 15,
-                  onTap: () => toast(context, 'Dial 108 from your phone'),
+                  onTap: () => isLive ? p2Open(context, 'tel:108', failed: 'Dial 108 from your phone') : toast(context, 'Dial 108 from your phone'),
                 ),
               ],
             ),
@@ -1285,7 +1388,10 @@ class _DoctorCard extends StatelessWidget {
                     ),
                     Text(d.title, style: tx(14, c: MP.ink2, h: 1.4)),
                     Text(
-                      '${d.years} yrs · ${d.clinic}, ${d.area}',
+                      [
+                        if (d.years != null) '${d.years} yrs',
+                        [d.clinic, d.area].where((x) => x.isNotEmpty).join(', '),
+                      ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tx(13, c: MP.ink3, h: 1.4),
@@ -1301,9 +1407,9 @@ class _DoctorCard extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              _InfoPill(I.pin, '${d.km.toStringAsFixed(1)} km'),
+              if (d.km != null) _InfoPill(I.pin, '${d.km!.toStringAsFixed(1)} km'),
               if (d.video) const _InfoPill(_icVideo, 'Video visit'),
-              _InfoPill(_icGlobe, d.langs.join(' · ')),
+              if (d.langs.isNotEmpty) _InfoPill(_icGlobe, d.langs.join(' · ')),
             ],
           ),
           const Gap(12),
@@ -1333,7 +1439,7 @@ class _DoctorCard extends StatelessWidget {
                   children: [
                     Text('Fee', style: tx(12, c: MP.ink3)),
                     const Gap(2),
-                    Text('₹${d.fee}', style: tx(14, w: w700, tab: true)),
+                    Text(d.feeText, style: tx(14, w: w700, tab: true)),
                   ],
                 ),
                 const Gap(12),
@@ -1361,16 +1467,28 @@ class _DoctorCard extends StatelessWidget {
 
 /// Doctor details with the next free times; pops the picked time, or
 /// '__page' to open the patient's own doctor page (Dr. Sen).
+///
+/// Live (the doctor has an id) it loads the next three free times, sends the
+/// visit request itself and pops the confirmation to show.
 class _DoctorSheet extends StatefulWidget {
   final _Doc doc;
-  const _DoctorSheet({required this.doc});
+
+  /// Show "Open doctor page"; null → the design's rule (Dr. Sen only).
+  final bool? showPage;
+  const _DoctorSheet({required this.doc, this.showPage});
   @override
   State<_DoctorSheet> createState() => _DoctorSheetState();
 }
 
 class _DoctorSheetState extends State<_DoctorSheet> {
-  late final List<String> _slots = _slotsFor(widget.doc);
-  late String _slot = _slots.first;
+  bool get _live => widget.doc.id != null;
+  late List<String> _slots = _live ? const [] : _slotsFor(widget.doc);
+  late String? _slot = _slots.isEmpty ? null : _slots.first;
+
+  /// Live: label → startAt (ISO) of each offered time.
+  final _startAt = <String, String>{};
+  bool _loadingSlots = false;
+  final _busy = ValueNotifier(false);
 
   static List<String> _slotsFor(_Doc d) {
     final first = d.next.replaceAll(' · video', '');
@@ -1379,9 +1497,80 @@ class _DoctorSheetState extends State<_DoctorSheet> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    if (_live && widget.doc.locationId != null) _loadSlots();
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSlots() async {
+    setState(() => _loadingSlots = true);
+    try {
+      final res = await Api.I.get(
+        '/api/patient/doctors/${widget.doc.id}/slots',
+        query: {'locationId': widget.doc.locationId, 'next': 3},
+      );
+      if (!mounted) return;
+      final labels = <String>[];
+      for (final s in (res as Map).cast<String, dynamic>().list('slots')) {
+        final at = F.date(s['startAt']);
+        if (at == null) continue;
+        final label = F.when(at);
+        _startAt[label] = s.str('startAt');
+        labels.add(label);
+      }
+      setState(() {
+        _slots = labels;
+        _slot = labels.isEmpty ? null : labels.first;
+        _loadingSlots = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingSlots = false);
+      toast(context, e.message);
+    }
+  }
+
+  Future<void> _request() async {
+    final d = widget.doc;
+    if (!_live) {
+      Navigator.pop(context, _slot);
+      return;
+    }
+    final slot = _slot;
+    final res = await runAction(
+      context,
+      () => Api.I.post('/api/patient/visit-requests', {
+        'doctorId': d.id,
+        if (d.locationId != null) 'locationId': d.locationId,
+        'visitType': d.mine ? 'follow_up' : 'new',
+        'mode': 'in_clinic',
+        if (slot != null) 'slot': _startAt[slot],
+        if (slot == null) 'preferredTime': 'Any time the clinic suggests',
+      }),
+      busy: _busy,
+    );
+    if (res is! Map || !mounted) return;
+    final appt = (res['appointment'] as Map?)?.cast<String, dynamic>();
+    final token = appt?['tokenNo'];
+    Navigator.pop(
+      context,
+      appt != null
+          ? 'Visit booked with ${d.name} for $slot${token == null ? '' : ' · Token ${'$token'.padLeft(2, '0')}'}'
+          : 'Request sent to ${d.name}${slot == null ? '' : ' for $slot'}. The clinic will confirm.',
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final d = widget.doc;
-    final isSen = d.name == 'Dr. Arjun Sen';
+    final showPage = widget.showPage ?? d.name == 'Dr. Arjun Sen';
+    final where = [d.clinic, d.area].where((x) => x.isNotEmpty).join(', ');
     return MpSheet(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1405,7 +1594,7 @@ class _DoctorSheetState extends State<_DoctorSheet> {
                     ),
                     const Gap(2),
                     Text(d.title, style: tx(15, c: MP.ink2, h: 1.4)),
-                    Text('${d.years} years of practice', style: tx(13, c: MP.ink3, h: 1.4)),
+                    if (d.years != null) Text('${d.years} years of practice', style: tx(13, c: MP.ink3, h: 1.4)),
                   ],
                 ),
               ),
@@ -1423,21 +1612,27 @@ class _DoctorSheetState extends State<_DoctorSheet> {
               ),
             ],
           ),
-          const Gap(14),
-          Text(d.about, style: tx(15, h: 1.5)),
+          if (d.about.isNotEmpty) ...[
+            const Gap(14),
+            Text(d.about, style: tx(15, h: 1.5)),
+          ],
           const Gap(14),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(16)),
             child: Column(
               children: [
-                MpKV('Clinic', '${d.clinic}, ${d.area}'),
+                MpKV('Clinic', where),
+                if (d.km != null) ...[
+                  const MpDivider(),
+                  MpKV('Distance', '${d.km!.toStringAsFixed(1)} km from you'),
+                ],
+                if (d.langs.isNotEmpty) ...[
+                  const MpDivider(),
+                  MpKV('Speaks', d.langs.join(', ')),
+                ],
                 const MpDivider(),
-                MpKV('Distance', '${d.km.toStringAsFixed(1)} km from you'),
-                const MpDivider(),
-                MpKV('Speaks', d.langs.join(', ')),
-                const MpDivider(),
-                MpKV('Consult fee', '₹${d.fee}'),
+                MpKV('Consult fee', d.feeText),
                 const MpDivider(),
                 MpKV('Video visit', d.video ? 'Available' : 'Clinic visits only', vColor: d.video ? MP.green : MP.ink2),
               ],
@@ -1446,17 +1641,37 @@ class _DoctorSheetState extends State<_DoctorSheet> {
           const Gap(18),
           Text('Pick a time', style: tx(14, w: w600)),
           const Gap(8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final s in _slots)
-                MpChip(s, selected: _slot == s, tonal: true, onTap: () => setState(() => _slot = s)),
-            ],
-          ),
+          if (_loadingSlots)
+            const SizedBox(
+              height: 40,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: MP.primary)),
+              ),
+            )
+          else if (_slots.isEmpty)
+            Text(
+              'No online times in the next two weeks. Send a request and the clinic will suggest a time.',
+              style: tx(14, c: MP.ink2, h: 1.45),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in _slots)
+                  MpChip(s, selected: _slot == s, tonal: true, onTap: () => setState(() => _slot = s)),
+              ],
+            ),
           const Gap(20),
-          MpButton('Request visit', onTap: () => Navigator.pop(context, _slot)),
-          if (isSen) ...[
+          ValueListenableBuilder<bool>(
+            valueListenable: _busy,
+            builder: (_, busy, __) => MpButton(
+              busy ? 'Sending…' : 'Request visit',
+              onTap: busy || _loadingSlots ? null : _request,
+            ),
+          ),
+          if (showPage) ...[
             const Gap(10),
             MpButton('Open doctor page', kind: MpBtn.secondary, onTap: () => Navigator.pop(context, '__page')),
           ],

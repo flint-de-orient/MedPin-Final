@@ -57,6 +57,13 @@ threads.get('/:id/messages', async (req, res) => {
   const patient = convo.patientId ? await M.Patient.findById(convo.patientId, 'name userId') : null;
   const lastSeen = patient?.userId ? convo.participants.find((p) => String(p.userId) === String(patient.userId))?.lastReadAt : null;
   const nextVisit = convo.patientId ? await M.Appointment.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting'] } }).sort({ startAt: 1 }) : null;
+  // Shared records show as cards ("HbA1c · 7.4%, shared report · 30 Sep").
+  const recIds = msgs.filter((m) => m.recordId).map((m) => m.recordId);
+  const recs = recIds.length ? await M.MedicalRecord.find({ _id: { $in: recIds } }, 'kind title recordDate sourceName flagLabel') : [];
+  const recordOf = (m) => {
+    const x = m.recordId && recs.find((r) => String(r._id) === String(m.recordId));
+    return x ? { id: x._id, kind: x.kind, title: x.title, date: x.recordDate, sourceName: x.sourceName, flagLabel: x.flagLabel } : undefined;
+  };
   res.json({
     conversation: {
       ...convo.toJSON(),
@@ -65,7 +72,7 @@ threads.get('/:id/messages', async (req, res) => {
       nextVisit: nextVisit && { startAt: nextVisit.startAt, token: String(nextVisit.tokenNo).padStart(2, '0') },
     },
     pinned: pinned && !pinned.deletedForEveryoneAt ? messageView(pinned, req.user._id) : null,
-    items: msgs.map((m) => messageView(m, req.user._id)),
+    items: msgs.map((m) => ({ ...messageView(m, req.user._id), record: recordOf(m) })),
   });
 });
 

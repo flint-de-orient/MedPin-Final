@@ -92,7 +92,16 @@ r.post('/consent-code', async (req, res) => {
 // ── Who can see my record ──
 r.get('/care-team', async (req, res) => {
   const rows = await M.CareTeamAccess.find({ patientId: req.patient._id }).populate('userId', 'name').populate('practiceId', 'name');
-  res.json(rows.map((c) => ({ userId: c.userId?._id, name: c.userId?.name, role: c.role, practice: c.practiceId?.name, accessLevel: c.accessLevel, since: c.since })));
+  // Patient-Me shows "Diabetes · City Care Clinic" under each name.
+  const profiles = await M.DoctorProfile.find({ userId: { $in: rows.map((c) => c.userId?._id).filter(Boolean) } }, 'userId displayName headline specialtyKeys');
+  const specs = new Map((await M.Specialty.find({ key: { $in: profiles.flatMap((p) => p.specialtyKeys) } }, 'key label')).map((s) => [s.key, s.label]));
+  res.json(rows.map((c) => {
+    const prof = profiles.find((p) => String(p.userId) === String(c.userId?._id));
+    return {
+      userId: c.userId?._id, name: prof?.displayName || c.userId?.name, role: c.role, practiceId: c.practiceId?._id, practice: c.practiceId?.name,
+      accessLevel: c.accessLevel, since: c.since, headline: prof?.headline, specialty: specs.get(prof?.specialtyKeys?.[0]) || null,
+    };
+  }));
 });
 
 r.patch('/care-team/:userId', async (req, res) => {
@@ -264,7 +273,7 @@ r.get('/doctors/search', async (req, res) => {
   if (req.query.area) cards = cards.filter((c) => new RegExp(escapeRegex(req.query.area), 'i').test(c.location.area || ''));
   if (req.query.sort === 'soonest') cards.sort((a, b) => new Date(a.nextSlot?.startAt || 8.64e15) - new Date(b.nextSlot?.startAt || 8.64e15));
   else cards.sort((a, b) => (a.km ?? 1e9) - (b.km ?? 1e9) || Number(b.mine) - Number(a.mine));
-  res.json({ total: cards.length, emergency: req.query.q ? assistant.isEmergencyText(req.query.q) : false, items: cards });
+  res.json({ total: cards.length, emergency: req.query.q ? assistant.isEmergencyText(req.query.q) : false, area: req.patient.area || req.patient.addresses.find((a) => a.isDefault)?.area || null, items: cards });
 });
 
 r.get('/doctors/:doctorId', async (req, res) => {
@@ -275,27 +284,61 @@ r.get('/doctors/:doctorId', async (req, res) => {
   const access = await M.CareTeamAccess.findOne({ patientId: req.patient._id, userId: prof.userId });
   const [nextVisit, lastVisit, records, history, courses] = await Promise.all([
     M.Appointment.findOne({ patientId: req.patient._id, doctorId: prof.userId, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }).sort({ startAt: 1 }).populate('locationId', 'name shortName googleMapsUrl'),
-    M.Consultation.findOne({ patientId: req.patient._id, doctorId: prof.userId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).populate('vitalsId').populate('prescriptionId', 'items tests advice'),
+    M.Consultation.findOne({ patientId: req.patient._id, doctorId: prof.userId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).populate('vitalsId').populate('prescriptionId', 'items tests advice file'),
     M.MedicalRecord.find({ patientId: req.patient._id, deletedAt: null, $or: [{ doctorId: prof.userId }, { 'sharedWith.userId': prof.userId }] }).sort({ recordDate: -1 }).limit(50),
     M.Consultation.find({ patientId: req.patient._id, doctorId: prof.userId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).limit(10),
     M.MedicationCourse.find({ patientId: req.patient._id, doctorId: prof.userId, status: 'active' }),
   ]);
+  // Patient-DoctorDetail extras: specialty label, plan adherence, the chat with this doctor's clinic.
+  const [spec, adh, convo] = await Promise.all([
+    M.Specialty.findOne({ key: prof.specialtyKeys[0] }, 'label'),
+    care.adherence(req.patient, 30),
+    access?.practiceId ? M.Conversation.findOne({ patientId: req.patient._id, practiceId: access.practiceId, type: 'care' }) : null,
+  ]);
+  const fromDoctor = convo ? await M.Message.findOne({ conversationId: convo._id, senderId: prof.userId, deletedForEveryoneAt: null }).sort({ createdAt: -1 }) : null;
+  const rxFiles = new Map((await M.Prescription.find({ _id: { $in: records.map((x) => x.prescriptionId).filter(Boolean) } }, 'file')).map((x) => [String(x._id), x.file?.key]));
+  const lastFileUrl = (x) => storage.signedUrl(x.files?.[0]?.key || rxFiles.get(String(x.prescriptionId)));
   res.json({
     ...(card || { doctorId: prof.userId, name: prof.displayName }),
     bio: prof.bio,
+    specialty: spec?.label || null,
+    avgReplyMinutes: prof.avgReplyMinutes,
     qualifications: prof.qualifications.map((q) => ({ name: q.name, institution: q.institution, year: q.year })),
     places: places.map((d) => ({ locationId: d.locationId._id, name: d.locationId.name, address: d.locationId.address, mapUrl: d.locationId.googleMapsUrl, services: d.services })),
     access: access && { level: access.accessLevel, since: access.since },
     nextVisit,
-    lastVisit: lastVisit && { date: lastVisit.startedAt, diagnoses: lastVisit.diagnoses.map((d) => d.name), vitals: lastVisit.vitalsId, prescriptionId: lastVisit.prescriptionId?._id, advice: lastVisit.prescriptionId?.advice },
-    medicines: courses.map((c) => ({ id: c._id, name: c.name, strength: c.strength, pattern: doseText(c.dose) })),
-    records: records.map((x) => ({ id: x._id, kind: x.kind, title: x.title, date: x.recordDate, origin: x.origin, flagLabel: x.flagLabel, flagTone: x.flagTone })),
+    lastVisit: lastVisit && {
+      date: lastVisit.startedAt, diagnoses: lastVisit.diagnoses.map((d) => d.name), vitals: lastVisit.vitalsId, prescriptionId: lastVisit.prescriptionId?._id, advice: lastVisit.prescriptionId?.advice,
+      chiefComplaint: lastVisit.chiefComplaint, prescriptionUrl: storage.signedUrl(lastVisit.prescriptionId?.file?.key),
+    },
+    adherencePct: adh.perDoctor.find((d) => d.doctor === String(prof.userId))?.pct ?? null,
+    medicines: courses.map((c) => {
+      const a = adh.perMedicine.find((m) => String(m.courseId) === String(c._id));
+      return { id: c._id, name: c.name, strength: c.strength, pattern: c.frequency === 'weekly' ? `Once a week${c.weekday ? ` · ${c.weekday}` : ''}` : doseText(c.dose), foodRelation: c.foodRelation, tracked: c.trackingEnabled, adherencePct: a?.pct ?? null, isNew: a ? a.isNew : true };
+    }),
+    records: records.map((x) => ({ id: x._id, kind: x.kind, title: x.title, date: x.recordDate, origin: x.origin, sourceName: x.sourceName, flagLabel: x.flagLabel, flagTone: x.flagTone, url: lastFileUrl(x) })),
     timeline: history.map((h) => ({ date: h.startedAt, text: h.diagnoses.map((d) => d.name).join(', ') || h.chiefComplaint })),
+    conversation: convo && {
+      id: convo._id,
+      unread: convo.participants.find((p) => String(p.userId) === String(req.user._id))?.unreadCount || 0,
+      latestFromDoctor: fromDoctor && { text: fromDoctor.text, kind: fromDoctor.kind, at: fromDoctor.createdAt },
+    },
   });
 });
 
 r.get('/doctors/:doctorId/slots', async (req, res) => {
   if (!req.query.locationId) throw badRequest('locationId is required');
+  // ?next=3: the next free online times over the coming two weeks (Find doctor "Pick a time").
+  if (req.query.next) {
+    const want = Math.min(Math.max(Number(req.query.next) || 3, 1), 12);
+    const found = [];
+    for (let i = 0; i < 14 && found.length < want; i += 1) {
+      const day = T.addDays(T.dayStart(req.query.date ? T.parseDay(req.query.date) : new Date()), i);
+      const { slots } = await S.slotsFor({ doctorId: req.params.doctorId, locationId: req.query.locationId, day });
+      for (const s of slots) if (s.available && !s.walkIn && found.length < want) found.push(s);
+    }
+    return res.json({ open: found.length > 0, slots: found });
+  }
   const out = await S.slotsFor({ doctorId: req.params.doctorId, locationId: req.query.locationId, day: T.parseDay(req.query.date) });
   res.json({ ...out, slots: out.slots.filter((s) => !s.walkIn) });
 });
@@ -307,7 +350,7 @@ r.get('/my-doctors', async (req, res) => {
   const out = [];
   for (const c of team) {
     const [prof, next, last, convo, fu, meds] = await Promise.all([
-      M.DoctorProfile.findOne({ userId: c.userId._id }, 'displayName headline presence avgReplyMinutes'),
+      M.DoctorProfile.findOne({ userId: c.userId._id }, 'displayName headline presence avgReplyMinutes specialtyKeys'),
       M.Appointment.findOne({ patientId: req.patient._id, doctorId: c.userId._id, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting'] } }).sort({ startAt: 1 }),
       M.Appointment.findOne({ patientId: req.patient._id, doctorId: c.userId._id, status: 'completed' }).sort({ completedAt: -1 }),
       M.Conversation.findOne({ patientId: req.patient._id, practiceId: c.practiceId?._id, type: 'care' }),
@@ -315,7 +358,13 @@ r.get('/my-doctors', async (req, res) => {
       M.MedicationCourse.countDocuments({ patientId: req.patient._id, doctorId: c.userId._id, status: 'active' }),
     ]);
     const docAdh = adh.perDoctor.find((d) => d.doctor === String(c.userId._id));
+    // "Diabetes · City Care, Salt Lake" on the Doctor tab.
+    const [spec, place] = await Promise.all([
+      prof?.specialtyKeys?.[0] ? M.Specialty.findOne({ key: prof.specialtyKeys[0] }, 'label') : null,
+      M.DoctorLocation.findOne({ doctorId: c.userId._id, status: 'active', ...(c.practiceId ? { practiceId: c.practiceId._id } : {}) }).populate('locationId', 'name shortName area'),
+    ]);
     out.push({
+      specialty: spec?.label || null, practiceId: c.practiceId?._id, area: place?.locationId?.area || place?.locationId?.shortName || null, locationId: place?.locationId?._id || null,
       doctorId: c.userId._id, name: prof?.displayName || c.userId.name, role: c.role, headline: prof?.headline, clinic: c.practiceId?.name,
       presence: prof?.presence, avgReplyMinutes: prof?.avgReplyMinutes, nextVisit: next && { id: next._id, startAt: next.startAt, token: String(next.tokenNo).padStart(2, '0') },
       lastSeenAt: last?.completedAt, followUpDue: fu?.dueDate, medicines: meds, adherencePct: docAdh?.pct ?? null,

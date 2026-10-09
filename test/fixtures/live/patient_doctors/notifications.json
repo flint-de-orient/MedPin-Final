@@ -1,0 +1,102 @@
+{
+  "items": [
+    {
+      "userId": "6ac8d0e273298218d8b8406f",
+      "practiceId": "6ac8d0e273298218d8b84072",
+      "type": "appointment_booked",
+      "title": "Visit booked",
+      "body": "5:15 PM, 2026-10-13 · Token 02",
+      "screen": "Patient-DoctorDetail",
+      "params": {
+        "appointmentId": "6ac8d5a31c49a51ea2fb6b0b"
+      },
+      "channels": [
+        "in_app",
+        "push",
+        "whatsapp"
+      ],
+      "sentAt": "2026-10-09T11:53:07.723Z",
+      "createdAt": "2026-10-09T11:53:07.723Z",
+      "updatedAt": "2026-10-09T11:53:07.723Z",
+      "id": "6ac8d5a31c49a51ea2fb6b11"
+    },
+    {
+      "userId": "6ac8d0e273298218d8b8406f",
+      "practiceId": "6ac8d0e273298218d8b84072",
+      "type": "appointment_booked",
+      "title": "Visit booked",
+      "body": "5:00 PM, 2026-10-13 · Token 01",
+      "screen": "Patient-DoctorDetail",
+      "params": {
+        "appointmentId": "6ac8d5931c49a51ea2fb6ad4"
+      },
+      "channels": [
+        "in_app",
+        "push",
+        "whatsapp"
+      ],
+      "sentAt": "2026-10-09T11:52:51.980Z",
+      "createdAt": "2026-10-09T11:52:51.981Z",
+      "updatedAt": "2026-10-09T11:52:51.981Z",
+      "id": "6ac8d5931c49a51ea2fb6ada"
+    },
+    {
+      "userId": "6ac8d0e273298218d8b8406f",
+      "practiceId": "6ac8d0e273298218d8b84072",
+      "type": "message",
+      "title": "New message from Dr. Sen",
+      "body": "Got your report, thanks. We will adjust the dose when you come in.",
+      "screen": "Patient-Thread",
+      "params": {
+        "conversationId": "6ac8d0e273298218d8b8409d"
+      },
+      "channels": [
+        "in_app",
+        "push"
+      ],
+      "sentAt": "2026-10-09T11:52:15.855Z",
+      "createdAt": "2026-10-09T11:52:15.857Z",
+      "updatedAt": "2026-10-09T11:52:15.857Z",
+      "id": "6ac8d56f1c49a51ea2fb6936"
+    },
+    {
+      "userId": "6ac8d0e273298218d8b8406f",
+      "practiceId": "6ac8d0e273298218d8b84072",
+      "type": "message",
+      "title": "New message from Clinic",
+      "body": "Should I take the tablet before or after food?",
+      "screen": "Patient-Thread",
+      "params": {
+        "conversationId": "6ac8d0e273298218d8b8409d"
+      },
+      "channels": [
+        "in_app",
+        "push"
+      ],
+      "sentAt": "2026-10-09T11:32:54.561Z",
+      "createdAt": "2026-10-09T11:32:54.561Z",
+      "updatedAt": "2026-10-09T11:32:54.561Z",
+      "id": "6ac8d0e6fb653f61fa067966"
+    },
+    {
+      "userId": "6ac8d0e273298218d8b8406f",
+      "practiceId": "6ac8d0e273298218d8b84072",
+      "type": "urgent_message",
+      "title": "Urgent message",
+      "body": "Chest tightness, hard to breathe.",
+      "screen": "Patient-Thread",
+      "params": {
+        "conversationId": "6ac8d0e273298218d8b8409d"
+      },
+      "channels": [
+        "in_app",
+        "push"
+      ],
+      "sentAt": "2026-10-09T11:32:54.433Z",
+      "createdAt": "2026-10-09T11:32:54.434Z",
+      "updatedAt": "2026-10-09T11:32:54.434Z",
+      "id": "6ac8d0e6fb653f61fa0678d0"
+    }
+  ],
+  "unread": 5
+}

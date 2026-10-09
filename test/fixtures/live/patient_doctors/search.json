@@ -1,0 +1,74 @@
+{
+  "total": 2,
+  "emergency": false,
+  "area": "Salt Lake",
+  "items": [
+    {
+      "doctorId": "6ac8d0e273298218d8b84066",
+      "name": "Dr. Arjun Sen",
+      "initials": "AS",
+      "headline": "Diabetologist · Internal medicine",
+      "specialtyKeys": [
+        "diabetes"
+      ],
+      "degrees": "MBBS, MD",
+      "years": 16,
+      "languages": [
+        "English",
+        "Bengali"
+      ],
+      "gender": "male",
+      "video": true,
+      "verified": true,
+      "presence": "in_clinic",
+      "clinic": "City Care Clinic",
+      "location": {
+        "id": "6ac8d0e273298218d8b84075",
+        "name": "City Care Clinic — Salt Lake",
+        "area": "Salt Lake"
+      },
+      "km": null,
+      "fee": 600,
+      "nextSlot": {
+        "startAt": "2026-10-10T03:30:00.000Z",
+        "time": "9:00 AM"
+      },
+      "availableToday": false,
+      "mine": true
+    },
+    {
+      "doctorId": "6ac8d0e4fb653f61fa0676a0",
+      "name": "Dr. Rina Mitra",
+      "initials": "RM",
+      "headline": "Cardiologist",
+      "specialtyKeys": [
+        "heart"
+      ],
+      "degrees": "MBBS, DM",
+      "years": 14,
+      "languages": [
+        "English",
+        "Bengali",
+        "Hindi"
+      ],
+      "gender": "female",
+      "video": true,
+      "verified": true,
+      "presence": "available",
+      "clinic": "City Care Clinic",
+      "location": {
+        "id": "6ac8d0e273298218d8b84075",
+        "name": "City Care Clinic — Salt Lake",
+        "area": "Salt Lake"
+      },
+      "km": null,
+      "fee": 800,
+      "nextSlot": {
+        "startAt": "2026-10-13T11:30:00.000Z",
+        "time": "5:00 PM"
+      },
+      "availableToday": false,
+      "mine": true
+    }
+  ]
+}

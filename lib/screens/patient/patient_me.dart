@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
@@ -10,6 +12,12 @@ import 'common_p2.dart';
 /// Patient app · Profile tab ("My profile"). Not an artboard in the design
 /// canvas: built from the front-desk Profile pattern (Staff-Profile) and the
 /// patient's own data used across the patient screens.
+///
+/// Live data: GET /api/patient/me, GET /api/patient/care-team and the bell
+/// (GET /api/notifications). Edits: PATCH /api/patient/me (details,
+/// reminders, language, app lock), PATCH /api/patient/care-team/:userId,
+/// POST /api/patient/consent-code, POST /api/me/support, /api/me/export and
+/// /api/me/delete-request.
 class PatientMeScreen extends StatefulWidget {
   const PatientMeScreen({super.key});
 
@@ -21,11 +29,11 @@ class PatientMeScreen extends StatefulWidget {
 
 class _Me {
   final String name;
-  final int age;
+  final int? age;
   final String gender;
   final String phone;
-  final double heightCm;
-  final double weightKg;
+  final double? heightCm;
+  final double? weightKg;
   final String? bloodGroup;
   final String? emergencyName;
   final String? emergencyPhone;
@@ -47,7 +55,7 @@ class _Me {
     return (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
   }
 
-  double get bmi => weightKg / ((heightCm / 100) * (heightCm / 100));
+  double? get bmi => heightCm == null || weightKg == null ? null : weightKg! / ((heightCm! / 100) * (heightCm! / 100));
 }
 
 const _conditions = ['Type 2 diabetes', 'PCOS'];
@@ -66,7 +74,10 @@ class _Viewer {
   final String initials;
   final String name;
   final String role;
-  const _Viewer(this.initials, this.name, this.role);
+
+  /// Live only: their user id.
+  final String? userId;
+  const _Viewer(this.initials, this.name, this.role, {this.userId});
 }
 
 const _viewers = [
@@ -77,7 +88,38 @@ const _viewers = [
 ];
 
 const _languages = ['English', 'हिन्दी (Hindi)', 'বাংলা (Bengali)'];
+const _languageCodes = ['en', 'hi', 'bn'];
 const _bloodGroups = ['A+', 'A−', 'B+', 'B−', 'AB+', 'AB−', 'O+', 'O−', 'Not sure'];
+
+const _roleLabels = {
+  'doctor': 'Doctor',
+  'dietician': 'Dietician',
+  'front_desk': 'Front desk',
+  'doctor_assistant': 'Assistant',
+  'lab_manager': 'Lab',
+  'lab_technician': 'Lab',
+  'practice_manager': 'Clinic manager',
+};
+
+/// 'A−' ↔ 'A-', 'Not sure' ↔ 'not_sure'.
+String? _bloodToApi(String? v) => v == null ? null : (v == 'Not sure' ? 'not_sure' : v.replaceAll('−', '-'));
+String? _bloodFromApi(Object? v) => v == null ? null : (v == 'not_sure' ? 'Not sure' : '$v'.replaceAll('-', '−'));
+
+String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+/// "9876543210" → "98765 43210".
+String _phoneText(String p) {
+  final d = p.replaceAll(RegExp(r'\D'), '');
+  final ten = d.length > 10 ? d.substring(d.length - 10) : d;
+  return ten.length == 10 ? '${ten.substring(0, 5)} ${ten.substring(5)}' : p;
+}
+
+/// "20:00" → "8:00 PM".
+String _clock(String hhmm) {
+  final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(hhmm);
+  if (m == null) return hhmm;
+  return F.time(DateTime(2026, 1, 1, int.parse(m[1]!), int.parse(m[2]!)));
+}
 
 // Icons used here that aren't in the shared set (24×24, stroke).
 const _icGlobe = '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>';
@@ -87,8 +129,8 @@ const _icRuler = '<path d="M21.3 15.3 8.7 2.7a1 1 0 0 0-1.4 0L2.7 7.3a1 1 0 0 0 
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
-class _PatientMeScreenState extends State<PatientMeScreen> {
-  _Me _me = const _Me(
+class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
+  _Me _sample = const _Me(
     name: 'Priya Sharma',
     age: 29,
     gender: 'Female',
@@ -103,27 +145,142 @@ class _PatientMeScreenState extends State<PatientMeScreen> {
   bool _visitReminders = true;
   bool _appLock = true;
 
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([
+      Api.I.get('/api/patient/me'),
+      Api.I.get('/api/patient/care-team'),
+      Api.I.get('/api/notifications', query: {'limit': 20}).then<Object?>((v) => v, onError: (_) => null),
+    ]);
+    return {'me': r[0], 'team': r[1], 'notifications': r[2]};
+  }
+
+  Map<String, dynamic> get _p => data?.obj('me') ?? const {};
+  Map<String, dynamic> get _settings => _p.obj('settings');
+
+  _Me get _me {
+    if (data == null) return _sample;
+    final ec = _p.obj('emergencyContact');
+    return _Me(
+      name: _p.str('name'),
+      age: (_p['age'] as num?)?.toInt(),
+      gender: _cap(_p.str('gender')),
+      phone: _phoneText(_p.str('phone')),
+      heightCm: (_p['heightCm'] as num?)?.toDouble(),
+      weightKg: (_p['weightKg'] as num?)?.toDouble(),
+      bloodGroup: _bloodFromApi(_p['bloodGroup']),
+      emergencyName: ec.str('name').isEmpty ? null : ec.str('name'),
+      emergencyPhone: ec.str('name').isEmpty || ec.str('phone').isEmpty ? null : _phoneText(ec.str('phone')),
+    );
+  }
+
+  List<String> get _conditionList => data == null ? _conditions : [for (final c in _p.list('conditions')) c.str('name')];
+  List<String> get _allergyList => data == null ? const [_allergy] : [for (final a in _p.list('allergies')) a.str('allergen')];
+
+  List<Map<String, dynamic>> get _team => data?.list('team') ?? const [];
+
+  List<(_Viewer, String)> get _viewerRows {
+    if (data == null) return [for (var i = 0; i < _viewers.length; i++) (_viewers[i], _sharing[i])];
+    return [
+      for (final t in _team)
+        (
+          _Viewer(
+            F.initials(t.str('name')),
+            t.str('name'),
+            [
+              t.str('specialty', t.str('headline', _roleLabels[t.str('role')] ?? '')),
+              t.str('practice'),
+            ].where((x) => x.isNotEmpty).join(' · '),
+            userId: t.str('userId'),
+          ),
+          p2AccessLevels[t.str('accessLevel')] ?? _levels[1],
+        ),
+    ];
+  }
+
+  bool get _medR => data == null ? _medReminders : _settings['medReminders'] != false;
+  bool get _logR => data == null ? _logReminder : _settings['dailyLogReminder'] != false;
+  bool get _visitR => data == null ? _visitReminders : _settings['visitReminders'] != false;
+  bool get _lock => data == null ? _appLock : _p['appLock'] == true;
+  String get _lang {
+    if (data == null) return _language;
+    final i = _languageCodes.indexOf(_p.str('language', 'en'));
+    return _languages[i < 0 ? 0 : i];
+  }
+
+  int get _unreadNotifications => data == null ? 1 : data!.obj('notifications').numOr('unread').toInt();
+
+  /// PATCH /api/patient/me and show the saved profile. Returns false on error.
+  Future<bool> _save(Map<String, dynamic> body) async {
+    final res = await runAction(context, () => Api.I.patch('/api/patient/me', body));
+    if (res is! Map || !mounted) return false;
+    setState(() => data = {...?data, 'me': res.cast<String, dynamic>()});
+    return true;
+  }
+
+  /// A reminder / app-lock switch: flips at once, reverts if saving fails.
+  Future<void> _toggle(String key, bool value, {bool setting = true}) async {
+    final me = Map<String, dynamic>.of(_p);
+    if (setting) {
+      me['settings'] = {..._settings, key: value};
+    } else {
+      me[key] = value;
+    }
+    final before = data;
+    setState(() => data = {...?data, 'me': me});
+    final ok = await _save(setting ? {'settings': {key: value}} : {key: value});
+    if (!ok && mounted) setState(() => data = before);
+  }
+
   Future<void> _edit() async {
     final updated = await openSheet<_Me>(context, (_) => _EditSheet(me: _me));
     if (updated == null || !mounted) return;
-    setState(() => _me = updated);
-    toast(context, 'Profile updated');
+    if (data == null) {
+      setState(() => _sample = updated);
+      toast(context, 'Profile updated');
+      return;
+    }
+    final phone = (updated.emergencyPhone ?? '').replaceAll(RegExp(r'\D'), '');
+    final ok = await _save({
+      'name': updated.name,
+      if (updated.age != null) 'ageYears': updated.age,
+      'gender': updated.gender.toLowerCase(),
+      if (updated.heightCm != null) 'heightCm': updated.heightCm,
+      if (updated.weightKg != null) 'weightKg': updated.weightKg,
+      if (updated.bloodGroup != null) 'bloodGroup': _bloodToApi(updated.bloodGroup),
+      'emergencyContact': updated.emergencyName == null
+          ? {'name': null}
+          : {'name': updated.emergencyName, if (phone.isNotEmpty) 'phone': phone.length > 10 ? phone.substring(phone.length - 10) : phone},
+    });
+    if (ok && mounted) toast(context, 'Profile updated');
   }
 
   Future<void> _manage(int i) async {
-    final v = _viewers[i];
-    final level = await openSheet<String>(context, (_) => _SharingSheet(viewer: v, current: _sharing[i]));
-    if (level == null || !mounted || level == _sharing[i]) return;
-    setState(() => _sharing[i] = level);
+    final (v, current) = _viewerRows[i];
+    final level = await openSheet<String>(context, (_) => _SharingSheet(viewer: v, current: current));
+    if (level == null || !mounted || level == current) return;
+    if (data != null) {
+      final key = p2AccessLevels.entries.firstWhere((e) => e.value == level, orElse: () => const MapEntry('not_shared', '')).key;
+      final ok = await runAction(context, () => Api.I.patch('/api/patient/care-team/${v.userId}', {'accessLevel': key}));
+      if (ok == null || !mounted) return;
+      reload(quiet: true);
+    } else {
+      setState(() => _sharing[i] = level);
+    }
     toast(context, level == _stopSharing ? 'Stopped sharing with ${v.name}' : '${v.name} can now see: ${level.toLowerCase()}');
   }
 
   Future<void> _pickLanguage() async {
     final l = await openSheet<String>(
       context,
-      (_) => _PickSheet(title: 'App language', subtitle: 'MedPin and your reminders use this language.', options: _languages, value: _language),
+      (_) => _PickSheet(title: 'App language', subtitle: 'MedPin and your reminders use this language.', options: _languages, value: _lang),
     );
-    if (l != null && mounted) setState(() => _language = l);
+    if (l == null || !mounted || l == _lang) return;
+    if (data == null) {
+      setState(() => _language = l);
+      return;
+    }
+    await _save({'language': _languageCodes[_languages.indexOf(l)]});
   }
 
   Future<void> _logOut() async {
@@ -136,171 +293,272 @@ class _PatientMeScreenState extends State<PatientMeScreen> {
     }
   }
 
+  Future<void> _notifications() async {
+    if (data == null) {
+      toast(context, 'Notifications are not in the design yet');
+      return;
+    }
+    final items = data!.obj('notifications').list('items');
+    await openSheet<void>(context, (_) => _NotificationsSheet(items: items));
+    if (!mounted || _unreadNotifications == 0) return;
+    await runAction(context, () => Api.I.post('/api/notifications/read-all'));
+    if (mounted) reload(quiet: true);
+  }
+
+  Future<void> _help() async {
+    if (data == null) {
+      toast(context, 'Help is not in the design yet');
+      return;
+    }
+    await openSheet<void>(context, (_) => const _HelpSheet());
+  }
+
+  Future<void> _privacy() async {
+    if (data == null) {
+      toast(context, 'Privacy and terms are not in the design yet');
+      return;
+    }
+    final i = await openSheet<int>(
+      context,
+      (_) => const P2ActionSheet(
+        title: 'Privacy and data',
+        actions: [(I.download, 'Download my data', false), (I.alert, 'Delete my account', true)],
+      ),
+    );
+    if (i == null || !mounted) return;
+    if (i == 0) {
+      final r = await runAction(context, () => Api.I.post('/api/me/export'));
+      if (r is Map && mounted) await p2Open(context, r['url'] as String?, failed: "Couldn't open your data file");
+      return;
+    }
+    final sure = await openSheet<bool>(
+      context,
+      (_) => const P2ConfirmSheet(
+        title: 'Delete your MedPin account?',
+        subtitle: 'We will check with your clinics, then delete your account and tell you by SMS.',
+        confirm: 'Ask to delete',
+      ),
+    );
+    if (sure != true || !mounted) return;
+    final r = await runAction(context, () => Api.I.post('/api/me/delete-request', {'reason': 'Requested from the patient app'}));
+    if (r != null && mounted) toast(context, 'Request sent. Our team will contact you.');
+  }
+
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    final me = _me;
+    final viewers = _viewerRows;
+    final allergies = _allergyList;
+    final conditions = _conditionList;
+    final logAt = data == null ? '8:00 PM' : _clock(_settings.str('dailyLogReminderAt', '20:00'));
     return MpPage(
       nav: const PatientNav(current: 4),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _topBar(),
-          VGap(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-            gap: 24,
-            children: [
-              _identity(),
-              const _ConsentCard(),
-              _section('Health details', [
-                _Row(
-                  icon: I.activity,
-                  title: 'Conditions',
-                  below: Wrap(spacing: 6, runSpacing: 6, children: [for (final c in _conditions) _Tag(c)]),
-                  onTap: _edit,
-                ),
-                _Row(
-                  icon: I.alert,
-                  title: 'Allergies',
-                  below: const MpBadge(
-                    _allergy,
-                    bg: MP.amberSoft,
-                    fg: MP.amber,
-                    border: MP.amberLine,
-                    icon: I.alert,
-                    weight: w600,
-                    padX: 8,
+          if (placeholder != null)
+            placeholder
+          else
+            VGap(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              gap: 24,
+              children: [
+                _identity(me),
+                _ConsentCard(live: data != null),
+                _section('Health details', [
+                  _Row(
+                    icon: I.activity,
+                    title: 'Conditions',
+                    sub: conditions.isEmpty ? 'None added' : null,
+                    subColor: MP.ink3,
+                    below: conditions.isEmpty ? null : Wrap(spacing: 6, runSpacing: 6, children: [for (final c in conditions) _Tag(c)]),
+                    onTap: _edit,
                   ),
-                  onTap: _edit,
+                  _Row(
+                    icon: I.alert,
+                    title: 'Allergies',
+                    sub: allergies.isEmpty ? 'None added' : null,
+                    subColor: MP.ink3,
+                    below: allergies.isEmpty
+                        ? null
+                        : Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final a in allergies)
+                                MpBadge(a, bg: MP.amberSoft, fg: MP.amber, border: MP.amberLine, icon: I.alert, weight: w600, padX: 8),
+                            ],
+                          ),
+                    onTap: _edit,
+                  ),
+                  _Row(
+                    icon: _icRuler,
+                    title: 'Height and weight',
+                    sub: me.heightCm == null && me.weightKg == null
+                        ? 'Not added'
+                        : [
+                            if (me.heightCm != null) '${_fmt(me.heightCm!)} cm',
+                            if (me.weightKg != null) '${_fmt(me.weightKg!)} kg',
+                            if (me.bmi != null) 'BMI ${me.bmi!.toStringAsFixed(1)}',
+                          ].join(' · '),
+                    subColor: me.heightCm == null && me.weightKg == null ? MP.ink3 : MP.ink2,
+                    trailing: me.heightCm == null && me.weightKg == null ? const _Action('Add') : const _Chevron(),
+                    onTap: _edit,
+                  ),
+                  _Row(
+                    icon: I.drop,
+                    title: 'Blood group',
+                    sub: me.bloodGroup ?? 'Not added',
+                    subColor: me.bloodGroup == null ? MP.ink3 : MP.ink2,
+                    trailing: me.bloodGroup == null ? const _Action('Add') : const _Chevron(),
+                    onTap: _edit,
+                  ),
+                  _Row(
+                    icon: I.phone,
+                    title: 'Emergency contact',
+                    sub: me.emergencyName == null
+                        ? 'Someone we can call for you'
+                        : '${me.emergencyName}${me.emergencyPhone == null ? '' : ' · +91 ${me.emergencyPhone}'}',
+                    subColor: me.emergencyName == null ? MP.ink3 : MP.ink2,
+                    trailing: me.emergencyName == null ? const _Action('Add') : const _Chevron(),
+                    onTap: _edit,
+                  ),
+                ]),
+                if (viewers.isNotEmpty)
+                  _section(
+                    'Who can see my records',
+                    [
+                      for (var i = 0; i < viewers.length; i++)
+                        _Row(
+                          leading: MpAvatar(viewers[i].$1.initials, size: 40, fontSize: 14),
+                          title: viewers[i].$1.name,
+                          sub: viewers[i].$2,
+                          subColor: viewers[i].$2 == _stopSharing ? MP.ink3 : MP.ink2,
+                          meta: viewers[i].$1.role,
+                          trailing: const _Action('Manage'),
+                          onTap: () => _manage(i),
+                        ),
+                    ],
+                    caption: 'You decide who sees what. They are told when you change it.',
+                  ),
+                _section('Reminders', [
+                  _Row(
+                    icon: I.pill,
+                    title: 'Medicine reminders',
+                    sub: 'At each dose time',
+                    trailing: MpSwitch(value: _medR, onChanged: (v) => _setReminder('medReminders', v)),
+                    onTap: () => _setReminder('medReminders', !_medR),
+                  ),
+                  _Row(
+                    icon: I.edit,
+                    title: 'Daily log reminder',
+                    sub: '$logAt every day',
+                    trailing: MpSwitch(value: _logR, onChanged: (v) => _setReminder('dailyLogReminder', v)),
+                    onTap: () => _setReminder('dailyLogReminder', !_logR),
+                  ),
+                  _Row(
+                    icon: I.calendar,
+                    title: 'Visit reminders',
+                    sub: 'A day before and 2 hours before',
+                    trailing: MpSwitch(value: _visitR, onChanged: (v) => _setReminder('visitReminders', v)),
+                    onTap: () => _setReminder('visitReminders', !_visitR),
+                  ),
+                ]),
+                _section('General', [
+                  _Row(
+                    icon: _icGlobe,
+                    title: 'Language',
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(_lang, style: tx(14, c: MP.ink2)),
+                      const Gap(12),
+                      const _Chevron(),
+                    ]),
+                    onTap: _pickLanguage,
+                  ),
+                  _Row(
+                    icon: I.lock,
+                    title: 'App lock',
+                    sub: 'Fingerprint or PIN to open MedPin',
+                    trailing: MpSwitch(value: _lock, onChanged: _setAppLock),
+                    onTap: () => _setAppLock(!_lock),
+                  ),
+                  _Row(
+                    icon: _icHelp,
+                    title: 'Help and support',
+                    trailing: const _Chevron(),
+                    onTap: _help,
+                  ),
+                  _Row(
+                    icon: I.shield,
+                    title: 'Privacy and terms',
+                    trailing: const _Chevron(),
+                    onTap: _privacy,
+                  ),
+                ]),
+                _card([
+                  _Row(
+                    icon: I.logout,
+                    title: 'Log out',
+                    onTap: _logOut,
+                  ),
+                ]),
+                Text(
+                  'MedPin 1.0.0 · Care Connected',
+                  textAlign: TextAlign.center,
+                  style: tx(13, c: MP.ink3),
                 ),
-                _Row(
-                  icon: _icRuler,
-                  title: 'Height and weight',
-                  sub: '${_fmt(_me.heightCm)} cm · ${_fmt(_me.weightKg)} kg · BMI ${_me.bmi.toStringAsFixed(1)}',
-                  trailing: const _Chevron(),
-                  onTap: _edit,
-                ),
-                _Row(
-                  icon: I.drop,
-                  title: 'Blood group',
-                  sub: _me.bloodGroup ?? 'Not added',
-                  subColor: _me.bloodGroup == null ? MP.ink3 : MP.ink2,
-                  trailing: _me.bloodGroup == null ? const _Action('Add') : const _Chevron(),
-                  onTap: _edit,
-                ),
-                _Row(
-                  icon: I.phone,
-                  title: 'Emergency contact',
-                  sub: _me.emergencyName == null
-                      ? 'Someone we can call for you'
-                      : '${_me.emergencyName} · +91 ${_me.emergencyPhone}',
-                  subColor: _me.emergencyName == null ? MP.ink3 : MP.ink2,
-                  trailing: _me.emergencyName == null ? const _Action('Add') : const _Chevron(),
-                  onTap: _edit,
-                ),
-              ]),
-              _section(
-                'Who can see my records',
-                [
-                  for (var i = 0; i < _viewers.length; i++)
-                    _Row(
-                      leading: MpAvatar(_viewers[i].initials, size: 40, fontSize: 14),
-                      title: _viewers[i].name,
-                      sub: _sharing[i] == _stopSharing ? _stopSharing : _sharing[i],
-                      subColor: _sharing[i] == _stopSharing ? MP.ink3 : MP.ink2,
-                      meta: _viewers[i].role,
-                      trailing: const _Action('Manage'),
-                      onTap: () => _manage(i),
-                    ),
-                ],
-                caption: 'You decide who sees what. They are told when you change it.',
-              ),
-              _section('Reminders', [
-                _Row(
-                  icon: I.pill,
-                  title: 'Medicine reminders',
-                  sub: 'At each dose time',
-                  trailing: MpSwitch(value: _medReminders, onChanged: (v) => setState(() => _medReminders = v)),
-                  onTap: () => setState(() => _medReminders = !_medReminders),
-                ),
-                _Row(
-                  icon: I.edit,
-                  title: 'Daily log reminder',
-                  sub: '8:00 PM every day',
-                  trailing: MpSwitch(value: _logReminder, onChanged: (v) => setState(() => _logReminder = v)),
-                  onTap: () => setState(() => _logReminder = !_logReminder),
-                ),
-                _Row(
-                  icon: I.calendar,
-                  title: 'Visit reminders',
-                  sub: 'A day before and 2 hours before',
-                  trailing: MpSwitch(value: _visitReminders, onChanged: (v) => setState(() => _visitReminders = v)),
-                  onTap: () => setState(() => _visitReminders = !_visitReminders),
-                ),
-              ]),
-              _section('General', [
-                _Row(
-                  icon: _icGlobe,
-                  title: 'Language',
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(_language, style: tx(14, c: MP.ink2)),
-                    const Gap(12),
-                    const _Chevron(),
-                  ]),
-                  onTap: _pickLanguage,
-                ),
-                _Row(
-                  icon: I.lock,
-                  title: 'App lock',
-                  sub: 'Fingerprint or PIN to open MedPin',
-                  trailing: MpSwitch(value: _appLock, onChanged: (v) => setState(() => _appLock = v)),
-                  onTap: () => setState(() => _appLock = !_appLock),
-                ),
-                _Row(
-                  icon: _icHelp,
-                  title: 'Help and support',
-                  trailing: const _Chevron(),
-                  onTap: () => toast(context, 'Help is not in the design yet'),
-                ),
-                _Row(
-                  icon: I.shield,
-                  title: 'Privacy and terms',
-                  trailing: const _Chevron(),
-                  onTap: () => toast(context, 'Privacy and terms are not in the design yet'),
-                ),
-              ]),
-              _card([
-                _Row(
-                  icon: I.logout,
-                  title: 'Log out',
-                  onTap: _logOut,
-                ),
-              ]),
-              Text(
-                'MedPin 1.0.0 · Care Connected',
-                textAlign: TextAlign.center,
-                style: tx(13, c: MP.ink3),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
     );
   }
 
+  void _setReminder(String key, bool v) {
+    if (data == null) {
+      setState(() {
+        switch (key) {
+          case 'medReminders':
+            _medReminders = v;
+          case 'dailyLogReminder':
+            _logReminder = v;
+          default:
+            _visitReminders = v;
+        }
+      });
+      return;
+    }
+    _toggle(key, v);
+  }
+
+  void _setAppLock(bool v) {
+    if (data == null) {
+      setState(() => _appLock = v);
+      return;
+    }
+    _toggle('appLock', v, setting: false);
+  }
+
   // Logo + bell, as on the front-desk Profile tab.
-  Widget _topBar() => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-        child: Row(
-          children: [
-            const MpLogo(),
-            const Spacer(),
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                MpIconButton(
-                  I.bell,
-                  label: 'Notifications, 1 new',
-                  onTap: () => toast(context, 'Notifications are not in the design yet'),
-                ),
+  Widget _topBar() {
+    final unread = _unreadNotifications;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Row(
+        children: [
+          const MpLogo(),
+          const Spacer(),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              MpIconButton(
+                I.bell,
+                label: unread > 0 ? 'Notifications, $unread new' : 'Notifications',
+                onTap: _notifications,
+              ),
+              if (unread > 0)
                 Positioned(
                   top: 10,
                   right: 11,
@@ -316,32 +574,33 @@ class _PatientMeScreenState extends State<PatientMeScreen> {
                     ),
                   ),
                 ),
-              ],
-            ),
-          ],
-        ),
-      );
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
-  Widget _identity() => Padding(
+  Widget _identity(_Me me) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           children: [
-            MpAvatar(_me.initials, size: 72, fontSize: 24),
+            MpAvatar(me.initials, size: 72, fontSize: 24),
             const Gap(16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _me.name,
+                    me.name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: tx(28, w: w800, h: 1.15, em: -0.02),
                   ),
                   const Gap(4),
-                  Text('+91 ${_me.phone}', style: tx(14, c: MP.ink2, tab: true)),
+                  Text('+91 ${me.phone}', style: tx(14, c: MP.ink2, tab: true)),
                   const Gap(6),
-                  MpBadge('${_me.age} yrs · ${_me.gender}', weight: w600),
+                  MpBadge([if (me.age != null) '${me.age} yrs', me.gender].where((x) => x.isNotEmpty).join(' · '), weight: w600),
                 ],
               ),
             ),
@@ -472,8 +731,12 @@ class _Tag extends StatelessWidget {
 
 /// The code a clinic asks for to link this record to their practice
 /// (see Add-Patient-Existing). It changes every 60 seconds.
+///
+/// Live: each code comes from POST /api/patient/consent-code and counts down
+/// to its own expiry.
 class _ConsentCard extends StatefulWidget {
-  const _ConsentCard();
+  final bool live;
+  const _ConsentCard({this.live = false});
   @override
   State<_ConsentCard> createState() => _ConsentCardState();
 }
@@ -484,14 +747,48 @@ class _ConsentCardState extends State<_ConsentCard> {
   int _left = _period;
   Timer? _timer;
 
+  /// Live: the current code and when it expires.
+  String? _liveCode;
+  DateTime? _expiresAt;
+  bool _fetching = false;
+
   @override
   void initState() {
     super.initState();
+    if (widget.live) _fetch();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
-        if (--_left <= 0) _next();
+        if (widget.live) {
+          final exp = _expiresAt;
+          if (exp == null) return;
+          _left = exp.difference(DateTime.now()).inSeconds.clamp(0, _period);
+          if (_left <= 0) _fetch();
+        } else if (--_left <= 0) {
+          _next();
+        }
       });
     });
+  }
+
+  Future<void> _fetch() async {
+    if (_fetching) return;
+    _fetching = true;
+    try {
+      final r = await Api.I.post('/api/patient/consent-code');
+      if (!mounted || r is! Map) return;
+      setState(() {
+        _liveCode = '${r['code']}';
+        _expiresAt = F.date(r['expiresAt']) ?? DateTime.now().add(const Duration(seconds: _period));
+        _left = _expiresAt!.difference(DateTime.now()).inSeconds.clamp(0, _period);
+      });
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => _expiresAt = DateTime.now().add(const Duration(seconds: 15))); // try again shortly
+        toast(context, e.message);
+      }
+    } finally {
+      _fetching = false;
+    }
   }
 
   void _next() {
@@ -501,6 +798,7 @@ class _ConsentCardState extends State<_ConsentCard> {
 
   /// Six digits; the first matches the code typed in Add-Patient-Existing.
   String get _code {
+    if (widget.live) return _liveCode ?? '······';
     if (_seed == 0) return '482917';
     final n = (482917 + _seed * 7919 * 104729) % 1000000;
     return n.toString().padLeft(6, '0');
@@ -579,6 +877,7 @@ class _ConsentCardState extends State<_ConsentCard> {
                 height: 40,
                 child: Tap(
                   onTap: () {
+                    if (widget.live && _liveCode == null) return;
                     Clipboard.setData(ClipboardData(text: code));
                     toast(context, 'Code copied');
                   },
@@ -615,7 +914,7 @@ class _ConsentCardState extends State<_ConsentCard> {
                 ),
               ),
               Tap(
-                onTap: () => setState(_next),
+                onTap: () => widget.live ? _fetch() : setState(_next),
                 radius: 8,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 child: Text('New code', style: tx(14, w: w600, c: MP.white)),
@@ -639,9 +938,9 @@ class _EditSheet extends StatefulWidget {
 
 class _EditSheetState extends State<_EditSheet> {
   late final _name = TextEditingController(text: widget.me.name);
-  late final _age = TextEditingController(text: '${widget.me.age}');
-  late final _height = TextEditingController(text: _PatientMeScreenState._fmt(widget.me.heightCm));
-  late final _weight = TextEditingController(text: _PatientMeScreenState._fmt(widget.me.weightKg));
+  late final _age = TextEditingController(text: widget.me.age == null ? '' : '${widget.me.age}');
+  late final _height = TextEditingController(text: widget.me.heightCm == null ? '' : _PatientMeScreenState._fmt(widget.me.heightCm!));
+  late final _weight = TextEditingController(text: widget.me.weightKg == null ? '' : _PatientMeScreenState._fmt(widget.me.weightKg!));
   late final _ecName = TextEditingController(text: widget.me.emergencyName ?? '');
   late final _ecPhone = TextEditingController(text: widget.me.emergencyPhone ?? '');
   late String _gender = widget.me.gender;
@@ -657,7 +956,7 @@ class _EditSheetState extends State<_EditSheet> {
 
   void _save() {
     final m = widget.me;
-    double num(TextEditingController c, double fallback) => double.tryParse(c.text.trim().replaceAll(',', '.')) ?? fallback;
+    double? num(TextEditingController c, double? fallback) => double.tryParse(c.text.trim().replaceAll(',', '.')) ?? fallback;
     final name = _ecName.text.trim();
     final phone = _ecPhone.text.trim();
     Navigator.pop(
@@ -667,8 +966,8 @@ class _EditSheetState extends State<_EditSheet> {
         age: int.tryParse(_age.text.trim()) ?? m.age,
         gender: _gender,
         phone: m.phone,
-        heightCm: num(_height, m.heightCm).clamp(50, 250).toDouble(),
-        weightKg: num(_weight, m.weightKg).clamp(2, 400).toDouble(),
+        heightCm: num(_height, m.heightCm)?.clamp(50, 250).toDouble(),
+        weightKg: num(_weight, m.weightKg)?.clamp(2, 400).toDouble(),
         bloodGroup: _blood,
         emergencyName: name.isEmpty ? null : name,
         emergencyPhone: name.isEmpty || phone.isEmpty ? null : phone,
@@ -879,4 +1178,134 @@ class _LogOutSheet extends StatelessWidget {
           ],
         ),
       );
+}
+
+/// The bell: recent notifications (GET /api/notifications).
+class _NotificationsSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> items;
+  const _NotificationsSheet({required this.items});
+
+  @override
+  Widget build(BuildContext context) => MpSheet(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 20),
+              child: P2SheetHeader(title: 'Notifications', subtitle: 'Visits, messages and reports from your clinics.'),
+            ),
+            const Gap(12),
+            if (items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text('Nothing new yet.', style: tx(15, c: MP.ink2)),
+              ),
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) const MpDivider(),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 7),
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: items[i]['readAt'] == null ? MP.primary : MP.lineStrong,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    const Gap(12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(items[i].str('title'), style: tx(15, w: w600, h: 1.4)),
+                          if (items[i].str('body').isNotEmpty) Text(items[i].str('body'), style: tx(14, c: MP.ink2, h: 1.4)),
+                        ],
+                      ),
+                    ),
+                    const Gap(12),
+                    if (F.date(items[i]['createdAt']) case final at?) Text(F.ago(at), style: tx(13, c: MP.ink3)),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+}
+
+/// Help and support: the support contacts (GET /api/me/support) and a message
+/// to the MedPin team (POST /api/me/support).
+class _HelpSheet extends StatefulWidget {
+  const _HelpSheet();
+  @override
+  State<_HelpSheet> createState() => _HelpSheetState();
+}
+
+class _HelpSheetState extends State<_HelpSheet> {
+  final _msg = TextEditingController();
+  final _busy = ValueNotifier(false);
+  Map<String, dynamic> _contacts = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    Api.I.get('/api/me/support').then((r) {
+      if (mounted && r is Map) setState(() => _contacts = r.cast<String, dynamic>());
+    }).catchError((_) {});
+  }
+
+  @override
+  void dispose() {
+    _msg.dispose();
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final text = _msg.text.trim();
+    final r = await runAction(context, () => Api.I.post('/api/me/support', {'topic': 'problem', 'message': text, 'platform': 'app'}), busy: _busy);
+    if (r == null || !mounted) return;
+    Navigator.pop(context);
+    toast(context, 'Message sent. We will reply by phone or email.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final phone = _contacts.str('phone');
+    final email = _contacts.str('email');
+    return MpSheet(
+      child: VGap(
+        gap: 16,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 20),
+            child: P2SheetHeader(title: 'Help and support', subtitle: 'Tell us what went wrong. A person from MedPin will reply.'),
+          ),
+          if (phone.isNotEmpty || email.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(16)),
+              child: Column(
+                children: [
+                  if (phone.isNotEmpty) Tap(onTap: () => p2Open(context, 'tel:$phone'), child: MpKV('Call', phone, vColor: MP.primary)),
+                  if (phone.isNotEmpty && email.isNotEmpty) const MpDivider(),
+                  if (email.isNotEmpty) Tap(onTap: () => p2Open(context, 'mailto:$email'), child: MpKV('Email', email, vColor: MP.primary)),
+                ],
+              ),
+            ),
+          MpInput(label: 'Your message', controller: _msg, hint: 'e.g. My reminders stopped coming', maxLines: 4, height: 120),
+          ValueListenableBuilder<bool>(
+            valueListenable: _busy,
+            builder: (_, busy, __) => MpButton(busy ? 'Sending…' : 'Send message', onTap: busy ? null : _send),
+          ),
+        ],
+      ),
+    );
+  }
 }

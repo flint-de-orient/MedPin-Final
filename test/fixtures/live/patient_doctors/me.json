@@ -1,0 +1,79 @@
+{
+  "emergencyContact": {
+    "name": "Rohit Sharma",
+    "phone": "9876500000"
+  },
+  "healthScore": {
+    "value": 74,
+    "weeklyDelta": 3,
+    "computedAt": "2026-10-09T11:32:50.613Z"
+  },
+  "targets": {
+    "sugarFasting": 130,
+    "hba1c": 7,
+    "stepsPerDay": 8000
+  },
+  "settings": {
+    "reminderTimes": {
+      "morning": "07:30",
+      "afternoon": "13:30",
+      "night": "20:30"
+    },
+    "medReminders": true,
+    "dailyLogReminder": true,
+    "dailyLogReminderAt": "20:00",
+    "visitReminders": true
+  },
+  "userId": "6ac8d0e273298218d8b8406f",
+  "name": "Priya Sharma",
+  "phone": "9230592842",
+  "phoneVerifiedAt": "2026-10-09T11:32:50.613Z",
+  "ageYears": 29,
+  "ageRecordedAt": "2026-10-09T11:32:50.613Z",
+  "gender": "female",
+  "heightCm": 158,
+  "weightKg": 68.5,
+  "conditions": [
+    {
+      "name": "Type 2 diabetes",
+      "icdCode": "E11.9",
+      "_id": "6ac8d0e273298218d8b8408f"
+    },
+    {
+      "name": "PCOS",
+      "icdCode": "E28.2",
+      "_id": "6ac8d0e273298218d8b84090"
+    }
+  ],
+  "allergies": [
+    {
+      "allergen": "Sulfa drugs",
+      "drugClass": "sulfonamide",
+      "_id": "6ac8d0e273298218d8b84091"
+    }
+  ],
+  "addresses": [
+    {
+      "label": "Home",
+      "line": "Flat 3B, 12 Purbachal Rd, Salt Lake",
+      "area": "Salt Lake",
+      "city": "Kolkata",
+      "isDefault": true,
+      "_id": "6ac8d0e273298218d8b84092"
+    }
+  ],
+  "area": "Salt Lake",
+  "trackedMeasures": [
+    "blood_sugar",
+    "blood_pressure"
+  ],
+  "createdByPracticeId": "6ac8d0e273298218d8b84072",
+  "createdAt": "2026-10-09T11:32:50.663Z",
+  "updatedAt": "2026-10-09T11:53:38.986Z",
+  "bloodGroup": "B+",
+  "id": "6ac8d0e273298218d8b8408e",
+  "age": 29,
+  "bmi": 27.4,
+  "language": "en",
+  "appLock": true
+}
