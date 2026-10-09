@@ -1,0 +1,43 @@
+{
+ "date": "2026-10-05T18:30:00.000Z",
+ "summary": {
+  "consultations": 1,
+  "new": 0,
+  "followUp": 1
+ },
+ "items": [
+  {
+   "id": "6ac8bbd08adea6a429a73345",
+   "seenAt": "2026-10-06T04:15:00.000Z",
+   "patient": {
+    "id": "6ac8bbd08adea6a429a731e5",
+    "name": "Amit Pal",
+    "age": 42,
+    "gender": "male"
+   },
+   "isNew": false,
+   "complaint": "Routine diabetes review",
+   "diagnosis": "Type 2 diabetes mellitus",
+   "vitals": {
+    "bp": "123/81",
+    "pulse": 75,
+    "spo2": 98,
+    "weightKg": 76
+   },
+   "medicines": [
+    {
+     "name": "Metformin 500 mg",
+     "pattern": "1-0-1",
+     "frequency": "daily",
+     "foodRelation": "after_food",
+     "duration": {
+      "value": 3,
+      "unit": "months"
+     }
+    }
+   ],
+   "advice": "Walk 30 minutes, 5 days a week\nCome back with fasting sugar.",
+   "followUpDate": "2026-11-04T18:30:00.000Z"
+  }
+ ]
+}

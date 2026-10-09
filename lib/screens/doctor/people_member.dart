@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d9.dart';
 
 /// Design: People-Member.dc.html — "People · member".
+/// Live data (args `{'memberId'}`): GET /api/members/:id, /api/departments,
+/// /api/locations; Save → PATCH /api/members/:id.
 class PeopleMemberScreen extends StatefulWidget {
   const PeopleMemberScreen({super.key});
 
@@ -11,28 +16,93 @@ class PeopleMemberScreen extends StatefulWidget {
   State<PeopleMemberScreen> createState() => _PeopleMemberScreenState();
 }
 
-class _PeopleMemberScreenState extends State<PeopleMemberScreen> {
-  static const _departments = ['Endocrinology', 'Diabetology', 'Cardiology', 'General medicine'];
+class _PeopleMemberScreenState extends State<PeopleMemberScreen> with LiveData {
+  static const _sampleDepartments = ['Endocrinology', 'Diabetology', 'Cardiology', 'General medicine'];
+  static const _noDepartment = 'None';
 
   String _role = "Doctor's assistant";
   String _department = 'Endocrinology';
   List<bool> _locations = [true, false];
   bool _suspended = false;
+  final _busy = ValueNotifier(false);
+
+  String? _memberId;
+
+  @override
+  Future<Object?> fetch() async {
+    final a = Nav.args<Map>(context) ?? const {};
+    _memberId = a['memberId'] as String?;
+    if (_memberId == null) throw const ApiException(404, 'NO_MEMBER', 'Choose a team member first');
+    final r = await Future.wait([
+      Api.I.get('/api/members/$_memberId'),
+      Api.I.get('/api/departments'),
+      Api.I.get('/api/locations'),
+    ]);
+    final m = (r[0] as Map).cast<String, dynamic>();
+    final locs = ((r[2] as Map)['items'] as List? ?? const []).cast<Map>();
+    final mine = {for (final l in m.list('locations')) l.str('id')};
+    _role = D9Roles.label(m.str('role'));
+    _department = m.obj('department').str('name', _noDepartment);
+    _locations = [for (final l in locs) m['allLocations'] == true || mine.contains('${l['id']}')];
+    _suspended = m['status'] == 'suspended';
+    return {'member': m, 'departments': r[1], 'locations': r[2]};
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Map<String, dynamic> get _member => data!.obj('member');
+  List<Map<String, dynamic>> get _locationItems => data!.obj('locations').list('items');
+  List<Map<String, dynamic>> get _departmentItems => [
+    for (final d in (data!['departments'] as List? ?? const [])) (d as Map).cast<String, dynamic>(),
+  ];
+
+  List<String> get _departments =>
+      data == null ? _sampleDepartments : [for (final d in _departmentItems) d.str('name'), _noDepartment];
+
+  List<String> get _locationNames =>
+      data == null ? D9Locations.names : [for (final l in _locationItems) l.str('name')];
 
   String get _locationLabel {
+    final labels = _locationNames;
     final names = [
-      for (var i = 0; i < _locations.length; i++)
-        if (_locations[i]) D9Locations.names[i],
+      for (var i = 0; i < _locations.length && i < labels.length; i++)
+        if (_locations[i]) labels[i],
     ];
     return names.isEmpty ? 'None' : names.join(', ');
   }
 
   Future<void> _pickLocations() async {
-    final picked = await openSheet<List<bool>>(context, (_) => _LocationsSheet(_locations));
+    final picked = await openSheet<List<bool>>(context, (_) => _LocationsSheet(_locations, labels: _locationNames));
     if (picked != null && mounted) setState(() => _locations = picked);
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (!isLive) {
+      toast(context, 'Saved');
+      Nav.back(context);
+      return;
+    }
+    final m = _member;
+    final locs = _locationItems;
+    final ids = [
+      for (var i = 0; i < locs.length && i < _locations.length; i++)
+        if (_locations[i]) locs[i].str('id'),
+    ];
+    final dept = _departmentItems.where((d) => d.str('name') == _department).map((d) => d['id']).firstOrNull;
+    final body = <String, Object?>{
+      'role': D9Roles.key(_role),
+      'departmentId': dept,
+      'locationIds': ids,
+      'allLocations': locs.isNotEmpty && ids.length == locs.length,
+      // Only when it changed: the server refuses any suspend flag for the owner.
+      if (_suspended != (m['status'] == 'suspended')) 'suspended': _suspended,
+    };
+    final res = await runAction(context, () => Api.I.patch('/api/members/$_memberId', body), busy: _busy);
+    if (res == null || !mounted) return;
     toast(context, 'Saved');
     Nav.back(context);
   }
@@ -40,9 +110,21 @@ class _PeopleMemberScreenState extends State<PeopleMemberScreen> {
   @override
   Widget build(BuildContext context) {
     final count = _locations.where((v) => v).length;
+    final placeholder = livePlaceholder();
+    final m = data == null ? null : _member;
+    final joined = F.date(m?['joinedAt']);
     return MpPage(
-      header: const _MemberHeader(),
-      body: VGap(
+      header: m == null
+          ? const _MemberHeader()
+          : _MemberHeader(
+              name: m.str('name'),
+              initials: F.initials(m.str('name')),
+              line: [
+                if (m.str('phone').isNotEmpty) D9Fmt.phone(m.str('phone')),
+                if (joined != null) 'Joined ${D9Fmt.monthYear(joined)}',
+              ].join(' · '),
+            ),
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
         gap: 16,
         children: [
@@ -129,19 +211,24 @@ class _PeopleMemberScreenState extends State<PeopleMemberScreen> {
           ),
         ],
       ),
-      bottom: MpBottomBar(
-        color: MP.bg,
-        border: false,
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        child: MpButton('Save', onTap: _save),
-      ),
+      bottom: placeholder != null
+          ? null
+          : MpBottomBar(
+              color: MP.bg,
+              border: false,
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: MpButton('Save', onTap: _save),
+            ),
     );
   }
 }
 
 /// 64px bar: back, 40px avatar, name over phone · joined.
 class _MemberHeader extends StatelessWidget {
-  const _MemberHeader();
+  final String name;
+  final String initials;
+  final String line;
+  const _MemberHeader({this.name = 'Rohit Saha', this.initials = 'RS', this.line = '+91 98311 20486 · Joined Mar 2026'});
 
   @override
   Widget build(BuildContext context) {
@@ -153,7 +240,7 @@ class _MemberHeader extends StatelessWidget {
         children: [
           MpIconButton(I.back, label: 'Back', onTap: () => Nav.back(context)),
           const Gap(4),
-          const MpAvatar('RS', size: 40, fontSize: 14),
+          MpAvatar(initials, size: 40, fontSize: 14),
           // margin-right 8 + gap 4
           const Gap(12),
           Expanded(
@@ -161,9 +248,9 @@ class _MemberHeader extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Rohit Saha', style: tx(20, w: w700, h: 1.25), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(name, style: tx(20, w: w700, h: 1.25), maxLines: 1, overflow: TextOverflow.ellipsis),
                 Text(
-                  '+91 98311 20486 · Joined Mar 2026',
+                  line,
                   style: tx(14, c: MP.ink2, h: 1.45, tab: true),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -180,7 +267,8 @@ class _MemberHeader extends StatelessWidget {
 /// Multi-select of the practice's locations, opened from the Locations field.
 class _LocationsSheet extends StatefulWidget {
   final List<bool> initial;
-  const _LocationsSheet(this.initial);
+  final List<String> labels;
+  const _LocationsSheet(this.initial, {this.labels = D9Locations.names});
 
   @override
   State<_LocationsSheet> createState() => _LocationsSheetState();
@@ -196,7 +284,11 @@ class _LocationsSheetState extends State<_LocationsSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          D9Locations(value: _selected, onToggle: (i) => setState(() => _selected[i] = !_selected[i])),
+          D9Locations(
+            value: _selected,
+            labels: widget.labels,
+            onToggle: (i) => setState(() => _selected[i] = !_selected[i]),
+          ),
           const Gap(20),
           MpButton('Done', onTap: () => Navigator.pop(context, _selected)),
         ],

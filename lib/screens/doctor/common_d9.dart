@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/format.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch D9 (dashboard cards, team, plan & billing, export and
@@ -310,28 +312,34 @@ class D9Bar extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    label: label,
-    image: label != null,
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: SizedBox(
-        height: height,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < segs.length; i++) ...[
-              if (i > 0) SizedBox(width: gap),
-              if (segs[i].width != null)
-                SizedBox(width: segs[i].width, child: _cell(segs[i]))
-              else
-                Expanded(flex: segs[i].flex, child: _cell(segs[i])),
+  Widget build(BuildContext context) {
+    // Live counts can be zero: those segments are left out, and an all-zero
+    // bar is an empty grey track.
+    final shown = segs.where((s) => s.width != null || s.flex > 0).toList();
+    if (shown.isEmpty) shown.add(const D9Seg(1, MP.fill));
+    return Semantics(
+      label: label,
+      image: label != null,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: SizedBox(
+          height: height,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < shown.length; i++) ...[
+                if (i > 0) SizedBox(width: gap),
+                if (shown[i].width != null)
+                  SizedBox(width: shown[i].width, child: _cell(shown[i]))
+                else
+                  Expanded(flex: shown[i].flex, child: _cell(shown[i])),
+              ],
             ],
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// Legend swatch: 8×8, radius 2, optional 1px inset ring and opacity.
@@ -625,7 +633,10 @@ class D9Locations extends StatelessWidget {
   static const names = ['City Care Clinic, Salt Lake', 'City Care — New Town'];
   final List<bool> value;
   final ValueChanged<int> onToggle;
-  const D9Locations({super.key, required this.value, required this.onToggle});
+
+  /// The practice's location names (live); the design's two by default.
+  final List<String> labels;
+  const D9Locations({super.key, required this.value, required this.onToggle, this.labels = names});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -637,7 +648,7 @@ class D9Locations extends StatelessWidget {
     ),
     child: Column(
       children: [
-        for (var i = 0; i < names.length; i++) ...[
+        for (var i = 0; i < labels.length && i < value.length; i++) ...[
           if (i > 0) const MpDivider(),
           Semantics(
             checked: value[i],
@@ -647,7 +658,7 @@ class D9Locations extends StatelessWidget {
               child: SizedBox(
                 height: 56,
                 child: Row(
-                  children: [D9Check(value[i]), const Gap(12), Expanded(child: Text(names[i], style: tx(16)))],
+                  children: [D9Check(value[i]), const Gap(12), Expanded(child: Text(labels[i], style: tx(16)))],
                 ),
               ),
             ),
@@ -687,6 +698,29 @@ class D9Roles {
     'Practice manager': (true, true, true, false),
   };
 
+  /// API role keys, in the same order as [all].
+  static const keys = [
+    'doctor',
+    'front_desk',
+    'doctor_assistant',
+    'dietician',
+    'lab_manager',
+    'lab_technician',
+    'practice_manager',
+  ];
+
+  /// "doctor_assistant" → "Doctor's assistant".
+  static String label(String key) {
+    final i = keys.indexOf(key);
+    return i < 0 ? key : all[i];
+  }
+
+  /// "Doctor's assistant" → "doctor_assistant".
+  static String key(String label) {
+    final i = all.indexOf(label);
+    return i < 0 ? label : keys[i];
+  }
+
   static (bool, bool, bool, bool) _g(String role) => _grants[role] ?? (true, false, false, false);
 
   /// Read-only permission list shown on the member screen.
@@ -702,4 +736,88 @@ class D9Roles {
     final parts = [if (g.$1) 'view', if (g.$2) 'edit', if (g.$4) 'prescribe', if (g.$3) 'chat read + reply'];
     return "$role: ${parts.join(', ')}. There's no separate permission step.";
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Opens a signed file link (invoice, export, report PDF) outside the app.
+class D9Open {
+  D9Open._();
+
+  /// Replaced in tests.
+  static Future<bool> Function(Uri) launcher = (uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
+
+  static Future<bool> url(BuildContext context, Object? url, {String failed = "Couldn't open the file"}) async {
+    final uri = url is String && url.isNotEmpty ? Uri.tryParse(url) : null;
+    var ok = false;
+    if (uri != null) {
+      try {
+        ok = await launcher(uri);
+      } catch (_) {
+        ok = false;
+      }
+    }
+    if (!ok && context.mounted) toast(context, failed);
+    return ok;
+  }
+}
+
+/// Formatting shared by the D9 screens.
+class D9Fmt {
+  D9Fmt._();
+
+  static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  /// 2499 → "₹2,499"
+  static String money(num n) => '₹${F.count(n)}';
+
+  /// "14 Sep 2026"
+  static String date(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
+
+  /// "Mar 2026"
+  static String monthYear(DateTime d) => '${_months[d.month - 1]} ${d.year}';
+
+  /// "2026-09-14" (the API's day key)
+  static String dayKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Parses "14 Sep 2026", "14/09/2026" or "2026-09-14".
+  static DateTime? parseDate(String text) {
+    final t = text.trim();
+    final iso = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})$').firstMatch(t);
+    if (iso != null) return _ymd(int.parse(iso[1]!), int.parse(iso[2]!), int.parse(iso[3]!));
+    final dmy = RegExp(r'^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$').firstMatch(t);
+    if (dmy != null) return _ymd(int.parse(dmy[3]!), int.parse(dmy[2]!), int.parse(dmy[1]!));
+    final named = RegExp(r'^(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})$').firstMatch(t);
+    if (named != null) {
+      final m = _months.indexWhere((x) => x.toLowerCase() == named[2]!.toLowerCase());
+      if (m >= 0) return _ymd(int.parse(named[3]!), m + 1, int.parse(named[1]!));
+    }
+    return null;
+  }
+
+  static DateTime? _ymd(int y, int m, int d) {
+    final v = DateTime(y, m, d);
+    return v.year == y && v.month == m && v.day == d ? v : null;
+  }
+
+  /// "9831120486" → "+91 98311 20486"
+  static String phone(String digits) {
+    final d = digits.replaceAll(RegExp(r'\D'), '');
+    final local = d.length > 10 ? d.substring(d.length - 10) : d;
+    return local.length == 10 ? '+91 ${local.substring(0, 5)} ${local.substring(5)}' : digits;
+  }
+
+  /// "male" → "M"
+  static String gender(Object? g) => switch ('$g') {
+    'male' => 'M',
+    'female' => 'F',
+    'other' => 'O',
+    _ => '',
+  };
+
+  /// "1 visit" / "3 visits"
+  static String plural(num n, String one, [String? many]) => '${F.count(n)} ${n == 1 ? one : (many ?? '${one}s')}';
 }

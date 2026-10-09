@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d9.dart';
 
 /// Design: People-Add.dc.html — "People · add".
+/// Live data: GET /api/departments, /api/locations. "Add to team" verifies
+/// the phone (POST /api/members/phone-otp, code entered in a sheet) and then
+/// POST /api/members with the code.
 class PeopleAddScreen extends StatefulWidget {
   const PeopleAddScreen({super.key});
 
@@ -11,8 +16,8 @@ class PeopleAddScreen extends StatefulWidget {
   State<PeopleAddScreen> createState() => _PeopleAddScreenState();
 }
 
-class _PeopleAddScreenState extends State<PeopleAddScreen> {
-  static const _departments = [
+class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
+  static const _sampleDepartments = [
     'Endocrinology',
     'Diabetology',
     'Cardiology',
@@ -23,29 +28,120 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> {
 
   String _role = 'Doctor';
   String _department = 'Endocrinology';
-  final _locations = [true, false];
+  List<bool> _locations = [true, false];
+
+  late final _name = TextEditingController(text: isLive ? '' : 'Dr. Ananya Basu');
+  late final _phone = TextEditingController(text: isLive ? '' : '+91 98300 45127')..addListener(_phoneEdited);
 
   // Doctor-only fields keep their text while another role is picked.
-  final _qualifications = TextEditingController(text: 'MBBS, DNB (Endocrinology)');
-  final _registration = TextEditingController(text: 'WBMC 71842');
+  late final _qualifications = TextEditingController(text: isLive ? '' : 'MBBS, DNB (Endocrinology)');
+  late final _registration = TextEditingController(text: isLive ? '' : 'WBMC 71842');
+
+  /// The code the new member's phone received, once entered.
+  String? _otpCode;
+  String? _otpPhone;
+  final _busy = ValueNotifier(false);
+
+  bool get _verified => !isLive || (_otpCode != null && _otpPhone == _digits);
+
+  String get _digits {
+    final d = _phone.text.replaceAll(RegExp(r'\D'), '');
+    return d.length > 10 ? d.substring(d.length - 10) : d;
+  }
+
+  void _phoneEdited() {
+    if (_otpCode != null && _otpPhone != _digits) setState(() => _otpCode = null);
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    final r = await Future.wait([Api.I.get('/api/departments'), Api.I.get('/api/locations')]);
+    final deps = r[0] as List? ?? const [];
+    final locs = ((r[1] as Map)['items'] as List? ?? const []);
+    if (deps.isNotEmpty && data == null) _department = '${(deps.first as Map)['name']}';
+    if (_locations.length != locs.length) _locations = [for (var i = 0; i < locs.length; i++) i == 0];
+    return {'departments': deps, 'locations': r[1]};
+  }
+
+  List<Map<String, dynamic>> get _departmentItems => [
+    for (final d in (data!['departments'] as List? ?? const [])) (d as Map).cast<String, dynamic>(),
+  ];
+  List<Map<String, dynamic>> get _locationItems => data!.obj('locations').list('items');
+
+  List<String> get _departments => data == null ? _sampleDepartments : [for (final d in _departmentItems) d.str('name')];
+  List<String> get _locationNames => data == null ? D9Locations.names : [for (final l in _locationItems) l.str('name')];
 
   @override
   void dispose() {
+    _name.dispose();
+    _phone.dispose();
     _qualifications.dispose();
     _registration.dispose();
+    _busy.dispose();
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (!isLive) {
+      toast(context, 'Added to team');
+      Nav.back(context);
+      return;
+    }
+    if (_busy.value) return;
+    final name = _name.text.trim();
+    final phone = _digits;
+    if (name.isEmpty) return toast(context, 'Enter the full name');
+    if (phone.length != 10) return toast(context, 'Enter a 10-digit mobile number');
+
+    if (!_verified) {
+      final sent = await runAction(context, () => Api.I.post('/api/members/phone-otp', {'phone': phone}), busy: _busy);
+      if (sent is! Map || !mounted) return;
+      final dev = sent['devCode'];
+      if (dev != null) toast(context, 'Test code: $dev');
+      final code = await openSheet<String>(context, (_) => _CodeSheet(masked: '${sent['maskedPhone'] ?? D9Fmt.phone(phone)}'));
+      if (code == null || code.isEmpty || !mounted) return;
+      setState(() {
+        _otpCode = code;
+        _otpPhone = phone;
+      });
+    }
+
+    final locs = _locationItems;
+    final ids = [
+      for (var i = 0; i < locs.length && i < _locations.length; i++)
+        if (_locations[i]) locs[i].str('id'),
+    ];
+    final doctor = _role == 'Doctor';
+    final body = <String, Object?>{
+      'role': D9Roles.key(_role),
+      'name': name,
+      'phone': phone,
+      'departmentId': _departmentItems.where((d) => d.str('name') == _department).map((d) => d['id']).firstOrNull,
+      'locationIds': ids,
+      'allLocations': locs.isNotEmpty && ids.length == locs.length,
+      if (doctor && _qualifications.text.trim().isNotEmpty) 'qualifications': _qualifications.text.trim(),
+      if (doctor && _registration.text.trim().isNotEmpty) 'registrationNo': _registration.text.trim(),
+      'otpCode': _otpCode,
+    };
+    // Errors (e.g. 409 NO_SEATS "All 8 seats on the Clinic plan are used")
+    // are shown as a toast.
+    final res = await runAction(context, () => Api.I.post('/api/members', body), busy: _busy);
+    if (!mounted) return;
+    if (res == null) {
+      // The server checks (and uses up) the code first, so a retry needs a new one.
+      setState(() => _otpCode = null);
+      return;
+    }
     toast(context, 'Added to team');
     Nav.back(context);
   }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
     return MpPage(
       header: const MpHeader('Add someone'),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         gap: 24,
         children: [
@@ -69,7 +165,7 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> {
             ],
           ),
 
-          const D9Labeled('Full name', child: D9Input(value: 'Dr. Ananya Basu')),
+          D9Labeled('Full name', child: D9Input(controller: _name)),
 
           // Phone, verified
           Column(
@@ -78,21 +174,26 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> {
               const D9FieldLabel('Phone'),
               const Gap(8),
               D9Input(
-                value: '+91 98300 45127',
+                controller: _phone,
                 tab: true,
                 keyboard: TextInputType.phone,
                 padRight: 112,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Ico(I.check, size: 18, color: MP.green, stroke: 2.25),
-                    const Gap(6),
-                    Text('Verified', style: tx(14, w: w600, c: MP.green)),
-                  ],
-                ),
+                trailing: _verified
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Ico(I.check, size: 18, color: MP.green, stroke: 2.25),
+                          const Gap(6),
+                          Text('Verified', style: tx(14, w: w600, c: MP.green)),
+                        ],
+                      )
+                    : null,
               ),
               const Gap(8),
-              Text('OTP confirmed just now', style: tx(13, c: MP.ink3, h: 1.4)),
+              Text(
+                _verified ? 'OTP confirmed just now' : "We'll send a code to this number to confirm it",
+                style: tx(13, c: MP.ink3, h: 1.4),
+              ),
             ],
           ),
 
@@ -129,7 +230,11 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const D9FieldLabel('Locations', bottom: 8),
-              D9Locations(value: _locations, onToggle: (i) => setState(() => _locations[i] = !_locations[i])),
+              D9Locations(
+                value: _locations,
+                labels: _locationNames,
+                onToggle: (i) => setState(() => _locations[i] = !_locations[i]),
+              ),
             ],
           ),
 
@@ -184,6 +289,51 @@ class _RoleChip extends StatelessWidget {
         child: Center(
           widthFactor: 1,
           child: Text(label, style: tx(14, w: w600, c: selected ? MP.white : MP.ink2), maxLines: 1, softWrap: false),
+        ),
+      ),
+    );
+  }
+}
+
+/// Live only: the 6-digit code sent to the new member's phone. Returns it.
+class _CodeSheet extends StatefulWidget {
+  final String masked;
+  const _CodeSheet({required this.masked});
+
+  @override
+  State<_CodeSheet> createState() => _CodeSheetState();
+}
+
+class _CodeSheetState extends State<_CodeSheet> {
+  final _code = TextEditingController();
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  void _done() {
+    final code = _code.text.replaceAll(RegExp(r'\D'), '');
+    if (code.length != 6) return toast(context, 'Enter the 6-digit code');
+    Navigator.pop(context, code);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: MpSheet(
+        title: 'Confirm the phone',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Enter the code sent to ${widget.masked}', style: tx(14, c: MP.ink2, h: 1.45)),
+            const Gap(16),
+            D9Labeled('Code', child: D9Input(controller: _code, tab: true, keyboard: TextInputType.number)),
+            const Gap(20),
+            MpButton('Confirm and add', onTap: _done),
+          ],
         ),
       ),
     );

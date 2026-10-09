@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d9.dart';
 
 /// Design: Daily-Report.dc.html — "Daily report".
+/// Live data (args `{'date'}` optional): GET /api/reports/daily?date=;
+/// Download PDF / share → POST /api/exports {kind: report, reportType: daily}.
 class DailyReportScreen extends StatefulWidget {
   const DailyReportScreen({super.key});
 
@@ -77,35 +82,176 @@ const List<_Visit> _visits = [
   ),
 ];
 
-class _DailyReportScreenState extends State<DailyReportScreen> {
+class _DailyReportScreenState extends State<DailyReportScreen> with LiveData {
   String _date = _dates.first;
+  final _busy = ValueNotifier(false);
+
+  /// Live: the picker's labels → days (the last 5, plus a day passed in args).
+  Map<String, DateTime> _days = const {};
+  bool _argsRead = false;
+
+  static String _label(DateTime d, DateTime today) {
+    if (F.sameDay(d, today)) return 'Today · ${F.dateLong(d)}';
+    if (F.sameDay(d, today.subtract(const Duration(days: 1)))) return 'Yesterday · ${F.dateLong(d)}';
+    return F.dateLong(d);
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    if (!_argsRead) {
+      _argsRead = true;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final days = {for (var i = 0; i < 5; i++) _label(today.subtract(Duration(days: i)), today): today.subtract(Duration(days: i))};
+      final a = Nav.args<Map>(context) ?? const {};
+      final asked = a['date'] is String ? D9Fmt.parseDate(a['date'] as String) : null;
+      var pick = days.keys.first;
+      if (asked != null) {
+        final label = _label(asked, today);
+        if (!days.containsKey(label)) days[label] = asked;
+        pick = label;
+      }
+      _days = days;
+      _date = pick;
+    }
+    return Api.I.get('/api/reports/daily', query: {'date': D9Fmt.dayKey(_days[_date]!)});
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  List<String> get _options => data == null && !isLive ? _dates : _days.keys.toList();
+
+  (String, String, String) get _summary {
+    if (data == null) return ('14', '3', '11');
+    final s = data!.obj('summary');
+    return ('${s.numOr('consultations')}', '${s.numOr('new')}', '${s.numOr('followUp')}');
+  }
+
+  static String _food(String v) => switch (v) {
+    'before_food' => 'before food',
+    'after_food' => 'after food',
+    'with_food' => 'with food',
+    'empty_stomach' => 'empty stomach',
+    'bedtime' => 'at bedtime',
+    _ => v.replaceAll('_', ' '),
+  };
+
+  static String _duration(Map<String, dynamic> d) {
+    final unit = d.str('unit');
+    if (unit == 'ongoing') return 'ongoing';
+    final n = d.numOr('value');
+    if (n <= 0 || unit.isEmpty) return '';
+    return '${F.count(n)} ${n == 1 ? unit.replaceFirst(RegExp(r's$'), '') : unit}';
+  }
+
+  List<_Visit> get _liveVisits {
+    if (data == null) return _visits;
+    return [
+      for (final c in data!.list('items'))
+        () {
+          final p = c.obj('patient');
+          final seen = F.date(c['seenAt']);
+          final v = c.obj('vitals');
+          final follow = F.date(c['followUpDate']);
+          final ageSex = [if (p['age'] != null) '${p['age']}', D9Fmt.gender(p['gender'])].where((x) => x.isNotEmpty).join(' ');
+          return (
+            name: p.str('name'),
+            meta: [if (ageSex.isNotEmpty) ageSex, if (seen != null) 'Seen ${F.time(seen)}'].join(' · '),
+            isNew: c['isNew'] == true,
+            complaint: c.str('complaint'),
+            diagnosis: c.str('diagnosis'),
+            vitals: c['vitals'] == null
+                ? const <String>[]
+                : [
+                    v.str('bp', '—'),
+                    v.str('pulse', '—'),
+                    v['spo2'] == null ? '—' : '${v['spo2']}%',
+                    v['weightKg'] == null ? '—' : '${v['weightKg']} kg',
+                  ],
+            rx: [
+              for (final m in c.list('medicines'))
+                (
+                  m.str('name'),
+                  [
+                    switch (m.str('frequency')) {
+                      'weekly' => 'Once a week',
+                      'as_needed' => 'As needed',
+                      _ => m.str('pattern'),
+                    },
+                    _food(m.str('foodRelation')),
+                    _duration(m.obj('duration')),
+                  ].where((x) => x.isNotEmpty).join(' · '),
+                ),
+            ],
+            advice: c.str('advice'),
+            followUp: follow == null ? '' : F.dateLong(follow),
+          );
+        }(),
+    ];
+  }
+
+  void _pickDate(String v) {
+    setState(() => _date = v);
+    if (isLive) reload();
+  }
+
+  /// PDF of the day via POST /api/exports, opened outside the app.
+  Future<void> _pdf(String done) async {
+    if (!isLive) {
+      toast(context, done);
+      return;
+    }
+    final picked = _days[_date];
+    if (picked == null) return;
+    final day = D9Fmt.dayKey(picked);
+    final res = await runAction(
+      context,
+      () => Api.I.post('/api/exports', {
+        'kind': 'report',
+        'reportType': 'daily',
+        'format': 'pdf',
+        'filters': {'from': day, 'to': day},
+      }),
+      busy: _busy,
+    );
+    if (res is! Map || !mounted) return;
+    await D9Open.url(context, res['url'], failed: "Couldn't open the report");
+  }
 
   @override
   Widget build(BuildContext context) {
+    final placeholder = livePlaceholder();
+    final visits = _liveVisits;
+    final options = _options;
     return MpPage(
       header: MpHeader(
         'Daily report',
-        actions: [MpIconButton(I.share, label: 'Share report', onTap: () => toast(context, 'Report shared'))],
+        actions: [MpIconButton(I.share, label: 'Share report', onTap: () => _pdf('Report shared'))],
       ),
       body: VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         gap: 16,
         children: [
-          D9Labeled(
+          if (options.isNotEmpty) D9Labeled(
             'Report date',
             h: 20 / 14,
             child: D9Select(
               title: 'Report date',
               value: _date,
-              options: _dates,
+              options: options,
               leading: I.calendar,
               leadingColor: MP.ink2,
               chevronColor: MP.ink3,
               right: 17,
-              onChanged: (v) => setState(() => _date = v),
+              onChanged: _pickDate,
             ),
           ),
-          const _DaySummary(),
+          if (placeholder != null) placeholder else ...[
+          _DaySummary(_summary),
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: SizedBox(
@@ -120,8 +266,10 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
               ),
             ),
           ),
-          for (final v in _visits) _VisitCard(v),
-          SizedBox(
+          for (final v in visits) _VisitCard(v),
+          if (visits.isEmpty) Text('No consultations on this day', style: tx(14, c: MP.ink2)),
+          // Live, every consultation of the day is listed above.
+          if (data == null) SizedBox(
             height: 48,
             child: Tap(
               onTap: () => Nav.go(context, 'Report-Consultations'),
@@ -129,6 +277,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
               child: Center(child: Text('Show 11 more consultations', style: tx(15, w: w600, c: MP.primary))),
             ),
           ),
+          ],
         ],
       ),
       bottom: MpBottomBar(
@@ -136,7 +285,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
           'Download PDF',
           icon: I.download,
           iconStroke: 1.75,
-          onTap: () => toast(context, 'PDF downloaded'),
+          onTap: () => _pdf('PDF downloaded'),
         ),
       ),
     );
@@ -145,7 +294,9 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
 
 /// White card with a 1.3fr / 1fr / 1fr grid of day totals.
 class _DaySummary extends StatelessWidget {
-  const _DaySummary();
+  /// (consultations, new, follow-up)
+  final (String, String, String) n;
+  const _DaySummary(this.n);
 
   @override
   Widget build(BuildContext context) {
@@ -155,12 +306,12 @@ class _DaySummary extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: MPDeco.card(),
-        child: const Row(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(flex: 13, child: _SummaryCell('14', 'Consultations', pad: 20, divider: false)),
-            Expanded(flex: 10, child: _SummaryCell('3', 'New')),
-            Expanded(flex: 10, child: _SummaryCell('11', 'Follow-up')),
+            Expanded(flex: 13, child: _SummaryCell(n.$1, 'Consultations', pad: 20, divider: false)),
+            Expanded(flex: 10, child: _SummaryCell(n.$2, 'New')),
+            Expanded(flex: 10, child: _SummaryCell(n.$3, 'Follow-up')),
           ],
         ),
       ),
@@ -216,9 +367,9 @@ class _VisitCard extends StatelessWidget {
           subTab: true,
           trailing: v.isNew ? const MpBadge.blue('New', weight: w600) : const MpBadge.grey('Follow-up', weight: w600),
         ),
-        _block('Complaint', Text(v.complaint, style: tx(16, h: 1.5))),
-        _block('Diagnosis', Text(v.diagnosis, style: tx(16, w: w600, h: 1.5))),
-        _block(
+        if (v.complaint.isNotEmpty) _block('Complaint', Text(v.complaint, style: tx(16, h: 1.5))),
+        if (v.diagnosis.isNotEmpty) _block('Diagnosis', Text(v.diagnosis, style: tx(16, w: w600, h: 1.5))),
+        if (v.vitals.length == _vitalLabels.length) _block(
           'Vitals',
           gap: 8,
           Container(
@@ -256,7 +407,7 @@ class _VisitCard extends StatelessWidget {
             ),
           ),
         ),
-        _block(
+        if (v.rx.isNotEmpty) _block(
           'Prescription',
           gap: 8,
           VGap(
@@ -274,8 +425,8 @@ class _VisitCard extends StatelessWidget {
             ],
           ),
         ),
-        _block('Advice', Text(v.advice, style: tx(16, h: 1.5))),
-        Container(
+        if (v.advice.isNotEmpty) _block('Advice', Text(v.advice, style: tx(16, h: 1.5))),
+        if (v.followUp.isNotEmpty) Container(
           padding: const EdgeInsets.only(top: 16),
           decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
           child: Row(
