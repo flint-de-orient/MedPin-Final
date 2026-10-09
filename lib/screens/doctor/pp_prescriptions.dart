@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
 
 /// Design: PP-Prescriptions.dc.html — "Patient profile · Prescriptions".
+/// Live data: GET /api/patients/:id and /prescriptions?filter=all|this_clinic|shared.
 class PpPrescriptionsScreen extends StatefulWidget {
   const PpPrescriptionsScreen({super.key});
 
@@ -13,7 +17,98 @@ class PpPrescriptionsScreen extends StatefulWidget {
 
 enum _Tag { none, latest, shared }
 
-class _PpPrescriptionsScreenState extends State<PpPrescriptionsScreen> {
+class _PpPrescriptionsScreenState extends State<PpPrescriptionsScreen> with LiveData {
+  static const _filterKeys = ['all', 'this_clinic', 'shared'];
+
+  @override
+  Future<Object?> fetch() => d6Load(context, {'rx': '/prescriptions?filter=${_filterKeys[_filter]}'});
+
+  /// "Dr. Arjun Sen · City Care Clinic" / "Dr. S. Chatterjee · scanned paper".
+  static String _by(Map<String, dynamic> x) {
+    final mine = '${x['practiceId']}' == '${Session.I.practiceId}';
+    final where = mine ? D6Rec.practiceName : (x['kind'] == 'scanned' ? 'scanned paper' : 'another clinic');
+    return [x.str('doctorName'), where].where((s) => s.isNotEmpty).join(' · ');
+  }
+
+  /// "Diabetes follow-up. Metformin 500 mg started. HbA1c and Lipid profile advised."
+  static String _summary(Map<String, dynamic> x) {
+    String verb(Object? c) => switch (c) {
+          'new' => 'started',
+          'continued' => 'continued',
+          'stopped' => 'stopped',
+          null => '',
+          _ => 'changed',
+        };
+    final meds = [
+      for (final i in x.list('items')) [i.str('name'), i.str('strength'), verb(i['change'])].where((s) => s.isNotEmpty).join(' '),
+    ];
+    final tests = [for (final t in (x['tests'] as List? ?? const [])) '$t'];
+    return [
+      if (x.str('diagnosisSummary').isNotEmpty) '${x.str('diagnosisSummary')}.',
+      if (meds.isNotEmpty) '${d6Cap(meds.join(', '))}.',
+      if (tests.isNotEmpty) '${F.joinAnd(tests)} ${tests.length == 1 ? 'test' : 'tests'} advised.',
+    ].join(' ');
+  }
+
+  /// "3 medicines · 3 tests · Follow-up 29 Oct"
+  static String _meta(Map<String, dynamic> x) {
+    final n = x.list('items').length;
+    final t = (x['tests'] as List? ?? const []).length;
+    final f = F.date(x['followUpDate']);
+    return [
+      if (x['source'] == 'uploaded_by_patient') 'Uploaded by patient',
+      if (n > 0) '$n ${n == 1 ? 'medicine' : 'medicines'}',
+      if (t > 0) '$t ${t == 1 ? 'test' : 'tests'}',
+      if (f != null) 'Follow-up ${F.dayMonth(f)}',
+    ].join(' · ');
+  }
+
+  static _Tag _tag(Map<String, dynamic> x) {
+    if ('${x['practiceId']}' != '${Session.I.practiceId}' || (x['source'] != null && x['source'] != 'this_clinic')) return _Tag.shared;
+    return x['latest'] == true ? _Tag.latest : _Tag.none;
+  }
+
+  Widget _liveBody(D6Rec rec) {
+    final rx = rec.m.obj('rx');
+    final c = rx.obj('counts');
+    final items = rx.list('items');
+    final labels = ['All · ${c.numOr('all')}', 'This clinic · ${c.numOr('thisClinic')}', 'Shared · ${c.numOr('shared')}'];
+    return VGap(
+      gap: 12,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (var i = 0; i < labels.length; i++)
+              D6FilterChip(
+                labels[i],
+                padH: _filters[i].$2,
+                selected: _filter == i,
+                onTap: () {
+                  if (_filter == i) return;
+                  setState(() => _filter = i);
+                  reload(quiet: true);
+                },
+              ),
+          ],
+        ),
+        D6ShieldNote('Includes prescriptions ${rec.first} chose to share from other clinics.'),
+        if (items.isEmpty) Text('No prescriptions yet', style: tx(14, c: MP.ink2)),
+        for (final x in items)
+          _RxCard(
+            date: F.date(x['issuedAt']) == null ? '' : d6Date(F.date(x['issuedAt'])!),
+            by: _by(x),
+            summary: _summary(x),
+            meta: _meta(x),
+            tag: _tag(x),
+            onView: () => Nav.go(context, 'Prescriptions', args: {'prescriptionId': x.str('id'), 'patientId': rec.id}),
+            onDownload: () => d6OpenUrl(context, x.obj('file').str('url'), fail: "Couldn't open the prescription"),
+          ),
+      ],
+    );
+  }
+
   /// date, prescriber, summary, meta, tag.
   static const _rx = [
     (
@@ -73,9 +168,14 @@ class _PpPrescriptionsScreenState extends State<PpPrescriptionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final rec = data == null ? null : D6Rec(data!);
+    if (rec != null) {
+      return D6PatientTabsPage(tab: 1, gap: 12, rec: rec, onChanged: () => reload(quiet: true), children: [_liveBody(rec)]);
+    }
     return D6PatientTabsPage(
       tab: 1,
       gap: 12,
+      placeholder: livePlaceholder(),
       children: [
         Wrap(
           spacing: 8,
@@ -104,7 +204,17 @@ class _RxCard extends StatelessWidget {
   final String summary;
   final String meta;
   final _Tag tag;
-  const _RxCard({required this.date, required this.by, required this.summary, required this.meta, required this.tag});
+  final VoidCallback? onView;
+  final VoidCallback? onDownload;
+  const _RxCard({
+    required this.date,
+    required this.by,
+    required this.summary,
+    required this.meta,
+    required this.tag,
+    this.onView,
+    this.onDownload,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +248,7 @@ class _RxCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Tap(
-                    onTap: () => Nav.go(context, 'Prescriptions'),
+                    onTap: onView ?? () => Nav.go(context, 'Prescriptions'),
                     radius: 12,
                     color: MP.primarySoft,
                     child: SizedBox(
@@ -163,7 +273,7 @@ class _RxCard extends StatelessWidget {
                   color: MP.primary,
                   background: MP.white,
                   borderColor: MP.lineStrong,
-                  onTap: () => toast(context, 'Downloading $date prescription'),
+                  onTap: onDownload ?? () => toast(context, 'Downloading $date prescription'),
                 ),
               ],
             ),

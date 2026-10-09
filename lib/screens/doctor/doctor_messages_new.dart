@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
 
@@ -27,8 +31,29 @@ const _team = [
   ('RM', 'Dr. Rina Mitra', 'Cardiology'),
 ];
 
-class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> {
+class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> with LiveData {
   String _query = '';
+  Timer? _debounce;
+  final _busy = ValueNotifier(false);
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/inbox/contacts', query: {if (_query.trim().isNotEmpty) 'q': _query.trim()});
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _busy.dispose();
+    super.dispose();
+  }
+
+  void _onQuery(String v) {
+    setState(() => _query = v);
+    if (!isLive) return;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) reload(quiet: true);
+    });
+  }
 
   bool _hit((String, String, String) p) {
     final q = _query.trim().toLowerCase();
@@ -39,11 +64,45 @@ class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> {
         (digits.isNotEmpty && p.$3.replaceAll(' ', '').contains(digits));
   }
 
+  static String _visit(Object? status) => switch (status) {
+        'waiting' => 'in queue',
+        'in_consultation' => 'in consultation',
+        'completed' => 'seen recently',
+        'missed' => 'missed a visit',
+        'booked' || 'confirmed' => 'booked',
+        _ => '',
+      };
+
+  List<(String, String, String)> get _livePatients => [
+        for (final p in data!.list('patients'))
+          (F.initials(p.str('name')), p.str('name'), [d2PatientMeta(p), _visit(p['today'])].where((s) => s.isNotEmpty).join(' · ')),
+      ];
+
+  List<(String, String, String)> get _liveTeam => [
+        for (final t in data!.list('team'))
+          (
+            F.initials(t.str('name')),
+            t.str('name'),
+            t['role'] == 'doctor' ? t.str('department', 'Doctor') : d2Role(t['role']),
+          ),
+      ];
+
+  /// Opens the care thread ({patientId}) or a direct thread ({userId}).
+  Future<void> _start(BuildContext context, Map<String, dynamic> body) async {
+    final res = await runAction(context, () => Api.I.post('/api/inbox', body), busy: _busy);
+    if (res is! Map || !context.mounted) return;
+    d2CloseThenGo(context, 'Patient-Thread', args: {
+      'conversationId': '${res['id'] ?? res['_id']}',
+      if (body['patientId'] != null) 'patientId': body['patientId'],
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
-    final patients = _patients.where(_hit).toList();
-    final team = _team.where(_hit).toList();
+    final live = data != null;
+    final patients = live ? _livePatients : _patients.where(_hit).toList();
+    final team = live ? _liveTeam : _team.where(_hit).toList();
     return LayoutBuilder(
       builder: (context, c) {
         final maxH = c.maxHeight.isFinite ? c.maxHeight : mq.size.height;
@@ -85,7 +144,7 @@ class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> {
                     D2SearchField(
                       hint: 'Patient name, mobile, doctor or staff',
                       active: true,
-                      onChanged: (v) => setState(() => _query = v),
+                      onChanged: _onQuery,
                     ),
                     Tap(
                       onTap: () => d2CloseThenGo(context, 'Doctor-FollowUps'),
@@ -112,22 +171,30 @@ class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> {
                         ],
                       ),
                     ),
+                    if (isLive && data == null) livePlaceholder() ?? const SizedBox.shrink(),
                     if (patients.isNotEmpty)
                       _Group(
                         title: 'Patients seen recently',
                         people: patients,
                         team: false,
-                        onTap: () => d2CloseThenGo(context, 'Patient-Thread'),
+                        onTap: (i) => live
+                            ? _start(context, {'patientId': data!.list('patients')[i].str('id')})
+                            : d2CloseThenGo(context, 'Patient-Thread'),
                       ),
                     if (team.isNotEmpty)
                       _Group(
                         title: 'Colleagues & staff',
                         people: team,
                         team: true,
-                        onTap: () => d2CloseThenGo(context, 'Patient-Thread'),
+                        onTap: (i) => live
+                            ? _start(context, {'userId': data!.list('team')[i].str('userId')})
+                            : d2CloseThenGo(context, 'Patient-Thread'),
                       ),
-                    if (patients.isEmpty && team.isEmpty)
-                      Text('No one matches “${_query.trim()}”', style: tx(14, c: MP.ink2)),
+                    if ((!isLive || live) && patients.isEmpty && team.isEmpty)
+                      Text(
+                        _query.trim().isEmpty ? 'No one to message yet' : 'No one matches “${_query.trim()}”',
+                        style: tx(14, c: MP.ink2),
+                      ),
                   ],
                 ),
               ),
@@ -143,7 +210,7 @@ class _Group extends StatelessWidget {
   final String title;
   final List<(String, String, String)> people;
   final bool team;
-  final VoidCallback onTap;
+  final ValueChanged<int> onTap;
   const _Group({required this.title, required this.people, required this.team, required this.onTap});
 
   @override
@@ -152,9 +219,9 @@ class _Group extends StatelessWidget {
       gap: 4,
       children: [
         D2Caps(title),
-        for (final p in people)
+        for (final (i, p) in people.indexed)
           Tap(
-            onTap: onTap,
+            onTap: () => onTap(i),
             radius: 12,
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: Row(

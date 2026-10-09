@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
 
 /// Design: Doctor-Patients.dc.html — "Doctor · Patients tab".
+/// Live data: GET /api/patients?filter=all|today|follow_up_due|abnormal&sort=recent|name.
 class DoctorPatientsScreen extends StatefulWidget {
   const DoctorPatientsScreen({super.key});
 
@@ -18,13 +21,21 @@ class _Patient {
   final String last;
   final String? flag;
   final Color flagColor;
-  const _Patient(this.name, this.meta, this.cond, this.last, [this.flag, this.flagColor = MP.ink2]);
+
+  /// Live: the patient's id (null in the design preview).
+  final String? id;
+  const _Patient(this.name, this.meta, this.cond, this.last, [this.flag, this.flagColor = MP.ink2, this.id]);
 
   String get initials {
-    final s = name.split(' ').map((w) => w[0]).join();
+    final s = name.split(' ').where((w) => w.isNotEmpty).map((w) => w[0]).join();
     return s.length > 2 ? s.substring(0, 2) : s;
   }
 }
+
+const _filterKeys = ['all', 'today', 'follow_up_due', 'abnormal'];
+
+/// Flag shown on every row of a filtered list (the reason it is in it).
+const _filterFlags = [null, ('Booked today', MP.primary), ('Follow-up due', MP.amber), ('Abnormal results · not reviewed', MP.amber)];
 
 const _filters = [('All', '248'), ('Today', '12'), ('Follow-up due', '9'), ('Abnormal results', '14')];
 
@@ -76,9 +87,17 @@ const _patients = [
 
 const _sorts = ['Recent visits first', 'Name, A to Z'];
 
-class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
+class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> with LiveData {
   int _filter = 0;
   String _sort = _sorts.first;
+  int _limit = 50;
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/patients', query: {
+        'filter': _filterKeys[_filter],
+        'sort': _sort == _sorts.first ? 'recent' : 'name',
+        'limit': _limit,
+      });
 
   bool _inFilter(_Patient p) => switch (_filter) {
     1 => p.last == 'Today',
@@ -88,40 +107,83 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
   };
 
   List<_Patient> get _visible {
+    final d = data;
+    if (d != null) {
+      final flag = _filterFlags[_filter];
+      return [
+        for (final p in d.list('items'))
+          _Patient(
+            p.str('name'),
+            d2PatientMeta(p),
+            [for (final c in (p['conditions'] as List? ?? const [])) '$c'].join(' · '),
+            d2LastSeen(p['lastVisitAt']),
+            flag?.$1,
+            flag?.$2 ?? MP.ink2,
+            p.str('id'),
+          ),
+      ];
+    }
     final list = _patients.where(_inFilter).toList();
     if (_sort != _sorts.first) list.sort((a, b) => a.name.compareTo(b.name));
     return list;
   }
 
+  List<(String, String)> get _chipLabels {
+    final d = data;
+    if (d == null) return _filters;
+    final c = d.obj('counts');
+    return [
+      ('All', '${c.numOr('all')}'),
+      ('Today', '${c.numOr('today')}'),
+      ('Follow-up due', '${c.numOr('followUpDue')}'),
+      ('Abnormal results', '${c.numOr('abnormal')}'),
+    ];
+  }
+
+  void _setFilter(int i) {
+    setState(() {
+      _filter = i;
+      _limit = 50;
+    });
+    if (isLive) reload(quiet: true);
+  }
+
   Future<void> _pickSort() async {
     final v = await d2PickOption(context, title: 'Sort patients', options: _sorts, value: _sort);
-    if (v != null && mounted) setState(() => _sort = v);
+    if (v != null && mounted) {
+      setState(() => _sort = v);
+      if (isLive) reload(quiet: true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final list = _visible;
+    final placeholder = livePlaceholder();
+    final d = data;
+    final all = d?.obj('counts').numOr('all').toInt();
+    final more = d == null || d.list('items').length < d.numOr('total');
     return MpPage(
       header: D2TabHeader(
         title: 'Patients',
-        subtitle: '248 patients · all locations',
+        subtitle: all == null ? '248 patients · all locations' : '$all ${all == 1 ? 'patient' : 'patients'} · all locations',
         action: D2PillButton('Add patient', icon: I.plus, onTap: () => Nav.go(context, 'Add-Patient')),
         search: D2SearchField(
           hint: 'Search by name or mobile number',
           onTap: () => Nav.go(context, 'Doctor-Patients-Search'),
         ),
         chips: [
-          for (var i = 0; i < _filters.length; i++)
+          for (final (i, f) in _chipLabels.indexed)
             D2Chip(
-              _filters[i].$1,
-              count: _filters[i].$2,
+              f.$1,
+              count: f.$2,
               selected: i == _filter,
-              onTap: () => setState(() => _filter = i),
+              onTap: () => _setFilter(i),
             ),
         ],
       ),
       nav: const DoctorNav(current: 1),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
         gap: 10,
         children: [
@@ -151,11 +213,23 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> {
               ],
             ),
           ),
+          if (d != null && list.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: Text('No patients here yet', style: tx(14, c: MP.ink2)),
+            ),
           for (final p in list) _PatientCard(p),
-          SizedBox(
+          if (more) SizedBox(
             height: 48,
             child: Tap(
-              onTap: () => toast(context, 'No more patients to show'),
+              onTap: () {
+                if (!isLive) {
+                  toast(context, 'No more patients to show');
+                  return;
+                }
+                _limit += 50;
+                reload(quiet: true);
+              },
               radius: 12,
               child: Center(child: Text('Show more patients', style: tx(15, w: w600, c: MP.primary))),
             ),
@@ -198,8 +272,10 @@ class _PatientCard extends StatelessWidget {
                     ),
                     const Gap(3),
                     Text(p.meta, style: tx(13, c: MP.ink2, tab: true)),
-                    const Gap(3),
-                    Text(p.cond, style: tx(13)),
+                    if (p.cond.isNotEmpty) ...[
+                      const Gap(3),
+                      Text(p.cond, style: tx(13)),
+                    ],
                     if (p.flag != null) ...[
                       // column gap 3 + margin-top 3
                       const Gap(6),
@@ -222,8 +298,8 @@ class _PatientCard extends StatelessWidget {
           ),
           const Gap(14),
           D2ViewConsult(
-            onView: () => Nav.go(context, 'PP-Summary'),
-            onConsult: () => Nav.go(context, 'Consult-Page'),
+            onView: () => Nav.go(context, 'PP-Summary', args: p.id == null ? null : {'patientId': p.id}),
+            onConsult: () => Nav.go(context, 'Consult-Page', args: p.id == null ? null : {'patientId': p.id}),
           ),
         ],
       ),

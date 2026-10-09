@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
 
 /// Design: History-Download.dc.html — "Doctor · History · download".
-/// Sheet over 'Doctor-History'.
+/// Sheet over 'Doctor-History'. Live: the subtitle counts GET /api/history for
+/// the period; Download posts POST /api/exports and opens the file link.
 class HistoryDownloadSheet extends StatefulWidget {
   const HistoryDownloadSheet({super.key});
 
@@ -13,6 +18,15 @@ class HistoryDownloadSheet extends StatefulWidget {
 }
 
 const _periods = ['This month', 'Last 3 months', 'This year', 'Custom'];
+const _periodKeys = ['this_month', 'last_3_months', 'this_year'];
+const _formatKeys = ['pdf', 'xlsx', 'csv'];
+const _mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+String _ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// "1 Jul – 1 Oct 2026" (year on both ends when they differ).
+String _range(DateTime a, DateTime b) =>
+    a.year == b.year ? '${a.day} ${_mon[a.month - 1]} – ${b.day} ${_mon[b.month - 1]} ${b.year}' : '${a.day} ${_mon[a.month - 1]} ${a.year} – ${b.day} ${_mon[b.month - 1]} ${b.year}';
 
 /// (title, description, button label)
 const _formats = [
@@ -21,13 +35,109 @@ const _formats = [
   ('CSV', 'Plain data for other software', 'CSV'),
 ];
 
-class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> {
+class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> with LiveData {
   int _period = 1;
   int _format = 0;
   bool _mobiles = false;
   bool _email = true;
+  bool _periodFromArgs = false;
+  DateTimeRange? _custom;
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    if (!_periodFromArgs) {
+      _periodFromArgs = true;
+      final a = Nav.args<Map>(context);
+      final i = _periodKeys.indexOf('${a?['period']}');
+      if (i >= 0) _period = i;
+    }
+    return Api.I.get('/api/history', query: _query);
+  }
+
+  Map<String, Object?> get _query {
+    final c = _custom;
+    if (_period == 3 && c != null) return {'from': _ymd(c.start), 'to': _ymd(c.end), 'limit': 1};
+    return {'period': _periodKeys[_period == 3 ? 1 : _period], 'limit': 1};
+  }
+
+  /// "1 Jul – 1 Oct 2026 · all statuses · 942 appointments"
+  String get _subtitle {
+    final d = data;
+    if (d == null) return isLive ? 'All statuses' : '1 Jul – 1 Oct 2026 · all statuses · 942 appointments';
+    final from = F.date(d['from']);
+    final to = F.date(d['to'])?.subtract(const Duration(days: 1));
+    final n = d.obj('summary').numOr('total').toInt();
+    return [if (from != null && to != null) _range(from, to), 'all statuses', '$n ${n == 1 ? 'appointment' : 'appointments'}'].join(' · ');
+  }
+
+  Future<void> _pickPeriod(int i) async {
+    if (!isLive) {
+      setState(() => _period = i);
+      return;
+    }
+    if (i == 3) {
+      final now = DateTime.now();
+      final r = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(now.year - 5),
+        lastDate: now,
+        initialDateRange: _custom ?? DateTimeRange(start: now.subtract(const Duration(days: 30)), end: now),
+      );
+      if (r == null || !mounted) return;
+      _custom = r;
+    }
+    setState(() => _period = i);
+    reload(quiet: true);
+  }
+
+  Future<void> _downloadLive() async {
+    final d = data;
+    final from = F.date(d?['from']);
+    final to = F.date(d?['to'])?.subtract(const Duration(days: 1));
+    final res = await runAction(
+      context,
+      () => Api.I.post('/api/exports', {
+        'kind': 'appointment_history',
+        'format': _formatKeys[_format],
+        'filters': {if (from != null) 'from': _ymd(from), if (to != null) 'to': _ymd(to)},
+        'includeMobiles': _mobiles,
+        'emailCopy': _email,
+      }),
+      busy: _busy,
+    );
+    if (res is! Map || !mounted) return;
+    final nav = Navigator.of(context);
+    nav.pop();
+    final url = res['url'] as String?;
+    var ok = false;
+    if (url != null) {
+      try {
+        ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      } catch (_) {
+        ok = false;
+      }
+    }
+    final under = nav.context;
+    if (!under.mounted) return;
+    if (!ok) {
+      toast(under, "The file is ready but couldn't be opened");
+      return;
+    }
+    toast(under, _email ? 'Download started · a copy is on its way to your email' : 'Download started');
+  }
 
   void _download() {
+    if (isLive) {
+      _downloadLive();
+      return;
+    }
     final nav = Navigator.of(context);
     nav.pop();
     toast(nav.context, _email ? 'Download started · a copy is on its way to your email' : 'Download started');
@@ -46,7 +156,7 @@ class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> {
               children: [
                 Text('Download history', style: tx(20, w: w700, h: 1.25)),
                 const Gap(4),
-                Text('1 Jul – 1 Oct 2026 · all statuses · 942 appointments', style: tx(14, c: MP.ink2)),
+                Text(_subtitle, style: tx(14, c: MP.ink2)),
               ],
             ),
             Column(
@@ -58,7 +168,7 @@ class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> {
                   runSpacing: 8,
                   children: [
                     for (var i = 0; i < _periods.length; i++)
-                      D2Chip(_periods[i], selected: i == _period, onTap: () => setState(() => _period = i)),
+                      D2Chip(_periods[i], selected: i == _period, onTap: () => _pickPeriod(i)),
                   ],
                 ),
               ],

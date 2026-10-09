@@ -1,15 +1,39 @@
 import 'package:flutter/material.dart';
 
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
 
 /// Design: PP-Summary.dc.html — "Patient profile · Summary".
-class PpSummaryScreen extends StatelessWidget {
+/// Live data: GET /api/patients/:id, /vitals and /lab-results.
+class PpSummaryScreen extends StatefulWidget {
   const PpSummaryScreen({super.key});
 
   @override
+  State<PpSummaryScreen> createState() => _PpSummaryScreenState();
+}
+
+class _PpSummaryScreenState extends State<PpSummaryScreen> with LiveData {
+  @override
+  Future<Object?> fetch() => d6Load(context, {'vitals': '/vitals', 'labs': '/lab-results'});
+
+  @override
   Widget build(BuildContext context) {
-    return const D6PatientTabsPage(tab: 0, children: [_AiSummary(), _Vitals(), _FastingSugar()]);
+    final rec = data == null ? null : D6Rec(data!);
+    return D6PatientTabsPage(
+      tab: 0,
+      rec: rec,
+      placeholder: livePlaceholder(),
+      onChanged: () => reload(quiet: true),
+      children: [
+        if (rec == null || _AiSummary.shown(rec)) const _AiSummary(),
+        if (rec == null || _Vitals.live(rec).isNotEmpty) const _Vitals(),
+        if (rec == null || _FastingSugar.live(rec).isNotEmpty) const _FastingSugar(),
+        if (rec != null && !_AiSummary.shown(rec) && _Vitals.live(rec).isEmpty)
+          Text('No readings or test results yet', style: tx(14, c: MP.ink2)),
+      ],
+    );
   }
 }
 
@@ -25,23 +49,59 @@ class _AiSummary extends StatelessWidget {
     ('Vitamin D', '14 ng/mL', 'Low', '30–100', 'Vitamin D, 18 Jul 2026'),
   ];
 
+  static Map<String, dynamic> _ai(D6Rec r) => r.detail.obj('aiSummary');
+  static bool _hasAi(D6Rec r) => _ai(r).str('body').isNotEmpty;
+  static bool shown(D6Rec r) => _hasAi(r) || r.detail.list('abnormalResults').isNotEmpty;
+
+  /// Abnormal values from the record, with the reference range from the report.
+  static List<(String, String, String, String, String)> _live(D6Rec r) {
+    final labs = r.m.obj('labs').list('items');
+    String ref(Map<String, dynamic> f) {
+      for (final l in labs) {
+        if ('${l['id']}' != '${f['labResultId']}') continue;
+        for (final v in l.list('values')) {
+          if (v['analyte'] == f['analyte']) return v.str('refText');
+        }
+      }
+      return '';
+    }
+
+    return [
+      for (final f in r.detail.list('abnormalResults'))
+        (
+          f.str('analyte'),
+          [d6Num(f['value']), f.str('unit')].where((s) => s.isNotEmpty).join(f.str('unit') == '%' ? '' : ' '),
+          d6Cap(f.str('flag')),
+          ref(f),
+          [f.str('test'), if (F.date(f['collectedAt']) != null) d6Date(F.date(f['collectedAt'])!)].where((s) => s.isNotEmpty).join(', '),
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
+    final r = D6Scope.recOf(context);
+    final ai = r == null ? null : _ai(r);
+    final hasAi = r == null || _hasAi(r);
+    final findings = r == null ? _findings : _live(r);
+    final reports = r == null ? 3 : {for (final f in r.detail.list('abnormalResults')) '${f['labResultId']}'}.length;
+    final updatedAt = F.date(ai?['generatedAt'] ?? ai?['createdAt']);
     return MpCard(
       radius: 20,
       shadow: MPShadow.float,
       child: VGap(
         gap: 16,
         children: [
-          Row(
+          if (hasAi) Row(
             children: [
               const Ico(I.sparkle, size: 16, color: MP.primary),
               const Gap(6),
               const Expanded(child: D6Caps('AI summary', color: MP.primary)),
-              Text('Updated today, 8:55 AM', style: tx(13, c: MP.ink3)),
+              if (r == null || updatedAt != null)
+                Text(r == null ? 'Updated today, 8:55 AM' : 'Updated ${d6When(updatedAt!)}', style: tx(13, c: MP.ink3)),
             ],
           ),
-          Text.rich(
+          if (r == null) Text.rich(
             TextSpan(
               style: tx(16, h: 1.55),
               children: [
@@ -54,10 +114,10 @@ class _AiSummary extends StatelessWidget {
                 TextSpan(text: 'Reported chest tightness this morning.', style: tx(16, w: w700, h: 1.55)),
               ],
             ),
-          ),
+          ) else if (hasAi) Text(ai!.str('body'), style: tx(16, h: 1.55)),
 
           // Abnormal findings
-          Column(
+          if (findings.isNotEmpty) Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
@@ -67,28 +127,28 @@ class _AiSummary extends StatelessWidget {
                   textBaseline: TextBaseline.alphabetic,
                   children: [
                     Expanded(child: Text('Abnormal findings', style: tx(16, w: w700))),
-                    Text('5 from 3 reports', style: tx(13, c: MP.ink3)),
+                    Text('${findings.length} from $reports ${reports == 1 ? 'report' : 'reports'}', style: tx(13, c: MP.ink3)),
                   ],
                 ),
               ),
-              for (final f in _findings) _finding(context, f),
+              for (final f in findings) _finding(context, f),
             ],
           ),
 
           // Source note
-          Container(
+          if (hasAi) Container(
             padding: const EdgeInsets.only(top: 12),
             decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    "Written by AI from Priya's shared records. Check the source before acting.",
+                    "Written by AI from ${r?.first ?? 'Priya'}'s shared records. Check the source before acting.",
                     style: tx(13, c: MP.ink3, h: 1.4),
                   ),
                 ),
                 const Gap(12),
-                D6Link('Sources', onTap: () => Nav.tab(context, 'PP-Tests')),
+                D6Link('Sources', onTap: () => d6Tab(context, 'PP-Tests')),
               ],
             ),
           ),
@@ -102,12 +162,12 @@ class _AiSummary extends StatelessWidget {
     final ref = tx(13, c: MP.ink3);
     final value = tx(15, w: w700, tab: true);
     final flag = tx(12, w: w700, c: MP.amber);
-    final refText = 'Ref ${f.$4} · ${f.$5}';
+    final refText = f.$4.isEmpty ? f.$5 : 'Ref ${f.$4} · ${f.$5}';
     // Like Chrome, only break "138 mg/dL" at the space, not after the slash.
     final valueText = f.$2.replaceAll('/', '/\u2060');
     return D6Row(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      onTap: () => Nav.tab(context, 'PP-Tests'),
+      onTap: () => d6Tab(context, 'PP-Tests'),
       child: LayoutBuilder(
         builder: (context, c) {
           // Both columns are flex items: when they don't fit side by side they
@@ -159,8 +219,78 @@ class _Vitals extends StatelessWidget {
     ('Height', '158', 'cm', 'Recorded Jun 2025', MP.ink2),
   ];
 
+  /// The newest value of each vital in the last 90 days.
+  static List<(String, String, String, String, Color)> live(D6Rec r) {
+    Color c(D6Band? b) => b == null ? MP.ink2 : b.$3;
+    final out = <(String, String, String, String, Color)>[];
+    final bp = r.latestWith('bpSystolic');
+    if (bp != null && bp['bpDiastolic'] != null) {
+      final b = d6BpBand(bp['bpSystolic'] as num?, bp['bpDiastolic'] as num?);
+      out.add(('Blood pressure', '${d6Num(bp['bpSystolic'])}/${d6Num(bp['bpDiastolic'])}', 'mmHg', b?.$1 ?? '', c(b)));
+    }
+    final pulse = r.latestWith('pulse');
+    if (pulse != null) {
+      final b = d6PulseBand(pulse['pulse'] as num?);
+      out.add(('Pulse', d6Num(pulse['pulse']), 'bpm', b?.$1 ?? '', c(b)));
+    }
+    final spo2 = r.latestWith('spo2');
+    if (spo2 != null) {
+      final b = d6Spo2Band(spo2['spo2'] as num?);
+      out.add(('SpO₂', d6Num(spo2['spo2']), '%', b?.$1 ?? '', c(b)));
+    }
+    final temp = r.latestWith('temperatureF');
+    if (temp != null) {
+      final b = d6TempBand(temp['temperatureF'] as num?);
+      out.add(('Temperature', d6Num(temp['temperatureF']), '°F', b?.$1 ?? '', c(b)));
+    }
+    final sugar = r.fastingSugar;
+    if (sugar != null && sugar['bloodSugar'] is num) {
+      final v = sugar['bloodSugar'] as num;
+      final target = r.detail.obj('targets').numOr('sugarFasting', 130);
+      final band = v > target ? 'High' : v < 70 ? 'Low' : 'In range';
+      final home = sugar['source'] == 'home' ? ' · home reading' : '';
+      out.add(('Fasting sugar', d6Num(v), 'mg/dL', '$band$home', band == 'In range' ? MP.green : MP.amber));
+    }
+    final clinic = r.clinicVitals ?? const <String, dynamic>{};
+    final bmi = clinic['bmi'] ?? r.p['bmi'];
+    if (bmi is num) {
+      final b = d6BmiBand(bmi);
+      out.add(('BMI', d6Num(bmi), '', b?.$1 ?? '', c(b)));
+    }
+    final weights = [for (final v in r.vitals) if (v['weightKg'] is num) v];
+    final weight = weights.isEmpty ? r.p['weightKg'] : weights.first['weightKg'];
+    if (weight is num) {
+      var note = 'On record';
+      if (weights.length > 1) {
+        final old = weights.last;
+        final diff = (weight - (old['weightKg'] as num)).toDouble();
+        final since = F.date(old['recordedAt']);
+        final when = since == null ? '' : ' since ${F.dayMonth(since).split(' ').last}';
+        note = diff.abs() < 0.05 ? 'No change$when' : '${diff < 0 ? '−' : '+'}${d6Num(double.parse(diff.abs().toStringAsFixed(1)))} kg$when';
+      } else if (weights.isNotEmpty && F.date(weights.first['recordedAt']) != null) {
+        note = 'Recorded ${d6MonthYear(F.date(weights.first['recordedAt'])!)}';
+      }
+      out.add(('Weight', d6Num(weight), 'kg', note, MP.ink2));
+    }
+    final h = r.latestWith('heightCm');
+    final height = h?['heightCm'] ?? r.p['heightCm'];
+    if (height is num) {
+      final at = F.date(h?['recordedAt']);
+      out.add(('Height', d6Num(height), 'cm', at == null ? 'On record' : 'Recorded ${d6MonthYear(at)}', MP.ink2));
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final r = D6Scope.recOf(context);
+    final vitals = r == null ? _vitals : live(r);
+    var sub = 'Today, 8:52 AM · front desk';
+    if (r != null) {
+      final last = r.vitals.isEmpty ? null : r.vitals.first;
+      final at = F.date(last?['recordedAt']);
+      sub = last == null || at == null ? 'From the patient record' : '${d6Cap(d6When(at))} · ${d6RecordedBy(last)}';
+    }
     return MpCard(
       child: VGap(
         gap: 16,
@@ -168,18 +298,18 @@ class _Vitals extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(child: D6Title('Vitals', sub: 'Today, 8:52 AM · front desk', subH: null)),
+              Expanded(child: D6Title('Vitals', sub: sub, subH: null)),
               const Gap(12),
               Padding(
                 padding: const EdgeInsets.only(top: 3),
-                child: D6Link('Record', onTap: () => Nav.go(context, 'Consult-Vitals')),
+                child: D6Link('Record', onTap: () => d6Go(context, 'Consult-Vitals')),
               ),
             ],
           ),
           MpGrid(
             columns: 2,
             children: [
-              for (final v in _vitals)
+              for (final v in vitals)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(12)),
@@ -228,8 +358,34 @@ class _FastingSugar extends StatelessWidget {
 <g font-size="11" fill="#69738A" text-anchor="middle"><text x="40" y="136">Wed</text><text x="84" y="136">Thu</text><text x="128" y="136">Fri</text><text x="172" y="136">Sat</text><text x="216" y="136">Sun</text><text x="260" y="136">Mon</text><text x="298" y="136">Tue</text></g>
 </svg>''';
 
+  /// Fasting readings of the last 7 days, one per day (the newest), oldest first.
+  static List<(DateTime, num)> live(D6Rec r) {
+    final since = DateTime.now().subtract(const Duration(days: 7));
+    final byDay = <String, (DateTime, num)>{};
+    for (final v in r.vitals) {
+      final at = F.date(v['recordedAt']);
+      if (at == null || at.isBefore(since) || v['sugarType'] != 'fasting' || v['bloodSugar'] is! num) continue;
+      byDay.putIfAbsent('${at.year}-${at.month}-${at.day}', () => (at, v['bloodSugar'] as num));
+    }
+    return byDay.values.toList()..sort((a, b) => a.$1.compareTo(b.$1));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final r = D6Scope.recOf(context);
+    var svg = _chart;
+    var avg = '143';
+    var label = 'Fasting sugar between 138 and 150 mg/dL over 7 days, above the 130 target';
+    if (r != null) {
+      final pts = live(r);
+      final target = r.detail.obj('targets').numOr('sugarFasting', 130);
+      final vals = [for (final p in pts) p.$2];
+      final lo = vals.reduce((a, b) => a < b ? a : b), hi = vals.reduce((a, b) => a > b ? a : b);
+      svg = d6DailySvg(pts, target: target);
+      avg = '${(vals.reduce((a, b) => a + b) / vals.length).round()}';
+      final vs = lo > target ? 'above' : hi <= target ? 'within' : 'around';
+      label = 'Fasting sugar between ${d6Num(lo)} and ${d6Num(hi)} mg/dL over ${pts.length} days, $vs the ${d6Num(target)} target';
+    }
     return MpCard(
       child: VGap(
         gap: 12,
@@ -245,16 +401,16 @@ class _FastingSugar extends StatelessWidget {
                   style: tx(14, c: MP.ink2),
                   children: [
                     const TextSpan(text: 'Last 7 days · avg '),
-                    TextSpan(text: '143', style: tx(14, w: w700, tab: true)),
+                    TextSpan(text: avg, style: tx(14, w: w700, tab: true)),
                   ],
                 ),
               ),
             ],
           ),
           Semantics(
-            label: 'Fasting sugar between 138 and 150 mg/dL over 7 days, above the 130 target',
+            label: label,
             image: true,
-            child: const D6Chart(_chart, width: 310, height: 140),
+            child: D6Chart(svg, width: 310, height: 140),
           ),
         ],
       ),
