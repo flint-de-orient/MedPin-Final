@@ -753,8 +753,11 @@ r.get('/conversations', async (req, res) => {
 // Open the chat with a doctor's clinic ("You can chat with the doctor once the visit is booked").
 r.post('/conversations', async (req, res) => {
   const access = await M.CareTeamAccess.findOne({ patientId: req.patient._id, userId: req.body.doctorId, accessLevel: { $ne: 'not_shared' } });
+  const prof = await M.DoctorProfile.findOne({ userId: req.body.doctorId }, 'chatSettings displayName');
+  const who = prof?.chatSettings?.whoCanMessage || 'booked';
+  if (who === 'nobody') throw conflict(`${prof?.displayName || 'This doctor'} isn't taking chat messages. Please call the clinic.`, 'CHAT_OFF');
   const booked = await M.Appointment.exists({ patientId: req.patient._id, doctorId: req.body.doctorId, status: { $nin: ['cancelled', 'rescheduled'] } });
-  if (!access || !booked) throw conflict('You can chat with the doctor once a visit is booked', 'NO_VISIT');
+  if (!access || (who === 'booked' && !booked)) throw conflict('You can chat with the doctor once a visit is booked', 'NO_VISIT');
   const dl = await M.DoctorLocation.findOne({ doctorId: req.body.doctorId, status: 'active' });
   const convo = await care.careConversation(req.patient._id, access.practiceId || dl.practiceId);
   await care.ensureParticipant(convo, req.user._id, 'patient');

@@ -313,6 +313,28 @@ r.post('/patients/:id/lab-results', async (req, res) => {
   res.status(201).json(result);
 });
 
+// Lab-Report: one result with its file and each value's previous reading.
+r.get('/lab-results/:id', async (req, res) => {
+  const result = await M.LabResult.findById(req.params.id).populate('reviewed.by', 'name');
+  if (!result) throw notFound('Result');
+  const patient = await patientInPractice(req, result.patientId);
+  const record = result.recordId ? await M.MedicalRecord.findById(result.recordId) : null;
+  const earlier = await M.LabResult.find({ patientId: patient._id, _id: { $ne: result._id }, collectedAt: { $lt: result.collectedAt } }).sort({ collectedAt: -1 }).limit(20);
+  const previous = (analyte) => {
+    for (const e of earlier) {
+      const v = e.values.find((x) => x.analyte.toLowerCase() === analyte.toLowerCase());
+      if (v) return { value: v.value ?? v.valueText, unit: v.unit, flag: v.flag, collectedAt: e.collectedAt };
+    }
+    return null;
+  };
+  res.json({
+    ...result.toJSON(),
+    patient: { id: patient._id, name: patient.name, age: T.ageFrom(patient), gender: patient.gender },
+    values: result.values.map((v) => ({ ...v.toJSON(), previous: previous(v.analyte) })),
+    record: record && { id: record._id, title: record.title, origin: record.origin, sourceName: record.sourceName, aiSummary: record.aiSummary, pageFrom: record.pageFrom, pageTo: record.pageTo, files: record.files.map(storage.withUrl) },
+  });
+});
+
 r.post('/lab-results/:id/reviewed', async (req, res) => {
   const result = await M.LabResult.findById(req.params.id);
   if (!result) throw notFound('Result');

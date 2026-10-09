@@ -47,7 +47,7 @@ async function checkOtp(phone, purpose, code) {
 
 async function createSession(user, req) {
   const refreshToken = randomToken();
-  await M.AuthSession.create({
+  const session = await M.AuthSession.create({
     userId: user._id,
     tokenHash: sha256(refreshToken),
     platform: ['android', 'ios', 'web', 'windows'].includes(req.body?.platform) ? req.body.platform : undefined,
@@ -55,7 +55,7 @@ async function createSession(user, req) {
     ip: req.ip,
     expiresAt: new Date(Date.now() + ttlMs(env.jwt.refreshTtl)),
   });
-  return { accessToken: signAccess(user), refreshToken, expiresIn: Math.round(ttlMs(env.jwt.accessTtl) / 1000) };
+  return { accessToken: signAccess(user, session._id), refreshToken, expiresIn: Math.round(ttlMs(env.jwt.accessTtl) / 1000) };
 }
 
 /** What the app needs right after sign-in to pick the landing screen. */

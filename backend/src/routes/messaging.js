@@ -280,6 +280,13 @@ ai.patch('/sessions/:id', async (req, res) => {
   res.json(s);
 });
 
+ai.delete('/sessions/:id', async (req, res) => {
+  const s = await ownSession(req);
+  await M.AiMessage.deleteMany({ sessionId: s._id });
+  await s.deleteOne();
+  res.json({ ok: true });
+});
+
 ai.get('/sessions/:id/messages', async (req, res) => {
   const s = await ownSession(req);
   res.json(await M.AiMessage.find({ sessionId: s._id }).sort({ createdAt: 1 }));

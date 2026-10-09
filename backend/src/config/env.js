@@ -94,6 +94,11 @@ const env = {
     webhookSecret: v('RAZORPAY_WEBHOOK_SECRET'),
   },
   googleMapsKey: v('GOOGLE_MAPS_API_KEY'),
+  support: {
+    email: v('SUPPORT_EMAIL'),
+    phone: v('SUPPORT_PHONE'),
+    whatsapp: v('SUPPORT_WHATSAPP'),
+  },
   abdm: {
     clientId: v('ABDM_CLIENT_ID'),
     clientSecret: v('ABDM_CLIENT_SECRET'),

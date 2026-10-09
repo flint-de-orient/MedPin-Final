@@ -88,6 +88,24 @@ r.post('/knowledge/:id/retire', staff({ roles: ['doctor'] }), async (req, res) =
   res.json(e);
 });
 
+// Knowledge-Options: copy an entry (own or shared) into a new draft.
+r.post('/knowledge/:id/duplicate', async (req, res) => {
+  const e = await M.KnowledgeEntry.findById(req.params.id);
+  if (!e || (e.practiceId && String(e.practiceId) !== String(req.practiceId))) throw notFound('Entry');
+  const copy = await M.KnowledgeEntry.create({
+    ...pick(e.toObject(), KB_FIELDS), title: `${e.title} (copy)`, practiceId: req.practiceId, status: 'draft', createdBy: req.user._id, updatedBy: req.user._id,
+  });
+  res.status(201).json(copy);
+});
+
+// Only drafts and entries waiting for approval can be deleted; approved ones are retired.
+r.delete('/knowledge/:id', async (req, res) => {
+  const e = await ownEntry(req);
+  if (!['draft', 'pending'].includes(e.status)) throw conflict('Approved entries can be retired, not deleted', 'NOT_DELETABLE');
+  await e.deleteOne();
+  res.json({ ok: true });
+});
+
 r.post('/knowledge/:id/adopt', async (req, res) => {
   const e = await M.KnowledgeEntry.findOne({ _id: req.params.id, practiceId: null, status: 'approved' });
   if (!e) throw notFound('Shared entry');

@@ -16,6 +16,9 @@ dependencies:
   url_launcher: ^6.3.3
   firebase_core: ^4.15.0
   firebase_auth: ^6.7.0
+  image_picker: ^1.2.4
+  file_picker: ^13.1.0
+  http_parser: ^4.1.2
 
 dev_dependencies:
   flutter_test:

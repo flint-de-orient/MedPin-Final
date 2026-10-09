@@ -76,6 +76,15 @@ import '../screens/doctor/doctor_myprofile.dart';
 import '../screens/doctor/profile_professional.dart';
 import '../screens/doctor/profile_location.dart';
 import '../screens/doctor/profile_schedule.dart';
+import '../screens/doctor/doctor_ai_history.dart';
+import '../screens/doctor/profile_about.dart';
+import '../screens/doctor/profile_chat.dart';
+import '../screens/doctor/profile_notifications.dart';
+import '../screens/doctor/profile_payouts.dart';
+import '../screens/doctor/profile_privacy.dart';
+import '../screens/doctor/profile_help.dart';
+import '../screens/doctor/lab_report.dart';
+import '../screens/doctor/knowledge_options.dart';
 import '../screens/staff/staff_today.dart';
 import '../screens/staff/staff_patients.dart';
 import '../screens/staff/staff_profile.dart';
@@ -178,6 +187,16 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Profile-Professional': ScreenSpec(stem: 'Profile-Professional', title: 'Profile · professional details', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileProfessionalScreen()),
   'Profile-Location': ScreenSpec(stem: 'Profile-Location', title: 'Profile · location: map, address, fees', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileLocationScreen()),
   'Profile-Schedule': ScreenSpec(stem: 'Profile-Schedule', title: 'Profile · schedules and slots', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileScheduleScreen()),
+  // Added after the design, in the same style (were "coming soon" in the design).
+  'Profile-About': ScreenSpec(stem: 'Profile-About', title: 'Profile · about and photo', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileAboutScreen()),
+  'Profile-Chat': ScreenSpec(stem: 'Profile-Chat', title: 'Profile · chat and urgent messages', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileChatScreen()),
+  'Profile-Notifications': ScreenSpec(stem: 'Profile-Notifications', title: 'Profile · notifications', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileNotificationsScreen()),
+  'Profile-Payouts': ScreenSpec(stem: 'Profile-Payouts', title: 'Profile · payouts and bank account', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfilePayoutsScreen()),
+  'Profile-Privacy': ScreenSpec(stem: 'Profile-Privacy', title: 'Profile · privacy and data', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfilePrivacyScreen()),
+  'Profile-Help': ScreenSpec(stem: 'Profile-Help', title: 'Profile · help and support', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileHelpScreen()),
+  'Doctor-AI-History': ScreenSpec(stem: 'Doctor-AI-History', title: 'Doctor · AI Assistant · history', group: 'Doctor dashboard & AI Assistant', panel: 'doctor', builder: (_) => const DoctorAiHistoryScreen()),
+  'Lab-Report': ScreenSpec(stem: 'Lab-Report', title: 'Patient profile · lab report', group: 'Patient profile · tabs (doctor view)', panel: 'doctor', builder: (_) => const LabReportScreen()),
+  'Knowledge-Options': ScreenSpec(stem: 'Knowledge-Options', title: 'Knowledge · entry options', group: 'AI assistant & feedback', panel: 'doctor', builder: (_) => const KnowledgeOptionsSheet(), sheet: true, parent: 'Knowledge-Editor'),
   'Staff-Today': ScreenSpec(stem: 'Staff-Today', title: 'Today', group: 'Front desk', panel: 'staff', builder: (_) => const StaffTodayScreen()),
   'Staff-Patients': ScreenSpec(stem: 'Staff-Patients', title: 'Patients', group: 'Front desk', panel: 'staff', builder: (_) => const StaffPatientsScreen()),
   'Staff-Profile': ScreenSpec(stem: 'Staff-Profile', title: 'Profile', group: 'Front desk', panel: 'staff', builder: (_) => const StaffProfileScreen()),

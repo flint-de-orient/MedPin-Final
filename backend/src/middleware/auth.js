@@ -20,6 +20,7 @@ async function requireAuth(req, _res, next) {
   const user = await M.User.findById(payload.sub);
   if (!user || user.disabledAt) return next(unauthorized('Account not available'));
   req.user = user;
+  req.sessionId = payload.sid;
   return next();
 }
 

@@ -61,6 +61,21 @@ const auditLogSchema = new Schema(
 );
 auditLogSchema.index({ practiceId: 1, createdAt: -1 });
 
+// Help and support: "Report a problem" / "Ask a question".
+const supportRequestSchema = new Schema(
+  {
+    userId: ref('User', true),
+    practiceId: ref('Practice'),
+    topic: enumOf(['problem', 'question', 'billing', 'account', 'feature'], { default: 'problem' }),
+    message: { type: String, required: true, maxlength: 4000 },
+    platform: String,
+    appVersion: String,
+    status: enumOf(['open', 'answered', 'closed'], { default: 'open' }),
+  },
+  baseOptions,
+);
+supportRequestSchema.index({ userId: 1, createdAt: -1 });
+
 // Atomic sequences, e.g. _id "rx:<practiceId>" for prescription numbers.
 const counterSchema = new Schema({
   _id: { type: String, required: true },
@@ -76,5 +91,6 @@ module.exports = {
   Notification: model('Notification', notificationSchema),
   ExportJob: model('ExportJob', exportJobSchema),
   AuditLog: model('AuditLog', auditLogSchema),
+  SupportRequest: model('SupportRequest', supportRequestSchema),
   Counter: model('Counter', counterSchema),
 };

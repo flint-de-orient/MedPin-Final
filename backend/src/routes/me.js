@@ -5,6 +5,9 @@ const E = require('../models/enums');
 const { requireAuth } = require('../middleware/auth');
 const { pick, badRequest, notFound, escapeRegex, paging, forbidden } = require('../lib/http');
 const storage = require('../services/storage');
+const env = require('../config/env');
+const { sendEmail } = require('../services/email');
+const { notify } = require('../services/notify');
 const { accountSummary } = require('./auth');
 
 const me = Router();
@@ -35,6 +38,78 @@ me.post('/devices', async (req, res) => {
   if (!token || !E.PLATFORMS.includes(platform)) throw badRequest('token and platform are required');
   await M.DeviceToken.findOneAndUpdate({ token }, { userId: req.user._id, platform, lastSeenAt: new Date() }, { upsert: true });
   res.json({ ok: true });
+});
+
+// ── Privacy and data: signed-in devices ──
+me.get('/sessions', async (req, res) => {
+  const rows = await M.AuthSession.find({ userId: req.user._id, revokedAt: null, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
+  res.json(rows.map((s) => ({
+    id: s._id, platform: s.platform, deviceName: s.deviceName, ip: s.ip, signedInAt: s.createdAt, lastUsedAt: s.updatedAt,
+    current: String(s._id) === String(req.sessionId),
+  })));
+});
+
+me.post('/sessions/:id/revoke', async (req, res) => {
+  const r = await M.AuthSession.updateOne({ _id: req.params.id, userId: req.user._id, revokedAt: null }, { revokedAt: new Date() });
+  if (!r.modifiedCount) throw notFound('Device');
+  res.json({ ok: true });
+});
+
+me.post('/sessions/revoke-others', async (req, res) => {
+  const r = await M.AuthSession.updateMany(
+    { userId: req.user._id, revokedAt: null, ...(req.sessionId ? { _id: { $ne: req.sessionId } } : {}) },
+    { revokedAt: new Date() },
+  );
+  await M.DeviceToken.deleteMany({ userId: req.user._id, ...(req.body.keepToken ? { token: { $ne: req.body.keepToken } } : {}) });
+  res.json({ ok: true, signedOut: r.modifiedCount });
+});
+
+// Download my data: the account and (for doctors) the professional profile, as JSON.
+me.post('/export', async (req, res) => {
+  const [members, profile, patient] = await Promise.all([
+    M.Member.find({ userId: req.user._id }).populate('practiceId', 'name'),
+    M.DoctorProfile.findOne({ userId: req.user._id }).lean(),
+    M.Patient.findOne({ userId: req.user._id }).lean(),
+  ]);
+  const data = {
+    exportedAt: new Date(),
+    account: { name: req.user.name, phone: req.user.phone, email: req.user.email, language: req.user.language, createdAt: req.user.createdAt },
+    memberships: members.map((m) => ({ practice: m.practiceId?.name, role: m.role, status: m.status, joinedAt: m.joinedAt })),
+    doctorProfile: profile ? { ...profile, payout: profile.payout ? { ...profile.payout, razorpayAccountId: undefined } : undefined, _id: undefined, __v: undefined } : null,
+    patientProfile: patient ? { ...patient, _id: undefined, __v: undefined } : null,
+  };
+  const file = await storage.save(Buffer.from(JSON.stringify(data, null, 2)), { folder: 'exports', name: 'medpin-my-data.json', mimeType: 'application/json' });
+  await M.AuditLog.create({ userId: req.user._id, action: 'account.export', ip: req.ip });
+  res.status(201).json({ url: storage.signedUrl(file.key), name: file.name });
+});
+
+// Ask to delete the account (needs a person to check practice records first).
+me.post('/delete-request', async (req, res) => {
+  await M.AuditLog.create({ userId: req.user._id, action: 'account.delete_request', meta: { reason: req.body.reason }, ip: req.ip });
+  await M.SupportRequest.create({ userId: req.user._id, practiceId: req.user.activePracticeId, topic: 'account', message: `Delete my account. ${req.body.reason || ''}`.trim() });
+  if (env.support.email) await sendEmail({ to: env.support.email, subject: 'MedPin: account deletion request', text: `${req.user.name || ''} (+91 ${req.user.phone}) asked to delete their account.\nReason: ${req.body.reason || '—'}` });
+  res.json({ ok: true });
+});
+
+// ── Help and support ──
+me.get('/support', (_req, res) => res.json({ email: env.support.email || null, phone: env.support.phone || null, whatsapp: env.support.whatsapp || null }));
+
+me.post('/support', async (req, res) => {
+  const message = String(req.body.message || '').trim();
+  if (message.length < 10) throw badRequest('Tell us a little more (at least 10 characters)', 'MESSAGE_TOO_SHORT');
+  const reqDoc = await M.SupportRequest.create({
+    userId: req.user._id, practiceId: req.user.activePracticeId, topic: req.body.topic || 'problem', message,
+    platform: req.body.platform, appVersion: req.body.appVersion,
+  });
+  if (env.support.email) {
+    await sendEmail({
+      to: env.support.email,
+      subject: `MedPin support: ${reqDoc.topic}`,
+      text: `From ${req.user.name || ''} (+91 ${req.user.phone})\n${req.body.platform || ''} ${req.body.appVersion || ''}\n\n${message}`,
+    });
+  }
+  await notify([req.user._id], { type: 'support', title: 'We got your message', body: 'Our team will reply by email or phone.' });
+  res.status(201).json(reqDoc);
 });
 
 // A doctor with no invite starts their own practice (they become its owner).

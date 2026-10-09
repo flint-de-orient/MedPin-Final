@@ -12,8 +12,8 @@ const safeEqual = (a, b) => {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
 
-const signAccess = (user) =>
-  jwt.sign({ sub: String(user._id), typ: 'access' }, env.jwt.accessSecret, { expiresIn: env.jwt.accessTtl });
+const signAccess = (user, sid) =>
+  jwt.sign({ sub: String(user._id), typ: 'access', ...(sid ? { sid: String(sid) } : {}) }, env.jwt.accessSecret, { expiresIn: env.jwt.accessTtl });
 
 const verifyAccess = (token) => {
   const payload = jwt.verify(token, env.jwt.accessSecret);

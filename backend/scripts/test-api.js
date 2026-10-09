@@ -245,7 +245,8 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const pdf = await fetch(issued.prescription.file.url);
     assert.equal(pdf.status, 200);
     assert.equal(pdf.headers.get('content-type'), 'application/pdf');
-    const tampered = await fetch(issued.prescription.file.url.replace(/sig=\w/, 'sig=0'));
+    // Flip one hex digit of the signature (always a real change).
+    const tampered = await fetch(issued.prescription.file.url.replace(/sig=(\w)/, (_, c) => `sig=${c === '0' ? '1' : '0'}`));
     assert.equal(tampered.status, 403, 'signed links cannot be forged');
     assert.equal((await ctx.doc('POST', `/api/consultations/${c.id}/issue`)).status, 409);
     const appt = ok(await ctx.doc('GET', `/api/appointments/${ctx.apptId}`));
@@ -451,6 +452,45 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await ctx.pat('POST', '/api/patient/ai/ask', { text: 'Is HbA1c 7.2% high?' }), 201);
     ok(await ctx.doc('GET', '/api/inbox/summaries?date=today'));
     ok(await ctx.doc('GET', '/api/inbox/reviews'));
+  });
+
+  await step('new doctor screens: settings, devices, support, lab report, knowledge, AI history', async () => {
+    // Payouts: only the last 4 digits are kept; bad IFSC is rejected.
+    assert.equal((await ctx.doc('PATCH', '/api/doctor/profile', { payout: { ifsc: 'BAD' } })).status, 400);
+    const pay = ok(await ctx.doc('PATCH', '/api/doctor/profile', { payout: { upiId: 'arjun@okhdfc', accountHolder: 'Arjun Sen', ifsc: 'hdfc0001234', accountNumber: '50100123456789' } }));
+    assert.equal(pay.payout.bankAccountLast4, '6789');
+    assert.equal(pay.payout.ifsc, 'HDFC0001234');
+    assert.equal(JSON.stringify(pay).includes('50100123456789'), false, 'full account number is never stored');
+    // Chat settings are enforced: "nobody" blocks a patient starting a chat.
+    ok(await ctx.doc('PATCH', '/api/doctor/profile', { chatSettings: { whoCanMessage: 'nobody' }, notificationPrefs: { quietHours: { enabled: true } } }));
+    assert.equal((await ctx.pat('POST', '/api/patient/conversations', { doctorId: ctx.doctorUserId })).body.error.code, 'CHAT_OFF');
+    const prof = ok(await ctx.doc('PATCH', '/api/doctor/profile', { chatSettings: { whoCanMessage: 'booked' } }));
+    assert.equal(prof.notificationPrefs.quietHours.enabled, true, 'settings merge instead of replacing');
+    // Signed-in devices.
+    const sessions = ok(await ctx.doc('GET', '/api/me/sessions'));
+    assert.ok(sessions.length >= 1);
+    const support = ok(await ctx.doc('GET', '/api/me/support'));
+    assert.ok('email' in support);
+    assert.equal((await ctx.doc('POST', '/api/me/support', { message: 'hi' })).status, 400);
+    ok(await ctx.doc('POST', '/api/me/support', { topic: 'problem', message: 'The queue did not refresh after check-in.' }), 201);
+    const mine = ok(await ctx.doc('POST', '/api/me/export'), 201);
+    assert.equal((await fetch(mine.url)).status, 200);
+    // Lab report detail with previous values.
+    const labs = ok(await ctx.doc('GET', `/api/patients/${ctx.patientId}/lab-results`));
+    const detail = ok(await ctx.doc('GET', `/api/lab-results/${labs.items[0].id}`));
+    assert.equal(detail.patient.name, 'Priya Sharma');
+    assert.ok(Array.isArray(detail.values));
+    // Knowledge: duplicate, delete the draft copy, approved entries can't be deleted.
+    const kb = ok(await ctx.doc('GET', '/api/knowledge'));
+    const approved = kb.items.find((e) => e.status === 'approved');
+    const copy = ok(await ctx.doc('POST', `/api/knowledge/${approved.id}/duplicate`), 201);
+    assert.equal(copy.status, 'draft');
+    ok(await ctx.doc('DELETE', `/api/knowledge/${copy.id}`));
+    assert.equal((await ctx.doc('DELETE', `/api/knowledge/${approved.id}`)).status, 409);
+    // AI history: delete a conversation.
+    const s = ok(await ctx.doc('POST', '/api/ai/sessions', {}), 201);
+    ok(await ctx.doc('DELETE', `/api/ai/sessions/${s.id}`));
+    assert.equal((await ctx.doc('GET', `/api/ai/sessions/${s.id}/messages`)).status, 404);
   });
 
   server.close();

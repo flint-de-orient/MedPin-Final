@@ -36,9 +36,10 @@ void main() {
   });
 
   test('every design artboard has a screen', () {
-    // 96 artboards + the patient Profile tab + Find a doctor.
-    expect(screenRegistry.length, 98);
-    expect(screenRegistry.values.where((s) => s.panel == 'doctor').length, 75);
+    // 96 artboards + the patient Profile tab + Find a doctor + 9 doctor screens
+    // added after the design (settings, AI history, lab report, entry options).
+    expect(screenRegistry.length, 107);
+    expect(screenRegistry.values.where((s) => s.panel == 'doctor').length, 84);
     expect(screenRegistry.values.where((s) => s.panel == 'staff').length, 3);
     expect(screenRegistry.values.where((s) => s.panel == 'patient').length, 20);
     for (final s in screenRegistry.values.where((s) => s.sheet)) {

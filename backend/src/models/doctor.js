@@ -62,10 +62,40 @@ const doctorProfileSchema = new Schema(
       channels: { type: [enumOf(E.REMINDER_CHANNELS)], default: ['whatsapp', 'app'] },
     },
     payout: {
-      upiId: String,
-      bankAccountLast4: String,
-      ifsc: String,
+      upiId: { type: String, trim: true, match: [/^[\w.-]{2,}@[a-zA-Z]{2,}$/, 'Enter a UPI ID like name@bank'] },
+      accountHolder: { type: String, trim: true },
+      bankName: { type: String, trim: true },
+      bankAccountLast4: { type: String, match: /^\d{4}$/ }, // only the last 4 digits are stored
+      ifsc: { type: String, uppercase: true, trim: true, match: [/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Enter an 11-character IFSC like HDFC0001234'] },
+      preferred: enumOf(['upi', 'bank']),
+      updatedAt: Date,
       razorpayAccountId: String,
+    },
+    // Chat and urgent messages
+    chatSettings: {
+      whoCanMessage: enumOf(['booked', 'anyone', 'nobody'], { default: 'booked' }),
+      aiReplies: { type: Boolean, default: true }, // MedPin AI answers my patients' chats
+      urgentAlerts: { type: Boolean, default: true },
+      replyHours: { from: { type: String, default: '09:00' }, to: { type: String, default: '20:00' } },
+      awayMessage: { type: String, maxlength: 300 },
+    },
+    // Notifications (in-app items are always kept)
+    notificationPrefs: {
+      push: { type: Boolean, default: true },
+      whatsapp: { type: Boolean, default: true },
+      email: { type: Boolean, default: false },
+      dailyDigest: { type: Boolean, default: true },
+      quietHours: {
+        enabled: { type: Boolean, default: false },
+        from: { type: String, default: '22:00' },
+        to: { type: String, default: '07:00' },
+      },
+      types: {
+        appointments: { type: Boolean, default: true },
+        messages: { type: Boolean, default: true },
+        labResults: { type: Boolean, default: true },
+        followUps: { type: Boolean, default: true },
+      },
     },
     // Queue-Select "Don't ask again today"
     defaultQueueLocation: { locationId: ref('Location'), forDate: Date },

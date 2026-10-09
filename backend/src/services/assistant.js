@@ -111,6 +111,12 @@ async function replyInCareThread(convo, patientMessage) {
   }
   const paused = convo.aiPausedAt && convo.aiPausedAt > T.addMinutes(new Date(), -AI_PAUSE_MIN);
   if (!ai.enabled() || !convo.aiEnabled || paused || convo.type !== 'care') return null;
+  // The patient's main doctor can turn MedPin AI replies off (Chat settings).
+  const primary = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true });
+  if (primary) {
+    const prof = await M.DoctorProfile.findOne({ userId: primary.userId }, 'chatSettings');
+    if (prof?.chatSettings?.aiReplies === false) return null;
+  }
   await useAiChat(convo.practiceId);
 
   const patient = await M.Patient.findById(convo.patientId);

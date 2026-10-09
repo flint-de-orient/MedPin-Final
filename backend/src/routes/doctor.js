@@ -55,7 +55,7 @@ r.get('/doctor/profile', async (req, res) => {
   });
 });
 
-const PROFILE_FIELDS = ['displayName', 'gender', 'profession', 'headline', 'specialtyKeys', 'specialisations', 'conditionsTreated', 'memberships', 'languagesSpoken', 'degreesSummary', 'practisingSince', 'registration', 'hprId', 'bio', 'offersVideo', 'acceptingBookings', 'presence', 'avgReplyMinutes', 'followUpReminder', 'payout'];
+const PROFILE_FIELDS = ['displayName', 'gender', 'profession', 'headline', 'specialtyKeys', 'specialisations', 'conditionsTreated', 'memberships', 'languagesSpoken', 'degreesSummary', 'practisingSince', 'registration', 'hprId', 'bio', 'offersVideo', 'acceptingBookings', 'presence', 'avgReplyMinutes', 'followUpReminder', 'payout', 'chatSettings', 'notificationPrefs'];
 // Case-insensitive de-duplication that keeps the first spelling.
 const dedupe = (list) => {
   const seen = new Map();
@@ -72,6 +72,20 @@ r.patch('/doctor/profile', async (req, res) => {
     if (req.body.registration.number && req.body.registration.number !== p.registration?.number) body.registration.status = 'in_review';
   }
   if (body.hprId && body.hprId !== p.hprId) p.hprLinkedAt = new Date();
+  // Payouts: keep only the last 4 digits of a full account number.
+  if (body.payout) {
+    const acc = String(req.body.payout.accountNumber || '').replace(/\s/g, '');
+    if (acc && !/^\d{9,18}$/.test(acc)) throw badRequest('Enter the bank account number (9–18 digits)', 'BAD_ACCOUNT');
+    body.payout = {
+      ...(p.payout?.toObject?.() || {}),
+      ...pick(req.body.payout, ['upiId', 'accountHolder', 'bankName', 'ifsc', 'preferred']),
+      ...(acc ? { bankAccountLast4: acc.slice(-4) } : {}),
+      updatedAt: new Date(),
+    };
+  }
+  for (const k of ['chatSettings', 'notificationPrefs']) {
+    if (body[k]) body[k] = { ...(p[k]?.toObject?.() || {}), ...body[k] };
+  }
   Object.assign(p, body);
   await p.save();
   if (body.displayName) await M.User.updateOne({ _id: req.user._id }, { name: body.displayName });
