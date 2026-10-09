@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Choose what to track</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<div aria-hidden="true" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; color: #545E72">Good morning,</span><span style="font-size: 28px; font-weight: 800">Priya</span></div>
+<div style="position: absolute; inset: 0; background: rgba(17,24,39,0.40)"></div>
+
+<section role="dialog" aria-modal="true" aria-labelledby="tr-h" style="position: absolute; left: 0; right: 0; bottom: 0; background: #FFFFFF; border-radius: 24px 24px 0 0; padding: 12px 20px 32px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 18px">
+  <span style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: #D5DBE5"></span>
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h2 id="tr-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">What do you want to track?</h2>
+    <span style="font-size: 14px; line-height: 1.45; color: #545E72">Pick up to 4. They appear on your home screen and your doctor sees them too. You can skip this.</span>
+  </div>
+
+  <div role="group" aria-label="Health measures" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+    <sc-for list="{{ items }}" as="i" hint-placeholder-count="6">
+      <button aria-pressed="{{ i.on }}" style="min-height: 72px; padding: 12px 14px; border-radius: 16px; text-align: left; display: flex; align-items: flex-start; gap: 10px; background: {{ i.bg }}; border: {{ i.border }}">
+        <span aria-hidden="true" style="width: 22px; height: 22px; flex-shrink: 0; border-radius: 6px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; color: #FFFFFF; background: {{ i.boxBg }}; border: {{ i.boxBorder }}">
+          <sc-if value="{{ i.on }}" hint-placeholder-val="{{ false }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+          </sc-if>
+        </span>
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 15px; font-weight: 700; color: #111827">{{ i.name }}</span>
+          <span style="font-size: 12px; line-height: 1.35; color: #545E72">{{ i.source }}</span>
+        </span>
+      </button>
+    </sc-for>
+  </div>
+
+  <div style="display: flex; flex-direction: column">
+    <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A; padding-bottom: 4px">Sync from a device</span>
+    <sc-for list="{{ devices }}" as="d" hint-placeholder-count="2">
+      <div style="display: flex; align-items: center; gap: 12px; height: 52px; border-top: {{ d.border }}">
+        <span style="flex-grow: 1; font-size: 15px; font-weight: 600; color: #545E72">{{ d.name }}</span>
+        <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 700; display: flex; align-items: center">Coming soon</span>
+      </div>
+    </sc-for>
+  </div>
+
+  <button style="height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24)">Save · 2 selected</button>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function it(name, source, on) {
+      return { name: name, source: source, on: on,
+        bg: on ? '#EBF1FB' : '#FFFFFF', border: on ? '1.5px solid #003399' : '1px solid #D5DBE5',
+        boxBg: on ? '#003399' : '#FFFFFF', boxBorder: on ? '0' : '1.5px solid #D5DBE5' };
+    }
+    return {
+      items: [
+        it('Blood sugar', 'You log it', true), it('Blood pressure', 'You log it', true),
+        it('HbA1c', 'From lab reports', false), it('Heart rate', 'You log it or a device', false),
+        it('Weight', 'You log it', false), it('SpO₂', 'From a device', false)
+      ],
+      devices: [
+        { name: 'Smartwatch', border: '0' },
+        { name: 'Smart ring', border: '1px solid #E5E9F0' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

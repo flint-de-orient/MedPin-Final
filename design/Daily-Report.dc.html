@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Daily report</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 2320px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <button aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Daily report</h1>
+  <button aria-label="Share report" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"></path></svg>
+  </button>
+</header>
+
+<main style="flex-grow: 1; padding: 8px 20px 24px; display: flex; flex-direction: column; gap: 16px">
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <span id="date-l" style="font-size: 14px; line-height: 20px; font-weight: 600">Report date</span>
+    <button aria-labelledby="date-l" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; display: flex; align-items: center; gap: 12px; font-size: 16px; color: #111827; text-align: left; cursor: pointer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#545E72" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>
+      <span style="flex-grow: 1">Today · Tue, 29 Sep 2026</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+    </button>
+  </div>
+
+  <section aria-label="Day summary" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 16px 0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: grid; grid-template-columns: 1.3fr 1fr 1fr">
+    <div style="padding: 0 20px; display: flex; flex-direction: column; gap: 4px">
+      <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">14</span>
+      <span style="font-size: 14px; line-height: 20px; color: #545E72">Consultations</span>
+    </div>
+    <div style="padding: 0 16px; border-left: 1px solid #E5E9F0; display: flex; flex-direction: column; gap: 4px">
+      <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">3</span>
+      <span style="font-size: 14px; line-height: 20px; color: #545E72">New</span>
+    </div>
+    <div style="padding: 0 16px; border-left: 1px solid #E5E9F0; display: flex; flex-direction: column; gap: 4px">
+      <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">11</span>
+      <span style="font-size: 14px; line-height: 20px; color: #545E72">Follow-up</span>
+    </div>
+  </section>
+
+  <div style="display: flex; align-items: baseline; justify-content: space-between; padding-top: 4px; height: 20px">
+    <h2 style="margin: 0; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Consultations</h2>
+    <span style="font-size: 13px; color: #69738A">In visit order</span>
+  </div>
+
+  <sc-for list="{{ patients }}" as="p" hint-placeholder-count="3">
+    <article style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+          <h3 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">{{ p.name }}</h3>
+          <span style="font-size: 14px; line-height: 20px; color: #545E72; font-variant-numeric: tabular-nums">{{ p.meta }}</span>
+        </div>
+        <span style="height: 24px; flex-shrink: 0; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: {{ p.typeBg }}; color: {{ p.typeFg }}">{{ p.type }}</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Complaint</span>
+        <span style="font-size: 16px; line-height: 1.5">{{ p.complaint }}</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Diagnosis</span>
+        <span style="font-size: 16px; line-height: 1.5; font-weight: 600">{{ p.diagnosis }}</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Vitals</span>
+        <div style="background: #F7F9FC; border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; gap: 8px">
+          <sc-for list="{{ p.vitals }}" as="v" hint-placeholder-count="4">
+            <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+              <span style="font-size: 12px; line-height: 16px; color: #69738A">{{ v.label }}</span>
+              <span style="font-size: 15px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap">{{ v.value }}</span>
+            </span>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Prescription</span>
+        <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px">
+          <sc-for list="{{ p.rx }}" as="m" hint-placeholder-count="2">
+            <li style="display: flex; flex-direction: column">
+              <span style="font-size: 16px; line-height: 24px; font-weight: 600">{{ m.drug }}</span>
+              <span style="font-size: 14px; line-height: 20px; color: #545E72; font-variant-numeric: tabular-nums">{{ m.detail }}</span>
+            </li>
+          </sc-for>
+        </ol>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Advice</span>
+        <span style="font-size: 16px; line-height: 1.5">{{ p.advice }}</span>
+      </div>
+
+      <div style="border-top: 1px solid #E5E9F0; padding-top: 16px; display: flex; align-items: center; justify-content: space-between">
+        <span style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: #545E72">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#545E72" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>Follow-up</span>
+        <span style="font-size: 16px; line-height: 24px; font-weight: 600; font-variant-numeric: tabular-nums">{{ p.followUp }}</span>
+      </div>
+    </article>
+  </sc-for>
+
+  <button style="height: 48px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 600; color: #003399; cursor: pointer">Show 11 more consultations</button>
+</main>
+
+<div style="flex-shrink: 0; padding: 12px 20px 24px; background: #FFFFFF; border-top: 1px solid #E5E9F0">
+  <button style="width: 100%; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"></path></svg>
+    Download PDF
+  </button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2320}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var NEW = { bg: '#EBF1FB', fg: '#003399' };
+    var FU = { bg: '#F1F4F9', fg: '#545E72' };
+    function vitals(bp, pulse, spo2, wt) {
+      return [
+        { label: 'BP mmHg', value: bp },
+        { label: 'Pulse', value: pulse },
+        { label: 'SpO₂', value: spo2 },
+        { label: 'Weight', value: wt }
+      ];
+    }
+    return {
+      patients: [
+        {
+          name: 'Priya Sharma', meta: '29 F · Seen 9:04 AM', type: 'Follow-up', typeBg: FU.bg, typeFg: FU.fg,
+          complaint: 'Tiredness and excess thirst, 2 weeks',
+          diagnosis: 'Type 2 diabetes (uncontrolled), PCOS',
+          vitals: vitals('118/76', '82', '99%', '68 kg'),
+          rx: [
+            { drug: 'Metformin 500 mg', detail: '1-0-1 · after food · 3 months' },
+            { drug: 'Glimepiride 1 mg', detail: '1-0-0 · before breakfast · 3 months' },
+            { drug: 'Vitamin D3 60,000 IU', detail: 'Once a week · after food · 8 weeks' }
+          ],
+          advice: 'Walk 30 minutes daily and cut sugary drinks. Repeat HbA1c before the next visit.',
+          followUp: 'Tue, 27 Oct 2026'
+        },
+        {
+          name: 'Rahul Das', meta: '45 M · Seen 9:38 AM', type: 'New', typeBg: NEW.bg, typeFg: NEW.fg,
+          complaint: 'Headaches, home BP over 160/100',
+          diagnosis: 'Essential hypertension, stage 2',
+          vitals: vitals('158/98', '88', '98%', '82 kg'),
+          rx: [
+            { drug: 'Telmisartan 40 mg', detail: '1-0-0 · after breakfast · 1 month' },
+            { drug: 'Amlodipine 5 mg', detail: '0-0-1 · after dinner · 1 month' }
+          ],
+          advice: 'Keep salt under 5 g a day. Log home BP twice daily in the app.',
+          followUp: 'Tue, 13 Oct 2026'
+        },
+        {
+          name: 'Aisha Khan', meta: '52 F · Seen 10:06 AM', type: 'Follow-up', typeBg: FU.bg, typeFg: FU.fg,
+          complaint: 'Weight gain, feels cold all the time',
+          diagnosis: 'Hypothyroidism, under-replaced',
+          vitals: vitals('124/80', '64', '98%', '71 kg'),
+          rx: [
+            { drug: 'Levothyroxine 75 mcg', detail: '1-0-0 · empty stomach · 6 weeks' }
+          ],
+          advice: 'Take it 30 minutes before breakfast or tea. Repeat TSH in 6 weeks.',
+          followUp: 'Tue, 10 Nov 2026'
+        }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

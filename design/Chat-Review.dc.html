@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat review</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <button aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Chat review</h1>
+</header>
+
+<main style="flex-grow: 1; padding: 8px 20px 24px; display: flex; flex-direction: column; gap: 16px">
+
+  <div role="tablist" aria-label="Show" style="flex-shrink: 0; background: #F1F4F9; border-radius: 16px; padding: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px">
+    <button role="tab" aria-selected="true" style="height: 44px; border: 0; border-radius: 12px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); font-size: 15px; font-weight: 600; color: #111827; cursor: pointer">Flagged (3)</button>
+    <button role="tab" aria-selected="false" style="height: 44px; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 500; color: #545E72; cursor: pointer">All</button>
+  </div>
+
+  <label style="position: relative; display: flex; align-items: center; flex-shrink: 0">
+    <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search conversations</span>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position: absolute; left: 16px"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+    <input type="search" placeholder="Search patient or message" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 16px 0 46px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+  </label>
+
+  <section aria-labelledby="nr-h" style="display: flex; flex-direction: column; gap: 8px">
+    <h2 id="nr-h" style="margin: 0; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Needs review · most urgent first</h2>
+    <div style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 4px 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+      <sc-for list="{{ flagged }}" as="r" hint-placeholder-count="3">
+        <a href="#" style="display: flex; gap: 12px; padding: 16px 0; border-top: {{ r.border }}; color: #111827">
+          <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ r.initials }}</span>
+          <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+            <span style="display: flex; align-items: center; gap: 8px; height: 24px">
+              <span style="flex-grow: 1; min-width: 0; font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.name }}</span>
+              <span style="flex-shrink: 0; font-size: 13px; color: #69738A; font-variant-numeric: tabular-nums">{{ r.time }}</span>
+            </span>
+            <span style="display: flex; align-items: center; gap: 8px; height: 24px">
+              <span style="flex-grow: 1; min-width: 0; font-size: 14px; font-weight: 600; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.reason }}</span>
+              <span style="flex-shrink: 0; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: {{ r.bg }}; color: {{ r.fg }}">{{ r.urgency }}</span>
+            </span>
+            <span style="font-size: 14px; line-height: 20px; color: #545E72; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{ r.preview }}</span>
+          </span>
+        </a>
+      </sc-for>
+    </div>
+  </section>
+
+  <section aria-labelledby="rv-h" style="display: flex; flex-direction: column; gap: 8px">
+    <h2 id="rv-h" style="margin: 0; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Reviewed today</h2>
+    <div style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 4px 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04)">
+      <a href="#" style="display: flex; gap: 12px; padding: 16px 0; color: #69738A">
+        <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #F1F4F9; color: #69738A; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">DB</span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+          <span style="display: flex; align-items: center; gap: 8px; height: 24px">
+            <span style="flex-grow: 1; min-width: 0; font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Debasish Bose</span>
+            <span style="flex-shrink: 0; font-size: 13px; font-variant-numeric: tabular-nums">7:20 AM</span>
+          </span>
+          <span style="display: flex; align-items: center; gap: 8px; height: 24px">
+            <span style="flex-grow: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Diet advice outside knowledge base</span>
+            <span style="flex-shrink: 0; display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: #076B3C">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#076B3C" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Reviewed</span>
+          </span>
+          <span style="font-size: 14px; line-height: 20px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">Reviewed by Dr. Sen at 8:15 AM. AI: Brown rice in small portions is fine; pair it with dal and vegetables.</span>
+        </span>
+      </a>
+    </div>
+  </section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var U = {
+      High: { bg: '#FEF6E7', fg: '#B45309' },
+      Medium: { bg: '#F1F4F9', fg: '#545E72' },
+      Low: { bg: '#E7F5EE', fg: '#076B3C' }
+    };
+    var rows = [
+      ['RD', 'Rahul Das', '8:52 AM', 'Symptom question: BP with headache', 'High', 'AI: A reading of 172/104 with a headache needs checking today. Please visit the clinic or call us at…'],
+      ['SM', 'Sujit Mondal', '9:44 AM', 'Dosage question answered by AI', 'Medium', 'AI: You can take Metformin with dinner instead of breakfast. Since your plan is 1-0-1, take both tablets…'],
+      ['FI', 'Farhana Islam', 'Yesterday', 'Low-confidence answer', 'Low', 'AI: Iron tablets can turn stools dark, which is usually harmless. If you also feel dizzy or breathless…']
+    ];
+    return {
+      flagged: rows.map(function (r, i) {
+        var u = U[r[4]];
+        return { initials: r[0], name: r[1], time: r[2], reason: r[3], urgency: r[4], preview: r[5], bg: u.bg, fg: u.fg,
+          border: i === 0 ? '0' : '1px solid #E5E9F0' };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

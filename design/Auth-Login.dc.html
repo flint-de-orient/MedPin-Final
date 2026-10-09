@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative; line-height: 1.4">
+
+<main style="flex-grow: 1; padding: 48px 20px 0; display: flex; flex-direction: column">
+  <img src="/_blob/518788f0cdbbd3963c68eba135a339f1" alt="MedPin — Care Connected" style="height: 36px; width: 97px; display: block">
+
+  <div style="margin-top: 48px; display: flex; flex-direction: column; gap: 8px">
+    <h1 style="margin: 0; font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em">Sign in</h1>
+    <p style="margin: 0; font-size: 16px; line-height: 1.5; color: #545E72">For doctors and clinic staff.</p>
+  </div>
+
+  <form action="#" style="margin: 32px 0 0; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="phone" style="font-size: 14px; font-weight: 600; color: #111827">Mobile number</label>
+      <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; background: #FFFFFF; border: 1px solid #003399; border-radius: 16px; box-shadow: 0 0 0 3px #EBF1FB">
+        <span aria-hidden="true" style="height: 100%; padding: 0 14px 0 16px; display: flex; align-items: center; border-right: 1px solid #E5E9F0; font-size: 16px; font-weight: 600; color: #111827; font-variant-numeric: tabular-nums">+91</span>
+        <input id="phone" type="tel" inputmode="numeric" autocomplete="tel-national" value="98765 18210" aria-describedby="phone-help" style="flex-grow: 1; min-width: 0; height: 100%; box-sizing: border-box; padding: 0 16px; border: 0; background: transparent; outline: none; font-size: 16px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums">
+      </div>
+      <span id="phone-help" style="font-size: 13px; color: #69738A">10-digit Indian mobile number</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <button type="submit" style="height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Send code</button>
+      <p style="margin: 0; text-align: center; font-size: 14px; color: #545E72">No password needed. We'll text a 6-digit code.</p>
+    </div>
+  </form>
+
+  <div style="margin-top: 16px; display: flex; justify-content: center">
+    <a href="#" style="height: 48px; padding: 0 12px; display: flex; align-items: center; font-size: 14px; font-weight: 600; color: #545E72">Sign in with password</a>
+  </div>
+</main>
+
+<footer style="padding: 16px 20px 32px; display: flex; justify-content: center; align-items: center; gap: 4px; font-size: 15px; color: #545E72">
+  New to MedPin?
+  <a href="#" style="height: 48px; padding: 0 4px; display: flex; align-items: center; font-size: 15px; font-weight: 600">Register</a>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

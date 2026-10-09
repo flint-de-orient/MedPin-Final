@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Choose a pharmacy</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 780px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; padding-bottom: 16px; flex-shrink: 0">
+  <div style="height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px">
+    <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+    </button>
+    <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Choose a pharmacy</h1>
+  </div>
+  <div role="tablist" aria-label="Pharmacy type" style="margin: 0 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 4px; background: #F1F4F9; border-radius: 16px">
+    <button role="tab" aria-selected="true" style="height: 44px; border: 0; border-radius: 12px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,51,153,0.08); font-size: 15px; font-weight: 600; color: #111827">Online · delivery</button>
+    <button role="tab" aria-selected="false" style="height: 44px; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 500; color: #545E72">Nearby · pick up</button>
+  </div>
+</header>
+
+<main style="padding: 16px 20px 120px; display: flex; flex-direction: column; gap: 10px">
+  <span style="font-size: 13px; color: #545E72; padding: 0 4px 4px">For 3 strips Metformin, 2 strips Atorvastatin</span>
+  <sc-for list="{{ shops }}" as="s" hint-placeholder-count="3">
+    <label style="display: flex; gap: 14px; padding: 16px; border-radius: 20px; background: #FFFFFF; border: {{ s.border }}; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); cursor: pointer">
+      <input type="radio" name="shop" style="position: absolute; opacity: 0; width: 1px; height: 1px">
+      <span aria-hidden="true" style="width: 22px; height: 22px; flex-shrink: 0; margin-top: 2px; border-radius: 999px; box-sizing: border-box; border: {{ s.ring }}; display: flex; align-items: center; justify-content: center">
+        <sc-if value="{{ s.on }}" hint-placeholder-val="{{ false }}"><span style="width: 10px; height: 10px; border-radius: 999px; background: #003399"></span></sc-if>
+      </span>
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px">
+        <span style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px">
+          <span style="font-size: 16px; font-weight: 700">{{ s.name }}</span>
+          <span style="font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums">{{ s.price }}</span>
+        </span>
+        <span style="font-size: 13px; color: #545E72">{{ s.when }}</span>
+        <span style="font-size: 13px; font-weight: 600; color: {{ s.stockColor }}">{{ s.stock }}</span>
+      </span>
+    </label>
+  </sc-for>
+
+  <div style="margin-top: 6px; padding: 14px 16px; border-radius: 16px; background: #F1F4F9; display: flex; align-items: center; gap: 12px">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#545E72" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path></svg>
+    <span style="flex-grow: 1; font-size: 13px; line-height: 1.4; color: #111827">Prescriptions go with your order automatically.</span>
+    <span style="height: 22px; padding: 0 8px; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 11px; font-weight: 700; display: flex; align-items: center; flex-shrink: 0">Coming soon</span>
+  </div>
+</main>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 28px; background: #FFFFFF; border-top: 1px solid #E5E9F0; display: flex; align-items: center; gap: 16px">
+  <span style="display: flex; flex-direction: column">
+    <span style="font-size: 12px; color: #545E72">Total</span>
+    <span style="font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums">₹138</span>
+  </span>
+  <button style="flex-grow: 1; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24)">Place order</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":780}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function s(name, price, when, stock, ok, on) {
+      return { name: name, price: price, when: when, stock: stock, stockColor: ok ? '#076B3C' : '#B45309', on: on,
+        border: on ? '1.5px solid #003399' : '1px solid #E5E9F0', ring: on ? '2px solid #003399' : '2px solid #D5DBE5' };
+    }
+    return {
+      shops: [
+        s('CarePlus Online', '₹138', 'Delivers tomorrow by 11 AM · free delivery', 'All items in stock', true, true),
+        s('QuickMeds', '₹152', 'Delivers today in 2 hours · ₹15 delivery', 'All items in stock', true, false),
+        s('City Care Clinic pharmacy', '₹144', 'Delivers today by 7 PM · your clinic', 'Atorvastatin 10 mg: only 1 strip', false, false)
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

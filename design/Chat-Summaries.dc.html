@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat summaries</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1400px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <button aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Today's conversations</h1>
+</header>
+
+<main style="flex-grow: 1; padding: 8px 20px 24px; display: flex; flex-direction: column; gap: 16px">
+
+  <div role="tablist" aria-label="Scope" style="flex-shrink: 0; background: #F1F4F9; border-radius: 16px; padding: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px">
+    <button role="tab" aria-selected="true" style="height: 44px; border: 0; border-radius: 12px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); font-size: 15px; font-weight: 600; color: #111827; cursor: pointer">My patients</button>
+    <button role="tab" aria-selected="false" style="height: 44px; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 500; color: #545E72; cursor: pointer">Whole practice</button>
+  </div>
+
+  <div role="group" aria-label="Day" style="display: flex; gap: 8px">
+    <button aria-pressed="true" style="height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 14px; font-weight: 600; cursor: pointer">Today</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600; cursor: pointer">Yesterday</button>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <p style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600"><span style="font-variant-numeric: tabular-nums">9</span> patients wrote today · <span style="font-variant-numeric: tabular-nums">3</span> need a reply</p>
+    <p style="margin: 0; display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; color: #545E72">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+      Summaries written by the AI assistant
+    </p>
+  </div>
+
+  <sc-for list="{{ items }}" as="c" hint-placeholder-count="5">
+    <article style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px 20px 4px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ c.initials }}</span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column">
+          <span style="font-size: 16px; line-height: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ c.name }}</span>
+          <span style="font-size: 13px; line-height: 18px; color: #69738A; font-variant-numeric: tabular-nums">{{ c.meta }}</span>
+        </span>
+        <sc-if value="{{ c.needsReply }}" hint-placeholder-val="{{ true }}">
+          <span style="height: 24px; flex-shrink: 0; padding: 0 10px; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 12px; font-weight: 600; display: flex; align-items: center">Needs reply</span>
+        </sc-if>
+      </div>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{ c.summary }}</p>
+      <sc-if value="{{ c.flagged }}" hint-placeholder-val="{{ true }}">
+        <span style="align-self: flex-start; height: 24px; padding: 0 10px; border-radius: 999px; background: #FEF6E7; color: #B45309; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>{{ c.flag }}</span>
+      </sc-if>
+      <a href="#" style="height: 48px; border-top: 1px solid #E5E9F0; display: flex; align-items: center; justify-content: space-between; font-size: 15px; font-weight: 600">
+        Open conversation
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+      </a>
+    </article>
+  </sc-for>
+
+  <button style="height: 48px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 600; color: #003399; cursor: pointer">Show 4 more patients</button>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var rows = [
+      ['SM', 'Sujit Mondal', '3 messages · last 9:44 AM', true, 'Flagged: dosage timing', 'Wants Metformin at night. AI said take both doses at dinner; flagged.'],
+      ['RD', 'Rahul Das', '5 messages · last 8:52 AM', true, 'Flagged: BP with headache', 'Home BP 172/104 with headache. AI advised a same-day visit; wants a slot.'],
+      ['FI', 'Farhana Islam', '2 messages · last 11:05 AM', true, '', 'Asked if iron tablets can be taken with tea. Wants her dose confirmed.'],
+      ['AK', 'Aisha Khan', '4 messages · last 10:30 AM', false, '', 'Shared TSH report, asked when to repeat. AI answered from clinic guidance.'],
+      ['MR', 'Moumita Roy', '2 messages · last 7:50 AM', false, '', 'Logged BP 128/84, asked about walking after meals. AI answered; no action.']
+    ];
+    return {
+      items: rows.map(function (r) {
+        return { initials: r[0], name: r[1], meta: r[2], needsReply: r[3], flagged: r[4] !== '', flag: r[4], summary: r[5] };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

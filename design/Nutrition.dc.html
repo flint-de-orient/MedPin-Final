@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nutrition inbox</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1220px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="padding: 12px 20px 0; display: flex; align-items: center; justify-content: space-between">
+  <img src="/_blob/518788f0cdbbd3963c68eba135a339f1" alt="MedPin — Care Connected" style="height: 36px; width: 97px; display: block">
+  <div style="display: flex; align-items: center; gap: 4px">
+    <button aria-label="Notifications, 2 new" style="position: relative; width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+      <span style="position: absolute; top: 10px; right: 11px; width: 8px; height: 8px; border-radius: 999px; background: #B91C1C; border: 2px solid #F7F9FC"></span>
+    </button>
+    <a href="#" aria-label="Profile" style="width: 40px; height: 40px; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center">AS</a>
+  </div>
+</header>
+
+<main style="padding: 20px 20px 112px; display: flex; flex-direction: column; gap: 16px">
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Nutrition</h1>
+    <p style="margin: 0; font-size: 14px; line-height: 1.45; color: #545E72">Food logs and dietician conversations</p>
+  </div>
+
+  <div role="group" aria-label="Filter conversations" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 16px; background: #F1F4F9">
+    <button aria-pressed="false" style="height: 44px; border: 0; border-radius: 12px; background: transparent; color: #545E72; font-size: 15px; font-weight: 500; cursor: pointer">Unread (3)</button>
+    <button aria-pressed="true" style="height: 44px; border: 0; border-radius: 12px; background: #FFFFFF; color: #111827; font-size: 15px; font-weight: 600; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); cursor: pointer">All</button>
+  </div>
+
+  <div style="position: relative">
+    <label for="nutrition-search" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap">Search conversations</label>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position: absolute; left: 16px; top: 18px"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+    <input id="nutrition-search" type="search" placeholder="Search patients or messages" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 16px 0 48px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+  </div>
+
+  <section aria-label="Conversations" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 4px 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <sc-for list="{{ rows }}" as="r" hint-placeholder-count="7">
+      <a href="#" aria-label="{{ r.aria }}" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: {{ r.border }}; color: #111827">
+        <span style="width: 48px; height: 48px; flex-shrink: 0; align-self: flex-start; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: center">{{ r.initials }}</span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="display: flex; align-items: center; gap: 8px">
+            <span style="flex-grow: 1; min-width: 0; font-size: 16px; line-height: 24px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.name }}</span>
+            <span style="flex-shrink: 0; font-size: 13px; line-height: 24px; font-variant-numeric: tabular-nums; color: {{ r.timeColor }}; font-weight: {{ r.timeWeight }}">{{ r.time }}</span>
+          </span>
+          <span style="display: flex; align-items: center; gap: 8px">
+            <span style="flex-grow: 1; min-width: 0; font-size: 14px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {{ r.previewColor }}"><span style="font-weight: 600">{{ r.who }}:</span> {{ r.text }}</span>
+            <sc-if value="{{ r.hasUnread }}" hint-placeholder-val="{{ true }}">
+              <span style="flex-shrink: 0; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums">{{ r.unread }}</span>
+            </sc-if>
+          </span>
+          <span style="display: flex; align-items: center; gap: 8px; height: 24px; margin-top: 4px">
+            <sc-if value="{{ r.hasChip }}" hint-placeholder-val="{{ false }}">
+              <span style="height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: #F1F4F9; color: #545E72; flex-shrink: 0">{{ r.chip }}</span>
+            </sc-if>
+            <span style="font-size: 13px; color: #69738A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums">{{ r.meta }}</span>
+          </span>
+        </span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+      </a>
+    </sc-for>
+  </section>
+
+  <button style="height: 56px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; color: #111827; font-size: 16px; font-weight: 600; cursor: pointer">Show more</button>
+</main>
+
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 24px; height: 64px; box-sizing: border-box; padding: 6px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 28px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px">
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+  <a href="#" style="position: relative; border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>Care
+    <span aria-label="6 unread" style="position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #FFFFFF">6</span></a>
+  <a href="#" aria-current="page" style="border-radius: 22px; background: #EBF1FB; color: #003399; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 700">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path></svg>Nutrition</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>Profile</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1220}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var data = [
+      ['PS', 'Priya Sharma', '8:14 AM', 2, 'AI', 'Good pick. Add a bowl of curd to balance the carbs.', 'Review due', 'Meal logged 8:10 AM'],
+      ['AP', 'Amit Pal', '7:52 AM', 1, 'AI', 'Go easy on salt today and skip the papad and pickle.', '', 'Meal logged 7:40 AM'],
+      ['DB', 'Debasish Bose', '7:30 AM', 1, 'Dietician', 'Swap white rice for one cup of brown rice at lunch.', 'Review due', 'Meal logged 7:05 AM'],
+      ['FI', 'Farhana Islam', 'Yesterday', 0, 'Clinic', 'Please log dinner too so Mou can check your iron intake.', '', 'Meal logged yesterday 1:20 PM'],
+      ['AK', 'Aisha Khan', 'Yesterday', 0, 'Dietician', 'Great week. Keep soy foods apart from your thyroid tablet.', '', 'Meal logged yesterday 9:45 AM'],
+      ['MR', 'Moumita Roy', 'Sun', 0, 'AI', 'Steamed fish with vegetables fits your heart-healthy plan.', '', 'Meal logged Sun 1:30 PM'],
+      ['RD', 'Rahul Das', 'Sat', 0, 'Dietician', 'Aim for under 5 g salt a day, about one teaspoon.', '', 'Meal logged Sat 8:20 PM']
+    ];
+    return {
+      rows: data.map(function (r, i) {
+        var unread = r[3] > 0;
+        return {
+          initials: r[0], name: r[1], time: r[2], unread: String(r[3]), hasUnread: unread,
+          who: r[4], text: r[5], chip: r[6], hasChip: r[6] !== '', meta: r[7],
+          border: i === 0 ? 'none' : '1px solid #E5E9F0',
+          timeColor: unread ? '#003399' : '#69738A', timeWeight: unread ? '600' : '400',
+          previewColor: unread ? '#111827' : '#545E72',
+          aria: r[1] + (unread ? ', ' + r[3] + ' unread' : '') + ', ' + r[2] + ', open chat review'
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Consultation · select patient</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1260px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; flex-shrink: 0">
+  <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <div style="flex-grow: 1; display: flex; flex-direction: column">
+    <h1 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Consultation</h1>
+    <span style="font-size: 13px; color: #545E72">No patient selected</span>
+  </div>
+</header>
+
+<main style="padding: 16px 20px 136px; display: flex; flex-direction: column; gap: 16px">
+
+  <section aria-labelledby="pt-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 20px; padding: 20px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 16px">
+    <h2 id="pt-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Who are you consulting?</h2>
+    <label style="position: relative; display: flex; align-items: center">
+      <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search patient by name or phone</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#545E72" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position: absolute; left: 16px"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <input type="search" autofocus placeholder="Name or phone number" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 16px 0 46px; border: 2px solid #003399; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+    </label>
+
+    <div style="display: flex; flex-direction: column">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A; padding-bottom: 4px">Waiting now · Salt Lake</span>
+      <sc-for list="{{ queue }}" as="q" hint-placeholder-count="3">
+        <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: {{ q.border }}; color: #111827">
+          <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #F1F4F9; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; display: flex; align-items: center; justify-content: center">{{ q.token }}</span>
+          <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 16px; font-weight: 600">{{ q.name }}</span>
+            <span style="font-size: 13px; color: #545E72">{{ q.meta }}</span>
+          </span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+        </a>
+      </sc-for>
+    </div>
+
+    <div style="display: flex; flex-direction: column">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A; padding-bottom: 4px">Recent</span>
+      <sc-for list="{{ recent }}" as="r" hint-placeholder-count="2">
+        <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: {{ r.border }}; color: #111827">
+          <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ r.initials }}</span>
+          <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 16px; font-weight: 600">{{ r.name }}</span>
+            <span style="font-size: 13px; color: #545E72">{{ r.meta }}</span>
+          </span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+        </a>
+      </sc-for>
+    </div>
+
+    <button style="height: 48px; border: 1px solid #D5DBE5; border-radius: 12px; background: #FFFFFF; color: #003399; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M19 8v6M16 11h6"></path></svg>
+      Add new patient
+    </button>
+  </section>
+
+  <section aria-label="Consultation steps, available after selecting a patient" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 4px 20px 16px; display: flex; flex-direction: column">
+    <sc-for list="{{ steps }}" as="s" hint-placeholder-count="7">
+      <div style="display: flex; align-items: center; gap: 10px; height: 52px; border-top: {{ s.border }}">
+        <span style="width: 26px; height: 26px; border-radius: 999px; background: #F1F4F9; color: #69738A; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ s.n }}</span>
+        <span style="flex-grow: 1; font-size: 16px; font-weight: 600; color: #69738A">{{ s.title }}</span>
+      </div>
+    </sc-for>
+    <p style="margin: 8px 0 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #69738A">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+      Select or add a patient to start.
+    </p>
+  </section>
+</main>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 28px; background: #FFFFFF; border-top: 1px solid #E5E9F0">
+  <button disabled style="width: 100%; height: 56px; border: 0; border-radius: 16px; background: #E5E9F0; color: #69738A; font-size: 16px; font-weight: 600">Generate prescription</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1260}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function b(i) { return i === 0 ? '0' : '1px solid #E5E9F0'; }
+    return {
+      queue: [
+        ['05', 'Rahul Das', '45 M · +91 98311 20764 · waiting 22 min'],
+        ['06', 'Aisha Khan', '52 F · +91 90070 41288 · waiting 15 min'],
+        ['07', 'Sujit Mondal', '37 M · +91 83360 15902 · waiting 6 min']
+      ].map(function (r, i) { return { token: r[0], name: r[1], meta: r[2], border: b(i) }; }),
+      recent: [
+        ['DB', 'Debasish Bose', '62 M · +91 98740 33126 · today'],
+        ['MR', 'Moumita Roy', '41 F · +91 97480 62215 · 02 Sep']
+      ].map(function (r, i) { return { initials: r[0], name: r[1], meta: r[2], border: b(i) }; }),
+      steps: [
+        ['·', 'Vitals'], ['1', 'Chief complaint'], ['2', 'Diagnosis'], ['3', 'Medications'],
+        ['4', 'Lab tests'], ['5', 'Advice & instructions'], ['6', 'Validity & follow-up']
+      ].map(function (r, i) { return { n: r[0], title: r[1], border: b(i) }; })
+    };
+  }
+}
+</script>
+</body>
+</html>

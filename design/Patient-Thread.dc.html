@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patient thread</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; background: #FFFFFF; border-bottom: 1px solid #E5E9F0; display: flex; align-items: center; gap: 4px">
+  <button aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <a href="#" style="flex-grow: 1; min-width: 0; display: flex; align-items: center; gap: 12px; color: #111827">
+    <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">PS</span>
+    <span style="min-width: 0; display: flex; flex-direction: column">
+      <span style="font-size: 20px; line-height: 1.25; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Priya Sharma</span>
+      <span style="font-size: 13px; color: #69738A">Last seen 2 min ago</span>
+    </span>
+  </a>
+  <button aria-label="Call Priya Sharma" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #003399; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+  </button>
+</header>
+
+<p role="status" style="margin: 0; flex-shrink: 0; padding: 8px 20px; background: #F1F4F9; display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 1.45; color: #545E72">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+  AI assistant is paused while you're in this thread
+</p>
+
+<a href="#" style="flex-shrink: 0; padding: 12px 20px; background: #FFFFFF; border-bottom: 1px solid #E5E9F0; display: flex; align-items: center; gap: 10px; color: #111827">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z"></path></svg>
+  <span style="flex-grow: 1; min-width: 0; font-size: 14px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><strong style="font-weight: 600; color: #003399">Pinned:</strong> Take Metformin after food</span>
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+</a>
+
+<main aria-label="Messages" style="flex-grow: 1; min-height: 0; overflow: hidden; padding: 12px 16px; display: flex; flex-direction: column; justify-content: flex-end; gap: 12px">
+
+  <div role="separator" style="display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">
+    <span style="flex-grow: 1; height: 1px; background: #E5E9F0"></span>Today<span style="flex-grow: 1; height: 1px; background: #E5E9F0"></span>
+  </div>
+
+  <!-- Patient voice note (long-pressed: context menu open) -->
+  <div style="position: relative; align-self: flex-start">
+    <div style="width: 248px; box-sizing: border-box; padding: 10px 12px; background: #FFFFFF; border: 1px solid #D5DBE5; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 4px">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <button aria-label="Play voice note, 18 seconds" style="width: 40px; height: 40px; flex-shrink: 0; border: 0; border-radius: 999px; background: #EBF1FB; color: #003399; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>
+        </button>
+        <span aria-hidden="true" style="flex-grow: 1; height: 28px; display: flex; align-items: center; gap: 3px">
+          <sc-for list="{{ wave }}" as="b" hint-placeholder-count="20">
+            <span style="width: 3px; border-radius: 999px; height: {{ b.h }}; background: {{ b.c }}"></span>
+          </sc-for>
+        </span>
+        <span style="font-size: 13px; color: #545E72; font-variant-numeric: tabular-nums">0:18</span>
+      </div>
+      <span style="align-self: flex-end; font-size: 12px; color: #69738A; font-variant-numeric: tabular-nums">9:05 AM</span>
+    </div>
+
+    <div role="menu" aria-label="Message actions" style="position: absolute; top: calc(100% + 8px); left: 0; z-index: 2; width: 232px; box-sizing: border-box; padding: 4px 0; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column">
+      <button role="menuitem" style="height: 48px; border: 0; background: transparent; padding: 0 16px; text-align: left; font-size: 16px; color: #111827; cursor: pointer">Reply</button>
+      <button role="menuitem" style="height: 48px; border: 0; border-top: 1px solid #E5E9F0; background: transparent; padding: 0 16px; text-align: left; font-size: 16px; color: #111827; cursor: pointer">Pin</button>
+      <button role="menuitem" style="height: 48px; border: 0; border-top: 1px solid #E5E9F0; background: transparent; padding: 0 16px; text-align: left; font-size: 16px; color: #111827; cursor: pointer">Hide</button>
+      <button role="menuitem" style="height: 48px; border: 0; border-top: 1px solid #E5E9F0; background: transparent; padding: 0 16px; text-align: left; font-size: 16px; font-weight: 600; color: #B91C1C; cursor: pointer">Delete for everyone</button>
+    </div>
+  </div>
+
+  <!-- Patient attachment -->
+  <div style="align-self: flex-start; width: 264px; box-sizing: border-box; padding: 8px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 16px; display: flex; flex-direction: column">
+    <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 12px; background: #F7F9FC; color: #111827">
+      <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #FFFFFF; border: 1px solid #E5E9F0; box-sizing: border-box; color: #003399; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path></svg>
+      </span>
+      <span style="min-width: 0; display: flex; flex-direction: column">
+        <span style="font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Lipid profile.pdf</span>
+        <span style="font-size: 13px; color: #69738A; font-variant-numeric: tabular-nums">PDF · 240 KB · 9:06 AM</span>
+      </span>
+    </a>
+  </div>
+
+  <!-- AI assistant (before the doctor opened the thread) -->
+  <div style="align-self: flex-start; max-width: 288px; box-sizing: border-box; padding: 10px 14px; background: #F1F4F9; border-radius: 16px; display: flex; flex-direction: column; gap: 4px">
+    <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #545E72">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>AI assistant</span>
+    <span style="font-size: 16px; line-height: 1.5">Thanks, Priya. I've shared your report with Dr. Sen's team.</span>
+    <span style="align-self: flex-end; font-size: 12px; color: #69738A; font-variant-numeric: tabular-nums">9:06 AM</span>
+  </div>
+
+  <!-- Doctor reply quoting an earlier message -->
+  <div style="align-self: flex-end; max-width: 288px; box-sizing: border-box; padding: 10px 14px; background: #003399; color: #FFFFFF; border-radius: 16px; display: flex; flex-direction: column; gap: 6px">
+    <a href="#" aria-label="Replying to Priya Sharma: Should I take the tablet before or after breakfast?" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 12px; background: #002470; border-left: 3px solid #EBF1FB; color: #FFFFFF">
+      <span style="font-size: 13px; font-weight: 600; color: #EBF1FB">Priya Sharma · Yesterday</span>
+      <span style="font-size: 14px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Should I take the tablet before or after breakfast?</span>
+    </a>
+    <span style="font-size: 16px; line-height: 1.5">After food, not before. Your lipid report looks fine.</span>
+    <span style="align-self: flex-end; font-size: 12px; color: #EBF1FB; font-variant-numeric: tabular-nums">9:22 AM</span>
+  </div>
+
+  <!-- Last doctor message -->
+  <div style="align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px">
+    <div style="max-width: 288px; box-sizing: border-box; padding: 10px 14px; background: #003399; color: #FFFFFF; border-radius: 16px; font-size: 16px; line-height: 1.5">I've pinned it at the top of our chat.</div>
+    <span style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: #69738A; font-variant-numeric: tabular-nums">9:24 AM ·
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#076B3C" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Read</span>
+  </div>
+</main>
+
+<button aria-label="Jump to latest message" style="position: absolute; left: 16px; bottom: 92px; width: 44px; height: 44px; border: 1px solid #E5E9F0; border-radius: 999px; background: #FFFFFF; color: #003399; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; align-items: center; justify-content: center; cursor: pointer">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+</button>
+
+<form aria-label="Reply to Priya Sharma" style="margin: 0; flex-shrink: 0; padding: 12px 16px 16px; background: #FFFFFF; border-top: 1px solid #E5E9F0; display: flex; align-items: center; gap: 8px">
+  <button type="button" aria-label="Attach a file" style="width: 44px; height: 48px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; color: #545E72; display: flex; align-items: center; justify-content: center; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+  </button>
+  <label for="reply" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Write a reply</label>
+  <input id="reply" type="text" placeholder="Write a reply" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #F7F9FC; font-size: 16px; outline: none">
+  <button type="button" aria-label="Record a voice reply" style="width: 48px; height: 48px; flex-shrink: 0; border: 0; border-radius: 999px; background: #003399; color: #FFFFFF; box-shadow: 0 6px 16px rgba(0,51,153,0.24); display: flex; align-items: center; justify-content: center; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+  </button>
+</form>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var hs = [8, 14, 20, 12, 24, 18, 10, 22, 28, 16, 12, 20, 26, 14, 8, 18, 22, 12, 16, 10];
+    return {
+      wave: hs.map(function (h, i) { return { h: h + 'px', c: i < 7 ? '#003399' : '#B8C6E3' }; })
+    };
+  }
+}
+</script>
+</body>
+</html>

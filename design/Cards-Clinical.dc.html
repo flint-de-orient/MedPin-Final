@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dashboard cards — clinical</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 3520px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<main style="padding: 20px 20px 24px; display: flex; flex-direction: column; gap: 16px">
+
+  <!-- A. Today's clinic (general appointment diary, grouped by doctor — broader than the OPD queue) -->
+  <section aria-labelledby="tc-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 12px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="tc-h" style="margin: 0; font-size: 20px; line-height: 25px; font-weight: 700">Today's clinic</h2>
+        <span style="font-size: 14px; line-height: 20px; color: #545E72">14 visits · Dr. Sen, Dr. Mitra</span>
+      </div>
+      <a href="#" style="font-size: 14px; line-height: 20px; font-weight: 600; padding-top: 3px">View all</a>
+    </div>
+    <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A; padding-bottom: 8px">Dr. Arjun Sen · 8 visits</span>
+    <sc-for list="{{ clinicSen }}" as="c" hint-placeholder-count="3">
+      <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+        <span style="width: 44px; flex-shrink: 0; font-size: 15px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums">{{ c.time }}</span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 16px; line-height: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ c.name }}</span>
+          <span style="font-size: 14px; line-height: 20px; color: #545E72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ c.meta }}</span>
+        </span>
+        <span style="flex-shrink: 0; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: {{ c.bg }}; color: {{ c.fg }}">{{ c.status }}</span>
+      </a>
+    </sc-for>
+    <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A; padding: 16px 0 8px">Dr. Rina Mitra · 6 visits</span>
+    <sc-for list="{{ clinicMitra }}" as="c" hint-placeholder-count="2">
+      <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+        <span style="width: 44px; flex-shrink: 0; font-size: 15px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums">{{ c.time }}</span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 16px; line-height: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ c.name }}</span>
+          <span style="font-size: 14px; line-height: 20px; color: #545E72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ c.meta }}</span>
+        </span>
+        <span style="flex-shrink: 0; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: {{ c.bg }}; color: {{ c.fg }}">{{ c.status }}</span>
+      </a>
+    </sc-for>
+    <a href="#" style="border-top: 1px solid #E5E9F0; padding-top: 14px; font-size: 14px; line-height: 20px; font-weight: 600">+ 9 more today</a>
+  </section>
+
+  <!-- B. Critical lab results (danger is earned here: critical-flagged only) -->
+  <section aria-labelledby="cl-h" style="background: #FFFFFF; border: 1px solid #F3C4C4; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 12px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="cl-h" style="margin: 0; font-size: 20px; line-height: 25px; font-weight: 700">Critical lab results</h2>
+        <span style="font-size: 14px; line-height: 20px; color: #545E72">Unreviewed critical results</span>
+      </div>
+      <span style="flex-shrink: 0; height: 24px; padding: 0 10px; border-radius: 999px; background: #FDECEC; color: #B91C1C; font-size: 12px; font-weight: 700; display: flex; align-items: center; margin-top: 2px">1 critical</span>
+    </div>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+      <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+        <span style="display: flex; align-items: center; gap: 8px">
+          <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #FDECEC; color: #B91C1C; font-size: 12px; font-weight: 700; display: flex; align-items: center">Critical</span>
+          <span style="font-size: 13px; line-height: 18px; color: #69738A; font-variant-numeric: tabular-nums">7:55 AM</span>
+        </span>
+        <span style="font-size: 16px; line-height: 22px; font-weight: 600">Amit Pal</span>
+        <span style="font-size: 14px; line-height: 20px; color: #111827; font-variant-numeric: tabular-nums"><strong style="font-weight: 600; color: #B91C1C">Potassium 6.1 mmol/L</strong><span style="color: #545E72"> · ref 3.5–5.1</span></span>
+        <span style="font-size: 13px; line-height: 18px; color: #69738A">Renal function test · 55 M · T2DM, CKD 3</span>
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+    </a>
+  </section>
+
+  <!-- B. Recent lab reports (newest 6, worst-flag pill) -->
+  <section aria-labelledby="rl-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 12px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="rl-h" style="margin: 0; font-size: 20px; line-height: 25px; font-weight: 700">Recent lab reports</h2>
+        <span style="font-size: 14px; line-height: 20px; color: #545E72">Newest 6 · worst flag shown</span>
+      </div>
+      <a href="#" style="font-size: 14px; line-height: 20px; font-weight: 600; padding-top: 3px">View all</a>
+    </div>
+    <sc-for list="{{ reports }}" as="r" hint-placeholder-count="6">
+      <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 16px; line-height: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.name }}</span>
+          <span style="font-size: 14px; line-height: 20px; color: #545E72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.test }}</span>
+        </span>
+        <span style="flex-shrink: 0; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 700; display: flex; align-items: center; background: {{ r.bg }}; color: {{ r.fg }}">{{ r.flag }}</span>
+      </a>
+    </sc-for>
+  </section>
+
+  <!-- B. Lab flag summary -->
+  <section aria-labelledby="lf-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h2 id="lf-h" style="margin: 0; font-size: 20px; line-height: 25px; font-weight: 700">Lab flag summary</h2>
+      <span style="font-size: 14px; line-height: 20px; color: #545E72">Last 30 days · 265 results</span>
+    </div>
+    <div role="img" aria-label="Of 265 results: 1 critical, 38 high, 12 low, 214 normal" style="display: flex; height: 12px; border-radius: 999px; overflow: hidden; gap: 2px">
+      <span style="flex: 1 1 0%; min-width: 4px; background: #B91C1C"></span>
+      <span style="flex: 38 1 0%; background: #B45309"></span>
+      <span style="flex: 12 1 0%; background: #FEF6E7; box-shadow: inset 0 0 0 1px #B45309"></span>
+      <span style="flex: 214 1 0%; background: #076B3C"></span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <sc-for list="{{ flags }}" as="f" hint-placeholder-count="4">
+        <div style="padding: 12px 14px; border-radius: 12px; background: #F7F9FC; display: flex; flex-direction: column; gap: 6px">
+          <span style="display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; color: #545E72"><span style="width: 8px; height: 8px; border-radius: 2px; background: {{ f.swatch }}; box-shadow: {{ f.ring }}"></span>{{ f.label }}</span>
+          <span style="font-size: 30px; line-height: 30px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">{{ f.n }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- B. BP control (warning ramp: Stage 2 is off-track, not an emergency) -->
+  <section aria-labelledby="bp-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h2 id="bp-h" style="margin: 0; font-size: 20px; line-height: 25px; font-weight: 700">BP control</h2>
+      <span style="font-size: 14px; line-height: 20px; color: #545E72">Last 90 days · 86 of 112 measured</span>
+    </div>
+    <div role="img" aria-label="Latest BP of 86 patients: 38 normal, 21 elevated, 18 stage 1, 9 stage 2" style="display: flex; height: 12px; border-radius: 999px; overflow: hidden; gap: 2px">
+      <span style="flex: 38 1 0%; background: #076B3C"></span>
+      <span style="flex: 21 1 0%; background: #FEF6E7; box-shadow: inset 0 0 0 1px #B45309"></span>
+      <span style="flex: 18 1 0%; background: #B45309; opacity: 0.6"></span>
+      <span style="flex: 9 1 0%; background: #B45309"></span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <sc-for list="{{ bpBands }}" as="b" hint-placeholder-count="4">
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px">
+          <span style="width: 8px; height: 8px; flex-shrink: 0; border-radius: 2px; background: {{ b.swatch }}; opacity: {{ b.opacity }}; box-shadow: {{ b.ring }}"></span>
+          <span style="width: 72px; flex-shrink: 0; color: #111827; font-weight: 600">{{ b.label }}</span>
+          <span style="flex-grow: 1; color: #69738A; font-size: 13px; font-variant-numeric: tabular-nums">{{ b.range }}</span>
+          <span style="font-weight: 700; font-variant-numeric: tabular-nums">{{ b.n }}</span>
+        </div>
+      </sc-for>
+      <span style="font-size: 13px; line-height: 18px; color: #69738A">26 patients have no reading in 90 days</span>
+    </div>
+    <div style="display: flex; flex-direction: column">
+      <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A; padding-bottom: 8px">Needs attention</span>
+      <sc-for list="{{ bpNamed }}" as="p" hint-placeholder-count="3">
+        <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+          <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 16px; line-height: 22px; font-weight: 600">{{ p.name }}</span>
+            <span style="font-size: 14px; line-height: 20px; color: #545E72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ p.detail }}</span>
+          </span>
+          <span style="flex-shrink: 0; height: 24px; padding: 0 10px; border-radius: 999px; background: #FEF6E7; color: #B45309; font-size: 12px; font-weight: 700; display: flex; align-items: center">{{ p.band }}</span>
+        </a>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- B. Follow-ups due. Handoff calls overdue "red"; §3.2 wins: overdue is warning, never danger. -->
+  <section aria-labelledby="fu-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h2 id="fu-h" style="margin: 0; font-size: 20px; line-height: 25px; font-weight: 700">Follow-ups due</h2>
+      <span style="font-size: 14px; line-height: 20px; color: #545E72">Overdue first, then this week</span>
+    </div>
+    <div style="display: flex; flex-direction: column">
+      <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #B45309; padding-bottom: 8px">Overdue · 7</span>
+      <sc-for list="{{ overdue }}" as="o" hint-placeholder-count="3">
+        <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+          <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 16px; line-height: 22px; font-weight: 600">{{ o.name }}</span>
+            <span style="font-size: 14px; line-height: 20px; color: #545E72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><strong style="font-weight: 600; color: #B45309">{{ o.late }}</strong> · {{ o.detail }}</span>
+          </span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+        </a>
+      </sc-for>
+      <a href="#" style="border-top: 1px solid #E5E9F0; padding-top: 14px; font-size: 14px; line-height: 20px; font-weight: 600">+ 4 more overdue</a>
+    </div>
+    <div style="display: flex; flex-direction: column">
+      <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A; padding-bottom: 8px">Due this week · 9</span>
+      <sc-for list="{{ dueSoon }}" as="d" hint-placeholder-count="3">
+        <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+          <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 16px; line-height: 22px; font-weight: 600">{{ d.name }}</span>
+            <span style="font-size: 14px; line-height: 20px; color: #545E72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ d.detail }}</span>
+          </span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+        </a>
+      </sc-for>
+      <a href="#" style="border-top: 1px solid #E5E9F0; padding-top: 14px; font-size: 14px; line-height: 20px; font-weight: 600">+ 6 more this week</a>
+    </div>
+  </section>
+
+  <!-- B. Condition registry (bar = share of the 412-patient caseload) -->
+  <section aria-labelledby="cr-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 12px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="cr-h" style="margin: 0; font-size: 20px; line-height: 25px; font-weight: 700">Condition registry</h2>
+        <span style="font-size: 14px; line-height: 20px; color: #545E72">Practice-wide · 412 patients</span>
+      </div>
+      <a href="#" style="font-size: 14px; line-height: 20px; font-weight: 600; padding-top: 3px">View all</a>
+    </div>
+    <sc-for list="{{ conditions }}" as="c" hint-placeholder-count="6">
+      <a href="#" style="display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid #E5E9F0; color: #111827">
+        <span style="display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 16px; line-height: 22px">
+          <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ c.label }}</span>
+          <span style="font-weight: 700; font-variant-numeric: tabular-nums">{{ c.n }}</span>
+        </span>
+        <span style="display: block; height: 4px; border-radius: 999px; background: #F1F4F9; overflow: hidden"><span style="display: block; height: 4px; border-radius: 999px; background: #003399; width: {{ c.pct }}"></span></span>
+      </a>
+    </sc-for>
+    <div style="margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: #F7F9FC; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px">
+      <span style="color: #545E72"><strong style="color: #111827; font-weight: 700; font-variant-numeric: tabular-nums">31</strong> patients with no condition recorded</span>
+      <a href="#" style="flex-shrink: 0; font-weight: 600">Review</a>
+    </div>
+  </section>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":3520}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var DANGER = { bg: '#FDECEC', fg: '#B91C1C' };
+    var WARN = { bg: '#FEF6E7', fg: '#B45309' };
+    var NEUTRAL = { bg: '#F1F4F9', fg: '#545E72' };
+    var INFO = { bg: '#EBF1FB', fg: '#003399' };
+    var OK = { bg: '#E7F5EE', fg: '#076B3C' };
+    var STATUS = { 'In consult': INFO, 'Waiting': WARN, 'Upcoming': NEUTRAL, 'Done': OK };
+    var FLAG = { Critical: DANGER, High: WARN, Low: WARN, Normal: OK };
+    function visit(r) { var s = STATUS[r[3]]; return { time: r[0], name: r[1], meta: r[2], status: r[3], bg: s.bg, fg: s.fg }; }
+    var NONE = 'none';
+    var RING = 'inset 0 0 0 1px #B45309';
+    return {
+      clinicSen: [
+        ['8:45', 'Amit Pal', 'Follow-up · Salt Lake', 'Done'],
+        ['9:00', 'Priya Sharma', 'Follow-up · Salt Lake', 'In consult'],
+        ['9:30', 'Rahul Das', 'New visit · Salt Lake', 'Waiting']
+      ].map(visit),
+      clinicMitra: [
+        ['9:15', 'Debasish Bose', 'ECG review · New Town', 'Waiting'],
+        ['11:45', 'Moumita Roy', 'Cardiology review · New Town', 'Upcoming']
+      ].map(visit),
+      reports: [
+        ['Amit Pal', 'Renal function test · Today, 7:55 AM', 'Critical'],
+        ['Aisha Khan', 'Thyroid profile · Yesterday', 'High'],
+        ['Debasish Bose', 'HbA1c · Yesterday', 'High'],
+        ['Farhana Islam', 'Complete blood count · Sun, 27 Sep', 'Low'],
+        ['Priya Sharma', 'Lipid profile · Sat, 26 Sep', 'Normal'],
+        ['Rahul Das', 'Kidney function test · Fri, 25 Sep', 'Normal']
+      ].map(function (r) { var f = FLAG[r[2]]; return { name: r[0], test: r[1], flag: r[2], bg: f.bg, fg: f.fg }; }),
+      flags: [
+        { label: 'Critical', n: '1', swatch: '#B91C1C', ring: NONE },
+        { label: 'High', n: '38', swatch: '#B45309', ring: NONE },
+        { label: 'Low', n: '12', swatch: '#FEF6E7', ring: RING },
+        { label: 'Normal', n: '214', swatch: '#076B3C', ring: NONE }
+      ],
+      bpBands: [
+        { label: 'Normal', range: 'Below 120/80', n: '38', swatch: '#076B3C', opacity: '1', ring: NONE },
+        { label: 'Elevated', range: '120–129 / below 80', n: '21', swatch: '#FEF6E7', opacity: '1', ring: RING },
+        { label: 'Stage 1', range: '130–139 / 80–89', n: '18', swatch: '#B45309', opacity: '0.6', ring: NONE },
+        { label: 'Stage 2', range: '140+ / 90+', n: '9', swatch: '#B45309', opacity: '1', ring: NONE }
+      ],
+      bpNamed: [
+        { name: 'Rahul Das', detail: '172/104 mmHg · today, 8:40 AM', band: 'Stage 2' },
+        { name: 'Debasish Bose', detail: '158/96 mmHg · Thu, 24 Sep', band: 'Stage 2' },
+        { name: 'Moumita Roy', detail: '136/88 mmHg · 3 readings above', band: 'Stage 1' }
+      ],
+      overdue: [
+        { name: 'Debasish Bose', late: '9 days overdue', detail: 'was due Sun, 20 Sep' },
+        { name: 'Sujit Mondal', late: '6 days overdue', detail: 'was due Wed, 23 Sep' },
+        { name: 'Farhana Islam', late: '3 days overdue', detail: 'was due Sat, 26 Sep' }
+      ],
+      dueSoon: [
+        { name: 'Aisha Khan', detail: 'Thu, 1 Oct · Thyroid review' },
+        { name: 'Moumita Roy', detail: 'Fri, 2 Oct · Cardiology, Dr. Mitra' },
+        { name: 'Rahul Das', detail: 'Sat, 3 Oct · BP review' }
+      ],
+      conditions: [
+        ['Type 2 diabetes', 148], ['Hypertension', 121], ['Dyslipidaemia', 96],
+        ['Hypothyroidism', 44], ['Coronary artery disease', 27], ['Chronic kidney disease', 18]
+      ].map(function (r) { return { label: r[0], n: String(r[1]), pct: (r[1] / 412 * 100).toFixed(1) + '%' }; })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,724 @@
+import 'package:flutter/material.dart';
+
+import '../../widgets/mp.dart';
+import 'common_d6.dart';
+
+/// Design: Patient-Profile.dc.html — "Patient profile".
+class PatientProfileScreen extends StatefulWidget {
+  const PatientProfileScreen({super.key});
+
+  @override
+  State<PatientProfileScreen> createState() => _PatientProfileScreenState();
+}
+
+class _PatientProfileScreenState extends State<PatientProfileScreen> {
+  static const _meds = [
+    ('Metformin 500 mg', '1-0-1 · After food · 30 days'),
+    ('Atorvastatin 10 mg', '0-0-1 · At night · 30 days'),
+  ];
+
+  static const _tests = ['HbA1c', 'Lipid profile', 'Fasting glucose', 'Kidney function', 'Urine routine', 'TSH'];
+
+  /// Follow-up presets and their distance (days) from today, Thu 1 Oct 2026.
+  static const _presets = [('1 week', 7), ('2 weeks', 14), ('1 month', 28), ('3 months', 91)];
+
+  final Set<int> _picked = {0, 1};
+  int? _preset = 2;
+  final _date = TextEditingController(text: 'Thu, 29 Oct 2026');
+
+  @override
+  void dispose() {
+    _date.dispose();
+    super.dispose();
+  }
+
+  static String _fmt(DateTime d) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]} ${d.year}';
+  }
+
+  void _pickPreset(int i) {
+    setState(() {
+      _preset = i;
+      _date.text = _fmt(DateTime.utc(2026, 10, 1 + _presets[i].$2));
+    });
+  }
+
+  void _toggleTest(int i) {
+    setState(() {
+      if (!_picked.remove(i)) _picked.add(i);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MpPage(
+      header: const MpHeader(
+        'Patient profile',
+        actions: [MpIconButton(I.moreVSmall, label: 'More options', filled: true)],
+      ),
+      body: VGap(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        gap: 16,
+        children: [
+          const D6ProfileHero(consult: true),
+          const D6ConsentNote(),
+          const D6RecordCaption(),
+          const D6OverviewCard(),
+          const D6MeasurementsCard(),
+          const _Nutrition(),
+          const _Hba1cHistory(),
+          const _TestReports(),
+          const _Ecg(),
+          const _RecentAlerts(),
+          const _PastConsultations(),
+          const _AiContext(),
+          Padding(padding: const EdgeInsets.only(top: 8), child: _prescription(context)),
+        ],
+      ),
+    );
+  }
+
+  Widget _prescription(BuildContext context) {
+    return MpCard(
+      child: VGap(
+        gap: 24,
+        children: [
+          const D6Title("Today's prescription", sub: 'Draft · Dr. Arjun Sen'),
+
+          // Current medications
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    const Expanded(child: D6Caps('Current medications', weight: w600, h: 1.35)),
+                    D6Link(
+                      'Add medicine',
+                      leading: I.plus,
+                      minHeight: 44,
+                      onTap: () => Nav.go(context, 'Consult-Voice'),
+                    ),
+                  ],
+                ),
+              ),
+              for (final m in _meds)
+                D6Row(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(m.$1, style: tx(16, w: w600)),
+                            const Gap(2),
+                            Text(m.$2, style: tx(14, c: MP.ink2, h: 1.45, tab: true)),
+                          ],
+                        ),
+                      ),
+                      const Gap(12),
+                      MpIconButton(
+                        I.edit,
+                        label: 'Edit ${m.$1}',
+                        iconSize: 18,
+                        color: MP.primary,
+                        background: MP.primarySoft,
+                        onTap: () => Nav.go(context, 'Consult-Dosage'),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+
+          // Lab tests
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(child: D6Caps('Lab tests', weight: w600, h: 1.35)),
+                  Text('${_picked.length} selected', style: tx(13, c: MP.ink3)),
+                ],
+              ),
+              const Gap(12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (var i = 0; i < _tests.length; i++)
+                    _TestChip(_tests[i], on: _picked.contains(i), onTap: () => _toggleTest(i)),
+                ],
+              ),
+            ],
+          ),
+
+          // Diagnosis and advice
+          const VGap(
+            gap: 16,
+            children: [
+              MpInput(label: 'Diagnosis', value: 'Type 2 diabetes mellitus; PCOS'),
+              MpInput(
+                label: 'Advice',
+                value:
+                    'Walk 30 minutes daily. Avoid sweets and fried food. Come in at once if chest tightness returns.',
+                maxLines: 3,
+                height: 104,
+              ),
+            ],
+          ),
+
+          // Follow-up
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const D6Caps('Follow-up', weight: w600, h: 1.35),
+              const Gap(12),
+              Row(
+                children: [
+                  for (var i = 0; i < _presets.length; i++) ...[
+                    if (i > 0) const Gap(8),
+                    Expanded(child: _PresetChip(_presets[i].$1, on: _preset == i, onTap: () => _pickPreset(i))),
+                  ],
+                ],
+              ),
+              const Gap(12),
+              _DateField(
+                controller: _date,
+                onChanged: (_) {
+                  if (_preset != null) setState(() => _preset = null);
+                },
+              ),
+            ],
+          ),
+
+          // Actions
+          Row(
+            children: [
+              Expanded(child: _ActionButton('Save draft', secondary: true, onTap: () => toast(context, 'Draft saved'))),
+              const Gap(12),
+              Expanded(
+                child: _ActionButton('Send prescription', onTap: () => toast(context, 'Prescription sent to Priya')),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clinical record cards
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Nutrition extends StatelessWidget {
+  const _Nutrition();
+
+  @override
+  Widget build(BuildContext context) {
+    return MpCard(
+      child: VGap(
+        gap: 16,
+        children: [
+          Text('Nutrition', style: tx(20, w: w700, h: 1.25)),
+          Row(
+            children: [
+              const MpAvatar('MB', size: 40, fontSize: 14),
+              const Gap(12),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Covered by Mou Banerjee', style: tx(16, w: w600)),
+                    const Gap(2),
+                    Text('Dietician, City Care Clinic', style: tx(14, c: MP.ink2, h: 1.45)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Hba1cHistory extends StatelessWidget {
+  const _Hba1cHistory();
+
+  static const _chart =
+      r'''<svg xmlns="http://www.w3.org/2000/svg" width="310" height="150" viewBox="0 0 310 150" font-family="Figtree">
+<rect x="24" y="84" width="286" height="36" fill="#E7F5EE"/>
+<path d="M24 12H310M24 48H310M24 120H310" stroke="#E5E9F0" stroke-width="1"/>
+<path d="M24 84H310" stroke="#076B3C" stroke-width="1.5" stroke-dasharray="4 4"/>
+<text x="0" y="16" font-size="12" fill="#69738A">9</text>
+<text x="0" y="52" font-size="12" fill="#69738A">8</text>
+<text x="0" y="88" font-size="12" fill="#69738A">7</text>
+<text x="0" y="124" font-size="12" fill="#69738A">6</text>
+<text x="30" y="112" font-size="12" font-weight="600" fill="#076B3C">Target 7.0</text>
+<polyline points="44,51.6 99.8,33.6 174.3,91.2 286,76.8" fill="none" stroke="#003399" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="44" cy="51.6" r="4" fill="#FFFFFF" stroke="#003399" stroke-width="2"/>
+<circle cx="99.8" cy="33.6" r="4" fill="#FFFFFF" stroke="#003399" stroke-width="2"/>
+<circle cx="174.3" cy="91.2" r="4" fill="#FFFFFF" stroke="#003399" stroke-width="2"/>
+<circle cx="286" cy="76.8" r="4.5" fill="#003399"/>
+<text x="44" y="41" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">7.9</text>
+<text x="99.8" y="23" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">8.4</text>
+<text x="174.3" y="80" font-size="12" font-weight="600" fill="#111827" text-anchor="middle">6.8</text>
+<text x="286" y="66" font-size="12" font-weight="700" fill="#111827" text-anchor="middle">7.2</text>
+<text x="44" y="142" font-size="12" fill="#69738A" text-anchor="middle">Jun ’25</text>
+<text x="99.8" y="142" font-size="12" fill="#69738A" text-anchor="middle">Sep ’25</text>
+<text x="174.3" y="142" font-size="12" fill="#69738A" text-anchor="middle">Jan ’26</text>
+<text x="286" y="142" font-size="12" fill="#69738A" text-anchor="middle">Jul ’26</text>
+</svg>''';
+
+  @override
+  Widget build(BuildContext context) {
+    return MpCard(
+      child: VGap(
+        gap: 16,
+        children: [
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: D6Title('HbA1c history', sub: 'Latest 7.2% · target below 7.0%')),
+              Gap(12),
+              Padding(padding: EdgeInsets.only(top: 2), child: D6Pill('Above target', bg: MP.amberSoft, fg: MP.amber)),
+            ],
+          ),
+          Semantics(
+            label: 'HbA1c: Jun 2025 7.9%, Sep 2025 8.4%, Jan 2026 6.8%, Jul 2026 7.2%. Target 7.0%.',
+            image: true,
+            child: const D6Chart(_chart, width: 310, height: 150),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TestReports extends StatelessWidget {
+  const _TestReports();
+
+  static const _ldl = r'''<svg xmlns="http://www.w3.org/2000/svg" width="72" height="32" viewBox="0 0 72 32">
+<polyline points="4,23.2 26,16.6 48,13 68,8.8" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="68" cy="8.8" r="3" fill="#B45309"/>
+</svg>''';
+
+  static const _tsh = r'''<svg xmlns="http://www.w3.org/2000/svg" width="72" height="32" viewBox="0 0 72 32">
+<polyline points="4,18 26,14 48,17 68,16" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="68" cy="16" r="3" fill="#076B3C"/>
+</svg>''';
+
+  static const _rows = [
+    (
+      'Lipid profile',
+      'High',
+      MP.amberSoft,
+      MP.amber,
+      'LDL 162 mg/dL · 12 Mar 2026',
+      _ldl,
+      'LDL rising over the last four reports',
+    ),
+    (
+      'Thyroid profile',
+      'Normal',
+      MP.greenSoft,
+      MP.green,
+      'TSH 2.4 mIU/L · 12 Mar 2026',
+      _tsh,
+      'TSH steady over the last four reports',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return MpCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: D6TitleLink('Test reports', action: 'View all', onTap: () => Nav.go(context, 'PP-Tests')),
+          ),
+          for (final r in _rows)
+            D6Row(
+              onTap: () => Nav.go(context, 'PP-Tests'),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(r.$1, style: tx(16, w: w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            ),
+                            const Gap(8),
+                            D6Pill(r.$2, bg: r.$3, fg: r.$4, height: 22, padH: 8, weight: w600),
+                          ],
+                        ),
+                        const Gap(2),
+                        Text(
+                          r.$5,
+                          style: tx(14, c: MP.ink2, h: 1.45, tab: true),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Gap(12),
+                  Semantics(label: r.$7, image: true, child: Svg(r.$6, width: 72, height: 32)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Ecg extends StatelessWidget {
+  const _Ecg();
+
+  @override
+  Widget build(BuildContext context) {
+    return MpCard(
+      child: VGap(
+        gap: 16,
+        children: [
+          D6TitleLink('ECG', action: 'View tracing', onTap: () => Nav.go(context, 'PP-Tests')),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Normal sinus rhythm', style: tx(16, w: w600)),
+                    const Gap(2),
+                    Text('12 Aug 2026 · 12-lead', style: tx(14, c: MP.ink2, h: 1.45)),
+                  ],
+                ),
+              ),
+              const Gap(12),
+              const D6Pill('Normal', bg: MP.greenSoft, fg: MP.green),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentAlerts extends StatelessWidget {
+  const _RecentAlerts();
+
+  @override
+  Widget build(BuildContext context) {
+    return MpCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: D6TitleLink('Recent alerts', action: 'View all', onTap: () => Nav.go(context, 'Alerts')),
+          ),
+          D6Row(
+            padding: const EdgeInsets.only(top: 14),
+            onTap: () => Nav.go(context, 'Patient-Thread'),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const D6Pill('Emergency', bg: MP.redSoft, fg: MP.red),
+                          const Gap(8),
+                          Flexible(
+                            child: Text(
+                              'Today, 9:12 AM · Open',
+                              style: tx(13, c: MP.ink3, tab: true),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Gap(6),
+                      Text(
+                        'Emergency message: chest tightness and sweating since morning',
+                        style: tx(14, c: MP.ink2, h: 1.45),
+                      ),
+                    ],
+                  ),
+                ),
+                const Gap(12),
+                const Ico(I.chevronRight, size: 18, color: MP.ink3),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PastConsultations extends StatelessWidget {
+  const _PastConsultations();
+
+  static const _visits = [
+    ('12 Mar 2026', 'Type 2 diabetes, dyslipidaemia · Dr. Arjun Sen'),
+    ('12 Jan 2026', 'Type 2 diabetes, PCOS review · Dr. Arjun Sen'),
+    ('18 Sep 2025', 'Type 2 diabetes, HbA1c 8.4% · Dr. Arjun Sen'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return MpCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: D6TitleLink('Past consultations', action: 'View all', onTap: () => Nav.go(context, 'Prescriptions')),
+          ),
+          for (final v in _visits)
+            D6Row(
+              onTap: () => Nav.go(context, 'Prescriptions'),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(v.$1, style: tx(16, w: w600, tab: true)),
+                        const Gap(2),
+                        Text(v.$2, style: tx(14, c: MP.ink2, h: 1.45), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ],
+                    ),
+                  ),
+                  const Gap(12),
+                  const Ico(I.chevronRight, size: 18, color: MP.ink3),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiContext extends StatelessWidget {
+  const _AiContext();
+
+  @override
+  Widget build(BuildContext context) {
+    return MpCard(
+      child: VGap(
+        gap: 12,
+        children: [
+          Row(
+            children: [
+              const Ico(I.sparkle, size: 20, color: MP.primary),
+              const Gap(8),
+              Expanded(child: Text('AI assistant context', style: tx(20, w: w700, h: 1.25))),
+            ],
+          ),
+          Text.rich(
+            TextSpan(
+              style: tx(16, h: 1.5),
+              children: [
+                const TextSpan(text: 'This week Priya asked about: '),
+                TextSpan(text: 'missed doses, chest tightness', style: tx(16, w: w600, h: 1.5)),
+              ],
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: D6Link(
+              'Open chat review',
+              size: 15,
+              icon: I.chevronRight,
+              minHeight: 44,
+              onTap: () => Nav.go(context, 'Chat-Review'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prescribing controls
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Lab test toggle: 40px border-box pill (padding 0 16, 1px border), check
+/// icon when selected.
+class _TestChip extends StatelessWidget {
+  final String label;
+  final bool on;
+  final VoidCallback onTap;
+  const _TestChip(this.label, {required this.on, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = on ? MP.white : MP.ink2;
+    return Semantics(
+      button: true,
+      toggled: on,
+      child: SizedBox(
+        height: 40,
+        child: Tap(
+          onTap: onTap,
+          radius: 999,
+          color: on ? MP.primary : MP.white,
+          border: on ? MP.primary : MP.lineStrong,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (on) ...[Ico(I.check, size: 16, color: fg, stroke: 2.25), const Gap(6)],
+              Text(label, style: tx(14, w: w600, c: fg)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Follow-up preset: equal-width 40px border-box pill (padding 0).
+class _PresetChip extends StatelessWidget {
+  final String label;
+  final bool on;
+  final VoidCallback onTap;
+  const _PresetChip(this.label, {required this.on, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: on,
+      child: SizedBox(
+        height: 40,
+        child: Tap(
+          onTap: onTap,
+          radius: 999,
+          color: on ? MP.primary : MP.white,
+          border: on ? MP.primary : MP.lineStrong,
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(label, style: tx(14, w: w600, c: on ? MP.white : MP.ink2), maxLines: 1),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Follow-up date input: 56px, calendar icon at 16px, text at 48px.
+class _DateField extends StatefulWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  const _DateField({required this.controller, required this.onChanged});
+
+  @override
+  State<_DateField> createState() => _DateFieldState();
+}
+
+class _DateFieldState extends State<_DateField> {
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = _focus.hasFocus;
+    return Semantics(
+      label: 'Follow-up date',
+      textField: true,
+      child: Container(
+        height: 56,
+        decoration: BoxDecoration(
+          color: MP.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: focused ? MP.primary : MP.lineStrong),
+          boxShadow: focused ? MPShadow.focusRing : null,
+        ),
+        child: Row(
+          children: [
+            // Positions are measured from the outer edge; the 1px border is inside.
+            const Gap(15),
+            const Ico(I.calendar, size: 20, color: MP.ink2),
+            const Gap(13),
+            Expanded(
+              child: TextField(
+                controller: widget.controller,
+                focusNode: _focus,
+                onChanged: widget.onChanged,
+                keyboardType: TextInputType.datetime,
+                style: tx(16, tab: true),
+                cursorColor: MP.primary,
+                decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
+              ),
+            ),
+            const Gap(16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 56px action button whose label may wrap to two lines on narrow phones
+/// (CSS buttons wrap; padding is the UA default 6px).
+class _ActionButton extends StatelessWidget {
+  final String label;
+  final bool secondary;
+  final VoidCallback onTap;
+  const _ActionButton(this.label, {this.secondary = false, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: Tap(
+        onTap: onTap,
+        radius: 16,
+        color: secondary ? MP.white : MP.primarySoft,
+        border: secondary ? MP.lineStrong : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Center(
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              style: tx(16, w: w600, c: secondary ? MP.ink : MP.primary),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

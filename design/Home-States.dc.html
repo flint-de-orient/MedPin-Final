@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Home states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 2292px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<main style="padding: 24px 20px 48px; display: flex; flex-direction: column; gap: 32px">
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Home states</h1>
+    <p style="margin: 0; font-size: 14px; line-height: 1.45; color: #545E72">How dashboard cards behave while loading, when data is late or missing, and when a card fails.</p>
+  </div>
+
+  <!-- LOADING -->
+  <section aria-labelledby="s-loading" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="s-loading" style="margin: 0; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Loading</h2>
+    <div aria-hidden="true" style="display: flex; flex-direction: column">
+      <div style="height: 44px; display: flex; align-items: center; justify-content: space-between">
+        <span style="width: 97px; height: 28px; border-radius: 12px; background: #F1F4F9"></span>
+        <span style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 24px; height: 24px; border-radius: 999px; background: #F1F4F9"></span>
+          <span style="width: 40px; height: 40px; border-radius: 999px; background: #F1F4F9"></span>
+        </span>
+      </div>
+      <span style="margin-top: 20px; width: 240px; height: 32px; border-radius: 12px; background: #F1F4F9"></span>
+      <span style="margin-top: 8px; width: 180px; height: 16px; border-radius: 999px; background: #F1F4F9"></span>
+      <div style="margin-top: 20px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+        <span style="width: 140px; height: 20px; border-radius: 999px; background: #F1F4F9"></span>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #F1F4F9"></span>
+          <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px"><span style="width: 60%; height: 14px; border-radius: 999px; background: #F1F4F9"></span><span style="width: 85%; height: 12px; border-radius: 999px; background: #F1F4F9"></span></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #F1F4F9"></span>
+          <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px"><span style="width: 50%; height: 14px; border-radius: 999px; background: #F1F4F9"></span><span style="width: 75%; height: 12px; border-radius: 999px; background: #F1F4F9"></span></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #F1F4F9"></span>
+          <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px"><span style="width: 55%; height: 14px; border-radius: 999px; background: #F1F4F9"></span><span style="width: 80%; height: 12px; border-radius: 999px; background: #F1F4F9"></span></span>
+        </div>
+      </div>
+      <div style="margin-top: 16px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+        <span style="width: 120px; height: 20px; border-radius: 999px; background: #F1F4F9"></span>
+        <span style="width: 88px; height: 30px; border-radius: 12px; background: #F1F4F9"></span>
+        <span style="width: 100%; height: 10px; border-radius: 999px; background: #F1F4F9"></span>
+      </div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.4; color: #69738A">Static blocks in the card's real shape. No shimmer or pulse.</p>
+  </section>
+
+  <!-- STALE DATA -->
+  <section aria-labelledby="s-stale" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="s-stale" style="margin: 0; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Stale data</h2>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <p style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Good morning, Dr. Sen</p>
+      <div style="height: 44px; display: flex; align-items: center; gap: 8px; font-size: 14px">
+        <span style="width: 8px; height: 8px; flex-shrink: 0; border-radius: 999px; background: #B45309"></span>
+        <span style="color: #B45309; font-weight: 600">Updated 3 min ago · Reconnecting</span>
+        <button style="height: 44px; margin-left: auto; padding: 0 4px; border: 0; background: transparent; color: #003399; font-size: 14px; font-weight: 600; cursor: pointer">Retry</button>
+      </div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.4; color: #69738A">Polls keep failing. Last values stay on screen, nothing animates.</p>
+  </section>
+
+  <!-- ALL CLEAR -->
+  <section aria-labelledby="s-clear" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="s-clear" style="margin: 0; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">All clear</h2>
+    <div style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+      <h3 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Open alerts</h3>
+      <div style="display: flex; align-items: flex-start; gap: 12px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#076B3C" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px"><path d="M20 6 9 17l-5-5"></path></svg>
+        <span style="display: flex; flex-direction: column">
+          <span style="font-size: 16px; line-height: 24px; font-weight: 600">No open alerts</span>
+          <span style="font-size: 13px; line-height: 18px; color: #69738A">Last checked 4s ago</span>
+        </span>
+      </div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.4; color: #69738A">Always rendered. An empty alerts card is never hidden.</p>
+  </section>
+
+  <!-- NOT ENOUGH DATA -->
+  <section aria-labelledby="s-nodata" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="s-nodata" style="margin: 0; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Not enough data</h2>
+    <div style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 20px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h3 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Weekly impact</h3>
+        <span style="font-size: 14px; line-height: 20px; color: #545E72">Last 7 days</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Avg consultation time</span>
+        <span style="font-size: 16px; line-height: 24px; font-weight: 600; color: #69738A">Not enough data yet</span>
+        <span style="font-size: 14px; line-height: 20px; color: #545E72">Needs one completed consultation first.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Patient chats</span>
+        <span style="font-size: 16px; line-height: 24px; font-weight: 600; color: #69738A">Not enough data yet</span>
+      </div>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.4; color: #69738A">Never "0 min". Zero reads as a real, good result.</p>
+  </section>
+
+  <!-- ERROR -->
+  <section aria-labelledby="s-error" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="s-error" style="margin: 0; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Error</h2>
+    <div style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+      <h3 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Needs review</h3>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; line-height: 24px; font-weight: 600">Couldn't load this card</span>
+        <span style="font-size: 14px; line-height: 20px; color: #545E72">The rest of Home is unaffected.</span>
+      </div>
+      <button style="align-self: flex-start; height: 48px; padding: 0 16px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>Try again</button>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.4; color: #69738A">Fails per card, in neutral tones. Danger is kept for emergencies.</p>
+  </section>
+
+  <!-- EMPTY -->
+  <section aria-labelledby="s-empty" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="s-empty" style="margin: 0; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Empty</h2>
+    <div style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 20px; padding: 20px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 16px">
+      <h3 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Today's OPD queue</h3>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; line-height: 24px; font-weight: 600">No visits booked today</span>
+        <span style="font-size: 14px; line-height: 20px; color: #545E72">Bookings and walk-ins show up here.</span>
+      </div>
+      <a href="#" style="align-self: flex-start; height: 48px; padding: 0 16px; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; display: flex; align-items: center">Open appointments</a>
+    </div>
+    <p style="margin: 0; font-size: 13px; line-height: 1.4; color: #69738A">A real empty state with a way forward, never a blank card.</p>
+  </section>
+
+  <!-- CRITICAL LAB RESULTS, LOADING -->
+  <section aria-labelledby="s-crit" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="s-crit" style="margin: 0; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Critical lab results · Loading</h2>
+    <div style="border: 1.5px dashed #D5DBE5; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 4px">
+      <span style="font-size: 16px; line-height: 24px; font-weight: 600; color: #545E72">Critical lab results</span>
+      <span style="font-size: 14px; line-height: 20px; color: #545E72">Renders nothing while loading (prevents a false all-clear)</span>
+    </div>
+  </section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2292}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

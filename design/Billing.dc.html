@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Plan and billing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1480px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <button aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Plan &amp; billing</h1>
+</header>
+
+<main style="padding: 8px 20px 24px; display: flex; flex-direction: column; gap: 16px">
+
+  <!-- Current plan (hero) -->
+  <section aria-labelledby="plan-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 20px; padding: 20px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 12px">
+    <span style="font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Current plan</span>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <h2 id="plan-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Clinic plan</h2>
+      <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #E7F5EE; color: #076B3C; font-size: 12px; font-weight: 600; display: flex; align-items: center">Active</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">₹2,499<span style="font-size: 16px; font-weight: 600; letter-spacing: 0; color: #545E72"> / month</span></span>
+      <span style="font-size: 14px; line-height: 1.45; color: #545E72; font-variant-numeric: tabular-nums">Renews 14 Oct 2026</span>
+    </div>
+  </section>
+
+  <!-- Usage -->
+  <section aria-labelledby="use-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h2 id="use-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Usage</h2>
+      <span style="font-size: 14px; line-height: 1.45; color: #545E72; font-variant-numeric: tabular-nums">This billing cycle · resets 14 Oct 2026</span>
+    </div>
+    <sc-for list="{{ meters }}" as="m" hint-placeholder-count="3">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px">
+          <span style="font-size: 15px; line-height: 1.45; font-weight: 600">{{ m.label }}</span>
+          <span style="font-size: 14px; line-height: 1.45; color: #545E72; font-variant-numeric: tabular-nums"><strong style="font-weight: 600; color: #111827">{{ m.used }}</strong> of {{ m.cap }}</span>
+        </div>
+        <div role="progressbar" aria-label="{{ m.aria }}" aria-valuenow="{{ m.pct }}" aria-valuemin="0" aria-valuemax="100" style="height: 6px; border-radius: 999px; background: #F1F4F9; overflow: hidden">
+          <span style="display: block; height: 100%; border-radius: 999px; width: {{ m.width }}; background: {{ m.color }}"></span>
+        </div>
+      </div>
+    </sc-for>
+  </section>
+
+  <!-- Billing history -->
+  <section aria-labelledby="hist-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px">
+      <h2 id="hist-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Billing history</h2>
+      <a href="#" style="font-size: 14px; font-weight: 600">View all</a>
+    </div>
+    <sc-for list="{{ invoices }}" as="i" hint-placeholder-count="3">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid #E5E9F0">
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 16px; line-height: 1.5; font-weight: 600; font-variant-numeric: tabular-nums">{{ i.date }}</span>
+          <span style="font-size: 14px; line-height: 1.45; color: #545E72">Clinic plan · monthly</span>
+        </span>
+        <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px">
+          <span style="font-size: 16px; line-height: 1.5; font-weight: 600; font-variant-numeric: tabular-nums">₹2,499</span>
+          <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #E7F5EE; color: #076B3C; font-size: 12px; font-weight: 600; display: flex; align-items: center">Paid</span>
+        </span>
+        <button aria-label="{{ i.dlLabel }}" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #003399; cursor: pointer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"></path></svg>
+        </button>
+      </div>
+    </sc-for>
+  </section>
+
+  <!-- Plans -->
+  <section aria-labelledby="plans-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; flex-direction: column; gap: 2px; padding-bottom: 12px">
+      <h2 id="plans-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Plans</h2>
+      <span style="font-size: 14px; line-height: 1.45; color: #545E72">Changes apply from your next billing cycle</span>
+    </div>
+    <sc-for list="{{ plans }}" as="p" hint-placeholder-count="3">
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 16px 0; border-top: 1px solid #E5E9F0">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="font-size: 16px; line-height: 1.5; font-weight: 600">{{ p.name }}</span>
+          <sc-if value="{{ p.current }}" hint-placeholder-val="{{ false }}">
+            <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 12px; font-weight: 600; display: flex; align-items: center">Current</span>
+          </sc-if>
+          <span style="margin-left: auto; font-size: 16px; line-height: 1.5; font-weight: 600; font-variant-numeric: tabular-nums">{{ p.price }}<span style="font-size: 14px; font-weight: 400; color: #545E72"> / month</span></span>
+        </div>
+        <span style="font-size: 14px; line-height: 1.45; color: #545E72; font-variant-numeric: tabular-nums">{{ p.features }}</span>
+        <sc-if value="{{ p.hasNote }}" hint-placeholder-val="{{ false }}">
+          <span style="font-size: 13px; line-height: 1.4; color: #69738A">{{ p.note }}</span>
+        </sc-if>
+        <sc-if value="{{ p.switchable }}" hint-placeholder-val="{{ true }}">
+          <button aria-label="{{ p.switchLabel }}" style="align-self: flex-start; margin-top: 8px; height: 48px; padding: 0 16px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; cursor: pointer">Switch plan</button>
+        </sc-if>
+      </div>
+    </sc-for>
+    <p style="margin: 0; padding-top: 14px; border-top: 1px solid #E5E9F0; display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.4; color: #69738A">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+      Secure checkout via Razorpay
+    </p>
+  </section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function meter(label, used, cap, usedText, capText) {
+      var pct = Math.round(used / cap * 100);
+      return { label: label, used: usedText, cap: capText, pct: pct, width: pct + '%',
+        color: pct >= 90 ? '#B45309' : '#003399',
+        aria: label + ': ' + usedText + ' of ' + capText + ' used' };
+    }
+    return {
+      meters: [
+        meter('Seats', 7, 8, '7', '8'),
+        meter('Active patients', 412, 500, '412', '500'),
+        meter('AI chats this month', 1860, 3000, '1,860', '3,000')
+      ],
+      invoices: ['14 Sep 2026', '14 Aug 2026', '14 Jul 2026'].map(function (d) {
+        return { date: d, dlLabel: 'Download invoice for ' + d };
+      }),
+      plans: [
+        { name: 'Starter', price: '₹999', current: false, switchable: true, switchLabel: 'Switch to Starter plan',
+          features: '3 seats · 150 active patients · 1,000 AI chats a month',
+          hasNote: true, note: 'Your team has 7 people, so 4 would need to be removed first' },
+        { name: 'Clinic', price: '₹2,499', current: true, switchable: false, switchLabel: '',
+          features: '8 seats · 500 active patients · 3,000 AI chats a month', hasNote: false, note: '' },
+        { name: 'Hospital', price: '₹7,999', current: false, switchable: true, switchLabel: 'Switch to Hospital plan',
+          features: '25 seats · 2,000 active patients · 12,000 AI chats a month', hasNote: false, note: '' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

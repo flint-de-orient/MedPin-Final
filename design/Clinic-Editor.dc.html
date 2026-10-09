@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Edit location</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 2680px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; background: #F7F9FC; display: flex; align-items: center; gap: 4px">
+  <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Edit location</h1>
+  <button style="height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; color: #003399; font-size: 16px; font-weight: 600; cursor: pointer">Save</button>
+</header>
+
+<form style="margin: 0; padding: 8px 20px 32px; display: flex; flex-direction: column; gap: 16px">
+
+  <!-- Details -->
+  <section aria-labelledby="det-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <h2 id="det-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Details</h2>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="loc-name" style="font-size: 14px; font-weight: 600">Location name</label>
+      <input id="loc-name" type="text" value="City Care Clinic — Salt Lake" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px">
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="loc-addr" style="font-size: 14px; font-weight: 600">Address</label>
+      <textarea id="loc-addr" rows="2" style="height: 80px; box-sizing: border-box; padding: 14px 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; line-height: 1.5; resize: none">DD-24, Sector 1, Salt Lake, Kolkata 700064</textarea>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="loc-phone" style="font-size: 14px; font-weight: 600">Clinic phone</label>
+      <input id="loc-phone" type="tel" value="033 4012 5678" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; font-variant-numeric: tabular-nums">
+    </div>
+  </section>
+
+  <!-- Letterhead -->
+  <section aria-labelledby="lh-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h2 id="lh-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Letterhead</h2>
+      <span style="font-size: 14px; color: #545E72">Printed on prescriptions from this location</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="lh-tag" style="font-size: 14px; font-weight: 600">Tagline</label>
+      <input id="lh-tag" type="text" value="Diabetes, thyroid and heart care" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px">
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="lh-doc" style="font-size: 14px; font-weight: 600">Doctor name as printed</label>
+      <input id="lh-doc" type="text" value="Dr. Arjun Sen, MBBS, MD (Medicine)" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; text-overflow: ellipsis">
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="lh-reg" style="font-size: 14px; font-weight: 600">Registration number</label>
+      <input id="lh-reg" type="text" value="WBMC 64213" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; font-variant-numeric: tabular-nums">
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 14px; font-weight: 600">Logo</span>
+      <div style="display: flex; align-items: center; gap: 16px">
+        <span role="img" aria-label="Logo preview: City Care Clinic mark on a dark background" style="width: 72px; height: 72px; flex-shrink: 0; border-radius: 12px; background: #111827; display: flex; align-items: center; justify-content: center">
+          <span style="width: 44px; height: 44px; box-sizing: border-box; border: 2px solid #D5DBE5; border-radius: 999px; color: #D5DBE5; font-size: 16px; font-weight: 800; letter-spacing: 0.02em; display: flex; align-items: center; justify-content: center">CC</span>
+        </span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">citycare-logo.png</span>
+          <span style="font-size: 13px; color: #69738A">PNG · 48 KB</span>
+        </span>
+        <button type="button" style="flex-shrink: 0; height: 48px; padding: 0 8px; border: 0; background: transparent; color: #003399; font-size: 15px; font-weight: 600; cursor: pointer">Replace</button>
+      </div>
+      <p role="status" style="margin: 4px 0 0; padding: 12px 14px; border-radius: 12px; background: #F7F9FC; display: flex; align-items: flex-start; gap: 8px; font-size: 14px; line-height: 1.45; color: #545E72">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px"><path d="M20 6 9 17l-5-5"></path></svg>
+        Dark background detected — we'll print a light version
+      </p>
+    </div>
+  </section>
+
+  <!-- Map link -->
+  <section aria-labelledby="map-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <h2 id="map-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Map link</h2>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="map" style="font-size: 14px; font-weight: 600">Google Maps link</label>
+      <div style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; display: flex; align-items: center; gap: 10px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+        <input id="map" type="url" value="https://maps.app.goo.gl/Qx7bR2mLk9" aria-describedby="map-help" style="flex-grow: 1; min-width: 0; border: 0; padding: 0; background: transparent; font-size: 16px; outline: none; text-overflow: ellipsis">
+      </div>
+      <span id="map-help" style="font-size: 13px; color: #69738A">Patients get this with every booking confirmation.</span>
+    </div>
+  </section>
+
+  <!-- Weekly hours -->
+  <section aria-labelledby="wh-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px">
+      <h2 id="wh-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Weekly hours</h2>
+      <span style="font-size: 14px; color: #545E72">When patients can book at this location</span>
+    </div>
+    <sc-for list="{{ hours }}" as="h" hint-placeholder-count="7">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 8px 0; min-height: 48px; border-top: 1px solid #E5E9F0">
+        <span style="width: 44px; flex-shrink: 0; font-size: 15px; font-weight: 600">{{ h.day }}</span>
+        <button type="button" aria-label="{{ h.editLabel }}" style="flex-grow: 1; min-width: 0; height: 48px; padding: 0; border: 0; background: transparent; text-align: left; font-size: 15px; color: {{ h.color }}; font-variant-numeric: tabular-nums; cursor: pointer">{{ h.range }}</button>
+        <button type="button" role="switch" aria-checked="{{ h.on }}" aria-label="{{ h.switchLabel }}" style="position: relative; width: 52px; height: 32px; flex-shrink: 0; border: 0; padding: 0; border-radius: 999px; background: {{ h.track }}; cursor: pointer">
+          <span style="position: absolute; top: 2px; left: {{ h.knob }}; width: 28px; height: 28px; border-radius: 999px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04)"></span>
+        </button>
+      </div>
+    </sc-for>
+  </section>
+
+  <!-- Holidays & closures -->
+  <section aria-labelledby="hc-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <h2 id="hc-h" style="margin: 0; padding-bottom: 8px; font-size: 20px; line-height: 1.25; font-weight: 700">Holidays &amp; closures</h2>
+    <sc-for list="{{ closures }}" as="c" hint-placeholder-count="2">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0">
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums">{{ c.date }}</span>
+          <span style="font-size: 14px; color: #545E72">{{ c.reason }}</span>
+        </span>
+        <button type="button" aria-label="{{ c.removeLabel }}" style="width: 44px; height: 44px; flex-shrink: 0; margin-right: -10px; border: 0; border-radius: 12px; background: transparent; color: #545E72; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+        </button>
+      </div>
+    </sc-for>
+    <button type="button" style="align-self: flex-start; height: 48px; margin-top: 4px; padding: 0; border: 0; background: transparent; color: #003399; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add closure</button>
+  </section>
+
+  <!-- Per-doctor hours -->
+  <section aria-labelledby="pd-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px">
+      <h2 id="pd-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Per-doctor hours</h2>
+      <span style="font-size: 14px; color: #545E72">Within the clinic's weekly hours</span>
+    </div>
+    <sc-for list="{{ doctors }}" as="d" hint-placeholder-count="2">
+      <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+        <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ d.initials }}</span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 16px; font-weight: 600">{{ d.name }}</span>
+          <span style="font-size: 14px; color: #545E72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums">{{ d.hours }}</span>
+        </span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+      </a>
+    </sc-for>
+  </section>
+
+  <button type="submit" style="margin-top: 8px; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Save changes</button>
+
+  <div style="margin-top: 16px; padding-top: 24px; border-top: 1px solid #E5E9F0; display: flex; flex-direction: column; gap: 4px">
+    <button type="button" style="align-self: flex-start; height: 48px; padding: 0; border: 0; background: transparent; color: #B91C1C; font-size: 16px; font-weight: 600; cursor: pointer">Deactivate location</button>
+    <p style="margin: 0; font-size: 14px; line-height: 1.45; color: #545E72">3 patients have upcoming bookings here. Deactivating keeps their history.</p>
+  </div>
+</form>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2680}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var week = [
+      ['Mon', '9:00 AM – 8:00 PM'], ['Tue', '9:00 AM – 8:00 PM'], ['Wed', '9:00 AM – 8:00 PM'],
+      ['Thu', '9:00 AM – 8:00 PM'], ['Fri', '9:00 AM – 8:00 PM'], ['Sat', '9:00 AM – 2:00 PM'], ['Sun', null]
+    ];
+    return {
+      hours: week.map(function (w) {
+        var open = !!w[1];
+        return {
+          day: w[0],
+          range: open ? w[1] : 'Closed',
+          color: open ? '#111827' : '#69738A',
+          on: open ? 'true' : 'false',
+          track: open ? '#003399' : '#D5DBE5',
+          knob: open ? '22px' : '2px',
+          editLabel: open ? 'Edit ' + w[0] + ' hours, ' + w[1] : w[0] + ', closed',
+          switchLabel: 'Open on ' + w[0]
+        };
+      }),
+      closures: [
+        { date: 'Fri, 2 Oct 2026', reason: 'Gandhi Jayanti · closed all day', removeLabel: 'Remove closure on 2 October' },
+        { date: 'Tue 20 – Fri 23 Oct 2026', reason: 'Durga Puja · closed all day', removeLabel: 'Remove closure from 20 to 23 October' }
+      ],
+      doctors: [
+        { initials: 'AS', name: 'Dr. Arjun Sen', hours: 'Mon–Sat · 9:00 AM – 1:00 PM' },
+        { initials: 'RM', name: 'Dr. Rina Mitra', hours: 'Tue · Thu · 5:00 – 8:00 PM' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

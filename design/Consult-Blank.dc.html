@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Consultation · no records</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1820px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; flex-shrink: 0">
+  <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <div style="flex-grow: 1; display: flex; flex-direction: column">
+    <h1 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Consultation</h1>
+    <span style="font-size: 13px; color: #545E72">Started 9:41 AM</span>
+  </div>
+  <button style="height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 600; color: #003399">Save draft</button>
+</header>
+
+<main style="padding: 16px 20px 136px; display: flex; flex-direction: column; gap: 16px">
+
+  <section style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 20px; padding: 16px 20px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; align-items: center; gap: 12px">
+      <span style="width: 48px; height: 48px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center">AG</span>
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 18px; font-weight: 700">Ankit Ghosh</span>
+        <span style="font-size: 14px; color: #545E72">Male · New patient · added just now</span>
+      </div>
+      <a href="#" style="font-size: 14px; font-weight: 600">Change</a>
+    </div>
+    <a href="#" style="font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+      Add allergies
+    </a>
+  </section>
+
+  <section style="background: #FFFFFF; border: 1px dashed #D5DBE5; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+    <h2 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Patient snapshot</h2>
+    <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #545E72">No records yet. The AI summary, abnormal test results and current medicines appear here once Ankit shares reports or past prescriptions.</p>
+    <button style="height: 48px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"></path></svg>
+      Send Ankit an upload link
+    </button>
+  </section>
+
+  <section aria-labelledby="vit-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h2 id="vit-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Vitals</h2>
+      <span style="font-size: 13px; color: #545E72">Not recorded at the desk. Enter what you measure.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+      <sc-for list="{{ fields }}" as="f" hint-placeholder-count="8">
+        <label style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 14px; font-weight: 600">{{ f.label }}</span>
+          <span style="position: relative; display: flex; align-items: center">
+            <input type="text" inputmode="decimal" placeholder="{{ f.ph }}" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 56px 0 14px; border: 1px solid #D5DBE5; border-radius: 16px; background: {{ f.bg }}; font-size: 16px; outline: none; font-variant-numeric: tabular-nums">
+            <span style="position: absolute; right: 12px; font-size: 13px; color: #69738A">{{ f.unit }}</span>
+          </span>
+        </label>
+      </sc-for>
+    </div>
+    <div role="group" aria-label="Sugar reading type" style="display: flex; align-items: center; gap: 10px">
+      <span style="font-size: 14px; color: #545E72">Sugar reading is</span>
+      <div style="display: flex; padding: 4px; background: #F1F4F9; border-radius: 12px">
+        <button aria-pressed="false" style="height: 36px; padding: 0 14px; border: 0; border-radius: 9px; background: transparent; font-size: 14px; font-weight: 500; color: #545E72">Fasting</button>
+        <button aria-pressed="true" style="height: 36px; padding: 0 14px; border: 0; border-radius: 9px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,51,153,0.08); font-size: 14px; font-weight: 600; color: #111827">Random</button>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="cc-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="width: 26px; height: 26px; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">1</span>
+      <h2 id="cc-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Chief complaint</h2>
+    </div>
+    <div style="position: relative">
+      <label for="cc" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Chief complaint</label>
+      <textarea id="cc" placeholder="What brings Ankit in today?" style="width: 100%; height: 120px; box-sizing: border-box; padding: 14px 16px 56px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; line-height: 1.5; resize: none; outline: none"></textarea>
+      <button aria-label="Dictate chief complaint" style="position: absolute; right: 8px; bottom: 8px; height: 40px; padding: 0 14px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+        Speak
+      </button>
+    </div>
+    <span style="font-size: 13px; color: #69738A">Type or speak in English, বাংলা or हिन्दी.</span>
+  </section>
+
+  <section aria-labelledby="dx-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="width: 26px; height: 26px; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">2</span>
+      <h2 id="dx-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Diagnosis</h2>
+    </div>
+    <div style="position: relative">
+      <label for="dx" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Add diagnosis</label>
+      <input id="dx" type="text" placeholder="Type or speak a diagnosis" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 60px 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+      <button aria-label="Dictate diagnosis" style="position: absolute; right: 6px; top: 6px; width: 44px; height: 44px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+      </button>
+    </div>
+    <p style="margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #69738A">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+      Suggestions appear once you add a chief complaint.
+    </p>
+  </section>
+
+  <section style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 4px 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <sc-for list="{{ later }}" as="l" hint-placeholder-count="4">
+      <div style="display: flex; align-items: center; gap: 10px; height: 60px; border-top: {{ l.border }}">
+        <span style="width: 26px; height: 26px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ l.n }}</span>
+        <span style="flex-grow: 1; font-size: 17px; font-weight: 600; color: #545E72">{{ l.title }}</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+      </div>
+    </sc-for>
+  </section>
+</main>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 28px; background: #FFFFFF; border-top: 1px solid #E5E9F0; display: grid; grid-template-columns: 1fr 2fr; gap: 8px">
+  <button disabled style="height: 56px; border: 1px solid #E5E9F0; border-radius: 16px; background: #FFFFFF; color: #69738A; font-size: 16px; font-weight: 600">Preview</button>
+  <button disabled style="height: 56px; border: 0; border-radius: 16px; background: #E5E9F0; color: #69738A; font-size: 16px; font-weight: 600">Generate prescription</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function f(label, ph, unit) { return { label: label, ph: ph, unit: unit, bg: '#FFFFFF' }; }
+    return {
+      fields: [
+        f('Blood pressure', '120/80', 'mmHg'), f('Pulse', '72', 'bpm'),
+        f('SpO₂', '98', '%'), f('Temperature', '98.6', '°F'),
+        f('Weight', '0.0', 'kg'), f('Height', '000', 'cm'),
+        f('Blood sugar', '000', 'mg/dL'), { label: 'BMI', ph: 'Auto', unit: '', bg: '#F7F9FC' }
+      ],
+      later: [
+        ['3', 'Medications'], ['4', 'Lab tests'], ['5', 'Advice & instructions'], ['6', 'Validity & follow-up']
+      ].map(function (r, i) { return { n: r[0], title: r[1], border: i === 0 ? '0' : '1px solid #E5E9F0' }; })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patient profile · Treatment plan</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 2300px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; display: flex; flex-direction: column">
+  <div style="height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px">
+    <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+    </button>
+    <span style="flex-grow: 1"></span>
+    <button aria-label="Call Priya" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #003399">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+    </button>
+    <button aria-label="Message Priya" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #003399">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+    </button>
+    <button aria-label="More options" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+    </button>
+  </div>
+  <div style="padding: 0 20px 16px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; align-items: center; gap: 14px">
+      <span style="width: 56px; height: 56px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 19px; font-weight: 700; display: flex; align-items: center; justify-content: center">PS</span>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Priya Sharma</h1>
+        <span style="font-size: 14px; color: #545E72">29 yrs · Female · +91 98765 43210</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 6px">
+      <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: #FEF6E7; color: #B45309; font-size: 12px; font-weight: 700; display: flex; align-items: center">High risk</span>
+      <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">Type 2 diabetes</span>
+      <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">PCOS</span>
+      <span style="height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid #F0D3A8; color: #B45309; font-size: 12px; font-weight: 600; display: flex; align-items: center">Allergy: Sulfa drugs</span>
+    </div>
+  </div>
+  <div style="overflow: hidden">
+    <div role="tablist" aria-label="Patient record" style="padding: 0 20px; margin-left: -100px; display: flex; gap: 24px; white-space: nowrap">
+      <button role="tab" aria-selected="false" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Summary</button>
+      <button role="tab" aria-selected="false" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Prescriptions</button>
+      <button role="tab" aria-selected="false" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Test results</button>
+      <button role="tab" aria-selected="true" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid #003399; background: transparent; font-size: 15px; font-weight: 700; color: #003399">Treatment plan</button>
+    </div>
+  </div>
+</header>
+
+<main style="padding: 20px 20px 112px; display: flex; flex-direction: column; gap: 16px">
+
+  <!-- Plan owner -->
+  <section style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 20px; padding: 20px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Your plan</span>
+      <h2 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Dr. Arjun Sen</h2>
+      <span style="font-size: 14px; color: #545E72">Updated 29 Sep 2026 · Next visit Thu, 29 Oct</span>
+    </div>
+    <a href="#" style="font-size: 14px; font-weight: 600; padding-top: 2px">Edit</a>
+  </section>
+
+  <!-- Adherence -->
+  <section aria-labelledby="ad-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between">
+      <h2 id="ad-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Adherence</h2>
+      <span style="font-size: 14px; color: #545E72">Last 30 days</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: baseline; gap: 10px">
+        <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">86%</span>
+        <span style="font-size: 14px; font-weight: 600; color: #B45309">−4 pts vs previous 30 days</span>
+      </div>
+      <div style="height: 8px; border-radius: 999px; background: #E5E9F0; overflow: hidden" role="img" aria-label="86 percent of doses taken">
+        <div style="width: 86%; height: 8px; border-radius: 999px; background: #003399"></div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">This week</span>
+      <div style="display: grid; grid-template-columns: 64px repeat(7, minmax(0, 1fr)); gap: 6px; align-items: center" role="img" aria-label="Doses this week: morning doses all taken; evening doses missed Friday to Monday">
+        <sc-for list="{{ cells }}" as="c" hint-placeholder-count="24">
+          <span style="height: 28px; display: flex; align-items: center; justify-content: {{ c.justify }}">
+            <sc-if value="{{ c.isText }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size: 12px; font-weight: 600; color: #545E72">{{ c.text }}</span>
+            </sc-if>
+            <sc-if value="{{ c.taken }}" hint-placeholder-val="{{ true }}">
+              <span style="width: 28px; height: 28px; border-radius: 8px; background: #E7F5EE; color: #076B3C; display: flex; align-items: center; justify-content: center">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+              </span>
+            </sc-if>
+            <sc-if value="{{ c.missed }}" hint-placeholder-val="{{ false }}">
+              <span style="width: 26px; height: 26px; border-radius: 8px; border: 1px solid #B45309; background: #FEF6E7; color: #B45309; display: flex; align-items: center; justify-content: center">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+              </span>
+            </sc-if>
+            <sc-if value="{{ c.due }}" hint-placeholder-val="{{ false }}">
+              <span style="width: 26px; height: 26px; border-radius: 8px; border: 1px dashed #69738A; box-sizing: content-box"></span>
+            </sc-if>
+          </span>
+        </sc-for>
+      </div>
+      <div style="display: flex; gap: 16px; font-size: 13px; color: #545E72; padding-top: 4px">
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 12px; height: 12px; border-radius: 4px; background: #E7F5EE; border: 1px solid #076B3C"></span>Taken</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 12px; height: 12px; border-radius: 4px; background: #FEF6E7; border: 1px solid #B45309"></span>Missed</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 12px; height: 12px; border-radius: 4px; border: 1px dashed #69738A"></span>Due later</span>
+      </div>
+    </div>
+    <p style="margin: 0; padding: 12px 14px; border-radius: 12px; background: #FEF6E7; font-size: 14px; line-height: 1.45; color: #111827"><strong style="color: #B45309; font-weight: 700">4 evening doses missed</strong> in a row (Fri–Mon), all Metformin.</p>
+  </section>
+
+  <!-- Medications -->
+  <section aria-labelledby="md-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 12px">
+      <h2 id="md-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Current medications</h2>
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Taken</span>
+    </div>
+    <sc-for list="{{ meds }}" as="m" hint-placeholder-count="3">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0">
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+          <span style="font-size: 16px; font-weight: 600">{{ m.name }}</span>
+          <span style="font-size: 14px; color: #111827; font-variant-numeric: tabular-nums">{{ m.dose }}</span>
+          <span style="font-size: 13px; color: #69738A">{{ m.since }}</span>
+        </span>
+        <span style="font-size: {{ m.adSize }}; font-weight: 700; font-variant-numeric: tabular-nums; color: {{ m.adColor }}; text-align: right; flex-shrink: 0">{{ m.adherence }}</span>
+      </div>
+    </sc-for>
+  </section>
+
+  <!-- Instructions -->
+  <section aria-labelledby="in-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <h2 id="in-h" style="margin: 0 0 12px; font-size: 20px; line-height: 1.25; font-weight: 700">Instructions &amp; advice</h2>
+    <sc-for list="{{ advice }}" as="a" hint-placeholder-count="5">
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 14px 0; border-top: 1px solid #E5E9F0">
+        <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: {{ a.labelColor }}">{{ a.label }}</span>
+        <span style="font-size: 15px; line-height: 1.5; color: #111827">{{ a.text }}</span>
+      </div>
+    </sc-for>
+  </section>
+
+  <!-- Other doctors -->
+  <div style="display: flex; flex-direction: column; gap: 4px; padding: 12px 4px 0">
+    <h2 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">From other doctors</h2>
+    <span style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: #545E72">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+      Shared by Priya · read only
+    </span>
+  </div>
+  <sc-for list="{{ others }}" as="o" hint-placeholder-count="2">
+    <article style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 700">{{ o.doctor }}</span>
+        <span style="font-size: 14px; color: #545E72">{{ o.where }}</span>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 12px; background: #F7F9FC">
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 15px; font-weight: 600">{{ o.med }}</span>
+          <span style="font-size: 13px; color: #545E72">{{ o.dose }}</span>
+        </span>
+        <span style="font-size: {{ o.adSize }}; font-weight: 700; color: {{ o.adColor }}; text-align: right; flex-shrink: 0">{{ o.adherence }}</span>
+      </div>
+      <span style="font-size: 14px; line-height: 1.5; color: #111827"><strong style="font-weight: 600; color: #545E72">Advice:</strong> {{ o.advice }}</span>
+    </article>
+  </sc-for>
+</main>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 28px; background: #FFFFFF; border-top: 1px solid #E5E9F0">
+  <button style="width: 100%; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Start consultation</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var days = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue'];
+    var morning = ['t', 't', 't', 't', 't', 't', 't'];
+    var evening = ['t', 't', 'm', 'm', 'm', 'm', 'd'];
+    function text(s, j) { return { isText: true, text: s, taken: false, missed: false, due: false, justify: j }; }
+    function cell(k) { return { isText: false, text: '', taken: k === 't', missed: k === 'm', due: k === 'd', justify: 'center' }; }
+    var cells = [text('', 'flex-start')].concat(days.map(function (d) { return text(d, 'center'); }));
+    cells = cells.concat([text('Morning', 'flex-start')], morning.map(cell));
+    cells = cells.concat([text('Evening', 'flex-start')], evening.map(cell));
+    var WARN = '#B45309', OK = '#076B3C', FAINT = '#69738A';
+    return {
+      cells: cells,
+      meds: [
+        { name: 'Metformin 500 mg', dose: '1-0-1 · after food', since: 'Since Jun 2025 · ongoing', adherence: '78%', adColor: WARN, adSize: '16px' },
+        { name: 'Glimepiride 2 mg', dose: '1-0-0 · before breakfast', since: 'Started today · 30 days', adherence: 'New', adColor: FAINT, adSize: '14px' },
+        { name: 'Vitamin D3 60,000 IU', dose: 'Once a week · Sunday', since: 'Since 20 Jul 2026 · 8 weeks', adherence: '100%', adColor: OK, adSize: '16px' }
+      ],
+      advice: [
+        { label: 'Diet', text: 'Cut refined carbs. Three meals and two small snacks a day. Food logs reviewed by Mou Banerjee, dietician.', labelColor: '#69738A' },
+        { label: 'Activity', text: 'Brisk walk for 30 minutes, 5 days a week.', labelColor: '#69738A' },
+        { label: 'Monitoring', text: 'Check fasting sugar 3 times a week and log it in the app.', labelColor: '#69738A' },
+        { label: 'Before next visit', text: 'HbA1c, fasting and post-meal glucose.', labelColor: '#69738A' },
+        { label: 'Come in immediately if', text: 'Chest pain, breathlessness, or sugar below 70 mg/dL.', labelColor: '#B91C1C' }
+      ],
+      others: [
+        { doctor: 'Dr. Rina Mitra', where: 'Cardiology · City Care · 02 Feb 2026', med: 'Atorvastatin 10 mg', dose: '0-0-1 · at night', adherence: '91%', adColor: OK, adSize: '16px', advice: 'Walk 30 minutes daily. Limit salt and fried food.' },
+        { doctor: 'Dr. Nandita Gupta', where: 'Gynaecology · Apollo Clinic · 18 Nov 2025', med: 'Myo-inositol 2 g', dose: '1-0-1 · after food', adherence: 'Not tracked', adColor: FAINT, adSize: '13px', advice: 'Aim to lose 5% body weight in 6 months.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

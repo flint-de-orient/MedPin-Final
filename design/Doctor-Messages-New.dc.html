@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New chat</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<div aria-hidden="true" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; background: #FFFFFF"><span style="font-size: 28px; font-weight: 800">Messages</span><span style="font-size: 14px; color: #545E72">4 unread · 1 urgent</span></div>
+<div style="position: absolute; inset: 0; background: rgba(17,24,39,0.40)"></div>
+
+<section role="dialog" aria-modal="true" aria-labelledby="nc-h" style="position: absolute; left: 0; right: 0; bottom: 0; top: 72px; background: #FFFFFF; border-radius: 24px 24px 0 0; padding: 12px 20px 32px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 16px">
+  <span style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: #D5DBE5"></span>
+  <div style="display: flex; align-items: center; gap: 8px">
+    <h2 id="nc-h" style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">New chat</h2>
+    <button aria-label="Close" style="width: 44px; height: 44px; margin-right: -10px; border: 0; border-radius: 12px; background: transparent; color: #545E72; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+    </button>
+  </div>
+
+  <label style="height: 52px; box-sizing: border-box; padding: 0 16px; border: 1.5px solid #003399; border-radius: 16px; background: #FFFFFF; display: flex; align-items: center; gap: 10px">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+    <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search people</span>
+    <input type="search" placeholder="Patient name, mobile, doctor or staff" style="flex-grow: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 15px">
+  </label>
+
+  <a href="#" style="padding: 14px 16px; border-radius: 16px; background: #F7F9FC; border: 1px solid #E5E9F0; display: flex; align-items: center; gap: 12px; color: #111827">
+    <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #EBF1FB; color: #003399; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+    </span>
+    <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 15px; font-weight: 700">Message several patients</span>
+      <span style="font-size: 13px; color: #545E72">e.g. everyone with a follow-up due this week</span>
+    </span>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+  </a>
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Patients seen recently</span>
+    <sc-for list="{{ patients }}" as="p" hint-placeholder-count="3">
+      <button style="padding: 10px 0; border: 0; background: transparent; text-align: left; display: flex; align-items: center; gap: 12px">
+        <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ p.ini }}</span>
+        <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 1px">
+          <span style="font-size: 15px; font-weight: 600">{{ p.name }}</span>
+          <span style="font-size: 13px; color: #545E72; font-variant-numeric: tabular-nums">{{ p.sub }}</span>
+        </span>
+      </button>
+    </sc-for>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Colleagues & staff</span>
+    <sc-for list="{{ team }}" as="p" hint-placeholder-count="3">
+      <button style="padding: 10px 0; border: 0; background: transparent; text-align: left; display: flex; align-items: center; gap: 12px">
+        <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #F1F4F9; color: #545E72; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ p.ini }}</span>
+        <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 1px">
+          <span style="font-size: 15px; font-weight: 600">{{ p.name }}</span>
+          <span style="font-size: 13px; color: #545E72">{{ p.sub }}</span>
+        </span>
+      </button>
+    </sc-for>
+  </div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      patients: [
+        { ini: 'RD', name: 'Rahul Das', sub: '45 M · +91 98311 20764 · in queue' },
+        { ini: 'SM', name: 'Sujit Mondal', sub: '37 M · +91 98362 50417 · in queue' },
+        { ini: 'FI', name: 'Farhana Islam', sub: '34 F · +91 90511 72830 · seen today' }
+      ],
+      team: [
+        { ini: 'FD', name: 'Front desk · City Care', sub: 'Staff · Salt Lake' },
+        { ini: 'MB', name: 'Mou Banerjee', sub: 'Dietician' },
+        { ini: 'RM', name: 'Dr. Rina Mitra', sub: 'Cardiology' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

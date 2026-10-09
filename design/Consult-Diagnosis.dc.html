@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Consultation: diagnosis</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1156px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <a href="#" aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #111827">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </a>
+  <h1 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700; flex-grow: 1">Consultation</h1>
+</header>
+
+<div style="flex-shrink: 0; padding: 0 20px; display: flex; flex-direction: column; gap: 20px">
+  <div style="display: flex; align-items: center; gap: 12px">
+    <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">PS</span>
+    <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 16px; font-weight: 600">Priya Sharma</span>
+      <span style="font-size: 14px; line-height: 1.45; color: #545E72">29 F · <span style="font-weight: 600; color: #B45309">Allergy: Sulfa drugs</span></span>
+    </span>
+  </div>
+  <div style="position: relative">
+    <span aria-hidden="true" style="position: absolute; top: 13px; left: 16.67%; right: 16.67%; height: 2px; background: #D5DBE5"></span>
+    <span aria-hidden="true" style="position: absolute; top: 13px; left: 16.67%; width: 33.33%; height: 2px; background: #003399"></span>
+    <ol aria-label="Consultation steps, step 2 of 3" style="position: relative; margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr))">
+      <li style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px">
+        <span style="width: 28px; height: 28px; border-radius: 999px; background: #003399; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></span>
+        <span style="font-size: 14px; font-weight: 600; color: #545E72">Vitals<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">, done</span></span>
+      </li>
+      <li aria-current="step" style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px">
+        <span style="width: 28px; height: 28px; border-radius: 999px; background: #003399; color: #FFFFFF; box-shadow: 0 0 0 4px #EBF1FB; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">2</span>
+        <span style="font-size: 14px; font-weight: 700; color: #111827">Diagnosis</span>
+      </li>
+      <li style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px">
+        <span style="width: 28px; height: 28px; box-sizing: border-box; border-radius: 999px; background: #FFFFFF; border: 1.5px solid #D5DBE5; color: #69738A; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center">3</span>
+        <span style="font-size: 14px; font-weight: 500; color: #69738A">Advice</span>
+      </li>
+    </ol>
+  </div>
+</div>
+
+<main style="flex-shrink: 0; padding: 24px 20px 112px; display: flex; flex-direction: column; gap: 16px">
+  <section aria-labelledby="pd-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h2 id="pd-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Previous diagnoses</h2>
+      <span style="font-size: 14px; line-height: 1.45; color: #545E72">Tap to reuse on this prescription</span>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <sc-for list="{{ previous }}" as="c" hint-placeholder-count="3">
+          <button aria-pressed="{{ c.pressed }}" style="height: 40px; box-sizing: border-box; padding: 0 16px; border-radius: 999px; border: 1px solid {{ c.border }}; background: {{ c.bg }}; color: {{ c.fg }}; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer">
+            <sc-if value="{{ c.on }}" hint-placeholder-val="{{ true }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+            </sc-if>{{ c.label }}</button>
+        </sc-for>
+    </div>
+  </section>
+
+  <section aria-labelledby="ad-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <h2 id="ad-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700; padding-bottom: 16px">Add a diagnosis</h2>
+    <div style="position: relative">
+      <span style="position: absolute; left: 16px; top: 18px; color: #545E72; display: flex"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>
+      <input type="search" aria-label="Search condition catalog" value="hyper" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 56px 0 48px; border: 1px solid #003399; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+      <button aria-label="Clear search" style="position: absolute; right: 6px; top: 6px; width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; color: #545E72; display: flex; align-items: center; justify-content: center; cursor: pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+    </div>
+    <ul aria-label="Matching conditions" style="margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column">
+      <sc-for list="{{ results }}" as="r" hint-placeholder-count="3">
+        <li style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #E5E9F0">
+          <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 16px; font-weight: 600">{{ r.name }}</span>
+            <span style="font-size: 13px; color: #69738A">ICD-10 {{ r.code }}</span>
+          </span>
+          <button aria-label="{{ r.addLabel }}" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; display: flex; align-items: center; justify-content: center; cursor: pointer"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+        </li>
+      </sc-for>
+    </ul>
+    <a href="#" style="align-self: flex-start; margin-top: 8px; min-height: 44px; display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add custom diagnosis</a>
+  </section>
+
+  <section aria-labelledby="sd-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: center; gap: 10px; padding-bottom: 12px">
+      <h2 id="sd-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Selected</h2>
+      <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 12px; font-weight: 700; display: flex; align-items: center">2</span>
+    </div>
+    <sc-for list="{{ selected }}" as="s" hint-placeholder-count="2">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid #E5E9F0">
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 16px; font-weight: 600">{{ s.name }}</span>
+          <span style="font-size: 14px; line-height: 1.45; color: #545E72">{{ s.note }}</span>
+        </span>
+        <button aria-label="{{ s.removeLabel }}" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; color: #545E72; display: flex; align-items: center; justify-content: center; cursor: pointer"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+      </div>
+    </sc-for>
+  </section>
+</main>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 16px; background: #FFFFFF; border-top: 1px solid #E5E9F0; display: flex; gap: 12px">
+  <button style="height: 56px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; color: #111827; font-size: 16px; font-weight: 600; cursor: pointer; flex: 1 1 0">Back</button>
+  <button style="height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer; flex: 2 1 0">Next: Advice</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1156}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var ON = { bg: '#003399', fg: '#FFFFFF', border: '#003399' };
+    var OFF = { bg: '#FFFFFF', fg: '#545E72', border: '#D5DBE5' };
+    function chip(label, on) { var s = on ? ON : OFF; return { label: label, on: on, pressed: on ? 'true' : 'false', bg: s.bg, fg: s.fg, border: s.border }; }
+    return {
+      previous: [chip('Type 2 diabetes mellitus', true), chip('PCOS', true), chip('Obesity', false)],
+      results: [
+        ['Essential hypertension', 'I10'],
+        ['Hypertriglyceridaemia', 'E78.1'],
+        ['Hyperthyroidism', 'E05.9']
+      ].map(function (r) { return { name: r[0], code: r[1], addLabel: 'Add ' + r[0] }; }),
+      selected: [
+        { name: 'Type 2 diabetes mellitus', note: 'Reused from 12 Mar 2026', removeLabel: 'Remove Type 2 diabetes mellitus' },
+        { name: 'PCOS', note: 'Reused from 12 Jan 2026', removeLabel: 'Remove PCOS' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1044 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Add-Patient-Existing.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Add patient \u00b7 existing account",
+      "w": 390,
+      "x": 3760,
+      "y": 8668
+    },
+    "Add-Patient.dc.html": {
+      "h": 1232,
+      "radius": 28,
+      "title": "Add patient",
+      "w": 390,
+      "x": 3290,
+      "y": 8668
+    },
+    "Alerts.dc.html": {
+      "h": 1260,
+      "radius": 28,
+      "title": "Alerts",
+      "w": 390,
+      "x": 0,
+      "y": 13064
+    },
+    "Appointments-Manage.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Appointments \u00b7 manage",
+      "w": 390,
+      "x": 940,
+      "y": 13064
+    },
+    "Appointments.dc.html": {
+      "h": 1600,
+      "radius": 28,
+      "title": "Appointments",
+      "w": 390,
+      "x": 470,
+      "y": 13064
+    },
+    "Auth-Login.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Login",
+      "w": 390,
+      "x": 57,
+      "y": 0
+    },
+    "Auth-OTP.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Login \u00b7 code",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "Auth-Register.dc.html": {
+      "h": 1000,
+      "radius": 28,
+      "title": "Register",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "Billing.dc.html": {
+      "h": 1480,
+      "radius": 28,
+      "title": "Plan & billing",
+      "w": 390,
+      "x": 1410,
+      "y": 16164
+    },
+    "Cards-Analytics.dc.html": {
+      "h": 3548,
+      "radius": 28,
+      "title": "Cards \u00b7 analytics",
+      "w": 390,
+      "x": 470,
+      "y": 4700
+    },
+    "Cards-Clinical.dc.html": {
+      "h": 3520,
+      "radius": 28,
+      "title": "Cards \u00b7 queue & clinical",
+      "w": 390,
+      "x": 0,
+      "y": 4700
+    },
+    "Care.dc.html": {
+      "h": 1404,
+      "radius": 28,
+      "title": "Care",
+      "w": 390,
+      "x": 470,
+      "y": 1420
+    },
+    "Chat-Review-Detail.dc.html": {
+      "h": 1296,
+      "radius": 28,
+      "title": "Chat review \u00b7 detail",
+      "w": 390,
+      "x": 470,
+      "y": 18904
+    },
+    "Chat-Review.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Chat review",
+      "w": 390,
+      "x": 0,
+      "y": 18904
+    },
+    "Chat-Summaries.dc.html": {
+      "h": 1400,
+      "radius": 28,
+      "title": "Chat summaries",
+      "w": 390,
+      "x": 940,
+      "y": 18904
+    },
+    "Clinic-Editor.dc.html": {
+      "h": 2680,
+      "radius": 28,
+      "title": "Location editor",
+      "w": 390,
+      "x": 1880,
+      "y": 13064
+    },
+    "Clinics.dc.html": {
+      "h": 760,
+      "radius": 28,
+      "title": "Locations",
+      "w": 390,
+      "x": 1410,
+      "y": 13064
+    },
+    "Consult-Advice.dc.html": {
+      "h": 1972,
+      "radius": 28,
+      "title": "Consult 3 \u00b7 Advice",
+      "w": 390,
+      "x": 1880,
+      "y": 8668
+    },
+    "Consult-Blank.dc.html": {
+      "h": 1820,
+      "radius": 28,
+      "title": "Consultation \u00b7 fresh start, no records",
+      "w": 390,
+      "x": 2820,
+      "y": 31120
+    },
+    "Consult-Diagnosis.dc.html": {
+      "h": 1156,
+      "radius": 28,
+      "title": "Consult 2 \u00b7 Diagnosis",
+      "w": 390,
+      "x": 1410,
+      "y": 8668
+    },
+    "Consult-Dosage.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Consultation \u00b7 set dosage",
+      "w": 390,
+      "x": 940,
+      "y": 31120
+    },
+    "Consult-NotFound.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Consultation \u00b7 patient not found",
+      "w": 390,
+      "x": 1880,
+      "y": 31120
+    },
+    "Consult-Page.dc.html": {
+      "h": 4240,
+      "radius": 28,
+      "title": "Consultation \u00b7 from patient (auto-filled)",
+      "w": 390,
+      "x": 0,
+      "y": 31120
+    },
+    "Consult-Pick.dc.html": {
+      "h": 1260,
+      "radius": 28,
+      "title": "Consultation \u00b7 not from a patient: search",
+      "w": 390,
+      "x": 1410,
+      "y": 31120
+    },
+    "Consult-QuickAdd.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Consultation \u00b7 add new patient",
+      "w": 390,
+      "x": 2350,
+      "y": 31120
+    },
+    "Consult-Vitals.dc.html": {
+      "h": 1152,
+      "radius": 28,
+      "title": "Consult 1 \u00b7 Vitals",
+      "w": 390,
+      "x": 940,
+      "y": 8668
+    },
+    "Consult-Voice.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Consultation \u00b7 medicine by voice",
+      "w": 390,
+      "x": 470,
+      "y": 31120
+    },
+    "Daily-Report.dc.html": {
+      "h": 2320,
+      "radius": 28,
+      "title": "Daily report",
+      "w": 390,
+      "x": 2350,
+      "y": 16164
+    },
+    "Departments.dc.html": {
+      "h": 888,
+      "radius": 28,
+      "title": "Departments",
+      "w": 390,
+      "x": 2350,
+      "y": 13064
+    },
+    "Doctor-Dashboard.dc.html": {
+      "h": 980,
+      "radius": 28,
+      "title": "Doctor \u00b7 dashboard (redesign)",
+      "w": 390,
+      "x": 0,
+      "y": 41260
+    },
+    "Doctor-Home.dc.html": {
+      "h": 2860,
+      "radius": 28,
+      "title": "Home",
+      "w": 390,
+      "x": 0,
+      "y": 1420
+    },
+    "Export.dc.html": {
+      "h": 848,
+      "radius": 28,
+      "title": "Export",
+      "w": 390,
+      "x": 1880,
+      "y": 16164
+    },
+    "Feedback.dc.html": {
+      "h": 1296,
+      "radius": 28,
+      "title": "Feedback",
+      "w": 390,
+      "x": 2820,
+      "y": 18904
+    },
+    "Hero-Carousel.dc.html": {
+      "h": 1180,
+      "radius": 28,
+      "title": "Patient \u00b7 home carousel slides",
+      "w": 390,
+      "x": 3760,
+      "y": 22640
+    },
+    "Home-States.dc.html": {
+      "h": 2292,
+      "radius": 28,
+      "title": "Home \u00b7 states",
+      "w": 390,
+      "x": 1880,
+      "y": 1420
+    },
+    "Knowledge-Editor.dc.html": {
+      "h": 1100,
+      "radius": 28,
+      "title": "Knowledge \u00b7 edit",
+      "w": 390,
+      "x": 1880,
+      "y": 18904
+    },
+    "Knowledge-Shared.dc.html": {
+      "h": 992,
+      "radius": 28,
+      "title": "Knowledge \u00b7 shared",
+      "w": 390,
+      "x": 2350,
+      "y": 18904
+    },
+    "Knowledge.dc.html": {
+      "h": 1072,
+      "radius": 28,
+      "title": "Knowledge base",
+      "w": 390,
+      "x": 1410,
+      "y": 18904
+    },
+    "Main.dc.html": {
+      "h": 2560,
+      "radius": 28,
+      "title": "Patient \u00b7 Home",
+      "w": 390,
+      "x": 0,
+      "y": 22640
+    },
+    "Med-AddToCart.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Medicines \u00b7 add to cart",
+      "w": 390,
+      "x": 470,
+      "y": 38380
+    },
+    "Med-Cart.dc.html": {
+      "h": 860,
+      "radius": 28,
+      "title": "Medicines \u00b7 cart",
+      "w": 390,
+      "x": 940,
+      "y": 38380
+    },
+    "Med-Pharmacy.dc.html": {
+      "h": 780,
+      "radius": 28,
+      "title": "Medicines \u00b7 choose pharmacy",
+      "w": 390,
+      "x": 1410,
+      "y": 38380
+    },
+    "Nutrition.dc.html": {
+      "h": 1220,
+      "radius": 28,
+      "title": "Nutrition",
+      "w": 390,
+      "x": 940,
+      "y": 1420
+    },
+    "PP-Prescriptions.dc.html": {
+      "h": 2140,
+      "radius": 28,
+      "title": "Patient profile \u00b7 Prescriptions",
+      "w": 390,
+      "x": 470,
+      "y": 25820
+    },
+    "PP-Summary.dc.html": {
+      "h": 1880,
+      "radius": 28,
+      "title": "Patient profile \u00b7 Summary",
+      "w": 390,
+      "x": 0,
+      "y": 25820
+    },
+    "PP-Tests.dc.html": {
+      "h": 1300,
+      "radius": 28,
+      "title": "Patient profile \u00b7 Test results",
+      "w": 390,
+      "x": 940,
+      "y": 25820
+    },
+    "PP-Treatment.dc.html": {
+      "h": 2300,
+      "radius": 28,
+      "title": "Patient profile \u00b7 Treatment plan",
+      "w": 390,
+      "x": 1410,
+      "y": 25820
+    },
+    "Patient-Adherence.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Patient \u00b7 adherence by doctor",
+      "w": 390,
+      "x": 940,
+      "y": 22640
+    },
+    "Patient-AskAI.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Patient \u00b7 Ask MedPin AI",
+      "w": 390,
+      "x": 470,
+      "y": 22640
+    },
+    "Patient-Chat.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Patient \u00b7 urgent chat with doctor",
+      "w": 390,
+      "x": 4700,
+      "y": 22640
+    },
+    "Patient-DoctorChat.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Patient \u00b7 chat with doctor",
+      "w": 390,
+      "x": 940,
+      "y": 35780
+    },
+    "Patient-DoctorDetail.dc.html": {
+      "h": 2180,
+      "radius": 28,
+      "title": "Patient \u00b7 doctor page (Dr. Sen)",
+      "w": 390,
+      "x": 470,
+      "y": 35780
+    },
+    "Patient-Doctors.dc.html": {
+      "h": 1200,
+      "radius": 28,
+      "title": "Patient \u00b7 Doctor tab: my doctors",
+      "w": 390,
+      "x": 0,
+      "y": 35780
+    },
+    "Patient-Emergency.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Patient \u00b7 emergency: choose doctor",
+      "w": 390,
+      "x": 4230,
+      "y": 22640
+    },
+    "Patient-Log.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Patient \u00b7 log meal, exercise, steps",
+      "w": 390,
+      "x": 3290,
+      "y": 22640
+    },
+    "Patient-Medicines.dc.html": {
+      "h": 2460,
+      "radius": 28,
+      "title": "Patient \u00b7 Medicines tab",
+      "w": 390,
+      "x": 0,
+      "y": 38380
+    },
+    "Patient-Profile-Desk.dc.html": {
+      "h": 1852,
+      "radius": 28,
+      "title": "Patient profile \u00b7 front desk",
+      "w": 390,
+      "x": 470,
+      "y": 8668
+    },
+    "Patient-Profile.dc.html": {
+      "h": 3976,
+      "radius": 28,
+      "title": "Patient profile",
+      "w": 390,
+      "x": 0,
+      "y": 8668
+    },
+    "Patient-Records.dc.html": {
+      "h": 1920,
+      "radius": 28,
+      "title": "Patient \u00b7 Health records",
+      "w": 390,
+      "x": 1880,
+      "y": 22640
+    },
+    "Patient-Thread.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Patient thread",
+      "w": 390,
+      "x": 2820,
+      "y": 8668
+    },
+    "Patient-Track.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Patient \u00b7 choose what to track",
+      "w": 390,
+      "x": 1410,
+      "y": 22640
+    },
+    "People-Add.dc.html": {
+      "h": 1304,
+      "radius": 28,
+      "title": "People \u00b7 add",
+      "w": 390,
+      "x": 470,
+      "y": 16164
+    },
+    "People-Member.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "People \u00b7 member",
+      "w": 390,
+      "x": 940,
+      "y": 16164
+    },
+    "People.dc.html": {
+      "h": 952,
+      "radius": 28,
+      "title": "People",
+      "w": 390,
+      "x": 0,
+      "y": 16164
+    },
+    "Practice.dc.html": {
+      "h": 1204,
+      "radius": 28,
+      "title": "Practice",
+      "w": 390,
+      "x": 2820,
+      "y": 13064
+    },
+    "Prescriptions.dc.html": {
+      "h": 1216,
+      "radius": 28,
+      "title": "Prescriptions",
+      "w": 390,
+      "x": 2350,
+      "y": 8668
+    },
+    "Profile.dc.html": {
+      "h": 1840,
+      "radius": 28,
+      "title": "Profile",
+      "w": 390,
+      "x": 1410,
+      "y": 1420
+    },
+    "Queue-List.dc.html": {
+      "h": 2160,
+      "radius": 28,
+      "title": "Patient queue",
+      "w": 390,
+      "x": 470,
+      "y": 28540
+    },
+    "Queue-Select.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Patient queue \u00b7 choose location",
+      "w": 390,
+      "x": 0,
+      "y": 28540
+    },
+    "Records-Add.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Records \u00b7 add a record",
+      "w": 390,
+      "x": 2350,
+      "y": 22640
+    },
+    "Records-Review.dc.html": {
+      "h": 1700,
+      "radius": 28,
+      "title": "Records \u00b7 check and save (multi-test file)",
+      "w": 390,
+      "x": 2820,
+      "y": 22640
+    },
+    "Staff-Patients.dc.html": {
+      "h": 1340,
+      "radius": 28,
+      "title": "Patients",
+      "w": 390,
+      "x": 470,
+      "y": 20724
+    },
+    "Staff-Profile.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Profile",
+      "w": 390,
+      "x": 940,
+      "y": 20724
+    },
+    "Staff-Today.dc.html": {
+      "h": 1496,
+      "radius": 28,
+      "title": "Today",
+      "w": 390,
+      "x": 0,
+      "y": 20724
+    },
+    "Doctor-AI.dc.html": {
+      "h": 1000,
+      "radius": 28,
+      "title": "Doctor \u00b7 AI Assistant (landing)",
+      "w": 390,
+      "x": 470,
+      "y": 41260
+    },
+    "Doctor-AI-Chat.dc.html": {
+      "h": 1720,
+      "radius": 28,
+      "title": "Doctor \u00b7 AI Assistant \u00b7 answers with Listen",
+      "w": 390,
+      "x": 940,
+      "y": 41260
+    },
+    "Doctor-AI-Voice.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Doctor \u00b7 AI Assistant \u00b7 voice",
+      "w": 390,
+      "x": 1410,
+      "y": 41260
+    },
+    "Doctor-Patients.dc.html": {
+      "h": 1560,
+      "radius": 28,
+      "title": "Doctor \u00b7 Patients tab",
+      "w": 390,
+      "x": 0,
+      "y": 43580
+    },
+    "Doctor-Patients-Search.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Doctor \u00b7 Patients \u00b7 search by name or mobile",
+      "w": 390,
+      "x": 470,
+      "y": 43580
+    },
+    "Doctor-Messages.dc.html": {
+      "h": 1300,
+      "radius": 28,
+      "title": "Doctor \u00b7 Messages tab",
+      "w": 390,
+      "x": 0,
+      "y": 45740
+    },
+    "Doctor-Messages-New.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "Doctor \u00b7 Messages \u00b7 start a new chat",
+      "w": 390,
+      "x": 470,
+      "y": 45740
+    },
+    "Doctor-Reports.dc.html": {
+      "h": 2480,
+      "radius": 28,
+      "title": "Doctor \u00b7 Reports (consultation MIS)",
+      "w": 390,
+      "x": 0,
+      "y": 47640
+    },
+    "Doctor-Reports-Filter.dc.html": {
+      "h": 1240,
+      "radius": 28,
+      "title": "Doctor \u00b7 Reports \u00b7 filters",
+      "w": 390,
+      "x": 470,
+      "y": 47640
+    },
+    "Report-Consultations.dc.html": {
+      "h": 1280,
+      "radius": 28,
+      "title": "Report \u00b7 Consultation register",
+      "w": 390,
+      "x": 940,
+      "y": 47640
+    },
+    "Report-Prescriptions.dc.html": {
+      "h": 1580,
+      "radius": 28,
+      "title": "Report \u00b7 Prescription register",
+      "w": 390,
+      "x": 1410,
+      "y": 47640
+    },
+    "Report-Fees.dc.html": {
+      "h": 1260,
+      "radius": 28,
+      "title": "Report \u00b7 Fees and collections",
+      "w": 390,
+      "x": 1880,
+      "y": 47640
+    },
+    "Report-FollowUps.dc.html": {
+      "h": 1180,
+      "radius": 28,
+      "title": "Report \u00b7 Follow-up compliance",
+      "w": 390,
+      "x": 2350,
+      "y": 47640
+    },
+    "Report-Referrals.dc.html": {
+      "h": 1220,
+      "radius": 28,
+      "title": "Report \u00b7 Referrals",
+      "w": 390,
+      "x": 2820,
+      "y": 47640
+    },
+    "Report-Download.dc.html": {
+      "h": 900,
+      "radius": 28,
+      "title": "Report \u00b7 download options",
+      "w": 390,
+      "x": 3290,
+      "y": 47640
+    },
+    "Doctor-History.dc.html": {
+      "h": 1600,
+      "radius": 28,
+      "title": "Doctor \u00b7 History (all appointments)",
+      "w": 390,
+      "x": 0,
+      "y": 50720
+    },
+    "History-Download.dc.html": {
+      "h": 1000,
+      "radius": 28,
+      "title": "Doctor \u00b7 History \u00b7 download",
+      "w": 390,
+      "x": 470,
+      "y": 50720
+    },
+    "Doctor-FollowUps.dc.html": {
+      "h": 1720,
+      "radius": 28,
+      "title": "Doctor \u00b7 Follow-ups (quick action)",
+      "w": 390,
+      "x": 1880,
+      "y": 41260
+    },
+    "Doctor-MyProfile.dc.html": {
+      "h": 2190,
+      "radius": 28,
+      "title": "Doctor \u00b7 My profile (settings hub)",
+      "w": 390,
+      "x": 0,
+      "y": 52920
+    },
+    "Profile-Professional.dc.html": {
+      "h": 2180,
+      "radius": 28,
+      "title": "Profile \u00b7 professional details",
+      "w": 390,
+      "x": 470,
+      "y": 52920
+    },
+    "Profile-Location.dc.html": {
+      "h": 2010,
+      "radius": 28,
+      "title": "Profile \u00b7 location: map, address, fees",
+      "w": 390,
+      "x": 940,
+      "y": 52920
+    },
+    "Profile-Schedule.dc.html": {
+      "h": 1730,
+      "radius": 28,
+      "title": "Profile \u00b7 schedules and slots",
+      "w": 390,
+      "x": 1410,
+      "y": 52920
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-09-28T10:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "row0": {
+      "kind": "title1",
+      "maxW": 1330,
+      "text": "Sign in",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "row1": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "Clinician \u00b7 tabs",
+      "w": 240,
+      "x": 0,
+      "y": 1120
+    },
+    "row10": {
+      "kind": "title1",
+      "maxW": 1200,
+      "text": "Patient queue",
+      "w": 240,
+      "x": 0,
+      "y": 28240
+    },
+    "row11": {
+      "kind": "title1",
+      "maxW": 3210,
+      "text": "Consultation",
+      "w": 240,
+      "x": 0,
+      "y": 30820
+    },
+    "row12": {
+      "kind": "title1",
+      "maxW": 1330,
+      "text": "Patient app \u00b7 Doctor tab",
+      "w": 240,
+      "x": 0,
+      "y": 35480
+    },
+    "row13": {
+      "kind": "title1",
+      "maxW": 1800,
+      "text": "Patient app \u00b7 Medicines tab",
+      "w": 240,
+      "x": 0,
+      "y": 38080
+    },
+    "row14": {
+      "kind": "title1",
+      "maxW": 2270,
+      "text": "Doctor dashboard & AI Assistant",
+      "w": 240,
+      "x": 0,
+      "y": 40960
+    },
+    "row2": {
+      "kind": "title1",
+      "maxW": 1200,
+      "text": "Dashboard cards",
+      "w": 240,
+      "x": 0,
+      "y": 4400
+    },
+    "row3": {
+      "kind": "title1",
+      "maxW": 4150,
+      "text": "Patient care",
+      "w": 240,
+      "x": 0,
+      "y": 8368
+    },
+    "row4": {
+      "kind": "title1",
+      "maxW": 3210,
+      "text": "Clinic operations",
+      "w": 240,
+      "x": 0,
+      "y": 12764
+    },
+    "row5": {
+      "kind": "title1",
+      "maxW": 2740,
+      "text": "Team, billing & reports",
+      "w": 240,
+      "x": 0,
+      "y": 15864
+    },
+    "row6": {
+      "kind": "title1",
+      "maxW": 3210,
+      "text": "AI assistant & feedback",
+      "w": 240,
+      "x": 0,
+      "y": 18604
+    },
+    "row7": {
+      "kind": "title1",
+      "maxW": 1330,
+      "text": "Front desk",
+      "w": 240,
+      "x": 0,
+      "y": 20424
+    },
+    "row8": {
+      "kind": "title1",
+      "maxW": 5090,
+      "text": "Patient app",
+      "w": 240,
+      "x": 0,
+      "y": 22340
+    },
+    "row9": {
+      "kind": "title1",
+      "maxW": 1800,
+      "text": "Patient profile \u00b7 tabs (doctor view)",
+      "w": 240,
+      "x": 0,
+      "y": 25520
+    },
+    "row15": {
+      "kind": "title1",
+      "maxW": 1200,
+      "text": "Doctor \u00b7 Patients tab",
+      "w": 240,
+      "x": 0,
+      "y": 43280
+    },
+    "row16": {
+      "kind": "title1",
+      "maxW": 1200,
+      "text": "Doctor \u00b7 Messages tab",
+      "w": 240,
+      "x": 0,
+      "y": 45440
+    },
+    "row17": {
+      "kind": "title1",
+      "maxW": 3760,
+      "text": "Doctor \u00b7 Reports tab",
+      "w": 240,
+      "x": 0,
+      "y": 47340
+    },
+    "row18": {
+      "kind": "title1",
+      "maxW": 1200,
+      "text": "Doctor \u00b7 History tab",
+      "w": 240,
+      "x": 0,
+      "y": 50420
+    },
+    "row19": {
+      "kind": "title1",
+      "maxW": 1800,
+      "text": "Doctor \u00b7 My profile & settings",
+      "w": 240,
+      "x": 0,
+      "y": 52620
+    }
+  },
+  "order": [
+    "Auth-Login.dc.html",
+    "Auth-OTP.dc.html",
+    "Auth-Register.dc.html",
+    "Doctor-Home.dc.html",
+    "Care.dc.html",
+    "Nutrition.dc.html",
+    "Profile.dc.html",
+    "Home-States.dc.html",
+    "Cards-Clinical.dc.html",
+    "Cards-Analytics.dc.html",
+    "Patient-Profile.dc.html",
+    "Patient-Profile-Desk.dc.html",
+    "Consult-Vitals.dc.html",
+    "Consult-Diagnosis.dc.html",
+    "Consult-Advice.dc.html",
+    "Prescriptions.dc.html",
+    "Patient-Thread.dc.html",
+    "Add-Patient.dc.html",
+    "Add-Patient-Existing.dc.html",
+    "Alerts.dc.html",
+    "Appointments.dc.html",
+    "Appointments-Manage.dc.html",
+    "Clinics.dc.html",
+    "Clinic-Editor.dc.html",
+    "Departments.dc.html",
+    "Practice.dc.html",
+    "People.dc.html",
+    "People-Add.dc.html",
+    "People-Member.dc.html",
+    "Billing.dc.html",
+    "Export.dc.html",
+    "Daily-Report.dc.html",
+    "Chat-Review.dc.html",
+    "Chat-Review-Detail.dc.html",
+    "Chat-Summaries.dc.html",
+    "Knowledge.dc.html",
+    "Knowledge-Editor.dc.html",
+    "Knowledge-Shared.dc.html",
+    "Feedback.dc.html",
+    "Staff-Today.dc.html",
+    "Staff-Patients.dc.html",
+    "Staff-Profile.dc.html",
+    "Main.dc.html",
+    "Patient-AskAI.dc.html",
+    "Patient-Adherence.dc.html",
+    "Patient-Track.dc.html",
+    "Patient-Records.dc.html",
+    "Records-Add.dc.html",
+    "Records-Review.dc.html",
+    "Patient-Log.dc.html",
+    "Hero-Carousel.dc.html",
+    "Patient-Emergency.dc.html",
+    "Patient-Chat.dc.html",
+    "PP-Summary.dc.html",
+    "PP-Prescriptions.dc.html",
+    "PP-Tests.dc.html",
+    "PP-Treatment.dc.html",
+    "Queue-Select.dc.html",
+    "Queue-List.dc.html",
+    "Consult-Page.dc.html",
+    "Consult-Voice.dc.html",
+    "Consult-Dosage.dc.html",
+    "Consult-Pick.dc.html",
+    "Consult-NotFound.dc.html",
+    "Consult-QuickAdd.dc.html",
+    "Consult-Blank.dc.html",
+    "Patient-Doctors.dc.html",
+    "Patient-DoctorDetail.dc.html",
+    "Patient-DoctorChat.dc.html",
+    "Patient-Medicines.dc.html",
+    "Med-AddToCart.dc.html",
+    "Med-Cart.dc.html",
+    "Med-Pharmacy.dc.html",
+    "Doctor-Dashboard.dc.html",
+    "Doctor-AI.dc.html",
+    "Doctor-AI-Chat.dc.html",
+    "Doctor-AI-Voice.dc.html",
+    "Doctor-Patients.dc.html",
+    "Doctor-Patients-Search.dc.html",
+    "Doctor-Messages.dc.html",
+    "Doctor-Messages-New.dc.html",
+    "Doctor-Reports.dc.html",
+    "Doctor-Reports-Filter.dc.html",
+    "Report-Consultations.dc.html",
+    "Report-Prescriptions.dc.html",
+    "Report-Fees.dc.html",
+    "Report-FollowUps.dc.html",
+    "Report-Referrals.dc.html",
+    "Report-Download.dc.html",
+    "Doctor-History.dc.html",
+    "History-Download.dc.html",
+    "Doctor-FollowUps.dc.html",
+    "Doctor-MyProfile.dc.html",
+    "Profile-Professional.dc.html",
+    "Profile-Location.dc.html",
+    "Profile-Schedule.dc.html"
+  ],
+  "pages": [],
+  "title": "Medpin App"
+}

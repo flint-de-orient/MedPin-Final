@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patient queue · choose location</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<div aria-hidden="true" style="display: flex; flex-direction: column">
+  <div style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; padding-bottom: 16px">
+    <div style="height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px">
+      <span style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #111827">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+      </span>
+      <span style="font-size: 20px; font-weight: 700">Patient queue</span>
+    </div>
+    <div style="margin: 0 20px; height: 56px; border: 1px solid #D5DBE5; border-radius: 16px"></div>
+  </div>
+  <div style="padding: 20px; display: flex; flex-direction: column; gap: 12px">
+    <div style="height: 64px; border-radius: 16px; background: #F1F4F9"></div>
+    <div style="height: 180px; border-radius: 24px; background: #F1F4F9"></div>
+    <div style="height: 180px; border-radius: 24px; background: #F1F4F9"></div>
+  </div>
+</div>
+
+<div style="position: absolute; inset: 0; background: rgba(17,24,39,0.40)"></div>
+
+<section role="dialog" aria-modal="true" aria-labelledby="loc-h" style="position: absolute; left: 0; right: 0; bottom: 0; background: #FFFFFF; border-radius: 24px 24px 0 0; padding: 12px 20px 32px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 20px">
+  <span style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: #D5DBE5"></span>
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h2 id="loc-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Which queue are you seeing?</h2>
+    <p style="margin: 0; font-size: 14px; line-height: 1.45; color: #545E72">Pick the location you're consulting at right now. You can switch any time.</p>
+  </div>
+
+  <div role="radiogroup" aria-label="Location" style="display: flex; flex-direction: column; gap: 8px">
+    <label style="display: flex; gap: 14px; padding: 16px; border: 2px solid #003399; border-radius: 16px; background: #FFFFFF; cursor: pointer">
+      <input type="radio" name="loc" checked style="position: absolute; opacity: 0; width: 1px; height: 1px">
+      <span aria-hidden="true" style="width: 22px; height: 22px; flex-shrink: 0; margin-top: 1px; border-radius: 999px; border: 2px solid #003399; box-sizing: border-box; display: flex; align-items: center; justify-content: center"><span style="width: 10px; height: 10px; border-radius: 999px; background: #003399"></span></span>
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px">
+        <span style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+          <span style="font-size: 16px; font-weight: 700">City Care Clinic · Salt Lake</span>
+        </span>
+        <span style="font-size: 14px; color: #545E72">Clinic · 9:00 AM – 1:00 PM</span>
+        <span style="display: flex; align-items: center; gap: 8px; padding-top: 2px">
+          <span style="height: 22px; padding: 0 8px; border-radius: 999px; background: #E7F5EE; color: #076B3C; font-size: 12px; font-weight: 700; display: flex; align-items: center">Open now</span>
+          <span style="font-size: 13px; color: #545E72; font-variant-numeric: tabular-nums">12 booked · <strong style="color: #B45309; font-weight: 700">3 waiting</strong></span>
+        </span>
+      </span>
+    </label>
+
+    <label style="display: flex; gap: 14px; padding: 17px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; cursor: pointer">
+      <input type="radio" name="loc" style="position: absolute; opacity: 0; width: 1px; height: 1px">
+      <span aria-hidden="true" style="width: 22px; height: 22px; flex-shrink: 0; margin-top: 1px; border-radius: 999px; border: 2px solid #D5DBE5; box-sizing: border-box"></span>
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 16px; font-weight: 700">City Care · New Town</span>
+        <span style="font-size: 14px; color: #545E72">Clinic · 5:00 PM – 8:00 PM</span>
+        <span style="display: flex; align-items: center; gap: 8px; padding-top: 2px">
+          <span style="height: 22px; padding: 0 8px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 700; display: flex; align-items: center">Opens 5:00 PM</span>
+          <span style="font-size: 13px; color: #545E72; font-variant-numeric: tabular-nums">6 booked</span>
+        </span>
+      </span>
+    </label>
+
+    <label style="display: flex; gap: 14px; padding: 17px; border: 1px solid #E5E9F0; border-radius: 16px; background: #F7F9FC; cursor: not-allowed">
+      <input type="radio" name="loc" disabled style="position: absolute; opacity: 0; width: 1px; height: 1px">
+      <span aria-hidden="true" style="width: 22px; height: 22px; flex-shrink: 0; margin-top: 1px; border-radius: 999px; border: 2px solid #E5E9F0; box-sizing: border-box"></span>
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 16px; font-weight: 700; color: #545E72">Sen Diabetes Chamber · Gariahat</span>
+        <span style="font-size: 14px; color: #69738A">Chamber · Thu and Sat only</span>
+        <span style="font-size: 13px; color: #69738A; padding-top: 2px">Closed today · next session Thu, 1 Oct</span>
+      </span>
+    </label>
+  </div>
+
+  <label style="display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer">
+    <input type="checkbox" checked style="position: absolute; opacity: 0; width: 1px; height: 1px">
+    <span aria-hidden="true" style="width: 22px; height: 22px; flex-shrink: 0; border-radius: 6px; background: #003399; color: #FFFFFF; display: flex; align-items: center; justify-content: center">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+    </span>
+    <span style="font-size: 15px; color: #111827">Don't ask again today</span>
+  </label>
+
+  <button style="height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Show queue</button>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

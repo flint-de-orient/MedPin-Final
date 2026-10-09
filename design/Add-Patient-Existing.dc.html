@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Add patient, existing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<!-- Form behind the sheet (inert) -->
+<div aria-hidden="true" style="display: flex; flex-direction: column">
+  <header style="height: 64px; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px">
+    <span style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+    </span>
+    <span style="flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Add patient</span>
+  </header>
+  <div style="padding: 8px 20px 0">
+    <div style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 20px; line-height: 1.25; font-weight: 700">Patient details</span>
+        <span style="font-size: 14px; color: #545E72">Required to register the patient</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 14px; font-weight: 600">Full name</span>
+        <span style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; display: flex; align-items: center; font-size: 16px">Priya Sharma</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 14px; font-weight: 600">Age</span>
+        <span style="width: 144px; height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; display: flex; align-items: center; justify-content: space-between; font-size: 16px">29<span style="font-size: 14px; color: #69738A">years</span></span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 14px; font-weight: 600">Gender</span>
+        <span style="padding: 4px; border-radius: 16px; background: #F1F4F9; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; font-size: 15px">
+          <span style="height: 44px; border-radius: 12px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600">Female</span>
+          <span style="height: 44px; display: flex; align-items: center; justify-content: center; color: #545E72">Male</span>
+          <span style="height: 44px; display: flex; align-items: center; justify-content: center; color: #545E72">Other</span>
+        </span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 14px; font-weight: 600">Phone number</span>
+        <span style="display: flex; gap: 8px">
+          <span style="flex-grow: 1; height: 56px; box-sizing: border-box; border: 1px solid #D5DBE5; border-radius: 16px; display: flex; align-items: center; font-size: 16px"><span style="padding: 0 12px 0 16px; border-right: 1px solid #E5E9F0; font-weight: 600; color: #545E72">+91</span><span style="padding: 0 12px">98765 43210</span></span>
+          <span style="height: 56px; padding: 0 16px; border-radius: 16px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; display: flex; align-items: center">Verify</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="position: absolute; inset: 0; background: rgba(17,24,39,0.40)"></div>
+
+<section role="dialog" aria-modal="true" aria-labelledby="sheet-h" aria-describedby="sheet-d" style="position: absolute; left: 0; right: 0; bottom: 0; box-sizing: border-box; padding: 12px 20px 32px; background: #FFFFFF; border-radius: 24px 24px 0 0; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column">
+  <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: #D5DBE5"></span>
+
+  <div style="padding-top: 20px; display: flex; flex-direction: column; gap: 8px">
+    <h2 id="sheet-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">This number already has a MedPin account</h2>
+    <p id="sheet-d" style="margin: 0; font-size: 16px; line-height: 1.5; color: #545E72">We won't create a duplicate. Ask the patient for the consent code shown in their MedPin app to link their record to your practice.</p>
+  </div>
+
+  <fieldset style="margin: 24px 0 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px">
+    <legend style="padding: 0 0 8px; font-size: 14px; font-weight: 600">Consent code</legend>
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px">
+      <sc-for list="{{ boxes }}" as="b" hint-placeholder-count="6">
+        <input type="text" inputmode="numeric" maxlength="1" value="{{ b.v }}" aria-label="{{ b.label }}" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0; border: {{ b.border }}; border-radius: 12px; background: #FFFFFF; text-align: center; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; outline: none">
+      </sc-for>
+    </div>
+    <span style="font-size: 13px; color: #69738A">6 digits, from the patient's phone for +91 98765 43210</span>
+  </fieldset>
+
+  <div style="padding-top: 24px; display: flex; flex-direction: column; gap: 12px">
+    <button type="button" style="height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Link patient</button>
+    <button type="button" style="height: 56px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; color: #111827; font-size: 16px; font-weight: 600; cursor: pointer">Cancel</button>
+  </div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var digits = ['4', '8', '2', '', '', ''];
+    return {
+      boxes: digits.map(function (d, i) {
+        return {
+          v: d,
+          label: 'Digit ' + (i + 1) + ' of 6',
+          border: i === 3 ? '2px solid #003399' : '1px solid #D5DBE5'
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Doctor dashboard</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 980px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="padding: 16px 20px 0; display: flex; align-items: center; justify-content: space-between">
+  <img src="/_blob/518788f0cdbbd3963c68eba135a339f1" alt="MedPin — Care Connected" style="height: 36px; width: 97px; display: block">
+  <div style="display: flex; align-items: center; gap: 8px">
+    <button aria-label="Notifications, 3 new" style="position: relative; width: 44px; height: 44px; border: 1px solid #E5E9F0; border-radius: 999px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+      <span style="position: absolute; top: 9px; right: 10px; width: 8px; height: 8px; border-radius: 999px; background: #B91C1C; border: 2px solid #FFFFFF"></span>
+    </button>
+    <a href="#" aria-label="Profile" style="width: 44px; height: 44px; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center">AS</a>
+  </div>
+</header>
+
+<main style="padding: 20px 20px 112px; display: flex; flex-direction: column; gap: 20px">
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Hi, Dr. Sen</h1>
+    <span style="font-size: 15px; color: #545E72">Good to see you again</span>
+    <span style="display: flex; align-items: center; gap: 8px; padding-top: 4px; font-size: 14px; font-weight: 600; color: #003399">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>
+      Thu, 1 Oct 2026 · City Care, Salt Lake
+    </span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+    <sc-for list="{{ stats }}" as="s" hint-placeholder-count="3">
+      <a href="#" style="padding: 14px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E5E9F0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; color: #111827">
+        <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: {{ s.color }}">{{ s.n }}</span>
+        <span style="font-size: 13px; line-height: 1.3; color: #545E72">{{ s.label }}</span>
+      </a>
+    </sc-for>
+  </div>
+
+  <a href="#" style="padding: 18px; border-radius: 20px; background: #FDECEC; border: 1px solid #F3C4C4; display: flex; gap: 14px; color: #111827">
+    <span style="width: 48px; height: 48px; flex-shrink: 0; border-radius: 14px; background: #B91C1C; color: #FFFFFF; display: flex; align-items: center; justify-content: center">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><path d="M12 4v16M5.1 8l13.8 8M5.1 16l13.8-8"></path></svg>
+    </span>
+    <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 6px">
+      <span style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+        <span style="font-size: 17px; font-weight: 700">Emergency · Priya Sharma</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B91C1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+      </span>
+      <span style="font-size: 14px; line-height: 1.5; color: #545E72">Urgent chat message: <span style="color: #111827">“Chest tightness, hard to breathe.”</span></span>
+      <span style="display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: #B91C1C">
+        <span style="display: flex; align-items: center; gap: 4px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>2 min ago</span>
+        <span style="color: #D5A0A0">·</span>
+        <span style="font-weight: 800; text-decoration: underline; text-underline-offset: 3px">Review now</span>
+      </span>
+    </span>
+  </a>
+
+  <section aria-labelledby="qa-h" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="qa-h" style="margin: 0; font-size: 18px; font-weight: 700">Quick actions</h2>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <sc-for list="{{ actions }}" as="a" hint-placeholder-count="6">
+        <a href="#" style="height: 112px; box-sizing: border-box; padding: 14px 8px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E5E9F0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #111827; text-align: center">
+          <span style="width: 48px; height: 48px; border-radius: 14px; background: #EBF1FB; color: #003399; display: flex; align-items: center; justify-content: center">
+            <sc-if value="{{ a.queue }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg></sc-if>
+            <sc-if value="{{ a.newp }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M19 8v6M16 11h6"></path></svg></sc-if>
+            <sc-if value="{{ a.rx }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path></svg></sc-if>
+            <sc-if value="{{ a.lab }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"></path><path d="M7 15h10"></path></svg></sc-if>
+            <sc-if value="{{ a.consult }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg></sc-if>
+            <sc-if value="{{ a.follow }}" hint-placeholder-val="{{ false }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"></path></svg></sc-if>
+          </span>
+          <span style="font-size: 14px; line-height: 1.25; font-weight: 600">{{ a.label }}</span>
+        </a>
+      </sc-for>
+    </div>
+  </section>
+
+  <a href="#" style="padding: 18px; border-radius: 20px; background: #003399; box-shadow: 0 8px 24px rgba(0,51,153,0.22); display: flex; align-items: center; gap: 14px; color: #FFFFFF">
+    <span style="width: 52px; height: 52px; flex-shrink: 0; border-radius: 16px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path></svg>
+    </span>
+    <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px">
+      <span style="display: flex; align-items: center; gap: 8px">
+        <span style="font-size: 17px; font-weight: 700">AI Assistant</span>
+        <span style="height: 20px; padding: 0 7px; border-radius: 6px; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.28); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; display: flex; align-items: center">NEW</span>
+      </span>
+      <span style="font-size: 14px; line-height: 1.45; color: rgba(255,255,255,0.82)">Instant summaries, draft prescriptions, patient insights and more.</span>
+    </span>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; opacity: 0.8"><path d="m9 6 6 6-6 6"></path></svg>
+  </a>
+</main>
+
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 24px; height: 64px; box-sizing: border-box; padding: 6px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 28px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px">
+  <a href="#" aria-current="page" style="border-radius: 22px; background: #EBF1FB; color: #003399; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Patients</a>
+  <a href="#" style="position: relative; border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Messages
+    <span aria-label="4 unread" style="position: absolute; top: 3px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #FFFFFF">4</span></a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5"></path></svg>Reports</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>History</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function a(key, label) { var o = { label: label, queue: false, newp: false, rx: false, lab: false, consult: false, follow: false }; o[key] = true; return o; }
+    return {
+      stats: [
+        { n: '12', label: 'Total appointments', color: '#111827' },
+        { n: '9', label: 'Pending consultations', color: '#B45309' },
+        { n: '3', label: 'Completed consultations', color: '#076B3C' }
+      ],
+      actions: [
+        a('queue', 'Patient queue'), a('newp', 'New patient'), a('rx', 'Prescriptions'),
+        a('lab', 'Test results'), a('consult', 'Start consultation'), a('follow', 'Follow-ups')
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

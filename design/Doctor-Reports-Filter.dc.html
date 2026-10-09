@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Report filters</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1240px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<div aria-hidden="true" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; background: #FFFFFF"><span style="font-size: 28px; font-weight: 800">Reports</span><span style="font-size: 14px; color: #545E72">Your consultation MIS</span></div>
+<div style="position: absolute; inset: 0; background: rgba(17,24,39,0.40)"></div>
+
+<section role="dialog" aria-modal="true" aria-labelledby="f-h" style="position: absolute; left: 0; right: 0; bottom: 0; top: 72px; background: #FFFFFF; border-radius: 24px 24px 0 0; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column">
+  <div style="padding: 12px 20px 0; display: flex; flex-direction: column; gap: 8px">
+    <span style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: #D5DBE5"></span>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <h2 id="f-h" style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Filters</h2>
+      <button style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: #003399; font-size: 15px; font-weight: 600">Reset</button>
+    </div>
+  </div>
+
+  <div style="padding: 8px 20px 24px; display: flex; flex-direction: column; gap: 24px">
+
+    <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 10px">
+      <legend style="padding: 0 0 10px; font-size: 15px; font-weight: 700">Date range</legend>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <sc-for list="{{ dates }}" as="d" hint-placeholder-count="5">
+          <button aria-pressed="{{ d.sel }}" style="height: 36px; padding: 0 14px; border-radius: 999px; border: {{ d.border }}; background: {{ d.bg }}; color: {{ d.color }}; font-size: 14px; font-weight: 600">{{ d.label }}</button>
+        </sc-for>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px">
+        <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #545E72">From
+          <span style="height: 48px; box-sizing: border-box; padding: 0 14px; border: 1px solid #D5DBE5; border-radius: 16px; display: flex; align-items: center; font-size: 15px; font-weight: 500; color: #111827">1 Sep 2026</span>
+        </label>
+        <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #545E72">To
+          <span style="height: 48px; box-sizing: border-box; padding: 0 14px; border: 1px solid #D5DBE5; border-radius: 16px; display: flex; align-items: center; font-size: 15px; font-weight: 500; color: #111827">30 Sep 2026</span>
+        </label>
+      </div>
+      <label style="display: flex; align-items: center; gap: 10px; font-size: 14px">
+        <span aria-hidden="true" style="width: 22px; height: 22px; box-sizing: border-box; border-radius: 6px; background: #003399; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"></path></svg></span>
+        <input type="checkbox" checked style="position: absolute; opacity: 0; width: 1px; height: 1px">Compare with previous period
+      </label>
+    </fieldset>
+
+    <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+      <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column">
+        <legend style="padding: 0 0 6px; font-size: 15px; font-weight: 700">{{ g.title }}</legend>
+        <sc-for list="{{ g.opts }}" as="o" hint-placeholder-count="3">
+          <label style="min-height: 44px; display: flex; align-items: center; gap: 12px; font-size: 15px; cursor: pointer">
+            <input type="checkbox" style="position: absolute; opacity: 0; width: 1px; height: 1px">
+            <span aria-hidden="true" style="width: 22px; height: 22px; flex-shrink: 0; box-sizing: border-box; border-radius: 6px; border: {{ o.box }}; background: {{ o.fill }}; color: #FFFFFF; display: flex; align-items: center; justify-content: center">
+              <sc-if value="{{ o.on }}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"></path></svg></sc-if>
+            </span>
+            <span style="flex-grow: 1">{{ o.label }}</span>
+            <span style="font-size: 13px; color: #69738A; font-variant-numeric: tabular-nums">{{ o.n }}</span>
+          </label>
+        </sc-for>
+      </fieldset>
+    </sc-for>
+  </div>
+
+  <div style="margin-top: auto; padding: 12px 20px 28px; border-top: 1px solid #E5E9F0">
+    <button style="width: 100%; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24)">Show 286 consultations</button>
+  </div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function d(label, sel) {
+      return { label: label, sel: sel ? 'true' : 'false', bg: sel ? '#003399' : '#FFFFFF', color: sel ? '#FFFFFF' : '#111827', border: sel ? '1px solid #003399' : '1px solid #D5DBE5' };
+    }
+    function o(label, n, on) {
+      return { label: label, n: n, on: on, box: on ? '0' : '2px solid #D5DBE5', fill: on ? '#003399' : '#FFFFFF' };
+    }
+    return {
+      dates: [d('Today', false), d('7 days', false), d('30 days', true), d('This month', false), d('This year', false)],
+      groups: [
+        { title: 'Location', opts: [o('City Care · Salt Lake', '168', true), o('City Care · New Town', '84', true), o('Sen Diabetes Chamber · Gariahat', '34', true)] },
+        { title: 'Visit type', opts: [o('Follow-up', '196', true), o('New patient', '64', true), o('Report review', '26', true)] },
+        { title: 'Consultation mode', opts: [o('In clinic', '262', true), o('Video', '24', true)] },
+        { title: 'Age group', opts: [o('Under 18', '18', true), o('18 – 40', '92', true), o('41 – 60', '121', true), o('Over 60', '55', true)] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

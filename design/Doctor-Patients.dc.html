@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patients</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1560px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; padding: 16px 20px 14px; display: flex; flex-direction: column; gap: 14px; flex-shrink: 0">
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Patients</h1>
+      <span style="font-size: 14px; color: #545E72">248 patients · all locations</span>
+    </div>
+    <a href="#" style="height: 44px; padding: 0 14px 0 12px; border-radius: 12px; background: #EBF1FB; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add patient
+    </a>
+  </div>
+
+  <label style="height: 52px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; display: flex; align-items: center; gap: 10px">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+    <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search patients</span>
+    <input type="search" placeholder="Search by name or mobile number" style="flex-grow: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 15px">
+  </label>
+
+  <div role="tablist" aria-label="Filter patients" style="display: flex; gap: 8px; margin: 0 -20px; padding: 0 20px; overflow: hidden">
+    <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+      <button role="tab" aria-selected="{{ f.sel }}" style="height: 36px; padding: 0 14px; flex-shrink: 0; border-radius: 999px; border: {{ f.border }}; background: {{ f.bg }}; color: {{ f.color }}; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap">{{ f.label }} <span style="font-weight: 500; opacity: 0.75; font-variant-numeric: tabular-nums">{{ f.n }}</span></button>
+    </sc-for>
+  </div>
+</header>
+
+<main style="padding: 16px 16px 112px; display: flex; flex-direction: column; gap: 10px">
+  <div style="padding: 0 4px; display: flex; align-items: center; justify-content: space-between">
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Recent visits first</span>
+    <button style="height: 32px; padding: 0 4px; border: 0; background: transparent; color: #003399; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 4px">Sort
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+    </button>
+  </div>
+
+  <sc-for list="{{ patients }}" as="p" hint-placeholder-count="8">
+    <article style="padding: 16px; border-radius: 20px; background: #FFFFFF; border: 1px solid #E5E9F0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; gap: 12px">
+        <span style="width: 44px; height: 44px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ p.ini }}</span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+          <span style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+            <span style="font-size: 16px; font-weight: 700">{{ p.name }}</span>
+            <span style="font-size: 12px; color: #69738A; flex-shrink: 0">{{ p.last }}</span>
+          </span>
+          <span style="font-size: 13px; color: #545E72; font-variant-numeric: tabular-nums">{{ p.meta }}</span>
+          <span style="font-size: 13px; color: #111827">{{ p.cond }}</span>
+          <sc-if value="{{ p.flag }}" hint-placeholder-val="{{ false }}">
+            <span style="margin-top: 3px; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: {{ p.flagColor }}">
+              <span style="width: 6px; height: 6px; border-radius: 999px; background: {{ p.flagColor }}"></span>{{ p.flag }}</span>
+          </sc-if>
+        </span>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px">
+        <a href="#" style="height: 44px; border-radius: 12px; border: 1px solid #D5DBE5; background: #FFFFFF; color: #111827; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center">View</a>
+        <a href="#" style="height: 44px; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center">Consult</a>
+      </div>
+    </article>
+  </sc-for>
+
+  <button style="height: 48px; border: 0; border-radius: 12px; background: transparent; color: #003399; font-size: 15px; font-weight: 600">Show more patients</button>
+</main>
+
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 24px; height: 64px; box-sizing: border-box; padding: 6px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 28px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px">
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+  <a href="#" aria-current="page" style="border-radius: 22px; background: #EBF1FB; color: #003399; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Patients</a>
+  <a href="#" style="position: relative; border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Messages
+    <span aria-label="4 unread" style="position: absolute; top: 3px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #FFFFFF">4</span></a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5"></path></svg>Reports</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>History</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function f(label, n, sel) {
+      return { label: label, n: n, sel: sel ? 'true' : 'false', bg: sel ? '#003399' : '#FFFFFF', color: sel ? '#FFFFFF' : '#111827', border: sel ? '1px solid #003399' : '1px solid #D5DBE5' };
+    }
+    var RED = '#B91C1C', AMB = '#B45309', BLUE = '#003399';
+    function p(name, meta, cond, last, flag, flagColor) {
+      var ini = name.split(' ').map(function (w) { return w[0]; }).join('').slice(0, 2);
+      return { name: name, ini: ini, meta: meta, cond: cond, last: last, flag: flag || '', flagColor: flagColor || '#545E72' };
+    }
+    return {
+      filters: [f('All', '248', true), f('Today', '12', false), f('Follow-up due', '9', false), f('Abnormal results', '14', false)],
+      patients: [
+        p('Priya Sharma', '29 F · +91 98765 43210', 'Type 2 diabetes · PCOS', 'Today', 'Urgent chat · not reviewed', RED),
+        p('Rahul Das', '45 M · +91 98311 20764', 'High BP · first visit', 'Today', 'In queue · waiting 22 min', BLUE),
+        p('Aisha Khan', '52 F · +91 90070 41288', 'Hypothyroidism', 'Today', 'In queue · waiting 15 min', BLUE),
+        p('Debasish Bose', '62 M · +91 98740 33126', 'Type 2 diabetes', 'Today'),
+        p('Farhana Islam', '34 F · +91 90511 72830', 'Anaemia', 'Today', 'Haemoglobin 9.1 g/dL · low', AMB),
+        p('Amit Pal', '55 M · +91 98303 11942', 'Type 2 diabetes · CKD', '24 Sep', 'Creatinine up since last visit', AMB),
+        p('Moumita Roy', '41 F · +91 97480 62215', 'Under cardiology review', '02 Sep', 'Booked today · 11:00 AM', BLUE),
+        p('Sujit Mondal', '37 M · +91 98362 50417', 'Fever, cough · first visit', 'Today', 'In queue · waiting 6 min', BLUE)
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

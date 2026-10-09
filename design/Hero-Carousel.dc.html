@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Home carousel slides</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1180px; box-sizing: border-box; background: #F7F9FC; padding: 24px 20px; display: flex; flex-direction: column; gap: 28px; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827">
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 20px; font-weight: 700">Home carousel · 4 slides</h1>
+    <p style="margin: 0; font-size: 14px; line-height: 1.45; color: #545E72">Swipe or auto-advance every 6 s. Only slides with something current are shown, most urgent first.</p>
+  </div>
+
+  <!-- Slide 1 -->
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">1 · Opens appointment details</span>
+    <div style="position: relative; height: 212px; border-radius: 20px; overflow: hidden; background: #003399; box-shadow: 0 8px 24px rgba(0,51,153,0.18)">
+      <img src="/_blob/022c04e18fedbc18831a94fe64e734d1" alt="" style="position: absolute; top: 0; right: 0; width: 212px; height: 212px; object-fit: cover; display: block">
+      <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #003399 40%, rgba(0,51,153,0.55) 62%, rgba(0,51,153,0) 85%)"></div>
+      <div style="position: relative; height: 100%; box-sizing: border-box; padding: 20px; display: flex; flex-direction: column; justify-content: space-between">
+        <div style="display: flex; flex-direction: column; gap: 8px; max-width: 210px">
+          <span style="align-self: flex-start; height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.28); color: #FFFFFF; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; display: flex; align-items: center">Today · 5:00 PM</span>
+          <h2 style="margin: 0; font-size: 26px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; color: #FFFFFF">Visit with Dr. Sen</h2>
+          <span style="font-size: 14px; line-height: 1.4; color: rgba(255,255,255,0.86)">City Care Clinic, Salt Lake · Token 04</span>
+        </div>
+        <a href="#" style="align-self: flex-start; height: 44px; padding: 0 18px; border-radius: 999px; background: #FFFFFF; color: #003399; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px">View details
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
+      </div>
+    </div>
+  </div>
+
+  <sc-for list="{{ slides }}" as="s" hint-placeholder-count="3">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">{{ s.spec }}</span>
+      <div style="height: 212px; box-sizing: border-box; padding: 20px; border-radius: 20px; background: #003399; box-shadow: 0 8px 24px rgba(0,51,153,0.18); display: flex; flex-direction: column; justify-content: space-between">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="align-self: flex-start; height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.28); color: #FFFFFF; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; display: flex; align-items: center">{{ s.tag }}</span>
+            <h2 style="margin: 0; font-size: 26px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; color: #FFFFFF">{{ s.title }}</h2>
+            <span style="font-size: 14px; line-height: 1.4; color: rgba(255,255,255,0.86)">{{ s.sub }}</span>
+          </div>
+          <span style="width: 48px; height: 48px; flex-shrink: 0; border-radius: 14px; background: rgba(255,255,255,0.14); color: #FFFFFF; display: flex; align-items: center; justify-content: center">
+            <sc-if value="{{ s.isFile }}" hint-placeholder-val="{{ true }}">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path></svg>
+            </sc-if>
+            <sc-if value="{{ s.isPill }}" hint-placeholder-val="{{ false }}">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7z"></path><path d="m8.5 8.5 7 7"></path></svg>
+            </sc-if>
+            <sc-if value="{{ s.isChart }}" hint-placeholder-val="{{ false }}">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+            </sc-if>
+          </span>
+        </div>
+        <a href="#" style="align-self: flex-start; height: 44px; padding: 0 18px; border-radius: 999px; background: #FFFFFF; color: #003399; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px">{{ s.cta }}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
+      </div>
+    </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      slides: [
+        { spec: '2 · Opens the report in Health records', tag: 'New report', title: 'Your HbA1c is in', sub: '7.4%, a little above your target', cta: 'See what it means', isFile: true, isPill: false, isChart: false },
+        { spec: '3 · Opens Medicines, refill', tag: 'Refill soon', title: 'Metformin runs out in 3 days', sub: '6 tablets left', cta: 'Order a refill', isFile: false, isPill: true, isChart: false },
+        { spec: '4 · Opens health score details', tag: 'This week', title: 'Health score up by 3', sub: 'You walked 4 of 5 planned days', cta: 'See your progress', isFile: false, isPill: false, isChart: true }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

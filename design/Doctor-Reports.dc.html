@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reports</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 2480px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; padding: 16px 20px 14px; display: flex; flex-direction: column; gap: 14px; flex-shrink: 0">
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Reports</h1>
+      <span style="font-size: 14px; color: #545E72">Your consultation MIS</span>
+    </div>
+    <button style="height: 44px; padding: 0 14px 0 12px; border: 1px solid #D5DBE5; border-radius: 12px; background: #FFFFFF; color: #111827; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"></path></svg>Export
+    </button>
+  </div>
+
+  <div role="tablist" aria-label="Date range" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 4px; background: #F1F4F9; border-radius: 16px">
+    <sc-for list="{{ ranges }}" as="r" hint-placeholder-count="4">
+      <button role="tab" aria-selected="{{ r.sel }}" style="height: 40px; border: 0; border-radius: 12px; background: {{ r.bg }}; box-shadow: {{ r.shadow }}; font-size: 14px; font-weight: {{ r.weight }}; color: {{ r.color }}">{{ r.label }}</button>
+    </sc-for>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 8px">
+    <button style="height: 36px; padding: 0 12px; flex-shrink: 0; border: 1px solid #003399; border-radius: 999px; background: #EBF1FB; color: #003399; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"></path></svg>Filters
+    </button>
+    <span style="height: 36px; padding: 0 6px 0 12px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 500; white-space: nowrap">All locations</span>
+  </div>
+</header>
+
+<main style="padding: 20px 16px 112px; display: flex; flex-direction: column; gap: 16px">
+
+  <span style="padding: 0 4px; font-size: 13px; color: #545E72">1 – 30 Sep 2026 · compared with 1 – 31 Aug</span>
+
+  <section aria-label="Key numbers" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px">
+    <sc-for list="{{ kpis }}" as="k" hint-placeholder-count="6">
+      <div style="padding: 16px; border-radius: 20px; background: #FFFFFF; border: 1px solid #E5E9F0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 13px; color: #545E72">{{ k.label }}</span>
+        <span style="font-size: 26px; line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">{{ k.value }}</span>
+        <span style="font-size: 12px; font-weight: 600; color: {{ k.deltaColor }}">{{ k.delta }}</span>
+      </div>
+    </sc-for>
+  </section>
+
+  <section aria-labelledby="daily-h" style="padding: 20px; border-radius: 24px; background: #FFFFFF; border: 1px solid #E5E9F0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px">
+      <h2 id="daily-h" style="margin: 0; font-size: 17px; font-weight: 700">Consultations per day</h2>
+      <a href="#" style="font-size: 14px; font-weight: 600">Table</a>
+    </div>
+    <div style="position: relative; padding-left: 24px">
+      <div aria-hidden="true" style="position: absolute; left: 0; top: 0; height: 132px; display: flex; flex-direction: column; justify-content: space-between; font-size: 11px; color: #69738A; font-variant-numeric: tabular-nums"><span style="margin-top: -6px">14</span><span>7</span><span style="margin-bottom: -6px">0</span></div>
+      <div style="position: relative; height: 132px">
+        <span aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 0; border-top: 1px dashed #E5E9F0"></span>
+        <span aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 66px; border-top: 1px dashed #E5E9F0"></span>
+        <span aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid #D5DBE5"></span>
+        <div role="img" aria-label="Daily consultations, 1 to 30 September. Highest 14 on Monday 28 September. Closed on Sundays." style="position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 3px">
+          <sc-for list="{{ days }}" as="d" hint-placeholder-count="30">
+            <span style="flex: 1; height: {{ d.h }}; border-radius: 3px 3px 0 0; background: {{ d.c }}"></span>
+          </sc-for>
+        </div>
+        <div role="tooltip" style="position: absolute; right: -6px; top: -54px; padding: 8px 10px; border-radius: 12px; background: #111827; color: #FFFFFF; display: flex; flex-direction: column; gap: 1px; box-shadow: 0 8px 24px rgba(0,51,153,0.10)">
+          <span style="font-size: 11px; color: rgba(255,255,255,0.72)">Mon, 28 Sep</span>
+          <span style="font-size: 13px; font-weight: 700">14 consultations</span>
+        </div>
+      </div>
+      <div aria-hidden="true" style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 11px; color: #69738A"><span>1 Sep</span><span>8</span><span>15</span><span>22</span><span>30 Sep</span></div>
+    </div>
+    <span style="font-size: 13px; line-height: 1.45; color: #545E72">Busiest on Mondays and Thursdays. Closed on Sundays.</span>
+  </section>
+
+  <sc-for list="{{ splits }}" as="g" hint-placeholder-count="3">
+    <section style="padding: 20px; border-radius: 24px; background: #FFFFFF; border: 1px solid #E5E9F0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px">
+        <h2 style="margin: 0; font-size: 17px; font-weight: 700">{{ g.title }}</h2>
+        <span style="font-size: 13px; color: #69738A">{{ g.note }}</span>
+      </div>
+      <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 14px">
+            <span style="font-weight: 500">{{ r.label }}</span>
+            <span style="font-variant-numeric: tabular-nums"><span style="font-weight: 700">{{ r.n }}</span> <span style="color: #69738A">· {{ r.pct }}</span></span>
+          </span>
+          <span style="height: 8px; border-radius: 999px; background: #F1F4F9; display: flex">
+            <span style="width: {{ r.pct }}; border-radius: 999px; background: #003399"></span>
+          </span>
+        </div>
+      </sc-for>
+    </section>
+  </sc-for>
+
+  <section aria-labelledby="dl-h" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="dl-h" style="margin: 0; padding: 0 4px; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Detailed reports</h2>
+    <div style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 0 16px; display: flex; flex-direction: column">
+      <sc-for list="{{ detail }}" as="d" hint-placeholder-count="5">
+        <a href="#" style="padding: 14px 0; border-top: {{ d.border }}; display: flex; align-items: center; gap: 12px; color: #111827">
+          <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 15px; font-weight: 600">{{ d.title }}</span>
+            <span style="font-size: 13px; color: #545E72">{{ d.sub }}</span>
+          </span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+        </a>
+      </sc-for>
+    </div>
+  </section>
+</main>
+
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 24px; height: 64px; box-sizing: border-box; padding: 6px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 28px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px">
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Patients</a>
+  <a href="#" style="position: relative; border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Messages
+    <span aria-label="4 unread" style="position: absolute; top: 3px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #FFFFFF">4</span></a>
+  <a href="#" aria-current="page" style="border-radius: 22px; background: #EBF1FB; color: #003399; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5"></path></svg>Reports</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>History</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function r(label, sel) {
+      return { label: label, sel: sel ? 'true' : 'false', bg: sel ? '#FFFFFF' : 'transparent', shadow: sel ? '0 1px 2px rgba(0,51,153,0.08)' : 'none', weight: sel ? '600' : '500', color: sel ? '#111827' : '#545E72' };
+    }
+    var UP = '#076B3C', DOWN = '#B91C1C', FLAT = '#545E72';
+    var vals = [10,12,12,9,13,0,12,10,11,13,8,12,0,13,9,10,12,9,11,0,12,10,11,13,8,11,0,14,10,11];
+    var days = vals.map(function (v, i) {
+      return { h: v ? Math.round(v / 14 * 132) + 'px' : '2px', c: v ? (i === 27 ? '#003399' : '#7F99CC') : '#D5DBE5' };
+    });
+    function split(title, note, rows, total) {
+      return { title: title, note: note, rows: rows.map(function (x) { return { label: x[0], n: x[1], pct: Math.round(x[1] / total * 100) + '%' }; }) };
+    }
+    return {
+      ranges: [r('Today', false), r('7 days', false), r('30 days', true), r('Custom', false)],
+      kpis: [
+        { label: 'Consultations', value: '286', delta: '+12% vs August', deltaColor: UP },
+        { label: 'New patients', value: '64', delta: '+9 vs August', deltaColor: UP },
+        { label: 'Avg. consult time', value: '11 min', delta: 'Same as August', deltaColor: FLAT },
+        { label: 'Missed appointments', value: '21', delta: 'Booked, didn’t come · 7%', deltaColor: DOWN },
+        { label: 'Prescriptions', value: '271', delta: '95% of consultations', deltaColor: FLAT },
+        { label: 'Fees collected', value: '₹1.57L', delta: '+10% vs August', deltaColor: UP }
+      ],
+      days: days,
+      splits: [
+        split('By location', '286 total', [['City Care · Salt Lake', 168], ['City Care · New Town', 84], ['Sen Diabetes Chamber · Gariahat', 34]], 286),
+        split('By visit type', '286 total', [['Follow-up', 196], ['New patient', 64], ['Report review', 26]], 286),
+        split('Top diagnoses', 'Share of consultations', [['Type 2 diabetes', 92], ['Hypertension', 58], ['Hypothyroidism', 31], ['Fever, cough', 27], ['Anaemia', 14]], 286)
+      ],
+      detail: [
+        { title: 'Consultation register', sub: 'Every visit with patient, diagnosis and time', border: '0' },
+        { title: 'Prescription register', sub: 'Medicines and tests you prescribed', border: '1px solid #E5E9F0' },
+        { title: 'Fees and collections', sub: 'By location, mode and payment method', border: '1px solid #E5E9F0' },
+        { title: 'Follow-up compliance', sub: '72% came back on time · who missed', border: '1px solid #E5E9F0' },
+        { title: 'Referrals', sub: 'Sent to and received from other doctors', border: '1px solid #E5E9F0' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

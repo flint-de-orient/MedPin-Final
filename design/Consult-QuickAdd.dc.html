@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Consultation · add new patient</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<div aria-hidden="true" style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; height: 64px; padding: 0 16px; display: flex; align-items: center; font-size: 20px; font-weight: 700">Consultation</div>
+<div style="position: absolute; inset: 0; background: rgba(17,24,39,0.40)"></div>
+
+<section role="dialog" aria-modal="true" aria-labelledby="add-h" style="position: absolute; left: 0; right: 0; bottom: 0; background: #FFFFFF; border-radius: 24px 24px 0 0; padding: 12px 20px 32px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 18px">
+  <span style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: #D5DBE5"></span>
+  <div style="display: flex; align-items: flex-start; gap: 8px">
+    <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+      <h2 id="add-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Add new patient</h2>
+      <span style="font-size: 14px; color: #545E72">Just the basics. Add history during the consultation.</span>
+    </div>
+    <button aria-label="Close" style="width: 44px; height: 44px; margin: -6px -10px 0 0; border: 0; border-radius: 12px; background: transparent; color: #545E72; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+    </button>
+  </div>
+
+  <label style="display: flex; flex-direction: column; gap: 6px">
+    <span style="font-size: 14px; font-weight: 600">Phone number</span>
+    <span style="position: relative; display: flex; align-items: center">
+      <span style="position: absolute; left: 16px; font-size: 16px; color: #545E72">+91</span>
+      <input type="tel" value="98300 71245" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 100px 0 54px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none; font-variant-numeric: tabular-nums">
+      <span style="position: absolute; right: 14px; display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 600; color: #076B3C">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Verified
+      </span>
+    </span>
+    <span style="font-size: 13px; color: #69738A">Carried over from your search. Verified by OTP.</span>
+  </label>
+
+  <label style="display: flex; flex-direction: column; gap: 6px">
+    <span style="font-size: 14px; font-weight: 600">Full name</span>
+    <input type="text" value="Ankit Ghosh" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 2px solid #003399; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+  </label>
+
+  <div style="display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px">
+    <label style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 14px; font-weight: 600">Age</span>
+      <input type="text" inputmode="numeric" placeholder="Years" style="height: 56px; box-sizing: border-box; padding: 0 14px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+    </label>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span id="g-l" style="font-size: 14px; font-weight: 600">Gender</span>
+      <div role="group" aria-labelledby="g-l" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 4px; background: #F1F4F9; border-radius: 16px">
+        <button aria-pressed="false" style="height: 48px; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 500; color: #545E72">Female</button>
+        <button aria-pressed="true" style="height: 48px; border: 0; border-radius: 12px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,51,153,0.08); font-size: 15px; font-weight: 600; color: #111827">Male</button>
+        <button aria-pressed="false" style="height: 48px; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 500; color: #545E72">Other</button>
+      </div>
+    </div>
+  </div>
+
+  <p style="margin: 0; font-size: 13px; line-height: 1.45; color: #69738A">Ankit gets an SMS to join MedPin and share past reports. You don't need to wait for it.</p>
+
+  <button style="height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24)">Add and start consultation</button>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

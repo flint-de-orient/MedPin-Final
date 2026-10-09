@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Manage appointment</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<!-- Appointments screen behind the sheet (inert) -->
+<div aria-hidden="true" style="display: flex; flex-direction: column">
+  <header style="height: 64px; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px">
+    <span style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+    </span>
+    <span style="flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Appointments</span>
+  </header>
+  <div style="padding: 8px 20px 0; display: flex; flex-direction: column; gap: 16px">
+    <div style="padding: 4px; border-radius: 16px; background: #F1F4F9; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; font-size: 15px">
+      <span style="height: 44px; display: flex; align-items: center; justify-content: center; color: #545E72">Today</span>
+      <span style="height: 44px; border-radius: 12px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600">Upcoming</span>
+      <span style="height: 44px; display: flex; align-items: center; justify-content: center; color: #545E72">Past</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <span style="padding: 14px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E5E9F0; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 30px; line-height: 1; font-weight: 800">18</span><span style="font-size: 14px; color: #545E72">Booked</span></span>
+      <span style="padding: 14px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E5E9F0; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 30px; line-height: 1; font-weight: 800">3</span><span style="font-size: 14px; color: #545E72">Waiting</span></span>
+      <span style="padding: 14px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E5E9F0; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 30px; line-height: 1; font-weight: 800">2</span><span style="font-size: 14px; color: #545E72">Freed up</span></span>
+    </div>
+    <span style="padding-top: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Today · Tue 29 Sep</span>
+    <div style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 14px 20px; display: flex; gap: 12px">
+      <span style="width: 68px; font-size: 15px; font-weight: 600">9:30 AM</span>
+      <span style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 16px; font-weight: 600">Rahul Das</span><span style="font-size: 14px; color: #545E72">Dr. Sen · Salt Lake</span></span>
+    </div>
+  </div>
+</div>
+
+<div style="position: absolute; inset: 0; background: rgba(17,24,39,0.40)"></div>
+
+<section role="dialog" aria-modal="true" aria-labelledby="m-h" style="position: absolute; left: 0; right: 0; bottom: 0; box-sizing: border-box; padding: 12px 20px 32px; background: #FFFFFF; border-radius: 24px 24px 0 0; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column">
+  <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: #D5DBE5"></span>
+
+  <div style="padding-top: 20px; display: flex; align-items: flex-start; gap: 8px">
+    <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px">
+      <h2 id="m-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Manage appointment</h2>
+      <span style="font-size: 16px; font-weight: 600">Rahul Das · 9:30 AM · Dr. Sen</span>
+      <span style="font-size: 14px; color: #545E72">Today, Tue 29 Sep · City Care Clinic — Salt Lake</span>
+    </div>
+    <button aria-label="Close" style="width: 44px; height: 44px; margin: -8px -8px 0 0; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; color: #545E72; display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+    </button>
+  </div>
+
+  <fieldset style="margin: 24px 0 0; padding: 0; border: 0; min-width: 0">
+    <legend style="padding: 0 0 8px; font-size: 14px; font-weight: 600">New date</legend>
+    <div role="radiogroup" aria-label="New date" style="margin: 0 -20px; padding: 0 20px; display: flex; gap: 8px; overflow: hidden">
+      <sc-for list="{{ dates }}" as="d" hint-placeholder-count="5">
+        <button role="radio" aria-checked="{{ d.checked }}" style="flex-shrink: 0; height: 40px; padding: 0 16px; border: {{ d.border }}; border-radius: 999px; background: {{ d.bg }}; color: {{ d.fg }}; font-size: 14px; font-weight: 600; cursor: pointer">{{ d.label }}</button>
+      </sc-for>
+    </div>
+  </fieldset>
+
+  <fieldset style="margin: 20px 0 0; padding: 0; border: 0; min-width: 0">
+    <legend style="padding: 0 0 8px; font-size: 14px; font-weight: 600">Time · Wed 30 Sep</legend>
+    <div role="radiogroup" aria-label="Time slot" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <sc-for list="{{ slots }}" as="s" hint-placeholder-count="9">
+        <button role="radio" aria-checked="{{ s.checked }}" aria-label="{{ s.aria }}" aria-disabled="{{ s.disabled }}" style="height: 48px; box-sizing: border-box; border: {{ s.border }}; border-radius: 12px; background: {{ s.bg }}; color: {{ s.fg }}; font-size: 15px; font-weight: {{ s.weight }}; text-decoration: {{ s.deco }}; font-variant-numeric: tabular-nums; cursor: {{ s.cursor }}">{{ s.time }}</button>
+      </sc-for>
+    </div>
+    <p style="margin: 8px 0 0; font-size: 13px; color: #69738A">Crossed-out times are already booked.</p>
+  </fieldset>
+
+  <button type="button" style="margin-top: 24px; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Reschedule</button>
+
+  <button type="button" style="margin-top: 12px; height: 48px; border: 0; border-radius: 12px; background: transparent; color: #B91C1C; font-size: 15px; font-weight: 600; cursor: pointer">Cancel appointment</button>
+  <p style="margin: 0; text-align: center; font-size: 13px; color: #69738A">Rahul will be notified and the slot opens for others.</p>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var dates = ['Wed 30', 'Thu 1 Oct', 'Fri 2 Oct', 'Sat 3 Oct'];
+    var slots = [
+      ['9:00 AM', 'taken'], ['9:15 AM', 'free'], ['9:30 AM', 'taken'],
+      ['9:45 AM', 'free'], ['10:00 AM', 'selected'], ['10:15 AM', 'taken'],
+      ['10:30 AM', 'free'], ['10:45 AM', 'free'], ['11:00 AM', 'taken']
+    ];
+    return {
+      dates: dates.map(function (d, i) {
+        var on = i === 0;
+        return { label: d, checked: on ? 'true' : 'false',
+          bg: on ? '#003399' : '#FFFFFF', fg: on ? '#FFFFFF' : '#545E72',
+          border: on ? '0' : '1px solid #D5DBE5' };
+      }),
+      slots: slots.map(function (s) {
+        var t = s[1];
+        return {
+          time: s[0],
+          checked: t === 'selected' ? 'true' : 'false',
+          disabled: t === 'taken' ? 'true' : 'false',
+          aria: s[0] + (t === 'taken' ? ', already booked' : t === 'selected' ? ', selected' : ''),
+          bg: t === 'selected' ? '#EBF1FB' : t === 'taken' ? '#F1F4F9' : '#FFFFFF',
+          fg: t === 'selected' ? '#003399' : t === 'taken' ? '#69738A' : '#111827',
+          border: t === 'selected' ? '2px solid #003399' : t === 'taken' ? '1px solid #F1F4F9' : '1px solid #D5DBE5',
+          weight: t === 'selected' ? '700' : '500',
+          deco: t === 'taken' ? 'line-through' : 'none',
+          cursor: t === 'taken' ? 'not-allowed' : 'pointer'
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

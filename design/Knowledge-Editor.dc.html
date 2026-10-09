@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Knowledge editor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1100px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <button aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Edit entry</h1>
+  <button aria-label="More options" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+  </button>
+</header>
+
+<main style="flex-grow: 1; padding: 4px 20px 24px; display: flex; flex-direction: column; gap: 20px">
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; color: #545E72">
+      <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">Draft</span>
+      Last saved 2 min ago
+    </p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: #69738A">The AI assistant only uses this entry once Dr. Sen approves it.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <label for="kb-title" style="font-size: 14px; line-height: 20px; font-weight: 600">Title</label>
+    <input id="kb-title" type="text" value="Metformin timing" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <label for="kb-content" style="font-size: 14px; line-height: 20px; font-weight: 600">Content</label>
+    <textarea id="kb-content" aria-describedby="kb-content-h" style="height: 316px; box-sizing: border-box; padding: 14px 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; line-height: 1.5; resize: none; outline: none">Metformin is best taken with meals to reduce stomach upset. If it is prescribed twice a day (1-0-1), take one tablet with breakfast and one with dinner. If you forget a dose, take it with your next meal only if that meal is more than 4 hours away; never take two doses together to catch up. Extended-release (XR) tablets are usually taken once a day with the evening meal. Do not change your timing or dose without checking with your doctor.</textarea>
+    <span id="kb-content-h" style="display: flex; justify-content: space-between; font-size: 13px; line-height: 18px; color: #69738A">
+      <span>Written for patients, in plain words</span>
+      <span style="font-variant-numeric: tabular-nums">441 / 2000</span>
+    </span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0">
+      <label for="kb-lang" style="font-size: 14px; line-height: 20px; font-weight: 600">Language</label>
+      <span style="position: relative; display: flex; align-items: center">
+        <select id="kb-lang" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 40px 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; appearance: none; -webkit-appearance: none; outline: none">
+          <option selected>English</option>
+          <option>Bengali</option>
+          <option>Hindi</option>
+        </select>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position: absolute; right: 14px; pointer-events: none"><path d="m6 9 6 6 6-6"></path></svg>
+      </span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0">
+      <label for="kb-cat" style="font-size: 14px; line-height: 20px; font-weight: 600">Category</label>
+      <span style="position: relative; display: flex; align-items: center">
+        <select id="kb-cat" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 40px 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; appearance: none; -webkit-appearance: none; outline: none">
+          <option selected>Medicines</option>
+          <option>Diabetes</option>
+          <option>Hypertension</option>
+          <option>Diet</option>
+        </select>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position: absolute; right: 14px; pointer-events: none"><path d="m6 9 6 6 6-6"></path></svg>
+      </span>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <label for="kb-src" style="font-size: 14px; line-height: 20px; font-weight: 600">Source citation</label>
+    <input id="kb-src" type="text" value="ADA Standards of Care 2026, Section 9" aria-describedby="kb-src-h" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+    <span id="kb-src-h" style="font-size: 13px; line-height: 18px; color: #69738A">Shown to you in chat review when the AI cites this entry.</span>
+  </div>
+
+  <div role="group" aria-labelledby="kb-tags-l" style="display: flex; flex-direction: column; gap: 8px">
+    <span id="kb-tags-l" style="font-size: 14px; line-height: 20px; font-weight: 600">Tags</span>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px">
+      <sc-for list="{{ tags }}" as="t" hint-placeholder-count="3">
+        <span style="height: 40px; box-sizing: border-box; padding: 0 4px 0 14px; border-radius: 999px; background: #F1F4F9; color: #111827; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 2px">
+          {{ t.label }}
+          <button aria-label="{{ t.removeLabel }}" style="width: 32px; height: 32px; border: 0; border-radius: 999px; background: transparent; color: #545E72; display: flex; align-items: center; justify-content: center; cursor: pointer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+          </button>
+        </span>
+      </sc-for>
+      <button style="height: 40px; box-sizing: border-box; padding: 0 14px; border: 1px dashed #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #003399; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add tag</button>
+    </div>
+  </div>
+</main>
+
+<div style="flex-shrink: 0; padding: 12px 20px 24px; background: #FFFFFF; border-top: 1px solid #E5E9F0; display: flex; gap: 12px">
+  <button style="width: 124px; flex-shrink: 0; height: 56px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; color: #111827; font-size: 16px; font-weight: 600; cursor: pointer">Save draft</button>
+  <button style="flex-grow: 1; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Submit for approval</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      tags: ['metformin', 'diabetes', 'dosage timing'].map(function (t) {
+        return { label: t, removeLabel: 'Remove tag ' + t };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

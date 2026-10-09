@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Front desk today</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1496px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative; line-height: 1.4">
+
+<header style="padding: 12px 20px 0; display: flex; align-items: center; justify-content: space-between">
+  <img src="/_blob/518788f0cdbbd3963c68eba135a339f1" alt="MedPin — Care Connected" style="height: 36px; width: 97px; display: block">
+  <div style="display: flex; align-items: center; gap: 4px">
+    <button aria-label="Notifications, 3 new" style="position: relative; width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+      <span style="position: absolute; top: 10px; right: 11px; width: 8px; height: 8px; border-radius: 999px; background: #003399; border: 2px solid #F7F9FC"></span>
+    </button>
+    <a href="#" aria-label="Profile" style="width: 40px; height: 40px; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center">TG</a>
+  </div>
+</header>
+
+<main style="padding: 20px 20px 112px; display: flex; flex-direction: column; gap: 16px">
+
+  <div style="display: flex; flex-direction: column; gap: 6px; padding-bottom: 4px">
+    <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Good morning, Tania</h1>
+    <p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: #545E72">
+      <span style="width: 8px; height: 8px; border-radius: 999px; background: #076B3C"></span>
+      Tue, 29 Sep 2026 · Updated 4s ago
+    </p>
+  </div>
+
+  <!-- Requests waiting for a time -->
+  <section aria-labelledby="req-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="req-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Requests waiting for a time</h2>
+        <span style="font-size: 14px; color: #545E72">2 patients asked for a visit, no slot yet</span>
+      </div>
+    </div>
+    <sc-for list="{{ requests }}" as="r" hint-placeholder-count="2">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0">
+        <a href="#" style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; color: #111827">
+          <span style="font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.name }}</span>
+          <span style="font-size: 14px; color: #545E72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.detail }}</span>
+          <span style="font-size: 13px; color: #69738A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.meta }}</span>
+        </a>
+        <button style="height: 48px; flex-shrink: 0; padding: 0 16px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; cursor: pointer">Assign time</button>
+      </div>
+    </sc-for>
+  </section>
+
+  <nav aria-label="Quick actions" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+    <a href="#" style="height: 84px; box-sizing: border-box; padding: 14px 12px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E5E9F0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; justify-content: space-between; color: #111827; font-size: 14px; font-weight: 600; line-height: 1.25">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M19 8v6M16 11h6"></path></svg>Register walk-in</a>
+    <a href="#" style="height: 84px; box-sizing: border-box; padding: 14px 12px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E5E9F0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; justify-content: space-between; color: #111827; font-size: 14px; font-weight: 600; line-height: 1.25">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>Record vitals</a>
+    <a href="#" style="height: 84px; box-sizing: border-box; padding: 14px 12px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E5E9F0; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; justify-content: space-between; color: #111827; font-size: 14px; font-weight: 600; line-height: 1.25">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>Book appointment</a>
+  </nav>
+
+  <!-- Today's appointments (hero) -->
+  <section aria-labelledby="appt-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 20px; padding: 20px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 12px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="appt-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Today's appointments</h2>
+        <span style="font-size: 14px; color: #545E72">18 booked · Dr. Sen and Dr. Mitra</span>
+      </div>
+      <a href="#" style="font-size: 14px; font-weight: 600; padding-top: 3px">View all</a>
+    </div>
+    <sc-for list="{{ appts }}" as="a" hint-placeholder-count="6">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid #E5E9F0">
+        <a href="#" style="flex-grow: 1; min-width: 0; display: flex; align-items: center; gap: 12px; color: #111827">
+          <span style="width: 44px; flex-shrink: 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums">{{ a.time }}</span>
+          <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+            <span style="font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ a.name }}</span>
+            <span style="display: flex; align-items: center; gap: 8px; min-width: 0">
+              <span style="height: 22px; flex-shrink: 0; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: {{ a.bg }}; color: {{ a.fg }}">{{ a.status }}</span>
+              <span style="font-size: 13px; color: #69738A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ a.doctor }}</span>
+            </span>
+          </span>
+        </a>
+        <sc-if value="{{ a.upcoming }}" hint-placeholder-val="{{ false }}">
+          <button aria-label="{{ a.checkLabel }}" style="height: 48px; flex-shrink: 0; padding: 0 16px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; cursor: pointer">Check in</button>
+        </sc-if>
+      </div>
+    </sc-for>
+  </section>
+
+  <!-- Day summary -->
+  <section aria-labelledby="sum-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <h2 id="sum-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Day summary</h2>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <sc-for list="{{ summary }}" as="s" hint-placeholder-count="4">
+        <div style="padding: 14px; border-radius: 12px; background: #F7F9FC; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">{{ s.n }}</span>
+          <span style="font-size: 14px; color: #545E72">{{ s.label }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+</main>
+
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 24px; height: 64px; box-sizing: border-box; padding: 6px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 28px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px">
+  <a href="#" aria-current="page" style="border-radius: 22px; background: #EBF1FB; color: #003399; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 700">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>Today</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Patients</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>Profile</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1496}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var WARN = { bg: '#FEF6E7', fg: '#B45309' };
+    var NEUTRAL = { bg: '#F1F4F9', fg: '#545E72' };
+    var INFO = { bg: '#EBF1FB', fg: '#003399' };
+    var OK = { bg: '#E7F5EE', fg: '#076B3C' };
+    var STATUS = { 'In consult': INFO, 'Waiting': WARN, 'Upcoming': NEUTRAL, 'Done': OK };
+    var rows = [
+      ['8:30', 'Amit Pal', 'Done', 'Dr. Sen'],
+      ['9:00', 'Priya Sharma', 'In consult', 'Dr. Sen'],
+      ['9:30', 'Rahul Das', 'Waiting', 'Dr. Sen'],
+      ['10:00', 'Aisha Khan', 'Waiting', 'Dr. Sen'],
+      ['10:30', 'Sujit Mondal', 'Upcoming', 'Dr. Sen'],
+      ['11:00', 'Moumita Roy', 'Upcoming', 'Dr. Mitra']
+    ];
+    return {
+      requests: [
+        { name: 'Debasish Bose', detail: 'Follow-up with Dr. Sen', meta: 'Asked 8:20 AM · app' },
+        { name: 'Farhana Islam', detail: 'New visit with Dr. Sen', meta: 'Asked yesterday · WhatsApp' }
+      ],
+      appts: rows.map(function (r) {
+        var s = STATUS[r[2]];
+        return { time: r[0], name: r[1], status: r[2], doctor: r[3], bg: s.bg, fg: s.fg,
+          upcoming: r[2] === 'Upcoming', checkLabel: 'Check in ' + r[1] };
+      }),
+      summary: [
+        { n: '18', label: 'Booked' },
+        { n: '7', label: 'Checked in' },
+        { n: '5', label: 'Done' },
+        { n: '1', label: 'Missed appointments' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

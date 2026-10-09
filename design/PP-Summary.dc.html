@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patient profile · Summary</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1880px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; display: flex; flex-direction: column">
+  <div style="height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px">
+    <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+    </button>
+    <span style="flex-grow: 1"></span>
+    <button aria-label="Call Priya" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #003399">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+    </button>
+    <button aria-label="Message Priya" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #003399">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+    </button>
+    <button aria-label="More options" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+    </button>
+  </div>
+  <div style="padding: 0 20px 16px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; align-items: center; gap: 14px">
+      <span style="width: 56px; height: 56px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 19px; font-weight: 700; display: flex; align-items: center; justify-content: center">PS</span>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Priya Sharma</h1>
+        <span style="font-size: 14px; color: #545E72">29 yrs · Female · +91 98765 43210</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 6px">
+      <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: #FEF6E7; color: #B45309; font-size: 12px; font-weight: 700; display: flex; align-items: center">High risk</span>
+      <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">Type 2 diabetes</span>
+      <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">PCOS</span>
+      <span style="height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid #F0D3A8; color: #B45309; font-size: 12px; font-weight: 600; display: flex; align-items: center">Allergy: Sulfa drugs</span>
+    </div>
+  </div>
+  <div role="tablist" aria-label="Patient record" style="padding: 0 20px; display: flex; gap: 24px; white-space: nowrap; overflow: hidden">
+    <button role="tab" aria-selected="true" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid #003399; background: transparent; font-size: 15px; font-weight: 700; color: #003399">Summary</button>
+    <button role="tab" aria-selected="false" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Prescriptions</button>
+    <button role="tab" aria-selected="false" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Test results</button>
+    <button role="tab" aria-selected="false" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Treatment plan</button>
+  </div>
+</header>
+
+<main style="padding: 20px 20px 112px; display: flex; flex-direction: column; gap: 16px">
+
+  <section aria-labelledby="ai-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 20px; padding: 20px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <h2 id="ai-h" style="margin: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #003399">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+        AI summary
+      </h2>
+      <span style="font-size: 13px; color: #69738A">Updated today, 8:55 AM</span>
+    </div>
+    <p style="margin: 0; font-size: 16px; line-height: 1.55; color: #111827">Type 2 diabetes since Jun 2025, with PCOS. Sugar control improved on Metformin (HbA1c 8.4% → 6.8%) but has drifted back to 7.2%. LDL stays high on Atorvastatin. Adherence is 86% with 4 missed doses this week. <strong style="font-weight: 700">Reported chest tightness this morning.</strong></p>
+
+    <div style="display: flex; flex-direction: column">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 8px">
+        <h3 style="margin: 0; font-size: 16px; font-weight: 700">Abnormal findings</h3>
+        <span style="font-size: 13px; color: #69738A">5 from 3 reports</span>
+      </div>
+      <sc-for list="{{ findings }}" as="f" hint-placeholder-count="5">
+        <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid #E5E9F0; color: #111827">
+          <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 15px; font-weight: 600">{{ f.name }}</span>
+            <span style="font-size: 13px; color: #69738A">Ref {{ f.ref }} · {{ f.date }}</span>
+          </span>
+          <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px">
+            <span style="font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: #111827">{{ f.value }}</span>
+            <span style="font-size: 12px; font-weight: 700; color: #B45309">{{ f.flag }}</span>
+          </span>
+        </a>
+      </sc-for>
+    </div>
+
+    <p style="margin: 0; padding-top: 12px; border-top: 1px solid #E5E9F0; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; line-height: 1.4; color: #69738A">
+      <span>Written by AI from Priya's shared records. Check the source before acting.</span>
+      <a href="#" style="flex-shrink: 0; font-size: 14px; font-weight: 600">Sources</a>
+    </p>
+  </section>
+
+  <section aria-labelledby="v-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h2 id="v-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Vitals</h2>
+        <span style="font-size: 14px; color: #545E72">Today, 8:52 AM · front desk</span>
+      </div>
+      <a href="#" style="font-size: 14px; font-weight: 600; padding-top: 3px">Record</a>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <sc-for list="{{ vitals }}" as="v" hint-placeholder-count="8">
+        <div style="padding: 12px 14px; border-radius: 12px; background: #F7F9FC; display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 13px; color: #545E72">{{ v.label }}</span>
+          <span style="font-size: 22px; line-height: 1.15; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums">{{ v.value }}<span style="font-size: 13px; font-weight: 500; color: #69738A"> {{ v.unit }}</span></span>
+          <span style="font-size: 12px; font-weight: 700; color: {{ v.color }}">{{ v.band }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section aria-labelledby="t-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between">
+      <h2 id="t-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Fasting sugar</h2>
+      <span style="font-size: 14px; color: #545E72">Last 7 days · avg <strong style="color: #111827; font-variant-numeric: tabular-nums">143</strong></span>
+    </div>
+    <svg width="310" height="140" viewBox="0 0 310 140" role="img" aria-label="Fasting sugar between 138 and 150 mg/dL over 7 days, above the 130 target">
+      <g stroke="#E5E9F0" stroke-width="1"><line x1="34" y1="10" x2="306" y2="10"></line><line x1="34" y1="50" x2="306" y2="50"></line><line x1="34" y1="90" x2="306" y2="90"></line><line x1="34" y1="118" x2="306" y2="118"></line></g>
+      <g font-size="11" fill="#69738A" font-family="Figtree, system-ui, sans-serif" text-anchor="end"><text x="26" y="14">200</text><text x="26" y="54">150</text><text x="26" y="94">100</text><text x="26" y="122">70</text></g>
+      <line x1="34" y1="66" x2="306" y2="66" stroke="#076B3C" stroke-width="1" stroke-dasharray="4 3"></line>
+      <text x="306" y="80" font-size="11" fill="#076B3C" text-anchor="end" font-family="Figtree, system-ui, sans-serif">Target 130</text>
+      <polyline points="40,50 84,54.8 128,58.8 172,57.2 216,53.2 260,59.6 302,56.4" fill="none" stroke="#003399" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+      <g fill="#FFFFFF" stroke="#003399" stroke-width="2"><circle cx="40" cy="50" r="3"></circle><circle cx="84" cy="54.8" r="3"></circle><circle cx="128" cy="58.8" r="3"></circle><circle cx="172" cy="57.2" r="3"></circle><circle cx="216" cy="53.2" r="3"></circle><circle cx="260" cy="59.6" r="3"></circle><circle cx="302" cy="56.4" r="3.5" fill="#003399"></circle></g>
+      <g font-size="11" fill="#69738A" font-family="Figtree, system-ui, sans-serif" text-anchor="middle"><text x="40" y="136">Wed</text><text x="84" y="136">Thu</text><text x="128" y="136">Fri</text><text x="172" y="136">Sat</text><text x="216" y="136">Sun</text><text x="260" y="136">Mon</text><text x="298" y="136">Tue</text></g>
+    </svg>
+  </section>
+</main>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 28px; background: #FFFFFF; border-top: 1px solid #E5E9F0">
+  <button style="width: 100%; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Start consultation</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1880}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var OK = '#076B3C', WARN = '#B45309', MUTED = '#545E72';
+    return {
+      findings: [
+        { name: 'LDL cholesterol', value: '162 mg/dL', flag: 'High', ref: '< 100', date: 'Lipid profile, 12 Mar 2026' },
+        { name: 'Triglycerides', value: '210 mg/dL', flag: 'High', ref: '< 150', date: 'Lipid profile, 12 Mar 2026' },
+        { name: 'HbA1c', value: '7.2%', flag: 'High', ref: '< 7.0', date: 'Diabetes panel, 18 Jul 2026' },
+        { name: 'Fasting glucose', value: '138 mg/dL', flag: 'High', ref: '70–99', date: 'Diabetes panel, 18 Jul 2026' },
+        { name: 'Vitamin D', value: '14 ng/mL', flag: 'Low', ref: '30–100', date: 'Vitamin D, 18 Jul 2026' }
+      ],
+      vitals: [
+        { label: 'Blood pressure', value: '128/82', unit: 'mmHg', band: 'Normal', color: OK },
+        { label: 'Pulse', value: '78', unit: 'bpm', band: 'Normal', color: OK },
+        { label: 'SpO₂', value: '98', unit: '%', band: 'Normal', color: OK },
+        { label: 'Temperature', value: '98.4', unit: '°F', band: 'Normal', color: OK },
+        { label: 'Fasting sugar', value: '142', unit: 'mg/dL', band: 'High · home reading', color: WARN },
+        { label: 'BMI', value: '27.4', unit: '', band: 'Overweight', color: WARN },
+        { label: 'Weight', value: '68.5', unit: 'kg', band: '−0.8 kg since Aug', color: MUTED },
+        { label: 'Height', value: '158', unit: 'cm', band: 'Recorded Jun 2025', color: MUTED }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

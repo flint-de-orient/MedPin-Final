@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patient feedback</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1296px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <button aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Patient feedback</h1>
+</header>
+
+<main style="flex-grow: 1; padding: 8px 20px 24px; display: flex; flex-direction: column; gap: 16px">
+
+  <div role="group" aria-label="Filter feedback" style="display: flex; gap: 8px">
+    <button aria-pressed="true" style="height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 14px; font-weight: 600; cursor: pointer">All · 4</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600; cursor: pointer">Care · 3</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600; cursor: pointer">App · 1</button>
+  </div>
+
+  <sc-for list="{{ items }}" as="f" hint-placeholder-count="4">
+    <article style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 24px">
+          <h2 style="margin: 0; font-size: 16px; font-weight: 600">{{ f.name }}</h2>
+          <span style="font-size: 13px; color: #69738A; font-variant-numeric: tabular-nums">{{ f.date }}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; height: 24px">
+          <span role="img" aria-label="{{ f.ratingLabel }}" style="display: flex; gap: 2px">
+            <sc-for list="{{ f.stars }}" as="s" hint-placeholder-count="5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="{{ s.c }}" stroke="{{ s.c }}" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"></path></svg>
+            </sc-for>
+          </span>
+          <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">{{ f.kind }}</span>
+        </div>
+      </div>
+      <p style="margin: 0; font-size: 16px; line-height: 1.5">{{ f.message }}</p>
+      <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: #69738A">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>{{ f.readBy }}</span>
+      <sc-if value="{{ f.hasReply }}" hint-placeholder-val="{{ true }}">
+        <div style="border-top: 1px solid #E5E9F0; padding: 12px 0 0 16px; display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #545E72">{{ f.replyMeta }}</span>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: #545E72">{{ f.reply }}</p>
+        </div>
+      </sc-if>
+      <sc-if value="{{ f.canReply }}" hint-placeholder-val="{{ false }}">
+        <button style="align-self: flex-start; height: 48px; padding: 0 16px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Reply</button>
+      </sc-if>
+    </article>
+  </sc-for>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1296}}'>
+class Component extends DCLogic {
+  renderVals() {
+    // canReply is true only for people holding the chat-reply permission.
+    var hasChatReply = true;
+    var rows = [
+      { name: 'Moumita Roy', date: '28 Sep', rating: 5, kind: 'Care',
+        message: 'Dr. Sen explained my reports patiently, and the reminders in the app help me stay on track.',
+        readBy: 'Read by Dr. Sen, Tania', reply: 'Thank you, Moumita. See you at your follow-up on Mon, 12 Oct.', replyMeta: 'Clinic replied · Tania Ghosh · 28 Sep' },
+      { name: 'Debasish Bose', date: '27 Sep', rating: 2, kind: 'App',
+        message: 'The app logs me out every few days and I have to enter the OTP again. Very tiring.',
+        readBy: 'Read by Tania', reply: '', replyMeta: '' },
+      { name: 'Aisha Khan', date: '25 Sep', rating: 4, kind: 'Care',
+        message: 'Waiting time was long on Saturday, but the doctor was very thorough.',
+        readBy: 'Read by Dr. Sen', reply: '', replyMeta: '' },
+      { name: 'Rahul Das', date: '22 Sep', rating: 5, kind: 'Care',
+        message: 'Got my BP medicine adjusted over chat without an extra visit. Very convenient.',
+        readBy: 'Read by Dr. Sen, Tania', reply: 'Glad it helped, Rahul. Keep logging your BP every morning.', replyMeta: 'Clinic replied · Dr. Sen · 23 Sep' }
+    ];
+    return {
+      items: rows.map(function (r) {
+        var stars = [];
+        for (var i = 1; i <= 5; i++) { stars.push({ c: i <= r.rating ? '#003399' : '#D5DBE5' }); }
+        return { name: r.name, date: r.date, kind: r.kind, message: r.message, readBy: r.readBy,
+          reply: r.reply, replyMeta: r.replyMeta, hasReply: r.reply !== '', canReply: r.reply === '' && hasChatReply,
+          stars: stars, ratingLabel: 'Rated ' + r.rating + ' out of 5' };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

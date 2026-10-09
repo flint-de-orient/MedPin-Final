@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Medicines</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 2460px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="padding: 16px 20px 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Medicines</h1>
+    <span style="font-size: 14px; color: #545E72">5 running · from 3 doctors</span>
+  </div>
+  <a href="#" aria-label="Cart, 1 item" style="position: relative; width: 44px; height: 44px; border: 1px solid #E5E9F0; border-radius: 999px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; color: #111827">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"></circle><circle cx="18" cy="20" r="1.5"></circle><path d="M2 3h3l2.6 12.4a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.5L21 7H6"></path></svg>
+    <span style="position: absolute; top: -2px; right: -2px; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 2px solid #F7F9FC">1</span>
+  </a>
+</header>
+
+<main style="padding: 20px 20px 112px; display: flex; flex-direction: column; gap: 16px">
+
+  <!-- Today's doses -->
+  <section aria-labelledby="td-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 20px; padding: 20px 20px 8px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 4px">
+      <h2 id="td-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Today's doses</h2>
+      <span style="font-size: 14px; color: #545E72; font-variant-numeric: tabular-nums">3 of 5 taken</span>
+    </div>
+    <sc-for list="{{ slots }}" as="s" hint-placeholder-count="3">
+      <div style="padding: 14px 0; border-top: {{ s.border }}; display: flex; flex-direction: column; gap: 10px">
+        <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">{{ s.label }}</span>
+        <sc-for list="{{ s.doses }}" as="d" hint-placeholder-count="2">
+          <div style="display: flex; align-items: center; gap: 12px">
+            <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 1px">
+              <span style="font-size: 16px; font-weight: 600; color: {{ d.nameColor }}">{{ d.name }}</span>
+              <span style="font-size: 13px; color: #545E72">{{ d.when }}</span>
+            </span>
+            <sc-if value="{{ d.taken }}" hint-placeholder-val="{{ false }}">
+              <span style="height: 28px; padding: 0 10px; border-radius: 999px; background: #E7F5EE; color: #076B3C; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 4px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>{{ d.at }}</span>
+            </sc-if>
+            <sc-if value="{{ d.due }}" hint-placeholder-val="{{ true }}">
+              <span style="display: flex; gap: 6px">
+                <button aria-label="Skip {{ d.name }}" style="height: 40px; padding: 0 12px; border: 1px solid #D5DBE5; border-radius: 12px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600">Skip</button>
+                <button style="height: 40px; padding: 0 14px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700">Taken</button>
+              </span>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+  </section>
+
+  <!-- Refill alert -->
+  <div style="padding: 16px; border-radius: 16px; background: #FEF6E7; border: 1px solid #F0D3A8; display: flex; align-items: center; gap: 12px">
+    <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 15px; font-weight: 700; color: #111827">Metformin runs out on Friday</span>
+      <span style="font-size: 13px; color: #545E72">6 tablets left · 3 days</span>
+    </span>
+    <button style="height: 44px; padding: 0 16px; flex-shrink: 0; border: 0; border-radius: 12px; background: #FFFFFF; color: #003399; font-size: 14px; font-weight: 700; box-shadow: 0 1px 2px rgba(0,51,153,0.08)">Reorder</button>
+  </div>
+
+  <!-- Running medicines -->
+  <section aria-labelledby="rm-h" style="display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 4px 4px 0">
+      <h2 id="rm-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Running now</h2>
+      <span style="font-size: 13px; color: #69738A">Sorted by what runs out first</span>
+    </div>
+    <sc-for list="{{ meds }}" as="m" hint-placeholder-count="5">
+      <article style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 3px">
+            <h3 style="margin: 0; font-size: 18px; font-weight: 700">{{ m.name }}</h3>
+            <span style="font-size: 14px; color: #111827; font-variant-numeric: tabular-nums">{{ m.dose }}</span>
+          </div>
+          <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 700; display: flex; align-items: center; flex-shrink: 0; font-variant-numeric: tabular-nums">{{ m.day }}</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+          <div style="padding: 10px 12px; border-radius: 12px; background: #F7F9FC; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 12px; color: #545E72">Taken · 30 days</span>
+            <span style="font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: {{ m.takenColor }}">{{ m.taken }}</span>
+          </div>
+          <div style="padding: 10px 12px; border-radius: 12px; background: #F7F9FC; display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 12px; color: #545E72">In stock</span>
+            <span style="font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: {{ m.stockColor }}">{{ m.stock }}</span>
+          </div>
+        </div>
+
+        <a href="#" style="display: flex; align-items: center; gap: 10px; color: #111827">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#545E72" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path></svg>
+          <span style="flex-grow: 1; font-size: 13px; line-height: 1.4; color: #545E72">{{ m.by }}</span>
+          <span style="font-size: 14px; font-weight: 700; color: #003399; flex-shrink: 0">Prescription</span>
+        </a>
+
+        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px">
+          <button style="height: 48px; border: 1px solid #D5DBE5; border-radius: 12px; background: #FFFFFF; color: #111827; font-size: 14px; font-weight: 700">Update stock</button>
+          <button style="height: 48px; border: 0; border-radius: 12px; background: {{ m.cartBg }}; color: {{ m.cartFg }}; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"></circle><circle cx="18" cy="20" r="1.5"></circle><path d="M2 3h3l2.6 12.4a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.5L21 7H6"></path></svg>
+            {{ m.cart }}
+          </button>
+        </div>
+      </article>
+    </sc-for>
+  </section>
+
+  <!-- Safety check -->
+  <div style="padding: 16px; border-radius: 16px; background: #FFFFFF; border: 1px solid #E5E9F0; display: flex; gap: 12px">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#076B3C" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+    <span style="display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 15px; font-weight: 700">No clashes found</span>
+      <span style="font-size: 13px; line-height: 1.45; color: #545E72">Your 5 medicines from 3 doctors were checked against each other and your sulfa allergy.</span>
+    </span>
+  </div>
+
+  <!-- More -->
+  <section style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 4px 20px; display: flex; flex-direction: column">
+    <sc-for list="{{ more }}" as="r" hint-placeholder-count="4">
+      <a href="#" style="display: flex; align-items: center; gap: 12px; min-height: 60px; border-top: {{ r.border }}; color: #111827">
+        <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 15px; font-weight: 600">{{ r.title }}</span>
+          <span style="font-size: 13px; color: #545E72">{{ r.sub }}</span>
+        </span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+      </a>
+    </sc-for>
+  </section>
+</main>
+
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 24px; height: 64px; box-sizing: border-box; padding: 6px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 28px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px">
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Doctor</a>
+  <a href="#" aria-current="page" style="border-radius: 22px; background: #EBF1FB; color: #003399; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7z"></path><path d="m8.5 8.5 7 7"></path></svg>Medicines</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path></svg>Records</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>Profile</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2460}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function dose(name, when, state, at) {
+      return { name: name, when: when, taken: state === 'taken', due: state === 'due', at: at || '', nameColor: state === 'taken' ? '#545E72' : '#111827' };
+    }
+    var slots = [
+      { label: 'Morning', doses: [dose('Glimepiride 1 mg', 'Before breakfast', 'taken', '7:32 AM'), dose('Metformin 500 mg', 'After breakfast', 'taken', '8:40 AM'), dose('Myo-inositol 2 g', 'After breakfast', 'taken', '8:41 AM')] },
+      { label: 'Night', doses: [dose('Metformin 500 mg', '8:30 PM · after dinner', 'due'), dose('Atorvastatin 10 mg', '10:00 PM · at bedtime', 'due')] }
+    ].map(function (s, i) { s.border = i === 0 ? '0' : '1px solid #E5E9F0'; return s; });
+    var WARN = '#B45309', OK = '#076B3C', INK = '#111827', FAINT = '#69738A';
+    function med(name, dose, day, taken, takenColor, stock, stockColor, by, inCart) {
+      return { name: name, dose: dose, day: day, taken: taken, takenColor: takenColor, stock: stock, stockColor: stockColor, by: by,
+        cart: inCart ? 'In cart · 3 strips' : 'Add to cart', cartBg: inCart ? '#E7F5EE' : '#EBF1FB', cartFg: inCart ? '#076B3C' : '#003399' };
+    }
+    return {
+      slots: slots,
+      meds: [
+        med('Metformin 500 mg', '1-0-1 · after food', 'Day 468', '78%', WARN, '6 · 3 days', WARN, 'Dr. Arjun Sen · 29 Sep 2026 · ongoing', true),
+        med('Glimepiride 1 mg', '1-0-0 · before breakfast', 'Day 2 of 30', 'New', FAINT, '28 · 28 days', INK, 'Dr. Arjun Sen · 29 Sep 2026', false),
+        med('Atorvastatin 10 mg', '0-0-1 · at bedtime', 'Day 241', '91%', OK, '12 · 12 days', INK, 'Dr. Rina Mitra · 02 Feb 2026 · ongoing', false),
+        med('Myo-inositol 2 g', '1-0-1 · after food', 'Day 316', 'Not tracked', FAINT, '40 · 20 days', INK, 'Dr. Nandita Gupta · 18 Nov 2025', false),
+        med('Vitamin D3 60,000 IU', 'Once a week · Sunday', 'Week 7 of 8', '100%', OK, '2 · 2 weeks', INK, 'Dr. Arjun Sen · 11 Aug 2026', false)
+      ],
+      more: [
+        { title: 'Reminder times', sub: 'Morning 7:30 AM · Night 8:30 PM', border: '0' },
+        { title: 'Orders', sub: '1 delivered · 12 Sep', border: '1px solid #E5E9F0' },
+        { title: 'Past medicines', sub: '3 completed courses', border: '1px solid #E5E9F0' },
+        { title: 'Share medicine list', sub: 'PDF for a new doctor or pharmacy', border: '1px solid #E5E9F0' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

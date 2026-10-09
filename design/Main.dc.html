@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patient home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 2560px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="padding: 16px 20px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px">
+  <div style="display: flex; flex-direction: column; gap: 2px">
+    <span style="font-size: 15px; color: #545E72">Good morning,</span>
+    <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Priya</h1>
+  </div>
+  <div style="display: flex; align-items: center; gap: 8px">
+    <button aria-label="Notifications, 1 new" style="position: relative; width: 44px; height: 44px; border: 1px solid #E5E9F0; border-radius: 999px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+      <span style="position: absolute; top: 9px; right: 10px; width: 8px; height: 8px; border-radius: 999px; background: #003399; border: 2px solid #FFFFFF"></span>
+    </button>
+    <a href="#" aria-label="Profile" style="width: 44px; height: 44px; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center">PS</a>
+  </div>
+</header>
+
+<main style="padding: 20px 20px 184px; display: flex; flex-direction: column; gap: 16px">
+
+  <!-- Hero carousel: 4 slides, each with its own destination. Slide 1 shown, slide 2 peeks. -->
+  <section aria-roledescription="carousel" aria-label="Highlights" style="display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; gap: 12px; margin-right: -20px; overflow: hidden">
+      <div role="group" aria-roledescription="slide" aria-label="1 of 4" style="position: relative; width: 322px; height: 212px; flex-shrink: 0; border-radius: 20px; overflow: hidden; background: #003399; box-shadow: 0 8px 24px rgba(0,51,153,0.18)">
+        <img src="/_blob/022c04e18fedbc18831a94fe64e734d1" alt="" style="position: absolute; top: 0; right: 0; width: 200px; height: 212px; object-fit: cover; display: block">
+        <div style="position: absolute; inset: 0; background: linear-gradient(90deg, #003399 42%, rgba(0,51,153,0.55) 64%, rgba(0,51,153,0) 88%)"></div>
+        <div style="position: relative; height: 100%; box-sizing: border-box; padding: 20px; display: flex; flex-direction: column; justify-content: space-between">
+          <div style="display: flex; flex-direction: column; gap: 8px; max-width: 200px">
+            <span style="align-self: flex-start; height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.28); color: #FFFFFF; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; display: flex; align-items: center">Today · 5:00 PM</span>
+            <h2 style="margin: 0; font-size: 26px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; color: #FFFFFF">Visit with Dr. Sen</h2>
+            <span style="font-size: 14px; line-height: 1.4; color: rgba(255,255,255,0.86)">City Care Clinic, Salt Lake · Token 04</span>
+          </div>
+          <a href="#" style="align-self: flex-start; height: 44px; padding: 0 18px; border-radius: 999px; background: #FFFFFF; color: #003399; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px">
+            View details
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>
+          </a>
+        </div>
+      </div>
+      <div role="group" aria-roledescription="slide" aria-label="2 of 4" style="width: 322px; height: 212px; flex-shrink: 0; border-radius: 20px; background: #002470; box-sizing: border-box; padding: 20px">
+        <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,0.16); color: #FFFFFF; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center">NEW REPORT</span>
+      </div>
+    </div>
+    <div aria-hidden="true" style="display: flex; justify-content: center; gap: 6px">
+      <span style="width: 20px; height: 6px; border-radius: 999px; background: #003399"></span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #D5DBE5"></span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #D5DBE5"></span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #D5DBE5"></span>
+    </div>
+  </section>
+
+  <a href="#" style="height: 52px; padding: 0 16px; border-radius: 16px; background: #FFFFFF; border: 1px solid #F3C4C4; display: flex; align-items: center; gap: 12px; color: #B91C1C">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M12 7v4M12 14h.01"></path></svg>
+    <span style="flex-grow: 1; font-size: 15px; font-weight: 600">Emergency? Chat with your doctor</span>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+  </a>
+
+  <!-- Today's checklist -->
+  <section aria-labelledby="today-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px 20px 8px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px">
+      <div style="display: flex; align-items: baseline; justify-content: space-between">
+        <h2 id="today-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Today</h2>
+        <span style="font-size: 14px; color: #545E72; font-variant-numeric: tabular-nums">2 of 5 done</span>
+      </div>
+      <div style="height: 6px; border-radius: 999px; background: #E5E9F0; overflow: hidden" role="img" aria-label="2 of 5 tasks done">
+        <div style="width: 40%; height: 6px; border-radius: 999px; background: #076B3C"></div>
+      </div>
+    </div>
+    <sc-for list="{{ tasks }}" as="t" hint-placeholder-count="5">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: {{ t.border }}">
+        <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; background: #F1F4F9; color: #545E72; display: flex; align-items: center; justify-content: center">
+          <sc-if value="{{ t.isPill }}" hint-placeholder-val="{{ true }}">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7z"></path><path d="m8.5 8.5 7 7"></path></svg>
+          </sc-if>
+          <sc-if value="{{ t.isDrop }}" hint-placeholder-val="{{ false }}">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.7 6.3 9.4a7 7 0 1 0 11.4 0z"></path></svg>
+          </sc-if>
+          <sc-if value="{{ t.isFile }}" hint-placeholder-val="{{ false }}">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"></path></svg>
+          </sc-if>
+        </span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 16px; font-weight: 600; color: {{ t.titleColor }}">{{ t.title }}</span>
+          <span style="font-size: 13px; color: #545E72">{{ t.sub }}</span>
+        </span>
+        <sc-if value="{{ t.done }}" hint-placeholder-val="{{ false }}">
+          <span style="height: 28px; padding: 0 10px; border-radius: 999px; background: #E7F5EE; color: #076B3C; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 4px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Taken
+          </span>
+        </sc-if>
+        <sc-if value="{{ t.action }}" hint-placeholder-val="{{ true }}">
+          <button style="height: 40px; padding: 0 16px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700">{{ t.action }}</button>
+        </sc-if>
+        <sc-if value="{{ t.later }}" hint-placeholder-val="{{ false }}">
+          <span style="font-size: 13px; font-weight: 600; color: #69738A">{{ t.later }}</span>
+        </sc-if>
+      </div>
+    </sc-for>
+  </section>
+
+  <!-- Daily log: meals, exercise, steps (shared with care team) -->
+  <section aria-labelledby="log-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px 20px 16px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 8px">
+      <h2 id="log-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Daily log</h2>
+      <a href="#" style="font-size: 14px; font-weight: 600">History</a>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0">
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Meals</span>
+        <span style="font-size: 13px; color: #545E72">Breakfast logged · lunch next</span>
+      </span>
+      <button style="height: 40px; padding: 0 16px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"></path><circle cx="12" cy="13" r="3"></circle></svg>Log meal
+      </button>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0">
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Evening walk · 30 min</span>
+        <span style="font-size: 13px; color: #545E72">Planned 6:00 PM · 3 of 5 this week</span>
+      </span>
+      <button style="height: 40px; padding: 0 16px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700">Mark done</button>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-top: 1px solid #E5E9F0">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 16px; font-weight: 600"><span style="font-variant-numeric: tabular-nums">4,820</span> steps</span>
+          <span style="font-size: 13px; color: #545E72">Goal 8,000 · entered by you</span>
+        </span>
+        <button style="height: 40px; padding: 0 16px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700">Add</button>
+      </div>
+      <div style="height: 6px; border-radius: 999px; background: #E5E9F0; overflow: hidden" role="img" aria-label="4,820 of 8,000 steps"><div style="width: 60%; height: 6px; border-radius: 999px; background: #003399"></div></div>
+    </div>
+
+    <a href="#" style="display: flex; align-items: center; gap: 10px; padding-top: 14px; border-top: 1px solid #E5E9F0; color: #545E72">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"></path></svg>
+      <span style="flex-grow: 1; font-size: 13px">Shared with Dr. Sen and Mou (dietician)</span>
+      <span style="font-size: 14px; font-weight: 600; color: #003399">Change</span>
+    </a>
+  </section>
+
+  <!-- Your health: scores -->
+  <section aria-labelledby="score-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <h2 id="score-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Your health</h2>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <a href="#" style="padding: 14px; border-radius: 16px; background: #F7F9FC; display: flex; flex-direction: column; gap: 10px; color: #111827">
+        <span style="display: flex; align-items: center; gap: 12px">
+          <span style="position: relative; width: 56px; height: 56px; flex-shrink: 0">
+            <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="24" fill="none" stroke="#E5E9F0" stroke-width="6"></circle><circle cx="28" cy="28" r="24" fill="none" stroke="#076B3C" stroke-width="6" stroke-linecap="round" stroke-dasharray="111.6 150.8" transform="rotate(-90 28 28)"></circle></svg>
+            <span style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums">74</span>
+          </span>
+          <span style="font-size: 13px; font-weight: 700; color: #076B3C">+3 this week</span>
+        </span>
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 15px; font-weight: 700">Health score</span>
+          <span style="font-size: 13px; color: #545E72">out of 100</span>
+        </span>
+      </a>
+      <a href="#" style="padding: 14px; border-radius: 16px; background: #F7F9FC; display: flex; flex-direction: column; gap: 10px; color: #111827">
+        <span style="display: flex; align-items: baseline; gap: 6px; height: 56px; align-items: center">
+          <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">86%</span>
+        </span>
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 15px; font-weight: 700">Adherence</span>
+          <span style="display: flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 600; color: #003399">3 doctors
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+          </span>
+        </span>
+      </a>
+    </div>
+  </section>
+
+  <!-- AI health summary -->
+  <section aria-labelledby="ais-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <h2 id="ais-h" style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 20px; line-height: 1.25; font-weight: 700">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+        Health summary
+      </h2>
+      <span style="font-size: 13px; color: #69738A">Updated today</span>
+    </div>
+    <p style="margin: 0; font-size: 16px; line-height: 1.55">Your sugar has crept up a little since July (HbA1c 7.2%) and bad cholesterol (LDL) is still high. You missed 4 evening doses of Metformin this week. Taking it every evening is the biggest help right now.</p>
+    <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; background: #F7F9FC">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Focus this week</span>
+      <span style="display: flex; gap: 10px; font-size: 15px; line-height: 1.45"><span style="color: #003399; font-weight: 800">1</span>Take Metformin after dinner, every day</span>
+      <span style="display: flex; gap: 10px; font-size: 15px; line-height: 1.45"><span style="color: #003399; font-weight: 800">2</span>Walk 30 minutes, 5 days a week</span>
+    </div>
+    <p style="margin: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: #69738A">
+      <span>From your reports and medicines. Not a diagnosis.</span>
+      <a href="#" style="flex-shrink: 0; font-size: 14px; font-weight: 600">Read more</a>
+    </p>
+  </section>
+
+  <!-- Tracking (optional, customisable) -->
+  <section aria-labelledby="trk-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between">
+      <h2 id="trk-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">What you track</h2>
+      <a href="#" style="font-size: 14px; font-weight: 600">Customize</a>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <a href="#" style="padding: 14px; border-radius: 16px; background: #F7F9FC; display: flex; flex-direction: column; gap: 4px; color: #111827">
+        <span style="font-size: 13px; color: #545E72">Fasting sugar</span>
+        <span style="font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums">142<span style="font-size: 12px; font-weight: 600; color: #69738A"> mg/dL</span></span>
+        <svg width="130" height="32" viewBox="0 0 130 32" aria-hidden="true"><polyline points="2,10 22,15 43,19 64,17 85,13 106,20 128,16" fill="none" stroke="#003399" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline></svg>
+        <span style="font-size: 12px; font-weight: 700; color: #B45309">Above target</span>
+      </a>
+      <a href="#" style="padding: 14px; border-radius: 16px; background: #F7F9FC; display: flex; flex-direction: column; gap: 4px; color: #111827">
+        <span style="font-size: 13px; color: #545E72">Blood pressure</span>
+        <span style="font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums">128/82</span>
+        <svg width="130" height="32" viewBox="0 0 130 32" aria-hidden="true"><polyline points="2,18 22,16 43,20 64,15 85,17 106,14 128,16" fill="none" stroke="#003399" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline></svg>
+        <span style="font-size: 12px; font-weight: 700; color: #076B3C">Normal</span>
+      </a>
+    </div>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; padding-top: 14px; border-top: 1px solid #E5E9F0; color: #545E72">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="3"></rect><path d="M9 6V3h6v3M9 18v3h6v-3M12 10v2l1 1"></path></svg>
+      <span style="flex-grow: 1; font-size: 14px">Smartwatch and ring sync</span>
+      <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 700; display: flex; align-items: center">Coming soon</span>
+    </a>
+  </section>
+
+  <!-- From your doctor -->
+  <section aria-labelledby="doc-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px 20px 8px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 8px">
+      <h2 id="doc-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">From your doctor</h2>
+      <a href="#" style="font-size: 14px; font-weight: 600">All records</a>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0">
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 3px">
+        <span style="font-size: 16px; font-weight: 600">Prescription · 29 Sep</span>
+        <span style="font-size: 13px; color: #545E72">Dr. Arjun Sen · 3 medicines · valid till 29 Oct</span>
+      </span>
+      <button aria-label="Download prescription" style="width: 44px; height: 44px; flex-shrink: 0; border: 1px solid #D5DBE5; border-radius: 12px; background: #FFFFFF; color: #003399; display: flex; align-items: center; justify-content: center">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"></path></svg>
+      </button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid #E5E9F0">
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 16px; font-weight: 600">Diabetes panel · 18 Jul</span>
+        <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #545E72">
+          <span style="height: 22px; padding: 0 8px; border-radius: 999px; background: #FEF6E7; color: #B45309; font-size: 12px; font-weight: 700; display: flex; align-items: center">2 values high</span>
+          HbA1c, fasting sugar
+        </span>
+      </span>
+      <button style="height: 40px; padding: 0 14px; flex-shrink: 0; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>Explain
+      </button>
+    </div>
+  </section>
+
+</main>
+
+<!-- Ask MedPin AI: floating action button -->
+<a href="#" style="position: absolute; right: 20px; bottom: 108px; height: 56px; padding: 0 20px 0 16px; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; box-shadow: 0 6px 16px rgba(0,51,153,0.28)">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+  Ask MedPin AI
+</a>
+
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 24px; height: 64px; box-sizing: border-box; padding: 6px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 28px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px">
+  <a href="#" aria-current="page" style="border-radius: 22px; background: #EBF1FB; color: #003399; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Doctor</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7z"></path><path d="m8.5 8.5 7 7"></path></svg>Medicines</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path></svg>Records</a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>Profile</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    function t(kind, title, sub, state) {
+      return {
+        isPill: kind === 'pill', isDrop: kind === 'drop', isFile: kind === 'file',
+        title: title, sub: sub,
+        done: state === 'done', action: (state !== 'done' && state !== 'later') ? state : '',
+        later: state === 'later' ? 'Tonight' : '',
+        titleColor: state === 'done' ? '#545E72' : '#111827'
+      };
+    }
+    var tasks = [
+      t('pill', 'Glimepiride 1 mg', '7:30 AM · before breakfast', 'done'),
+      t('pill', 'Metformin 500 mg', '8:30 AM · after breakfast', 'done'),
+      t('drop', 'Log fasting sugar', 'Best before breakfast', 'Log'),
+      t('file', 'Upload HbA1c report', 'Dr. Sen needs it before 5 PM', 'Upload'),
+      t('pill', 'Metformin 500 mg', '8:30 PM · after dinner', 'later')
+    ];
+    tasks.forEach(function (x, i) { x.border = i === 0 ? '0' : '1px solid #E5E9F0'; });
+    return {
+      tasks: tasks,
+      vitals: [
+        { label: 'BP', value: '128/82', unit: '', note: 'Normal', noteColor: '#076B3C' },
+        { label: 'Weight', value: '68.5', unit: 'kg', note: '−0.8 since Aug', noteColor: '#545E72' },
+        { label: 'BMI', value: '27.4', unit: '', note: 'Overweight', noteColor: '#B45309' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

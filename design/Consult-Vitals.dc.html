@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Consultation: vitals</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1152px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <a href="#" aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #111827">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </a>
+  <h1 style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700; flex-grow: 1">Consultation</h1>
+</header>
+
+<div style="flex-shrink: 0; padding: 0 20px; display: flex; flex-direction: column; gap: 20px">
+  <div style="display: flex; align-items: center; gap: 12px">
+    <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">PS</span>
+    <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 16px; font-weight: 600">Priya Sharma</span>
+      <span style="font-size: 14px; line-height: 1.45; color: #545E72">29 F · <span style="font-weight: 600; color: #B45309">Allergy: Sulfa drugs</span></span>
+    </span>
+  </div>
+  <div style="position: relative">
+    <span aria-hidden="true" style="position: absolute; top: 13px; left: 16.67%; right: 16.67%; height: 2px; background: #D5DBE5"></span>
+    <span aria-hidden="true" style="position: absolute; top: 13px; left: 16.67%; width: 0%; height: 2px; background: #003399"></span>
+    <ol aria-label="Consultation steps, step 1 of 3" style="position: relative; margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr))">
+      <li aria-current="step" style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px">
+        <span style="width: 28px; height: 28px; border-radius: 999px; background: #003399; color: #FFFFFF; box-shadow: 0 0 0 4px #EBF1FB; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">1</span>
+        <span style="font-size: 14px; font-weight: 700; color: #111827">Vitals</span>
+      </li>
+      <li style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px">
+        <span style="width: 28px; height: 28px; box-sizing: border-box; border-radius: 999px; background: #FFFFFF; border: 1.5px solid #D5DBE5; color: #69738A; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center">2</span>
+        <span style="font-size: 14px; font-weight: 500; color: #69738A">Diagnosis</span>
+      </li>
+      <li style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px">
+        <span style="width: 28px; height: 28px; box-sizing: border-box; border-radius: 999px; background: #FFFFFF; border: 1.5px solid #D5DBE5; color: #69738A; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center">3</span>
+        <span style="font-size: 14px; font-weight: 500; color: #69738A">Advice</span>
+      </li>
+    </ol>
+  </div>
+</div>
+
+<main style="flex-shrink: 0; padding: 24px 20px 112px; display: flex; flex-direction: column; gap: 16px">
+  <section aria-labelledby="vt-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h2 id="vt-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Vitals</h2>
+      <span style="display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 1.45; color: #545E72"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#076B3C" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Recorded at the front desk, 8:52 AM</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px">
+      <sc-for list="{{ fields }}" as="f" hint-placeholder-count="8">
+        <div style="min-width: 0; display: flex; flex-direction: column; gap: 8px">
+          <label for="{{ f.id }}" style="font-size: 14px; font-weight: 600">{{ f.label }}</label>
+          <div style="position: relative">
+            <input id="{{ f.id }}" value="{{ f.value }}" inputmode="decimal" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 64px 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; font-variant-numeric: tabular-nums; outline: none">
+            <span aria-hidden="true" style="position: absolute; right: 16px; top: 18px; font-size: 14px; color: #69738A">{{ f.unit }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="padding: 12px 14px; border-radius: 12px; background: #F7F9FC; display: flex; align-items: center; gap: 12px">
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">BMI</span>
+        <span style="font-size: 13px; color: #69738A">Calculated from height and weight</span>
+      </span>
+      <output style="font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums">27.4</output>
+      <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #FEF6E7; color: #B45309; font-size: 12px; font-weight: 700; display: flex; align-items: center">Overweight</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="cc-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <h2 id="cc-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Chief complaint</h2>
+    <textarea aria-labelledby="cc-h" rows="3" style="height: 104px; box-sizing: border-box; padding: 14px 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; line-height: 1.5; resize: none; outline: none">Chest tightness since morning with mild sweating. Tired for about two weeks.</textarea>
+    <div style="padding-top: 16px; border-top: 1px solid #E5E9F0; display: flex; align-items: center; gap: 12px">
+      <span id="sp-l" style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Show on prescription</span>
+        <span style="font-size: 14px; line-height: 1.45; color: #545E72">Vitals and complaint print on the PDF</span>
+      </span>
+      <button role="switch" aria-checked="true" aria-labelledby="sp-l" style="width: 52px; height: 32px; flex-shrink: 0; padding: 2px; border: 0; border-radius: 999px; background: #003399; display: flex; justify-content: flex-end; cursor: pointer">
+        <span style="width: 28px; height: 28px; border-radius: 999px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04)"></span>
+      </button>
+    </div>
+  </section>
+</main>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 16px; background: #FFFFFF; border-top: 1px solid #E5E9F0; display: flex; gap: 12px">
+  <button style="height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer; flex-grow: 1">Next: Diagnosis</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1152}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      fields: [
+        ['v-sys', 'BP systolic', '128', 'mmHg'],
+        ['v-dia', 'BP diastolic', '82', 'mmHg'],
+        ['v-pulse', 'Pulse', '78', 'bpm'],
+        ['v-spo2', 'SpO2', '98', '%'],
+        ['v-temp', 'Temperature', '98.4', '°F'],
+        ['v-wt', 'Weight', '68.5', 'kg'],
+        ['v-ht', 'Height', '158', 'cm'],
+        ['v-fbs', 'Fasting sugar', '142', 'mg/dL']
+      ].map(function (r) { return { id: r[0], label: r[1], value: r[2], unit: r[3] }; })
+    };
+  }
+}
+</script>
+</body>
+</html>

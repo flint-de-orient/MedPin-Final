@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Create account</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1000px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative; line-height: 1.4">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Create account</h1>
+</header>
+
+<form action="#" style="margin: 0; padding: 8px 20px 24px; display: flex; flex-direction: column">
+
+  <!-- Step 1: done -->
+  <section aria-labelledby="s1-h" style="display: flex; flex-direction: column; gap: 8px">
+    <h2 id="s1-h" style="margin: 0; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">1 · Mobile number</h2>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 12px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#076B3C" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M20 6 9 17l-5-5"></path></svg>
+      <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Phone verified</span>
+        <span style="font-size: 14px; color: #545E72; font-variant-numeric: tabular-nums">+91 98765 18210</span>
+      </span>
+    </div>
+  </section>
+
+  <!-- Step 2: invite code -->
+  <section aria-labelledby="s2-h" style="margin-top: 32px; display: flex; flex-direction: column; gap: 8px">
+    <h2 id="s2-h" style="margin: 0; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">2 · Invite</h2>
+    <label for="invite" style="font-size: 14px; font-weight: 600; color: #111827">Invite code</label>
+    <div style="height: 56px; box-sizing: border-box; display: flex; align-items: center; background: #FFFFFF; border: 1px solid #D5DBE5; border-radius: 16px; padding: 0 16px">
+      <input id="invite" value="CCC-4821" autocomplete="off" aria-describedby="invite-help invite-result" style="flex-grow: 1; min-width: 0; height: 100%; box-sizing: border-box; padding: 0; border: 0; background: transparent; outline: none; font-size: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-variant-numeric: tabular-nums">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#076B3C" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-label="Code accepted" role="img" style="flex-shrink: 0"><path d="M20 6 9 17l-5-5"></path></svg>
+    </div>
+    <span id="invite-help" style="font-size: 13px; color: #69738A">Your invite code decides which fields appear below.</span>
+    <div id="invite-result" style="margin-top: 4px; padding: 12px 14px; border-radius: 12px; background: #EBF1FB; display: flex; flex-direction: column; gap: 4px">
+      <span style="font-size: 16px; font-weight: 600; color: #111827">Invite from City Care Clinic</span>
+      <span style="font-size: 14px; color: #545E72">Role: Front desk · Location: Salt Lake</span>
+    </div>
+  </section>
+
+  <!-- Step 3: fields unlocked by the invite -->
+  <section aria-labelledby="s3-h" style="margin-top: 32px; display: flex; flex-direction: column; gap: 20px">
+    <h2 id="s3-h" style="margin: 0 0 -12px; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">3 · Your details</h2>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="name" style="font-size: 14px; font-weight: 600; color: #111827">Full name</label>
+      <input id="name" autocomplete="name" value="Tania Ghosh" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; outline: none; font-size: 16px">
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="email" style="font-size: 14px; font-weight: 600; color: #111827">Email <span style="font-weight: 400; color: #545E72">(optional)</span></label>
+      <input id="email" type="email" autocomplete="email" placeholder="name@example.com" style="height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; outline: none; font-size: 16px">
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <label for="lang" style="font-size: 14px; font-weight: 600; color: #111827">Preferred language</label>
+      <span style="position: relative; display: block">
+        <select id="lang" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 48px 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; outline: none; font-size: 16px; -webkit-appearance: none; appearance: none; cursor: pointer">
+          <option selected>English</option>
+          <option>বাংলা (Bengali)</option>
+          <option>हिन्दी (Hindi)</option>
+        </select>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#545E72" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position: absolute; right: 16px; top: 18px; pointer-events: none"><path d="m6 9 6 6 6-6"></path></svg>
+      </span>
+    </div>
+  </section>
+
+  <label style="margin-top: 24px; display: flex; align-items: flex-start; gap: 12px; font-size: 14px; color: #545E72; cursor: pointer">
+    <span style="position: relative; width: 22px; height: 22px; flex-shrink: 0; margin-top: -1px; border-radius: 6px; background: #003399; display: flex; align-items: center; justify-content: center">
+      <input type="checkbox" checked style="position: absolute; top: 0; left: 0; width: 22px; height: 22px; margin: 0; opacity: 0; cursor: pointer">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+    </span>
+    <span>I agree to MedPin's <a href="#" style="font-weight: 600">Terms of Use</a> and <a href="#" style="font-weight: 600">Privacy Policy</a>.</span>
+  </label>
+
+  <button type="submit" style="margin-top: 24px; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Create account</button>
+
+  <p style="margin: 16px 0 0; display: flex; justify-content: center; align-items: center; gap: 4px; font-size: 15px; color: #545E72">
+    Already have an account?
+    <a href="#" style="height: 48px; padding: 0 4px; display: flex; align-items: center; font-weight: 600">Sign in</a>
+  </p>
+</form>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI Assistant · listening</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<div aria-hidden="true" style="height: 64px; background: #FFFFFF; border-bottom: 1px solid #E5E9F0; padding: 0 20px 0 52px; display: flex; align-items: center; font-size: 20px; font-weight: 700">AI Assistant</div>
+<div aria-hidden="true" style="padding: 28px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center">
+  <span style="width: 56px; height: 56px; border-radius: 18px; background: #003399"></span>
+  <span style="font-size: 24px; font-weight: 800">What do you need, Dr. Sen?</span>
+</div>
+<div style="position: absolute; inset: 0; background: rgba(17,24,39,0.40)"></div>
+
+<section role="dialog" aria-modal="true" aria-labelledby="v-h" style="position: absolute; left: 0; right: 0; bottom: 0; background: #FFFFFF; border-radius: 24px 24px 0 0; padding: 12px 20px 32px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; align-items: center; gap: 24px">
+  <span style="width: 36px; height: 4px; border-radius: 999px; background: #D5DBE5"></span>
+
+  <div style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+    <h2 id="v-h" style="margin: 0; font-size: 20px; font-weight: 700">Listening…</h2>
+    <span style="font-size: 14px; color: #545E72">Speak naturally. Say a patient’s name to focus on them.</span>
+  </div>
+
+  <p aria-live="polite" style="margin: 0; min-height: 84px; width: 100%; box-sizing: border-box; padding: 16px; border-radius: 16px; background: #F7F9FC; font-size: 17px; line-height: 1.5; color: #111827">Which patients have abnormal kidney results <span style="color: #69738A">this month</span></p>
+
+  <div aria-hidden="true" style="height: 56px; display: flex; align-items: center; gap: 5px">
+    <sc-for list="{{ bars }}" as="b" hint-placeholder-count="21">
+      <span style="width: 4px; height: {{ b.h }}; border-radius: 4px; background: {{ b.c }}"></span>
+    </sc-for>
+  </div>
+
+  <div style="width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center">
+    <button style="justify-self: start; height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Cancel</button>
+    <button aria-label="Stop and ask" style="width: 72px; height: 72px; border: 0; border-radius: 999px; background: #003399; color: #FFFFFF; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 8px #EBF1FB, 0 6px 16px rgba(0,51,153,0.24)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"></rect></svg>
+    </button>
+    <button style="justify-self: end; height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; font-size: 15px; font-weight: 600; color: #003399">Type instead</button>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #69738A">
+    <span>English (India)</span><span>·</span><a href="#" style="font-weight: 600">Change language</a>
+  </div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var hs = [8, 14, 22, 30, 18, 40, 52, 34, 46, 56, 42, 50, 30, 38, 24, 44, 28, 18, 12, 8, 6];
+    return {
+      bars: hs.map(function (h, i) { return { h: h + 'px', c: i < 16 ? '#003399' : '#D5DBE5' }; })
+    };
+  }
+}
+</script>
+</body>
+</html>

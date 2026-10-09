@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Front desk patients</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1340px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="padding: 12px 20px 0; display: flex; align-items: center; justify-content: space-between">
+  <img src="/_blob/518788f0cdbbd3963c68eba135a339f1" alt="MedPin — Care Connected" style="height: 36px; width: 97px; display: block">
+  <div style="display: flex; align-items: center; gap: 4px">
+    <button aria-label="Notifications, 2 new" style="position: relative; width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+      <span style="position: absolute; top: 10px; right: 11px; width: 8px; height: 8px; border-radius: 999px; background: #B91C1C; border: 2px solid #F7F9FC"></span>
+    </button>
+    <a href="#" aria-label="Profile" style="width: 40px; height: 40px; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center">TG</a>
+  </div>
+</header>
+
+<main style="padding: 20px 20px 112px; display: flex; flex-direction: column; gap: 16px">
+
+  <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Patients</h1>
+
+  <div role="group" aria-label="Filter conversations" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 16px; background: #F1F4F9">
+    <button aria-pressed="false" style="height: 44px; border: 0; border-radius: 12px; background: transparent; color: #545E72; font-size: 15px; font-weight: 500; cursor: pointer">Unread (6)</button>
+    <button aria-pressed="true" style="height: 44px; border: 0; border-radius: 12px; background: #FFFFFF; color: #111827; font-size: 15px; font-weight: 600; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); cursor: pointer">All</button>
+  </div>
+
+  <div style="position: relative">
+    <label for="patients-search" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap">Search conversations</label>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="position: absolute; left: 16px; top: 18px"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+    <input id="patients-search" type="search" placeholder="Search patients or messages" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 16px 0 48px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; font-size: 16px; outline: none">
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: #EBF1FB">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+    <p style="margin: 0; flex-grow: 1; font-size: 14px; line-height: 1.45; color: #111827">2 enrolments waiting on the patient's confirmation code</p>
+    <a href="#" style="flex-shrink: 0; height: 44px; padding: 0 4px; display: flex; align-items: center; font-size: 14px; font-weight: 600">View</a>
+  </div>
+
+  <section aria-label="Conversations" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 4px 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <sc-for list="{{ rows }}" as="r" hint-placeholder-count="8">
+      <a href="#" aria-label="{{ r.aria }}" style="display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-top: {{ r.border }}; color: #111827">
+        <span style="width: 48px; height: 48px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: center">{{ r.initials }}</span>
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="display: flex; align-items: center; gap: 8px">
+            <span style="flex-grow: 1; min-width: 0; font-size: 16px; line-height: 24px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ r.name }}</span>
+            <span style="flex-shrink: 0; font-size: 13px; line-height: 24px; font-variant-numeric: tabular-nums; color: {{ r.timeColor }}; font-weight: {{ r.timeWeight }}">{{ r.time }}</span>
+          </span>
+          <span style="display: flex; align-items: center; gap: 8px">
+            <span style="flex-grow: 1; min-width: 0; font-size: 14px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {{ r.previewColor }}"><span style="font-weight: 600">{{ r.who }}:</span> {{ r.text }}</span>
+            <sc-if value="{{ r.hasUnread }}" hint-placeholder-val="{{ true }}">
+              <span style="flex-shrink: 0; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums">{{ r.unread }}</span>
+            </sc-if>
+          </span>
+          <sc-if value="{{ r.hasChip }}" hint-placeholder-val="{{ true }}">
+            <span style="display: flex; padding-top: 6px">
+              <span style="height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: {{ r.chipBg }}; color: {{ r.chipFg }}">{{ r.chip }}</span>
+            </span>
+          </sc-if>
+        </span>
+      </a>
+    </sc-for>
+  </section>
+
+  <button style="height: 56px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; color: #111827; font-size: 16px; font-weight: 600; cursor: pointer">Show more</button>
+</main>
+
+<nav aria-label="Main" style="position: absolute; left: 16px; right: 16px; bottom: 24px; height: 64px; box-sizing: border-box; padding: 6px; background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 28px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px">
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>Today</a>
+  <a href="#" aria-current="page" style="position: relative; border-radius: 22px; background: #EBF1FB; color: #003399; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 700">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Patients
+    <span aria-label="6 unread" style="position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #FFFFFF">6</span></a>
+  <a href="#" style="border-radius: 22px; color: #545E72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 600">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>Profile</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1340}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var CHIP = {
+      'Needs attention': { bg: '#FEF6E7', fg: '#B45309' },
+      'Check-in due': { bg: '#F1F4F9', fg: '#545E72' }
+    };
+    var data = [
+      ['PS', 'Priya Sharma', '9:12 AM', 2, 'Priya', 'Chest feels tight since morning, should I come in?', 'Needs attention'],
+      ['RD', 'Rahul Das', '8:40 AM', 1, 'Rahul', 'BP was 172/104 this morning, feeling a bit dizzy', 'Needs attention'],
+      ['SM', 'Sujit Mondal', '8:22 AM', 1, 'Sujit', 'Should I take the tablet before or after breakfast?', ''],
+      ['AK', 'Aisha Khan', '7:50 AM', 1, 'AI', 'Your TSH report is in. Dr. Sen will review it today.', 'Check-in due'],
+      ['FI', 'Farhana Islam', '7:15 AM', 1, 'You', 'Your appointment is confirmed for Thu, 1 Oct at 11:00 AM.', ''],
+      ['AP', 'Amit Pal', 'Yesterday', 1, 'Amit', 'Missed my evening Metformin again, will restart today', 'Needs attention'],
+      ['MR', 'Moumita Roy', 'Yesterday', 0, 'Dr. Sen', 'Keep Ecosprin going and walk 20 minutes daily.', 'Check-in due'],
+      ['DB', 'Debasish Bose', 'Sun', 0, 'Dr. Sen', 'Please repeat HbA1c before your next visit.', 'Check-in due']
+    ];
+    return {
+      rows: data.map(function (r, i) {
+        var unread = r[3] > 0;
+        var c = CHIP[r[6]] || { bg: '', fg: '' };
+        return {
+          initials: r[0], name: r[1], time: r[2], unread: String(r[3]), hasUnread: unread,
+          who: r[4], text: r[5], chip: r[6], hasChip: r[6] !== '', chipBg: c.bg, chipFg: c.fg,
+          border: i === 0 ? 'none' : '1px solid #E5E9F0',
+          timeColor: unread ? '#003399' : '#69738A', timeWeight: unread ? '600' : '400',
+          previewColor: unread ? '#111827' : '#545E72',
+          aria: r[1] + (unread ? ', ' + r[3] + ' unread' : '') + ', ' + r[2]
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>People</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 952px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <button aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">People</h1>
+  <button aria-label="Add someone" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #003399; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M19 8v6M16 11h6"></path></svg>
+  </button>
+</header>
+
+<main style="padding: 8px 20px 24px; display: flex; flex-direction: column; gap: 16px">
+
+  <!-- Seat cap banner -->
+  <div role="status" style="min-height: 48px; box-sizing: border-box; background: #EBF1FB; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; gap: 12px">
+    <span style="flex-grow: 1; font-size: 14px; line-height: 1.45; font-weight: 600; color: #003399; font-variant-numeric: tabular-nums">7 of 8 seats used on the Clinic plan</span>
+    <a href="#" style="flex-shrink: 0; font-size: 14px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px">Upgrade</a>
+  </div>
+
+  <!-- Team, grouped by role -->
+  <section aria-label="Team" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 20px">
+    <sc-for list="{{ groups }}" as="g" hint-placeholder-count="5">
+      <div style="display: flex; flex-direction: column">
+        <h2 style="margin: 0; padding-bottom: 4px; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">{{ g.label }}</h2>
+        <sc-for list="{{ g.people }}" as="p" hint-placeholder-count="2">
+          <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: {{ p.border }}; color: #111827">
+            <span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 999px; background: {{ p.avBg }}; color: {{ p.avFg }}; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{ p.initials }}</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+              <span style="display: flex; align-items: center; gap: 8px; min-width: 0">
+                <span style="font-size: 16px; line-height: 1.5; font-weight: 600; color: {{ p.nameColor }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ p.name }}</span>
+                <sc-if value="{{ p.hasPill }}" hint-placeholder-val="{{ false }}">
+                  <span style="height: 24px; flex-shrink: 0; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: {{ p.pillBg }}; color: {{ p.pillFg }}">{{ p.pill }}</span>
+                </sc-if>
+              </span>
+              <span style="font-size: 14px; line-height: 1.45; color: #545E72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ p.meta }}</span>
+            </span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+          </a>
+        </sc-for>
+      </div>
+    </sc-for>
+  </section>
+
+  <button style="height: 56px; flex-shrink: 0; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    Add someone
+  </button>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":952}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var INFO = { bg: '#EBF1FB', fg: '#003399' };
+    var NEUTRAL = { bg: '#F1F4F9', fg: '#545E72' };
+    function person(name, initials, meta, first, pill, suspended) {
+      var tone = pill === 'Owner' ? INFO : NEUTRAL;
+      return {
+        name: name, initials: initials, meta: meta,
+        border: first ? 'none' : '1px solid #E5E9F0',
+        hasPill: !!pill, pill: pill || '', pillBg: tone.bg, pillFg: tone.fg,
+        nameColor: suspended ? '#545E72' : '#111827',
+        avBg: suspended ? '#F1F4F9' : '#EBF1FB',
+        avFg: suspended ? '#69738A' : '#003399'
+      };
+    }
+    return {
+      groups: [
+        { label: 'Doctors', people: [
+          person('Dr. Arjun Sen', 'AS', 'Endocrinology · All locations', true, 'Owner'),
+          person('Dr. Rina Mitra', 'RM', 'Cardiology · Salt Lake', false)
+        ] },
+        { label: 'Front desk', people: [
+          person('Tania Ghosh', 'TG', 'Endocrinology · Salt Lake', true),
+          person('Payel Dey', 'PD', 'Cardiology · New Town', false)
+        ] },
+        { label: 'Dieticians', people: [
+          person('Mou Banerjee', 'MB', 'Diabetology · All locations', true)
+        ] },
+        { label: "Doctor's assistant", people: [
+          person('Rohit Saha', 'RS', 'Endocrinology · Salt Lake', true)
+        ] },
+        { label: 'Lab manager', people: [
+          person('Sanjay Kar', 'SK', 'Diabetology · Salt Lake', true, 'Suspended', true)
+        ] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

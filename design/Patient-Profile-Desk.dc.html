@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patient profile (front desk)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1852px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <a href="#" aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #111827">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </a>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Patient profile</h1>
+  <button aria-label="More options" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.2"></circle><circle cx="12" cy="12" r="1.2"></circle><circle cx="12" cy="19" r="1.2"></circle></svg>
+  </button>
+</header>
+
+<main style="flex-shrink: 0; padding: 8px 20px 32px; display: flex; flex-direction: column; gap: 16px">
+
+  <!-- Identity (hero) -->
+  <section aria-labelledby="pt-name" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 20px; padding: 20px; box-shadow: 0 8px 24px rgba(0,51,153,0.10); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between">
+        <span style="width: 72px; height: 72px; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 24px; font-weight: 700; display: flex; align-items: center; justify-content: center">PS</span>
+        <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #FEF6E7; color: #B45309; font-size: 12px; font-weight: 700; display: flex; align-items: center">High risk</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h2 id="pt-name" style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Priya Sharma</h2>
+        <p style="margin: 0; font-size: 14px; line-height: 1.45; color: #545E72; font-variant-numeric: tabular-nums">29 yrs · Female · +91 98765 43210</p>
+      </div>
+    </div>
+
+    <ul aria-label="Conditions and allergies" style="margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px">
+      <li style="height: 24px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">Type 2 diabetes</li>
+      <li style="height: 24px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">PCOS</li>
+      <li style="height: 24px; box-sizing: border-box; padding: 0 10px; border-radius: 999px; background: #FFFFFF; border: 1px solid #B45309; color: #B45309; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>Allergy: Sulfa drugs</li>
+    </ul>
+
+    <nav aria-label="Quick actions" style="display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 8px">
+      <a href="#" style="height: 64px; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>Call</a>
+      <a href="#" style="height: 64px; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Message</a>
+      <a href="#" style="height: 64px; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 14px; font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path></svg>Prescriptions</a>
+    </nav>
+
+    <p style="margin: 0; padding: 10px 14px; border-radius: 12px; background: #F7F9FC; font-size: 14px; line-height: 1.45; color: #545E72"><strong style="font-weight: 600; color: #111827">Chief complaint:</strong> chest tightness, fatigue</p>
+  </section>
+
+  <!-- Consent -->
+  <div role="note" style="padding: 12px 14px; border-radius: 12px; background: #EBF1FB; display: flex; gap: 10px; align-items: flex-start">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+    <p style="margin: 0; font-size: 14px; line-height: 1.45; color: #111827">Priya shares her full record with City Care Clinic. She controls this.</p>
+  </div>
+
+  <span style="padding-top: 8px; font-size: 12px; line-height: 1.35; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">Clinical record</span>
+
+  <!-- Metrics grid -->
+  <section aria-labelledby="ov-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h2 id="ov-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Overview</h2>
+      <span style="font-size: 14px; line-height: 1.45; color: #545E72">Last 30 days · updated 8:52 AM today</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+      <div style="padding: 14px; border-radius: 12px; background: #F7F9FC; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">74<span style="font-size: 14px; font-weight: 600; color: #545E72">/100</span></span>
+        <span style="font-size: 14px; line-height: 1.35; color: #545E72">Health score</span>
+      </div>
+      <a href="#" aria-label="Adherence 86 percent, view details" style="padding: 14px; border-radius: 12px; background: #F7F9FC; display: flex; flex-direction: column; gap: 6px; color: #111827">
+        <span style="display: flex; align-items: flex-start; justify-content: space-between">
+          <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">86%</span>
+          <span style="display: flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 600; color: #003399">View<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></span>
+        </span>
+        <span style="font-size: 14px; line-height: 1.35; color: #545E72">Adherence</span>
+      </a>
+      <div style="padding: 14px; border-radius: 12px; background: #F7F9FC; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">3</span>
+        <span style="font-size: 14px; line-height: 1.35; color: #545E72">Medicines</span>
+      </div>
+      <div style="padding: 14px; border-radius: 12px; background: #F7F9FC; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">142<span style="font-size: 14px; font-weight: 600; color: #545E72"> mg/dL</span></span>
+        <span style="font-size: 14px; line-height: 1.35; color: #545E72">Latest fasting sugar</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Measurements -->
+  <section aria-labelledby="ms-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; flex-direction: column; gap: 2px; padding-bottom: 12px">
+      <h2 id="ms-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Measurements</h2>
+      <span style="font-size: 14px; line-height: 1.45; color: #545E72">Recorded today, 8:52 AM · front desk</span>
+    </div>
+    <sc-for list="{{ measures }}" as="m" hint-placeholder-count="6">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid #E5E9F0; min-height: 24px">
+        <span style="flex-grow: 1; font-size: 15px; color: #545E72">{{ m.label }}</span>
+        <span style="font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums">{{ m.value }}</span>
+        <span style="width: 80px; flex-shrink: 0; display: flex; justify-content: flex-end">
+          <sc-if value="{{ m.hasBand }}" hint-placeholder-val="{{ true }}">
+            <span style="height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: {{ m.bg }}; color: {{ m.fg }}">{{ m.band }}</span>
+          </sc-if>
+        </span>
+      </div>
+    </sc-for>
+  </section>
+
+  <!-- Desk care (replaces prescribing for front desk) -->
+  <section aria-labelledby="dc-h" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <div style="display: flex; flex-direction: column; gap: 2px; padding-bottom: 12px">
+      <h2 id="dc-h" style="margin: 0; font-size: 20px; line-height: 1.25; font-weight: 700">Desk care</h2>
+      <span style="font-size: 14px; line-height: 1.45; color: #545E72">Today's visit · 9:00 AM with Dr. Arjun Sen</span>
+    </div>
+    <a href="#" style="display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+      <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Record vitals</span>
+        <span style="font-size: 14px; line-height: 1.45; color: #545E72">Last recorded today, 8:52 AM</span>
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+    </a>
+    <a href="#" style="display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"></path></svg>
+      <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Upload report for today's visit</span>
+        <span style="font-size: 14px; line-height: 1.45; color: #545E72">Nothing uploaded for this visit yet</span>
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+    </a>
+    <a href="#" style="display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>
+      <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Book follow-up</span>
+        <span style="font-size: 14px; line-height: 1.45; color: #545E72">City Care Clinic, Salt Lake</span>
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+    </a>
+    <a href="#" style="display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid #E5E9F0; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+      <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Message patient</span>
+        <span style="font-size: 14px; line-height: 1.45; color: #545E72">Opens Priya's conversation</span>
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+    </a>
+    <a href="#" style="display: flex; align-items: center; gap: 14px; padding: 14px 0 0; border-top: 1px solid #E5E9F0; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+      <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Prescriptions (view only)</span>
+        <span style="font-size: 14px; line-height: 1.45; color: #545E72">Latest 12 Mar 2026 · Dr. Arjun Sen</span>
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#69738A" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"></path></svg>
+    </a>
+  </section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1852}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var WARN = { bg: '#FEF6E7', fg: '#B45309' };
+    var OK = { bg: '#E7F5EE', fg: '#076B3C' };
+    return {
+      measures: [
+        ['Height', '158 cm', null, null],
+        ['Weight', '68.5 kg', null, null],
+        ['BMI', '27.4', 'Overweight', WARN],
+        ['Blood pressure', '128/82 mmHg', 'Normal', OK],
+        ['Pulse', '78 bpm', 'Normal', OK],
+        ['SpO2', '98%', 'Normal', OK]
+      ].map(function (r) {
+        return { label: r[0], value: r[1], band: r[2] || '', hasBand: !!r[2], bg: r[3] ? r[3].bg : '', fg: r[3] ? r[3].fg : '' };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

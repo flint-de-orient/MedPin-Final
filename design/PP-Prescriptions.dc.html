@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patient profile · Prescriptions</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 2140px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; display: flex; flex-direction: column">
+  <div style="height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px">
+    <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+    </button>
+    <span style="flex-grow: 1"></span>
+    <button aria-label="Call Priya" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #003399">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+    </button>
+    <button aria-label="Message Priya" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #003399">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+    </button>
+    <button aria-label="More options" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="12" cy="19" r="1.6"></circle></svg>
+    </button>
+  </div>
+  <div style="padding: 0 20px 16px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; align-items: center; gap: 14px">
+      <span style="width: 56px; height: 56px; flex-shrink: 0; border-radius: 999px; background: #EBF1FB; color: #003399; font-size: 19px; font-weight: 700; display: flex; align-items: center; justify-content: center">PS</span>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h1 style="margin: 0; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em">Priya Sharma</h1>
+        <span style="font-size: 14px; color: #545E72">29 yrs · Female · +91 98765 43210</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 6px">
+      <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: #FEF6E7; color: #B45309; font-size: 12px; font-weight: 700; display: flex; align-items: center">High risk</span>
+      <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">Type 2 diabetes</span>
+      <span style="height: 26px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 600; display: flex; align-items: center">PCOS</span>
+      <span style="height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid #F0D3A8; color: #B45309; font-size: 12px; font-weight: 600; display: flex; align-items: center">Allergy: Sulfa drugs</span>
+    </div>
+  </div>
+  <div role="tablist" aria-label="Patient record" style="padding: 0 20px; display: flex; gap: 24px; white-space: nowrap; overflow: hidden">
+    <button role="tab" aria-selected="false" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Summary</button>
+    <button role="tab" aria-selected="true" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid #003399; background: transparent; font-size: 15px; font-weight: 700; color: #003399">Prescriptions</button>
+    <button role="tab" aria-selected="false" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Test results</button>
+    <button role="tab" aria-selected="false" style="height: 48px; padding: 0; flex-shrink: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 15px; font-weight: 600; color: #545E72">Treatment plan</button>
+  </div>
+</header>
+
+<main style="padding: 20px 20px 112px; display: flex; flex-direction: column; gap: 12px">
+  <div style="display: flex; gap: 8px" role="group" aria-label="Filter prescriptions">
+    <button aria-pressed="true" style="height: 40px; padding: 0 16px; border: 0; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 14px; font-weight: 600">All · 6</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600">This clinic · 4</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 14px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600; white-space: nowrap">Shared · 2</button>
+  </div>
+  <p style="margin: 0 0 4px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #69738A">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+    Includes prescriptions Priya chose to share from other clinics.
+  </p>
+
+  <sc-for list="{{ rx }}" as="r" hint-placeholder-count="6">
+    <article style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+          <h2 style="margin: 0; font-size: 18px; line-height: 1.25; font-weight: 700; font-variant-numeric: tabular-nums">{{ r.date }}</h2>
+          <sc-if value="{{ r.tag }}" hint-placeholder-val="{{ false }}">
+            <span style="height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 700; display: flex; align-items: center; background: {{ r.tagBg }}; color: {{ r.tagFg }}">{{ r.tag }}</span>
+          </sc-if>
+        </div>
+        <span style="font-size: 14px; color: #545E72">{{ r.by }}</span>
+      </div>
+      <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #111827">{{ r.summary }}</p>
+      <span style="font-size: 13px; color: #69738A">{{ r.meta }}</span>
+      <div style="display: flex; gap: 8px; padding-top: 4px">
+        <button style="flex-grow: 1; height: 48px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          View
+        </button>
+        <button aria-label="Download {{ r.date }} prescription" style="width: 48px; height: 48px; flex-shrink: 0; border: 1px solid #D5DBE5; border-radius: 12px; background: #FFFFFF; color: #003399; display: flex; align-items: center; justify-content: center">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"></path></svg>
+        </button>
+      </div>
+    </article>
+  </sc-for>
+</main>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 28px; background: #FFFFFF; border-top: 1px solid #E5E9F0">
+  <button style="width: 100%; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">Start consultation</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2140}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var LATEST = { tag: 'Latest', tagBg: '#F1F4F9', tagFg: '#545E72' };
+    var SHARED = { tag: 'Shared by patient', tagBg: '#EBF1FB', tagFg: '#003399' };
+    var NONE = { tag: '', tagBg: '', tagFg: '' };
+    var rows = [
+      ['29 Sep 2026', 'Dr. Arjun Sen · Endocrinology · City Care', 'Diabetes follow-up. Glimepiride 2 mg added, Metformin continued. HbA1c and glucose tests advised.', '3 medicines · 3 tests · Follow-up 29 Oct', LATEST],
+      ['12 Mar 2026', 'Dr. Arjun Sen · Endocrinology · City Care', 'Sugar stable. Metformin continued. Lipid profile ordered after a high LDL reading.', '2 medicines · 1 test · Follow-up 12 Jun', NONE],
+      ['02 Feb 2026', 'Dr. Rina Mitra · Cardiology · City Care', 'Chest discomfort review. ECG normal. Atorvastatin 10 mg started for raised LDL.', '1 medicine · 1 test', NONE],
+      ['12 Jan 2026', 'Dr. Arjun Sen · Endocrinology · City Care', 'HbA1c improved to 6.8%. Metformin kept at 500 mg twice daily.', '1 medicine · 2 tests', NONE],
+      ['18 Nov 2025', 'Dr. Nandita Gupta · Gynaecology · Apollo Clinic', 'PCOS review. Myo-inositol started, with diet and activity advice.', '1 medicine · 1 test', SHARED],
+      ['05 Sep 2025', 'Dr. S. Chatterjee · General medicine · scanned paper', 'Diabetes diagnosed. Metformin 500 mg once daily started.', 'Uploaded by Priya · 1 medicine', SHARED]
+    ];
+    return {
+      rx: rows.map(function (r) {
+        return { date: r[0], by: r[1], summary: r[2], meta: r[3], tag: r[4].tag, tagBg: r[4].tagBg, tagFg: r[4].tagFg };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

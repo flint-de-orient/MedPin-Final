@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Knowledge base</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 1072px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="height: 64px; flex-shrink: 0; box-sizing: border-box; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; background: #F7F9FC">
+  <button aria-label="Back" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Knowledge base</h1>
+  <button aria-label="Add entry" style="width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827; cursor: pointer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+  </button>
+</header>
+
+<main style="flex-grow: 1; padding: 0 20px 24px; display: flex; flex-direction: column; gap: 16px">
+
+  <p style="margin: 0; font-size: 14px; line-height: 20px; color: #545E72">Approved entries ground the AI assistant's answers to your patients.</p>
+
+  <div role="group" aria-label="Filter by status" style="margin: 0 -20px; padding: 0 20px; display: flex; gap: 8px; overflow-x: auto; flex-shrink: 0">
+    <button aria-pressed="true" style="height: 40px; flex-shrink: 0; padding: 0 16px; border: 0; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 14px; font-weight: 600; cursor: pointer">All · 7</button>
+    <button aria-pressed="false" style="height: 40px; flex-shrink: 0; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600; cursor: pointer">Approved · 4</button>
+    <button aria-pressed="false" style="height: 40px; flex-shrink: 0; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600; cursor: pointer">Pending · 1</button>
+    <button aria-pressed="false" style="height: 40px; flex-shrink: 0; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600; cursor: pointer">Draft · 1</button>
+    <button aria-pressed="false" style="height: 40px; flex-shrink: 0; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600; cursor: pointer">Retired · 1</button>
+  </div>
+
+  <section aria-label="Entries" style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 4px 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <sc-for list="{{ entries }}" as="e" hint-placeholder-count="7">
+      <a href="#" style="display: flex; flex-direction: column; gap: 4px; padding: 16px 0; border-top: {{ e.border }}; color: {{ e.titleColor }}">
+        <span style="display: flex; align-items: center; gap: 12px; height: 24px">
+          <span style="flex-grow: 1; min-width: 0; font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ e.title }}</span>
+          <span style="flex-shrink: 0; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: flex; align-items: center; background: {{ e.bg }}; color: {{ e.fg }}">{{ e.status }}</span>
+        </span>
+        <span style="font-size: 14px; line-height: 20px; color: {{ e.bodyColor }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ e.excerpt }}</span>
+        <span style="font-size: 13px; line-height: 18px; color: #69738A">{{ e.meta }}</span>
+        <sc-if value="{{ e.shared }}" hint-placeholder-val="{{ false }}">
+          <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; font-weight: 600; color: #545E72">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>Shared by MedPin</span>
+        </sc-if>
+      </a>
+    </sc-for>
+  </section>
+</main>
+
+<div style="flex-shrink: 0; padding: 12px 20px 24px; background: #FFFFFF; border-top: 1px solid #E5E9F0">
+  <button style="width: 100%; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    Add entry
+  </button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1072}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var S = {
+      Approved: { bg: '#E7F5EE', fg: '#076B3C' },
+      Pending: { bg: '#FEF6E7', fg: '#B45309' },
+      Draft: { bg: '#F1F4F9', fg: '#545E72' },
+      Retired: { bg: '#F1F4F9', fg: '#69738A' }
+    };
+    var rows = [
+      ['Metformin timing', 'Approved', 'Take with meals to reduce stomach upset; split doses morning and night.', 'English · Medicines · Updated 2 days ago', false],
+      ['Home BP: when to call us', 'Pending', 'Call the clinic the same day if BP is above 180/110 or with chest pain.', 'English · Hypertension · Updated today', false],
+      ['Iron tablets and tea', 'Draft', 'Keep tea and coffee 2 hours away from iron tablets for better absorption.', 'English · Medicines · Updated yesterday', false],
+      ['When to repeat HbA1c', 'Approved', 'Every 3 months until on target, then every 6 months if stable.', 'English · Diabetes · Updated 3 weeks ago', false],
+      ['Thyroid tablet on an empty stomach', 'Approved', 'Take levothyroxine with water, 30 to 60 minutes before breakfast or tea.', 'English · Medicines · Updated 1 Sep', true],
+      ['Fasting days with diabetes', 'Approved', 'Check sugar more often while fasting and break the fast if it drops below 70.', 'English · Diabetes · Updated 18 Aug', true],
+      ['Monsoon fever: dengue checks', 'Retired', 'Superseded by the 2026 clinic fever protocol.', 'English · Infections · Retired 2 Sep', false]
+    ];
+    return {
+      entries: rows.map(function (r, i) {
+        var s = S[r[1]];
+        var retired = r[1] === 'Retired';
+        return { title: r[0], status: r[1], excerpt: r[2], meta: r[3], shared: r[4], bg: s.bg, fg: s.fg,
+          titleColor: retired ? '#69738A' : '#111827', bodyColor: retired ? '#69738A' : '#545E72',
+          border: i === 0 ? '0' : '1px solid #E5E9F0' };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cart</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 860px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; flex-shrink: 0">
+  <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+  </button>
+  <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Cart · 2 medicines</h1>
+</header>
+
+<main style="padding: 16px 20px 120px; display: flex; flex-direction: column; gap: 16px">
+  <section style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 4px 20px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04); display: flex; flex-direction: column">
+    <sc-for list="{{ items }}" as="i" hint-placeholder-count="2">
+      <div style="padding: 16px 0; border-top: {{ i.border }}; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px">
+          <span style="display: flex; flex-direction: column; gap: 2px">
+            <span style="font-size: 16px; font-weight: 700">{{ i.name }}</span>
+            <span style="font-size: 13px; color: #545E72">{{ i.sub }}</span>
+          </span>
+          <button aria-label="Remove {{ i.name }}" style="width: 40px; height: 40px; margin: -8px -8px 0 0; border: 0; border-radius: 12px; background: transparent; color: #545E72; display: flex; align-items: center; justify-content: center">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+          </button>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <span style="font-size: 13px; color: #545E72">{{ i.covers }}</span>
+          <div role="group" aria-label="Strips of {{ i.name }}" style="display: flex; align-items: center; border: 1px solid #D5DBE5; border-radius: 12px; overflow: hidden">
+            <button aria-label="Less" style="width: 40px; height: 40px; border: 0; background: #FFFFFF; color: #003399; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg></button>
+            <span style="width: 64px; text-align: center; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums">{{ i.qty }}</span>
+            <button aria-label="More" style="width: 40px; height: 40px; border: 0; background: #FFFFFF; color: #003399; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </section>
+
+  <a href="#" style="padding: 14px 16px; border-radius: 16px; background: #FFFFFF; border: 1px dashed #D5DBE5; display: flex; align-items: center; gap: 12px; color: #111827">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    <span style="flex-grow: 1; font-size: 14px; font-weight: 600">Add Glimepiride too? <span style="font-weight: 400; color: #545E72">Runs out 28 Oct</span></span>
+  </a>
+
+  <section style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <span style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 15px; font-weight: 700">Prescriptions attached</span>
+        <span style="font-size: 13px; line-height: 1.4; color: #545E72">We'll attach Dr. Sen's 29 Sep and Dr. Mitra's 02 Feb prescriptions automatically.</span>
+      </span>
+      <span style="height: 24px; padding: 0 10px; border-radius: 999px; background: #F1F4F9; color: #545E72; font-size: 12px; font-weight: 700; display: flex; align-items: center; flex-shrink: 0">Coming soon</span>
+    </div>
+    <a href="#" style="font-size: 14px; font-weight: 600">Attach prescriptions yourself for now</a>
+  </section>
+
+  <section style="background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 24px; padding: 20px; display: flex; align-items: center; gap: 12px">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#545E72" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+    <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 15px; font-weight: 700">Deliver to home</span>
+      <span style="font-size: 13px; color: #545E72">Flat 3B, 12 Purbachal Rd, Salt Lake</span>
+    </span>
+    <a href="#" style="font-size: 14px; font-weight: 600">Change</a>
+  </section>
+</main>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 28px; background: #FFFFFF; border-top: 1px solid #E5E9F0">
+  <button style="width: 100%; height: 56px; border: 0; border-radius: 16px; background: #003399; color: #FFFFFF; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24)">Choose a pharmacy</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      items: [
+        { name: 'Metformin 500 mg', sub: 'Dr. Arjun Sen · strip of 10', covers: 'Lasts till 18 Oct', qty: '3 strips', border: '0' },
+        { name: 'Atorvastatin 10 mg', sub: 'Dr. Rina Mitra · strip of 10', covers: 'Lasts till 1 Nov', qty: '2 strips', border: '1px solid #E5E9F0' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

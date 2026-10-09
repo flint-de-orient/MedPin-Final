@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Patient queue</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Figtree',system-ui,sans-serif;color:#111827;background:#F7F9FC;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:#003399;text-decoration:none}a:hover{color:#002470}
+</style>
+</helmet>
+<div style="width: 390px; height: 2160px; box-sizing: border-box; background: #F7F9FC; display: flex; flex-direction: column; overflow: hidden; font-family: 'Figtree', system-ui, sans-serif; color: #111827; position: relative">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E5E9F0; display: flex; flex-direction: column; padding-bottom: 16px">
+  <div style="height: 64px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px">
+    <button aria-label="Back" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+    </button>
+    <h1 style="margin: 0; flex-grow: 1; font-size: 20px; line-height: 1.25; font-weight: 700">Patient queue</h1>
+    <button aria-label="Search the queue" style="width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; display: flex; align-items: center; justify-content: center; color: #111827">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+    </button>
+  </div>
+  <div style="padding: 0 20px; display: flex; flex-direction: column; gap: 10px">
+    <button aria-label="Change location. Current: City Care Clinic, Salt Lake" style="height: 56px; padding: 0 16px; border: 1px solid #D5DBE5; border-radius: 16px; background: #FFFFFF; display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003399" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+      <span style="flex-grow: 1; display: flex; flex-direction: column">
+        <span style="font-size: 16px; font-weight: 600; color: #111827">City Care Clinic · Salt Lake</span>
+        <span style="font-size: 13px; color: #545E72">Today 9:00 AM – 1:00 PM</span>
+      </span>
+      <span style="font-size: 14px; font-weight: 600; color: #003399">Change</span>
+    </button>
+    <p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #545E72">
+      <span style="width: 8px; height: 8px; border-radius: 999px; background: #076B3C"></span>
+      Tue, 29 Sep · Updated 4s ago
+    </p>
+  </div>
+</header>
+
+<main style="padding: 20px 20px 48px; display: flex; flex-direction: column; gap: 16px">
+
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: #FFFFFF; border: 1px solid #E5E9F0; border-radius: 16px; box-shadow: 0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04)">
+    <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+      <div style="padding: 12px; display: flex; flex-direction: column; gap: 2px; border-left: {{ s.border }}">
+        <span style="font-size: 22px; line-height: 1.1; font-weight: 800; font-variant-numeric: tabular-nums; color: {{ s.color }}">{{ s.n }}<span style="font-size: 12px; font-weight: 600; color: #69738A">{{ s.unit }}</span></span>
+        <span style="font-size: 12px; line-height: 1.3; color: #545E72">{{ s.label }}</span>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display: flex; gap: 8px; overflow: hidden; margin-right: -20px" role="group" aria-label="Filter by status">
+    <button aria-pressed="true" style="height: 40px; padding: 0 16px; flex-shrink: 0; border: 0; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 14px; font-weight: 600">All · 12</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 16px; flex-shrink: 0; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600">Waiting · 3</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 16px; flex-shrink: 0; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600">In consultation · 1</button>
+    <button aria-pressed="false" style="height: 40px; padding: 0 16px; flex-shrink: 0; border: 1px solid #D5DBE5; border-radius: 999px; background: #FFFFFF; color: #545E72; font-size: 14px; font-weight: 600">Completed · 6</button>
+  </div>
+
+  <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+    <section style="display: flex; flex-direction: column; gap: 8px">
+      <h2 style="margin: 4px 4px 0; display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #69738A">
+        <span>{{ g.title }}</span><span style="font-variant-numeric: tabular-nums">{{ g.count }}</span>
+      </h2>
+      <div style="background: #FFFFFF; border: {{ g.cardBorder }}; border-radius: 24px; padding: 0 20px; box-shadow: {{ g.cardShadow }}; display: flex; flex-direction: column">
+        <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+          <div style="padding: 16px 0; border-top: {{ r.border }}; display: flex; flex-direction: column; gap: 12px; opacity: {{ r.opacity }}">
+            <div style="display: flex; align-items: flex-start; gap: 12px">
+              <span aria-label="Token {{ r.token }}" style="width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; background: {{ r.tokenBg }}; color: {{ r.tokenFg }}; display: flex; flex-direction: column; align-items: center; justify-content: center">
+                <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.06em; line-height: 1">NO.</span>
+                <span style="font-size: 17px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums">{{ r.token }}</span>
+              </span>
+              <a href="#" style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; color: #111827">
+                <span style="display: flex; align-items: center; gap: 8px">
+                  <span style="font-size: 16px; font-weight: 600">{{ r.name }}</span>
+                  <sc-if value="{{ r.next }}" hint-placeholder-val="{{ false }}">
+                    <span style="height: 22px; padding: 0 8px; border-radius: 999px; background: #003399; color: #FFFFFF; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; display: flex; align-items: center">Next</span>
+                  </sc-if>
+                </span>
+                <span style="font-size: 14px; color: #545E72">{{ r.meta }}</span>
+              </a>
+              <span style="height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 700; display: flex; align-items: center; flex-shrink: 0; background: {{ r.statusBg }}; color: {{ r.statusFg }}">{{ r.status }}</span>
+            </div>
+
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-left: 56px">
+              <span style="height: 28px; padding: 0 10px 0 8px; border-radius: 999px; display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; background: {{ r.vBg }}; color: {{ r.vFg }}">
+                <sc-if value="{{ r.vitals }}" hint-placeholder-val="{{ true }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+                </sc-if>
+                <sc-if value="{{ r.noVitals }}" hint-placeholder-val="{{ false }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle></svg>
+                </sc-if>
+                {{ r.vText }}
+              </span>
+              <span style="height: 28px; padding: 0 10px 0 8px; border-radius: 999px; display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; background: {{ r.dBg }}; color: {{ r.dFg }}">
+                <sc-if value="{{ r.docs }}" hint-placeholder-val="{{ true }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5"></path></svg>
+                </sc-if>
+                <sc-if value="{{ r.noDocs }}" hint-placeholder-val="{{ false }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle></svg>
+                </sc-if>
+                {{ r.dText }}
+              </span>
+              <sc-if value="{{ r.ai }}" hint-placeholder-val="{{ false }}">
+                <span style="height: 28px; padding: 0 10px 0 8px; border-radius: 999px; display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; background: #EBF1FB; color: #003399">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+                  AI brief
+                </span>
+              </sc-if>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-left: 56px">
+              <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: {{ r.timeWeight }}; color: {{ r.timeColor }}; font-variant-numeric: tabular-nums">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                {{ r.time }}
+              </span>
+              <sc-if value="{{ r.recordVitals }}" hint-placeholder-val="{{ false }}">
+                <a href="#" style="font-size: 14px; font-weight: 600">Record vitals</a>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{ r.btnPrimary }}" hint-placeholder-val="{{ false }}">
+              <button style="margin-left: 56px; height: 48px; border: 0; border-radius: 12px; background: #003399; color: #FFFFFF; font-size: 15px; font-weight: 600; box-shadow: 0 6px 16px rgba(0,51,153,0.24); cursor: pointer">{{ r.btn }}</button>
+            </sc-if>
+            <sc-if value="{{ r.btnTonal }}" hint-placeholder-val="{{ true }}">
+              <button style="margin-left: 56px; height: 48px; border: 0; border-radius: 12px; background: #EBF1FB; color: #003399; font-size: 15px; font-weight: 600; cursor: pointer">{{ r.btn }}</button>
+            </sc-if>
+            <sc-if value="{{ r.btnQuiet }}" hint-placeholder-val="{{ false }}">
+              <button style="margin-left: 56px; height: 48px; border: 1px solid #D5DBE5; border-radius: 12px; background: #FFFFFF; color: #111827; font-size: 15px; font-weight: 600; cursor: pointer">{{ r.btn }}</button>
+            </sc-if>
+          </div>
+        </sc-for>
+        <sc-if value="{{ g.more }}" hint-placeholder-val="{{ false }}">
+          <a href="#" style="height: 52px; border-top: 1px solid #E5E9F0; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600">{{ g.more }}</a>
+        </sc-if>
+      </div>
+    </section>
+  </sc-for>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2160}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var ST = {
+      consult: { status: 'In consultation', statusBg: '#EBF1FB', statusFg: '#003399' },
+      waiting: { status: 'Waiting', statusBg: '#FEF6E7', statusFg: '#B45309' },
+      booked: { status: 'Not arrived', statusBg: '#F1F4F9', statusFg: '#545E72' },
+      done: { status: 'Completed', statusBg: '#E7F5EE', statusFg: '#076B3C' }
+    };
+    function row(o, i) {
+      var s = ST[o.kind];
+      var btnKind = o.btnKind || 'none';
+      return {
+        token: o.token, name: o.name, meta: o.meta, status: s.status, statusBg: s.statusBg, statusFg: s.statusFg,
+        tokenBg: o.kind === 'consult' ? '#003399' : '#F1F4F9', tokenFg: o.kind === 'consult' ? '#FFFFFF' : '#111827',
+        vitals: o.vitals, noVitals: !o.vitals, vText: o.vitals ? 'Vitals' : 'No vitals',
+        vBg: o.vitals ? '#E7F5EE' : '#F1F4F9', vFg: o.vitals ? '#076B3C' : '#545E72',
+        docs: o.docs > 0, noDocs: o.docs === 0, dText: o.docs > 0 ? (o.docs + (o.docs === 1 ? ' document' : ' documents')) : 'No documents',
+        dBg: o.docs > 0 ? '#E7F5EE' : '#F1F4F9', dFg: o.docs > 0 ? '#076B3C' : '#545E72',
+        next: !!o.next, ai: !!o.ai, time: o.time, timeColor: o.long ? '#B45309' : '#545E72', timeWeight: o.long ? '600' : '400',
+        recordVitals: !o.vitals && o.kind === 'waiting',
+        btn: o.btn || '', btnPrimary: btnKind === 'primary', btnTonal: btnKind === 'tonal', btnQuiet: btnKind === 'quiet',
+        border: i === 0 ? '0' : '1px solid #E5E9F0', opacity: o.kind === 'done' ? '0.85' : '1'
+      };
+    }
+    function group(title, count, rows, opts) {
+      opts = opts || {};
+      return { title: title, count: count, rows: rows.map(row), more: opts.more || '',
+        cardBorder: opts.hero ? '1.5px solid #003399' : '1px solid #E5E9F0',
+        cardShadow: opts.hero ? '0 8px 24px rgba(0,51,153,0.10)' : '0 1px 2px rgba(0,51,153,0.05), 0 1px 3px rgba(0,51,153,0.04)' };
+    }
+    return {
+      stats: [
+        { n: '3', unit: '', label: 'Waiting', color: '#B45309', border: '0' },
+        { n: '1', unit: '', label: 'In consult', color: '#111827', border: '1px solid #E5E9F0' },
+        { n: '6', unit: '', label: 'Completed', color: '#111827', border: '1px solid #E5E9F0' },
+        { n: '14', unit: ' min', label: 'Avg wait', color: '#111827', border: '1px solid #E5E9F0' }
+      ],
+      groups: [
+        group('In consultation', '1', [
+          { kind: 'consult', token: '04', name: 'Priya Sharma', meta: '29 F · Follow-up · Diabetes', vitals: true, docs: 2, ai: true, time: 'Started 9:14 AM · 11 min', btn: 'Resume', btnKind: 'tonal' }
+        ], { hero: true }),
+        group('Waiting', '3', [
+          { kind: 'waiting', token: '05', name: 'Rahul Das', meta: '45 M · New · High BP', vitals: true, docs: 0, time: 'Waiting 22 min', long: true, next: true, btn: 'Start consultation', btnKind: 'tonal' },
+          { kind: 'waiting', token: '06', name: 'Aisha Khan', meta: '52 F · Follow-up · Thyroid', vitals: true, docs: 1, ai: true, time: 'Waiting 15 min', btn: 'Start consultation', btnKind: 'tonal' },
+          { kind: 'waiting', token: '07', name: 'Sujit Mondal', meta: '37 M · New · Fever, cough', vitals: false, docs: 0, time: 'Waiting 6 min', btn: 'Start consultation', btnKind: 'tonal' }
+        ]),
+        group('Not arrived yet', '2', [
+          { kind: 'booked', token: '08', name: 'Moumita Roy', meta: '41 F · Follow-up · Cardiology', vitals: false, docs: 3, ai: true, time: 'Booked for 11:00 AM' },
+          { kind: 'booked', token: '09', name: 'Amit Pal', meta: '55 M · Follow-up · Diabetes, CKD', vitals: false, docs: 1, ai: true, time: 'Booked for 11:30 AM' }
+        ]),
+        group('Completed', '6', [
+          { kind: 'done', token: '03', name: 'Debasish Bose', meta: '62 M · Follow-up · Diabetes', vitals: true, docs: 1, time: 'Done 9:10 AM · 9 min', btn: 'View prescription', btnKind: 'quiet' },
+          { kind: 'done', token: '02', name: 'Farhana Islam', meta: '34 F · Review reports · Anaemia', vitals: true, docs: 2, time: 'Done 8:58 AM · 12 min', btn: 'View prescription', btnKind: 'quiet' }
+        ], { more: 'Show 4 more' })
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
