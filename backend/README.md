@@ -43,8 +43,8 @@ Demo accounts from `db:seed`:
 | Phone | Who | Lands on |
 | --- | --- | --- |
 | 9330414463 | Dr. Arjun Sen, owner of City Care Clinic (real SMS) | Doctor-Dashboard |
-| 9876518210 | Tania Ghosh, front desk | Staff-Today |
-| 9876543210 | Priya Sharma, patient | Main (patient home) |
+| 9749681391 | Tania Ghosh, front desk | Staff-Today |
+| 9230592842 | Priya Sharma, patient | Main (patient home) |
 
 Invite code `CCC-4821` registers a new front-desk member.
 

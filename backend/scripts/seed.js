@@ -118,8 +118,8 @@ async function seedDemo() {
   }
   const now = new Date();
   const doctor = await M.User.create({ phone: '9330414463', phoneVerifiedAt: now, name: 'Dr. Arjun Sen' });
-  const desk = await M.User.create({ phone: '9876518210', phoneVerifiedAt: now, name: 'Tania Ghosh' });
-  const patientUser = await M.User.create({ phone: '9876543210', phoneVerifiedAt: now, name: 'Priya Sharma' });
+  const desk = await M.User.create({ phone: '9749681391', phoneVerifiedAt: now, name: 'Tania Ghosh' });
+  const patientUser = await M.User.create({ phone: '9230592842', phoneVerifiedAt: now, name: 'Priya Sharma' });
 
   const practice = await M.Practice.create({
     name: 'City Care Clinic',
@@ -212,7 +212,7 @@ async function seedDemo() {
   const priya = await M.Patient.create({
     userId: patientUser._id,
     name: 'Priya Sharma',
-    phone: '9876543210',
+    phone: '9230592842',
     phoneVerifiedAt: now,
     gender: 'female',
     ageYears: 29,

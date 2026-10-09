@@ -160,7 +160,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
   await step('invite front desk; they register with the code', async () => {
     const invite = ok(await ctx.doc('POST', '/api/invites', { role: 'front_desk', locationIds: [ctx.locationId] }), 201);
     assert.match(invite.code, /^[A-Z]{3}-\d{4}$/);
-    const s = await login('9876518210');
+    const s = await login('9749681391');
     const desk = api(s.accessToken);
     const preview = ok(await desk('GET', `/api/auth/invites/${invite.code}`));
     assert.equal(preview.role, 'front_desk');
@@ -173,13 +173,13 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
   });
 
   await step('front desk registers a patient (phone verified by OTP)', async () => {
-    const sent = ok(await ctx.desk('POST', '/api/patients/phone-otp', { phone: '9876543210' }));
-    const p = ok(await ctx.desk('POST', '/api/patients', { name: 'Priya Sharma', phone: '9876543210', gender: 'female', ageYears: 29, address: '14/2 Beliaghata Main Road', otpCode: sent.devCode }), 201);
+    const sent = ok(await ctx.desk('POST', '/api/patients/phone-otp', { phone: '9230592842' }));
+    const p = ok(await ctx.desk('POST', '/api/patients', { name: 'Priya Sharma', phone: '9230592842', gender: 'female', ageYears: 29, address: '14/2 Beliaghata Main Road', otpCode: sent.devCode }), 201);
     ctx.patientId = p.id;
     const dup = await ctx.desk('POST', '/api/patients', { name: 'Dup', phone: '98765 43210', gender: 'female', ageYears: 30 });
     assert.equal(dup.status, 409);
     assert.equal(dup.body.error.code, 'PATIENT_EXISTS');
-    const look = ok(await ctx.desk('GET', '/api/patients/lookup?phone=9876543210'));
+    const look = ok(await ctx.desk('GET', '/api/patients/lookup?phone=9230592842'));
     assert.equal(look.linked, true);
     ok(await ctx.doc('POST', `/api/patients/${ctx.patientId}/allergies`, { allergens: 'Sulfa drugs, peanuts, sulfa drugs' }), 201);
     ok(await ctx.doc('POST', `/api/patients/${ctx.patientId}/conditions`, { name: 'Type 2 diabetes', icdCode: 'E11.9' }), 201);
@@ -258,7 +258,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
   });
 
   await step('patient signs in; record created by the clinic is theirs', async () => {
-    const s = await login('9876543210');
+    const s = await login('9230592842');
     assert.equal(s.landing, 'Main');
     assert.equal(s.patientId, ctx.patientId);
     ctx.pat = api(s.accessToken);
@@ -375,10 +375,10 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await doc2('POST', '/api/me/practices', { name: 'Heart Point', doctorName: 'Dr. Rina Mitra' }), 201);
     assert.equal((await doc2('GET', `/api/patients/${ctx.patientId}`)).status, 404, 'not linked yet');
     const code = ok(await ctx.pat('POST', '/api/patient/consent-code'));
-    assert.equal((await doc2('POST', '/api/patients/link', { phone: '9876543210', consentCode: '000000' === code.code ? '111111' : '000000' })).status, 400);
-    ok(await doc2('POST', '/api/patients/link', { phone: '9876543210', consentCode: code.display }));
+    assert.equal((await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: '000000' === code.code ? '111111' : '000000' })).status, 400);
+    ok(await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: code.display }));
     ok(await doc2('GET', `/api/patients/${ctx.patientId}`));
-    assert.equal((await doc2('POST', '/api/patients/link', { phone: '9876543210', consentCode: code.code })).status, 400, 'codes are single-use');
+    assert.equal((await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: code.code })).status, 400, 'codes are single-use');
   });
 
   await step('knowledge base workflow and feedback', async () => {

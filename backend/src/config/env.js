@@ -120,6 +120,6 @@ env.exposeDevOtp = !env.isProd && !env.msg91.authKey;
 // SMS. Defaults to the demo accounts from `npm run db:seed`.
 env.devOtpPhones = env.isProd
   ? []
-  : v('DEV_OTP_PHONES', '9876518210,9876543210').split(',').map((s) => s.replace(/\D/g, '')).filter(Boolean);
+  : v('DEV_OTP_PHONES', '9749681391,9230592842').split(',').map((s) => s.replace(/\D/g, '')).filter(Boolean);
 
 module.exports = env;

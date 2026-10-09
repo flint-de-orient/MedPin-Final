@@ -25,7 +25,7 @@ async function main() {
     return;
   }
   const sen = await M.User.findById(practice.ownerUserId);
-  const desk = await M.User.findOne({ phone: '9876518210' });
+  const desk = await M.User.findOne({ phone: '9749681391' });
   const saltLake = await M.Location.findOne({ practiceId: practice._id, shortName: 'Salt Lake' });
   const endo = await M.Department.findOne({ practiceId: practice._id, name: 'Endocrinology' });
   const cardioDept = await M.Department.findOne({ practiceId: null, name: 'Cardiology' });
@@ -82,7 +82,7 @@ async function main() {
     await M.CareTeamAccess.create({ patientId: p._id, userId: name === 'Moumita Roy' ? mitra._id : sen._id, practiceId: practice._id, role: 'doctor', isPrimary: true, accessLevel: 'full_record', since: T.addDays(today, -200) });
     P[name] = p;
   }
-  const priya = await M.Patient.findOne({ phone: '9876543210' });
+  const priya = await M.Patient.findOne({ phone: '9230592842' });
   P['Priya Sharma'] = priya;
   await M.CareTeamAccess.create({ patientId: priya._id, userId: mou._id, practiceId: practice._id, role: 'dietician', accessLevel: 'full_with_logs', since: T.addDays(today, -90) });
   await M.CareTeamAccess.create({ patientId: priya._id, userId: mitra._id, practiceId: practice._id, role: 'doctor', accessLevel: 'full_record', since: T.addDays(today, -60) });
