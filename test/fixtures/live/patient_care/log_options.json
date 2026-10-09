@@ -1,0 +1,30 @@
+{
+ "shareWith": [
+  {
+   "userId": "6ac8d0c08645bb27079976bd",
+   "name": "Mou Banerjee",
+   "role": "dietician",
+   "label": "Dietician · reviews every 3 days",
+   "seesLogs": true
+  },
+  {
+   "userId": "6ac8d0bd07fdebd2731d1eb3",
+   "name": "Dr. Arjun Sen",
+   "role": "doctor",
+   "label": "Diabetes & thyroid",
+   "seesLogs": true
+  },
+  {
+   "userId": "6ac8d0c08645bb27079976b9",
+   "name": "Dr. Rina Mitra",
+   "role": "doctor",
+   "label": "Heart",
+   "seesLogs": false
+  }
+ ],
+ "steps": {
+  "today": 0,
+  "goal": 8000
+ },
+ "activityPlans": []
+}

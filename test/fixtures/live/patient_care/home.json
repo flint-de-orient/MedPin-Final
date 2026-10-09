@@ -1,0 +1,286 @@
+{
+ "latestPrescription": {
+  "id": "6ac8d0c18645bb2707997758",
+  "issuedAt": "2026-09-29T03:34:00.000Z",
+  "doctorName": "Dr. Arjun Sen",
+  "medicines": 2,
+  "validUntil": "2026-11-07T18:30:00.000Z",
+  "url": "http://localhost:4000/files/prescriptions/2026-10/970f6bdd-3cd4-4047-8021-d2570b182e9b.pdf?exp=1791550244&sig=afa734ffdd7baa59ccc163d1be92f124ebc9b2aedaf30b508804046a5829bdee"
+ },
+ "latestLab": {
+  "id": "6ac8d0c18645bb270799771a",
+  "testName": "Lipid profile",
+  "collectedAt": "2026-09-29T18:30:00.000Z",
+  "abnormalCount": 2,
+  "abnormal": [
+   "LDL cholesterol",
+   "Triglycerides"
+  ],
+  "abnormalDirection": "high"
+ },
+ "mealsLogged": [],
+ "logSharedWith": [
+  {
+   "userId": "6ac8d0bd07fdebd2731d1eb3",
+   "name": "Dr. Arjun Sen",
+   "role": "doctor"
+  },
+  {
+   "userId": "6ac8d0c08645bb27079976bd",
+   "name": "Mou Banerjee",
+   "role": "dietician"
+  }
+ ],
+ "adherence": {
+  "pct": 0,
+  "doctors": 1
+ },
+ "trackedMeasures": [
+  "blood_sugar",
+  "blood_pressure"
+ ],
+ "tracked": {
+  "blood_sugar": [
+   {
+    "at": "2026-10-03T02:15:00.000Z",
+    "value": 146
+   },
+   {
+    "at": "2026-10-04T02:15:00.000Z",
+    "value": 139
+   },
+   {
+    "at": "2026-10-05T02:15:00.000Z",
+    "value": 151
+   },
+   {
+    "at": "2026-10-06T02:15:00.000Z",
+    "value": 142
+   },
+   {
+    "at": "2026-10-07T02:15:00.000Z",
+    "value": 137
+   },
+   {
+    "at": "2026-10-08T02:15:00.000Z",
+    "value": 148
+   },
+   {
+    "at": "2026-10-09T02:15:00.000Z",
+    "value": 142
+   }
+  ],
+  "blood_pressure": [
+   {
+    "at": "2026-10-03T02:15:00.000Z",
+    "value": 126,
+    "value2": 80
+   },
+   {
+    "at": "2026-10-04T02:15:00.000Z",
+    "value": 130,
+    "value2": 84
+   },
+   {
+    "at": "2026-10-05T02:15:00.000Z",
+    "value": 124,
+    "value2": 79
+   },
+   {
+    "at": "2026-10-06T02:15:00.000Z",
+    "value": 128,
+    "value2": 82
+   },
+   {
+    "at": "2026-10-07T02:15:00.000Z",
+    "value": 131,
+    "value2": 85
+   },
+   {
+    "at": "2026-10-08T02:15:00.000Z",
+    "value": 127,
+    "value2": 81
+   },
+   {
+    "at": "2026-10-09T02:15:00.000Z",
+    "value": 128,
+    "value2": 82
+   }
+  ],
+  "weight": [
+   {
+    "at": "2026-09-29T03:26:00.000Z",
+    "value": 68.5
+   }
+  ],
+  "heart_rate": [
+   {
+    "at": "2026-09-29T03:26:00.000Z",
+    "value": 82
+   }
+  ],
+  "spo2": [
+   {
+    "at": "2026-09-29T03:26:00.000Z",
+    "value": 98
+   }
+  ]
+ },
+ "targets": {
+  "sugarFasting": 130,
+  "hba1c": 7,
+  "stepsPerDay": 8000
+ },
+ "greetingName": "Priya",
+ "date": "2026-10-08T18:30:00.000Z",
+ "slides": [
+  {
+   "kind": "visit",
+   "title": "Visit today, 5:00 PM",
+   "sub": "Dr. Arjun Sen · Token 04",
+   "screen": "Patient-DoctorDetail",
+   "params": {
+    "appointmentId": "6ac8d0bd07fdebd2731d1ee3"
+   }
+  },
+  {
+   "kind": "report",
+   "title": "Your Vitamin D is in",
+   "sub": "1 value(s) outside the range",
+   "screen": "Patient-Records",
+   "testName": "Vitamin D",
+   "abnormalCount": 1,
+   "abnormal": [
+    "Vitamin D"
+   ],
+   "abnormalDirection": "low"
+  },
+  {
+   "kind": "score",
+   "title": "Health score 74",
+   "sub": "+3 this week",
+   "screen": "Patient-Home"
+  }
+ ],
+ "tasks": [
+  {
+   "kind": "dose",
+   "id": "6ac8d0f0bfcb2f5a9d64d644",
+   "title": "Glimepiride 1 mg",
+   "slot": "morning",
+   "at": "2026-10-09T02:00:00.000Z",
+   "foodRelation": "before_food",
+   "status": "missed",
+   "done": false,
+   "doneLabel": "Taken"
+  },
+  {
+   "kind": "dose",
+   "id": "6ac8d0f0bfcb2f5a9d64d642",
+   "title": "Metformin 500 mg",
+   "slot": "morning",
+   "at": "2026-10-09T02:00:00.000Z",
+   "foodRelation": "after_food",
+   "status": "missed",
+   "done": false,
+   "doneLabel": "Taken"
+  },
+  {
+   "kind": "dose",
+   "id": "6ac8d0f0bfcb2f5a9d64d643",
+   "title": "Metformin 500 mg",
+   "slot": "night",
+   "at": "2026-10-09T15:00:00.000Z",
+   "foodRelation": "after_food",
+   "status": "due",
+   "done": false,
+   "doneLabel": "Taken"
+  },
+  {
+   "kind": "log",
+   "id": "meal-log",
+   "title": "Log your meals",
+   "done": false,
+   "doneLabel": "Logged",
+   "detail": []
+  },
+  {
+   "kind": "visit_todo",
+   "id": "6ac8d0bd07fdebd2731d1ee4",
+   "appointmentId": "6ac8d0bd07fdebd2731d1ee3",
+   "title": "Upload HbA1c report",
+   "done": false
+  },
+  {
+   "kind": "visit_todo",
+   "id": "6ac8d0bd07fdebd2731d1ee5",
+   "appointmentId": "6ac8d0bd07fdebd2731d1ee3",
+   "title": "Log today's fasting sugar",
+   "done": false
+  },
+  {
+   "kind": "visit_todo",
+   "id": "6ac8d0bd07fdebd2731d1ee6",
+   "appointmentId": "6ac8d0bd07fdebd2731d1ee3",
+   "title": "Note down questions for Dr. Sen",
+   "done": false
+  }
+ ],
+ "tasksDone": 0,
+ "steps": {
+  "today": 0,
+  "goal": 8000
+ },
+ "refills": [],
+ "nextVisit": {
+  "practiceId": "6ac8d0bd07fdebd2731d1ebe",
+  "locationId": {
+   "name": "City Care Clinic — Salt Lake",
+   "shortName": "Salt Lake",
+   "id": "6ac8d0bd07fdebd2731d1ec0"
+  },
+  "doctorId": {
+   "name": "Dr. Arjun Sen",
+   "id": "6ac8d0bd07fdebd2731d1eb3"
+  },
+  "patientId": "6ac8d0bd07fdebd2731d1ed9",
+  "date": "2026-10-08T18:30:00.000Z",
+  "startAt": "2026-10-09T11:30:00.000Z",
+  "tokenNo": 4,
+  "isWalkIn": false,
+  "visitType": "follow_up",
+  "mode": "in_clinic",
+  "status": "confirmed",
+  "channel": "app",
+  "fee": 600,
+  "feeStatus": "pending",
+  "todos": [
+   {
+    "text": "Upload HbA1c report",
+    "done": false,
+    "_id": "6ac8d0bd07fdebd2731d1ee4"
+   },
+   {
+    "text": "Log today's fasting sugar",
+    "done": false,
+    "_id": "6ac8d0bd07fdebd2731d1ee5"
+   },
+   {
+    "text": "Note down questions for Dr. Sen",
+    "done": false,
+    "_id": "6ac8d0bd07fdebd2731d1ee6"
+   }
+  ],
+  "createdAt": "2026-10-09T11:32:13.337Z",
+  "updatedAt": "2026-10-09T11:32:13.337Z",
+  "id": "6ac8d0bd07fdebd2731d1ee3"
+ },
+ "aiSummary": null,
+ "healthScore": {
+  "value": 74,
+  "weeklyDelta": 3,
+  "computedAt": "2026-10-09T11:32:13.252Z"
+ },
+ "unreadMessages": 2,
+ "unreadNotifications": 2
+}

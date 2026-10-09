@@ -10,6 +10,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
+import 'p1_sheets.dart';
 import 'patient_log.dart';
 
 /// Design: Main.dc.html — "Patient · Home".
@@ -105,6 +106,17 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     }
   }
 
+  /// The measure a "Log …" to-do is about (fasting sugar, BP…), if any.
+  static String? _measureIn(String text) {
+    final t = text.toLowerCase();
+    if (t.contains('sugar') || t.contains('glucose')) return 'blood_sugar';
+    if (t.contains('bp') || t.contains('blood pressure')) return 'blood_pressure';
+    if (t.contains('weight')) return 'weight';
+    if (t.contains('pulse') || t.contains('heart rate')) return 'heart_rate';
+    if (t.contains('spo2') || t.contains('oxygen')) return 'spo2';
+    return null;
+  }
+
   Future<void> _taskAction(BuildContext context, int i) async {
     final t = _taskList[i];
     if (!isLive) {
@@ -116,15 +128,28 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
       return;
     }
     final raw = _rawTasks[i];
+    final appointment = raw['appointmentId'];
+    Object? result = true;
     if (t.action == 'Upload') {
-      await Nav.go(context, 'Records-Add');
+      result = await Nav.go(context, 'Records-Add', args: {'kind': 'test_result', 'appointmentId': appointment, 'title': t.title});
     } else if (t.action == 'Log') {
-      await Nav.go(context, 'Patient-Log');
+      final measure = _measureIn(t.title);
+      result = measure != null
+          ? await openSheet<bool>(context, (_) => P1ReadingSheet(measure: measure))
+          : await Nav.go(context, 'Patient-Log');
     }
-    if (raw['kind'] == 'visit_todo' && context.mounted) {
-      await runAction(context, () => Api.I.post('/api/patient/appointments/${raw['appointmentId']}/todos/${raw['id']}', {'done': true}));
+    // A visit to-do is ticked off once its action went through (or straight away for "Done").
+    if (raw['kind'] == 'visit_todo' && context.mounted && (t.action == 'Done' || result != null)) {
+      await runAction(context, () => Api.I.post('/api/patient/appointments/$appointment/todos/${raw['id']}', {'done': true}));
     }
     if (mounted) reload(quiet: true);
+  }
+
+  /// Tapping a dose row: Taken / Skip (or undo).
+  Future<void> _doseTap(BuildContext context, int i) async {
+    final raw = _rawTasks[i];
+    final changed = await openSheet<bool>(context, (_) => P1DoseSheet(dose: {...raw, 'status': raw['done'] == true ? 'taken' : raw['status']}));
+    if (changed == true && mounted) reload(quiet: true);
   }
 
   // ── Header ──
@@ -134,65 +159,40 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
   String get _initials => data == null ? 'PS' : F.initials(Session.I.name.isEmpty ? _name : Session.I.name);
 
   // ── Carousel ──
-  List<P1Slide> get _slides {
-    final d = data;
-    if (d == null) return P1.slides;
-    final out = <P1Slide>[];
-    final v = d.obj('nextVisit');
-    final at = F.date(v['startAt']);
-    if (at != null) {
-      final token = v['tokenNo'] == null ? '' : ' · Token ${'${v['tokenNo']}'.padLeft(2, '0')}';
-      out.add(P1Slide(
-        spec: '',
-        tag: F.sameDay(at, DateTime.now()) ? 'Today · ${F.time(at)}' : F.when(at),
-        title: 'Visit with ${F.doctorShort(v.obj('doctorId').str('name'))}',
-        sub: '${v.obj('locationId').str('name')}$token',
-        cta: 'View details',
-        stem: 'Patient-DoctorDetail',
-      ));
+  List<P1Slide> get _slides => data == null ? P1.slides : P1.slidesFrom(data!);
+
+  Future<void> _openBell(BuildContext context) async {
+    if (!isLive) {
+      toast(context, 'Notifications are coming soon');
+      return;
     }
-    final lab = d.obj('latestLab');
-    if (lab.isNotEmpty && d.list('slides').any((x) => x['kind'] == 'report')) {
-      final n = lab.numOr('abnormalCount').toInt();
-      final names = [for (final a in (lab['abnormal'] as List? ?? const [])) '$a'];
-      out.add(P1Slide(
-        spec: '',
-        tag: 'New report',
-        title: 'Your ${lab.str('testName')} is in',
-        sub: n == 0 ? 'All values in the normal range' : '${names.take(2).join(', ')} ${n == 1 ? 'is' : 'are'} ${lab.str('abnormalDirection')}',
-        cta: 'See what it means',
-        icon: I.fileText,
-        stem: 'Patient-Records',
-      ));
+    await openSheet<bool>(context, (_) => const P1NotificationsSheet());
+    if (mounted) reload(quiet: true);
+  }
+
+  Future<void> _openHistory(BuildContext context) async {
+    if (!isLive) {
+      toast(context, 'Log history is coming soon');
+      return;
     }
-    final refills = d.list('refills');
-    if (refills.isNotEmpty) {
-      final r = refills.first;
-      final days = r.numOr('daysLeft').toInt();
-      out.add(P1Slide(
-        spec: '',
-        tag: 'Refill soon',
-        title: '${r.str('name')} runs out ${days <= 0 ? 'today' : days == 1 ? 'tomorrow' : 'in $days days'}',
-        sub: '${r.numOr('tabletsLeft').toInt()} tablets left',
-        cta: 'Order a refill',
-        icon: I.pill,
-        stem: 'Patient-Medicines',
-      ));
+    final changed = await openSheet<bool>(context, (_) => const P1LogHistorySheet());
+    if (changed == true && mounted) reload(quiet: true);
+  }
+
+  Future<void> _openReading(BuildContext context, String measure) async {
+    final saved = await openSheet<bool>(context, (_) => P1ReadingSheet(measure: measure));
+    if (saved == true && mounted) reload(quiet: true);
+  }
+
+  /// "Change" under the daily log: the first doctor it is shared with.
+  void _openSharing(BuildContext context) {
+    final people = data?.list('logSharedWith') ?? const <Map<String, dynamic>>[];
+    final doctor = people.where((p) => p['role'] == 'doctor').firstOrNull ?? people.firstOrNull;
+    if (data != null && doctor == null) {
+      Nav.tab(context, 'Patient-Doctors');
+      return;
     }
-    final score = d.obj('healthScore');
-    if (score['value'] != null) {
-      final delta = score.numOr('weeklyDelta').toInt();
-      final plan = d.obj('activityPlan');
-      out.add(P1Slide(
-        spec: '',
-        tag: 'This week',
-        title: delta > 0 ? 'Health score up by $delta' : delta < 0 ? 'Health score down by ${-delta}' : 'Health score ${score['value']}',
-        sub: plan.isEmpty ? 'Out of 100' : 'You did ${plan['doneThisWeek']} of ${plan['daysPerWeek']} planned days',
-        cta: 'See your progress',
-        icon: I.activity,
-      ));
-    }
-    return out;
+    Nav.go(context, 'Patient-DoctorDetail', args: doctor == null ? null : {'doctorId': doctor['userId']});
   }
 
   // ── Daily log ──
@@ -311,7 +311,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
               points: '',
               note: 'No reading yet',
               noteColor: MP.ink3,
-              onTap: () => Nav.go(context, 'Patient-Track'),
+              onTap: () => _openReading(context, m),
             );
           }
           final last = series.last;
@@ -326,7 +326,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
             points: _points([for (final x in series) x.numOr('value')]),
             note: note,
             noteColor: color,
-            onTap: () => toast(context, '$label trend is coming soon'),
+            onTap: () => _openReading(context, m),
           );
         }(),
     ];
@@ -346,12 +346,14 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     if (!ok && context.mounted) toast(context, "Couldn't open the prescription");
   }
 
-  void _openLog(BuildContext context, int tab) {
+  Future<void> _openLog(BuildContext context, int tab) async {
+    final Future<bool?> sheet;
     if (tab == 0) {
-      Nav.go(context, 'Patient-Log');
+      sheet = Nav.go<bool>(context, 'Patient-Log');
     } else {
-      openSheet<void>(context, (_) => PatientLogSheet(initialTab: tab));
+      sheet = openSheet<bool>(context, (_) => PatientLogSheet(initialTab: tab));
     }
+    if (await sheet == true && mounted) reload(quiet: true);
   }
 
   @override
@@ -453,7 +455,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
                 radius: 999,
                 background: MP.white,
                 borderColor: MP.line,
-                onTap: () => toast(context, 'Notifications are coming soon'),
+                onTap: () => _openBell(context),
               ),
               // 8px dot + 2px white ring, top 9 / right 10 inside the border.
               if (_unread > 0) Positioned(
@@ -570,8 +572,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     } else {
       trailing = Text(t.later, style: tx(13, w: w600, c: MP.ink3));
     }
+    final isDose = data != null && _rawTasks[i]['kind'] == 'dose';
     return _ListRow(
       first: i == 0,
+      onTap: isDose ? () => _doseTap(context, i) : null,
       child: Row(
         children: [
           MpIconTile(t.icon, size: 40, iconSize: 20, radius: 12, bg: MP.fill, fg: MP.ink2),
@@ -603,7 +607,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: _cardHeading('Daily log', 'History', () => toast(context, 'Log history is coming soon')),
+            child: _cardHeading('Daily log', 'History', () => _openHistory(context)),
           ),
           _ListRow(
             first: true,
@@ -653,7 +657,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
             ),
           ),
           Tap(
-            onTap: () => Nav.go(context, 'Patient-DoctorDetail'),
+            onTap: () => _openSharing(context),
             radius: 0,
             child: Container(
               padding: const EdgeInsets.only(top: 14),
@@ -814,7 +818,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
             children: [
               Expanded(child: Text('From your reports and medicines. Not a diagnosis.', style: tx(13, c: MP.ink3))),
               const Gap(12),
-              _TextLink('Read more', onTap: () => toast(context, 'The full summary is coming soon')),
+              _TextLink(
+                'Read more',
+                onTap: () => isLive
+                    ? Nav.go(context, 'Patient-AskAI', args: {'prefill': 'Can you explain my health summary in simple words?'})
+                    : toast(context, 'The full summary is coming soon'),
+              ),
             ],
           ),
         ],
@@ -829,7 +838,10 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _cardHeading('What you track', 'Customize', () => Nav.go(context, 'Patient-Track')),
+          _cardHeading('What you track', 'Customize', () async {
+            final saved = await Nav.go<bool>(context, 'Patient-Track');
+            if (saved == true && mounted) reload(quiet: true);
+          }),
           const Gap(14),
           MpGrid(
             columns: 2,
@@ -985,7 +997,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
                   icon: I.sparkle,
                   iconStroke: 2,
                   padding: 14,
-                  onTap: () => Nav.go(context, 'Patient-AskAI'),
+                  onTap: () => Nav.go(
+                    context,
+                    'Patient-AskAI',
+                    args: _lab == null ? null : {'prefill': 'What does my ${_lab!.str('testName')} report mean?'},
+                  ),
                 ),
               ],
             ),
@@ -1153,15 +1169,17 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 class _ListRow extends StatelessWidget {
   final Widget child;
   final bool first;
-  const _ListRow({required this.child, this.first = false});
+  final VoidCallback? onTap;
+  const _ListRow({required this.child, this.first = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final row = Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: first ? null : const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
       child: child,
     );
+    return onTap == null ? row : GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: row);
   }
 }
 

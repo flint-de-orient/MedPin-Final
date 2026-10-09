@@ -1,13 +1,27 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 
+typedef _Doctor = ({String initials, String name, String dept, String status, Color statusColor, Color dot});
+
 /// Design: Patient-Emergency.dc.html — "Patient · emergency: choose doctor" (sheet over 'Main').
-class PatientEmergencySheet extends StatelessWidget {
+///
+/// Live: the doctors come from GET /api/patient/urgent/doctors. Choosing one
+/// sends the urgent message (POST /api/patient/urgent), which alerts the
+/// doctor, and opens Patient-Chat on that thread. "Call 108" dials 108.
+class PatientEmergencySheet extends StatefulWidget {
   const PatientEmergencySheet({super.key});
 
-  static const _doctors = [
+  @override
+  State<PatientEmergencySheet> createState() => _PatientEmergencySheetState();
+}
+
+class _PatientEmergencySheetState extends State<PatientEmergencySheet> with LiveData {
+  static const List<_Doctor> _doctors = [
     (initials: 'AS', name: 'Dr. Arjun Sen', dept: 'Diabetes · City Care', status: 'Available now', statusColor: MP.green, dot: MP.green),
     (
       initials: 'RM',
@@ -27,9 +41,52 @@ class PatientEmergencySheet extends StatelessWidget {
     ),
   ];
 
+  final _busy = ValueNotifier(false);
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/patient/urgent/doctors');
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  static _Doctor _from(Map<String, dynamic> d) {
+    final p = P1.presence(d);
+    return (initials: F.initials(d.str('name')), name: d.str('name'), dept: P1.dept(d), status: p.status, statusColor: p.color, dot: p.dot);
+  }
+
+  List<Map<String, dynamic>> get _raw => data?.list('items') ?? const [];
+  List<_Doctor> get _list => data == null ? (isLive ? const [] : _doctors) : [for (final d in _raw) _from(d)];
+
+  Future<void> _choose(int i) async {
+    if (!isLive) {
+      P1.closeThen(context, 'Patient-Chat');
+      return;
+    }
+    final d = _raw[i];
+    final res = await runAction(
+      context,
+      () => Api.I.post('/api/patient/urgent', {'doctorId': d['doctorId'], 'text': 'I need help urgently.'}),
+      busy: _busy,
+    );
+    if (res is! Map || !mounted) return;
+    P1.closeThen(context, 'Patient-Chat', args: {
+      'conversationId': res['conversationId'],
+      'doctorId': d['doctorId'],
+      'doctorName': d['name'],
+      'presence': d['presence'],
+      'avgReplyMinutes': d['avgReplyMinutes'],
+      'gender': d['gender'],
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget pad(Widget child) => Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: child);
+    final docs = _list;
+    final placeholder = livePlaceholder();
     return MpSheet(
       padding: const EdgeInsets.fromLTRB(0, 12, 0, 32),
       child: Padding(
@@ -45,13 +102,20 @@ class PatientEmergencySheet extends StatelessWidget {
                 style: tx(14, h: 1.45, c: MP.ink2),
               ),
             ),
-            const Gap(18),
-            pad(
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [for (var i = 0; i < _doctors.length; i++) _doctorRow(context, i)],
+            if (placeholder != null) placeholder,
+            if (data != null && docs.isEmpty) ...[
+              const Gap(18),
+              pad(Text("You don't have a doctor on MedPin yet. In an emergency, call 108.", style: tx(15, h: 1.45, c: MP.ink2))),
+            ],
+            if (docs.isNotEmpty) ...[
+              const Gap(18),
+              pad(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [for (var i = 0; i < docs.length; i++) _doctorRow(context, docs, i)],
+                ),
               ),
-            ),
+            ],
             const Gap(18),
             pad(
               Container(
@@ -66,7 +130,7 @@ class PatientEmergencySheet extends StatelessWidget {
                       P1.link(
                         'Call 108',
                         style: tx(14, w: w700, h: 1.45, c: MP.red),
-                        onTap: () => P1.closeWithToast(context, 'Calling 108…'),
+                        onTap: () => isLive ? P1.dial(context, '108') : P1.closeWithToast(context, 'Calling 108…'),
                       ),
                     ],
                   ),
@@ -79,10 +143,10 @@ class PatientEmergencySheet extends StatelessWidget {
     );
   }
 
-  Widget _doctorRow(BuildContext context, int i) {
-    final d = _doctors[i];
+  Widget _doctorRow(BuildContext context, List<_Doctor> docs, int i) {
+    final d = docs[i];
     return Tap(
-      onTap: () => P1.closeThen(context, 'Patient-Chat'),
+      onTap: () => _choose(i),
       radius: 0,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -118,8 +182,10 @@ class PatientEmergencySheet extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(d.name, style: tx(16, w: w700)),
-                  const Gap(2),
-                  Text(d.dept, style: tx(13, c: MP.ink2)),
+                  if (d.dept.isNotEmpty) ...[
+                    const Gap(2),
+                    Text(d.dept, style: tx(13, c: MP.ink2)),
+                  ],
                   const Gap(2),
                   Text(d.status, style: tx(13, w: w600, c: d.statusColor)),
                 ],

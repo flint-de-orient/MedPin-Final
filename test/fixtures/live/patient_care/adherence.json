@@ -1,0 +1,73 @@
+{
+ "days": 30,
+ "overallPct": 0,
+ "perMedicine": [
+  {
+   "courseId": "6ac8d0c18645bb270799775c",
+   "name": "Metformin",
+   "strength": "500 mg",
+   "doctorId": "6ac8d0bd07fdebd2731d1eb3",
+   "prescriber": "Dr. Arjun Sen",
+   "tracked": true,
+   "pct": 0,
+   "isNew": false
+  },
+  {
+   "courseId": "6ac8d0c18645bb270799775d",
+   "name": "Glimepiride",
+   "strength": "1 mg",
+   "doctorId": "6ac8d0bd07fdebd2731d1eb3",
+   "prescriber": "Dr. Arjun Sen",
+   "tracked": true,
+   "pct": 0,
+   "isNew": false
+  }
+ ],
+ "perDoctor": [
+  {
+   "doctor": "6ac8d0bd07fdebd2731d1eb3",
+   "pct": 0,
+   "name": "Dr. Arjun Sen"
+  }
+ ],
+ "mostMissedSlot": {
+  "slot": "morning",
+  "misses": 22
+ },
+ "doctors": [
+  {
+   "id": "6ac8d0bd07fdebd2731d1eb3",
+   "name": "Dr. Arjun Sen",
+   "specialty": "Diabetes & thyroid",
+   "clinic": "City Care Clinic",
+   "pct": 0,
+   "medicines": [
+    {
+     "courseId": "6ac8d0c18645bb270799775c",
+     "name": "Metformin",
+     "strength": "500 mg",
+     "tracked": true,
+     "pct": 0,
+     "isNew": false,
+     "startDate": "2026-09-28T18:30:00.000Z"
+    },
+    {
+     "courseId": "6ac8d0c18645bb270799775d",
+     "name": "Glimepiride",
+     "strength": "1 mg",
+     "tracked": true,
+     "pct": 0,
+     "isNew": false,
+     "startDate": "2026-09-28T18:30:00.000Z"
+    }
+   ],
+   "tracked": true
+  }
+ ],
+ "medReminders": true,
+ "reminderTimes": {
+  "morning": "07:30",
+  "afternoon": "13:30",
+  "night": "20:30"
+ }
+}
