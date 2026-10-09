@@ -152,6 +152,12 @@ r.get('/reports/prescriptions', async (req, res) => {
   const { from, to } = rangeOf(req.query);
   const q = { practiceId: req.practiceId, kind: 'digital', issuedAt: { $gte: from, $lt: to } };
   if (req.query.doctorId) q.doctorId = req.query.doctorId === 'me' ? req.user._id : req.query.doctorId;
+  const f = filtersOf(req.query);
+  if (f.locationIds.length || f.visitTypes.length || f.modes.length || f.ageGroups.length) {
+    // Only prescriptions from visits that match the filters.
+    const appts = await visits(req, T.addDays(from, -1), to, f);
+    q.consultationId = { $in: await M.Consultation.find({ appointmentId: { $in: appts.map((a) => a._id) } }).distinct('_id') };
+  }
   let rx = await M.Prescription.find(q).sort({ issuedAt: -1 }).populate('patientId', 'name').lean();
   if (req.query.q) {
     const re = new RegExp(escapeRegex(req.query.q), 'i');
@@ -163,7 +169,7 @@ r.get('/reports/prescriptions', async (req, res) => {
     totals: { prescriptions: rx.length, medicines: rx.reduce((s, p) => s + p.items.length, 0), labTests: rx.reduce((s, p) => s + p.tests.length, 0) },
     topMedicines: meds.slice(0, 10),
     topTests: tests.slice(0, 10),
-    items: rx.map((p) => ({ id: p._id, rxNumber: String(p.rxNumber).padStart(4, '0'), issuedAt: p.issuedAt, patient: p.patientId?.name, medicines: p.items.map((i) => `${i.name} ${i.strength || ''}`.trim()), tests: p.tests })),
+    items: rx.map((p) => ({ id: p._id, patientId: p.patientId?._id, rxNumber: String(p.rxNumber).padStart(4, '0'), issuedAt: p.issuedAt, patient: p.patientId?.name, medicines: p.items.map((i) => `${i.name} ${i.strength || ''}`.trim()), tests: p.tests })),
   });
 });
 
@@ -180,13 +186,13 @@ r.get('/reports/fees', async (req, res) => {
     freeVisits: rows.filter((a) => !a.fee).length,
     billedByLocation: sumBy(rows.map((a) => ({ amount: a.fee || 0, loc: a.locationId?.shortName || a.locationId?.name })), (x) => x.loc),
     collectedByMethod: sumBy(paid, (p) => p.method),
-    pending: payments.filter((p) => p.status === 'pending').map((p) => ({ id: p._id, patient: p.patientId?.name, date: p.appointmentId?.startAt || p.createdAt, location: p.locationId?.shortName || p.locationId?.name, mode: p.appointmentId?.mode, amount: p.amount, linkSentAt: p.paymentLinkSentAt })),
+    pending: payments.filter((p) => p.status === 'pending').map((p) => ({ id: p._id, patientId: p.patientId?._id, patient: p.patientId?.name, date: p.appointmentId?.startAt || p.createdAt, location: p.locationId?.shortName || p.locationId?.name, mode: p.appointmentId?.mode, amount: p.amount, linkSentAt: p.paymentLinkSentAt })),
   });
 });
 
 r.get('/reports/follow-ups', async (req, res) => {
   const { from, to } = rangeOf(req.query);
-  const fus = await M.FollowUp.find({ practiceId: req.practiceId, dueDate: { $gte: from, $lt: to } }).populate('patientId', 'name gender ageYears ageRecordedAt conditions').lean();
+  const fus = await M.FollowUp.find({ practiceId: req.practiceId, dueDate: { $gte: from, $lt: to } }).populate('patientId', 'name phone gender ageYears ageRecordedAt conditions').lean();
   const today = T.dayStart();
   const outcome = (f) => f.outcome || (f.dueDate < T.addDays(today, -3) && !['completed', 'booked'].includes(f.status) ? 'missed' : 'pending');
   const decided = fus.filter((f) => outcome(f) !== 'pending');
@@ -206,7 +212,7 @@ r.get('/reports/follow-ups', async (req, res) => {
     onTimePct: decided.length ? Math.round((decided.filter((f) => outcome(f) === 'on_time').length / decided.length) * 100) : null,
     byCondition: Object.entries(byCondition).map(([condition, v]) => ({ condition, onTimePct: Math.round((v.onTime / v.total) * 100), total: v.total })).sort((a, b) => b.total - a.total),
     missedList: fus.filter((f) => outcome(f) === 'missed').map((f) => ({
-      id: f._id, patient: f.patientId && { id: f.patientId._id, name: f.patientId.name, age: T.ageFrom(f.patientId), gender: f.patientId.gender, condition: f.patientId.conditions?.[0]?.name },
+      id: f._id, patient: f.patientId && { id: f.patientId._id, name: f.patientId.name, phone: f.patientId.phone, age: T.ageFrom(f.patientId), gender: f.patientId.gender, condition: f.patientId.conditions?.[0]?.name },
       dueDate: f.dueDate, daysLate: Math.round((today - f.dueDate) / T.DAY_MS),
     })),
   });
@@ -326,3 +332,6 @@ r.get('/dashboard/cards', async (req, res) => {
 });
 
 module.exports = r;
+module.exports.rangeOf = rangeOf;
+module.exports.filtersOf = filtersOf;
+module.exports.visits = visits;

@@ -129,7 +129,8 @@ r.get('/locations/:id', async (req, res) => {
     M.LocationClosure.find({ locationId: loc._id, endDate: { $gte: T.dayStart() } }).sort({ startDate: 1 }),
     M.DoctorLocation.find({ locationId: loc._id, status: 'active' }).populate('doctorId', 'name'),
   ]);
-  res.json({ ...loc.toJSON(), closures, doctors: doctors.map((d) => ({ doctorId: d.doctorId?._id, name: d.doctorId?.name, week: d.schedule.week })) });
+  const upcomingBookings = await M.Appointment.countDocuments({ locationId: loc._id, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } });
+  res.json({ ...loc.toJSON(), upcomingBookings, closures, doctors: doctors.map((d) => ({ doctorId: d.doctorId?._id, name: d.doctorId?.name, week: d.schedule.week })) });
 });
 
 r.patch('/locations/:id', ownerOnly, async (req, res) => {

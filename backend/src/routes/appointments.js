@@ -115,6 +115,12 @@ r.get('/appointment-requests', async (req, res) => {
   res.json(items);
 });
 
+r.get('/appointment-requests/:id', async (req, res) => {
+  const request = ownPractice(req, await M.AppointmentRequest.findById(req.params.id), 'Request');
+  await request.populate([{ path: 'patientId', select: 'name gender ageYears ageRecordedAt phone' }, { path: 'doctorId', select: 'name' }, { path: 'locationId', select: 'name shortName' }]);
+  res.json(request);
+});
+
 r.post('/appointment-requests/:id/assign', async (req, res) => {
   const request = ownPractice(req, await M.AppointmentRequest.findById(req.params.id), 'Request');
   if (request.status !== 'pending') throw conflict('This request was already handled');

@@ -80,10 +80,17 @@ r.patch('/follow-ups/:id', async (req, res) => {
 // ── Referrals ──
 r.get('/referrals', async (req, res) => {
   const direction = req.query.direction || 'sent';
-  const items = await M.Referral.find({ practiceId: req.practiceId, direction }).sort({ referredAt: -1 }).populate('patientId', 'name gender ageYears ageRecordedAt');
-  const all = await M.Referral.aggregate([{ $match: { practiceId: req.practiceId } }, { $group: { _id: { d: '$direction', s: '$status' }, n: { $sum: 1 } } }]);
+  // Optional period (range=… or from/to, like the reports); default = all time.
+  const period = {};
+  if (req.query.range || req.query.from || req.query.to) {
+    const { rangeOf } = require('./reports');
+    const { from, to } = rangeOf(req.query);
+    period.referredAt = { $gte: from, $lt: to };
+  }
+  const items = await M.Referral.find({ practiceId: req.practiceId, direction, ...period }).sort({ referredAt: -1 }).populate('patientId', 'name gender ageYears ageRecordedAt');
+  const all = await M.Referral.aggregate([{ $match: { practiceId: req.practiceId, ...period } }, { $group: { _id: { d: '$direction', s: '$status' }, n: { $sum: 1 } } }]);
   const c = (d, s) => all.filter((x) => x._id.d === d && (!s || x._id.s === s)).reduce((n, x) => n + x.n, 0);
-  const bySpecialty = await M.Referral.aggregate([{ $match: { practiceId: req.practiceId, direction } }, { $group: { _id: '$specialty', n: { $sum: 1 } } }, { $sort: { n: -1 } }]);
+  const bySpecialty = await M.Referral.aggregate([{ $match: { practiceId: req.practiceId, direction, ...period } }, { $group: { _id: '$specialty', n: { $sum: 1 } } }, { $sort: { n: -1 } }]);
   res.json({
     counts: { sent: c('sent'), received: c('received'), sentSeen: c('sent', 'seen'), sentAwaiting: c('sent', 'awaiting'), receivedSeen: c('received', 'seen'), receivedAwaiting: c('received', 'awaiting') },
     bySpecialty: bySpecialty.map((b) => ({ specialty: b._id || 'Other', count: b.n })),
