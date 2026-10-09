@@ -178,7 +178,7 @@ r.get('/queue/locations', async (req, res) => {
     });
   }
   const def = profile?.defaultQueueLocation;
-  res.json({ defaultLocationId: def && T.dayKey(def.forDate) === T.dayKey(new Date()) ? def.locationId : null, items: out });
+  res.json({ defaultLocationId: def?.forDate && def?.locationId && T.dayKey(def.forDate) === T.dayKey(new Date()) ? def.locationId : null, items: out });
 });
 
 r.get('/queue', async (req, res) => {
