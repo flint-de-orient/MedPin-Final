@@ -130,7 +130,9 @@ r.get('/locations/:id', async (req, res) => {
     M.DoctorLocation.find({ locationId: loc._id, status: 'active' }).populate('doctorId', 'name'),
   ]);
   const upcomingBookings = await M.Appointment.countDocuments({ locationId: loc._id, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } });
-  res.json({ ...loc.toJSON(), upcomingBookings, closures, doctors: doctors.map((d) => ({ doctorId: d.doctorId?._id, name: d.doctorId?.name, week: d.schedule.week })) });
+  const json = loc.toJSON();
+  if (json.letterhead?.logo) json.letterhead.logo = storage.withUrl(loc.letterhead.logo);
+  res.json({ ...json, upcomingBookings, closures, doctors: doctors.map((d) => ({ doctorId: d.doctorId?._id, name: d.doctorId?.name, week: d.schedule.week })) });
 });
 
 r.patch('/locations/:id', ownerOnly, async (req, res) => {
@@ -142,6 +144,17 @@ r.patch('/locations/:id', ownerOnly, async (req, res) => {
   if (req.body.hfrId) loc.hfrLinkedAt = new Date();
   await loc.save();
   res.json(loc);
+});
+
+// Letterhead logo printed on this location's prescriptions.
+r.post('/locations/:id/logo', ownerOnly, upload.single('file'), async (req, res) => {
+  const loc = await ownLocation(req);
+  if (!req.file) throw badRequest('Choose a logo file');
+  if (!/^image\/(png|jpeg|webp)$/.test(req.file.mimetype)) throw badRequest('Use a PNG, JPG or WebP image');
+  const logo = await storage.save(req.file.buffer, { folder: 'logos', name: req.file.originalname, mimeType: req.file.mimetype });
+  loc.letterhead = { ...(loc.letterhead?.toObject?.() || {}), logo, logoIsDark: req.body.isDark === 'true' };
+  await loc.save();
+  res.json({ logo: storage.withUrl(loc.letterhead.logo) });
 });
 
 r.post('/locations/:id/deactivate', ownerOnly, async (req, res) => {

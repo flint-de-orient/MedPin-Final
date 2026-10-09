@@ -7,9 +7,9 @@ import 'common_d4.dart';
 
 /// Knowledge editor · "More options" sheet: duplicate as a new draft, retire
 /// an approved entry, or delete a draft. Opened with
-/// {'knowledgeId', 'status': draft|pending|approved|retired}; pops
-/// `duplicated:ID`, `retired` or `deleted`.
-/// Live data: POST /api/knowledge/:id/duplicate, POST /api/knowledge/:id/retire,
+/// {'knowledgeId', 'status': draft|pending|approved|retired, 'canApprove'}; pops
+/// `duplicated:ID`, `approved`, `retired` or `deleted`.
+/// Live data: POST /api/knowledge/:id/duplicate, /approve, /retire,
 /// DELETE /api/knowledge/:id.
 class KnowledgeOptionsSheet extends StatelessWidget {
   const KnowledgeOptionsSheet({super.key});
@@ -19,14 +19,15 @@ class KnowledgeOptionsSheet extends StatelessWidget {
     final a = Nav.args<Map>(context) ?? const {};
     final id = a['knowledgeId'] as String?;
     final status = (a['status'] as String?) ?? 'draft';
+    final canApprove = status == 'pending' && a['canApprove'] == true;
     final canRetire = status == 'approved';
     final canDelete = status == 'draft' || status == 'pending';
 
     Future<void> run(String what) async {
       final nav = Navigator.of(context);
       if (!isLive || id == null) {
-        toast(context, what == 'duplicate' ? 'Copied as a new draft' : what == 'retire' ? 'Entry retired' : 'Draft deleted');
-        nav.pop(what == 'duplicate' ? 'duplicated:' : what == 'retire' ? 'retired' : 'deleted');
+        toast(context, what == 'duplicate' ? 'Copied as a new draft' : what == 'approve' ? 'Approved' : what == 'retire' ? 'Entry retired' : 'Draft deleted');
+        nav.pop(what == 'duplicate' ? 'duplicated:' : what == 'approve' ? 'approved' : what == 'retire' ? 'retired' : 'deleted');
         return;
       }
       switch (what) {
@@ -35,6 +36,11 @@ class KnowledgeOptionsSheet extends StatelessWidget {
           if (r == null || !context.mounted) return;
           toast(context, 'Copied as a new draft');
           nav.pop('duplicated:${(r as Map)['id']}');
+        case 'approve':
+          final r = await runAction(context, () => Api.I.post('/api/knowledge/$id/approve'));
+          if (r == null || !context.mounted) return;
+          toast(context, 'Approved · MedPin AI can now use it');
+          nav.pop('approved');
         case 'retire':
           final note = await d4FormSheet(
             context,
@@ -88,6 +94,7 @@ class KnowledgeOptionsSheet extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (canApprove) option(I.check, 'Approve entry', 'MedPin AI starts using it in answers', () => run('approve')),
           option(I.fileText, 'Duplicate as a new draft', 'Start a new entry from this one', () => run('duplicate')),
           if (canRetire) option(I.clock, 'Retire entry', 'MedPin AI stops using it; history is kept', () => run('retire'), color: MP.red),
           if (canDelete) option(I.close, 'Delete draft', 'Remove it for everyone', () => run('delete'), color: MP.red),

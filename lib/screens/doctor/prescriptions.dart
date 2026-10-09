@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
+import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
@@ -121,6 +122,36 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
 
   String get _patientName => data == null ? 'Priya Sharma' : data!.obj('patient').str('name');
 
+  /// Files a prescription written on paper into the patient's record.
+  Future<void> _filePaper(String source) async {
+    if (!isLive) {
+      toast(context, source == 'camera' ? 'Opening camera' : source == 'gallery' ? 'Opening gallery' : 'Choose a PDF to file');
+      return;
+    }
+    final patientId = data!.obj('patient').str('id');
+    UploadFile? file;
+    try {
+      file = source == 'pdf' ? await Files.pdf() : await Files.photo(camera: source == 'camera');
+    } catch (_) {
+      if (mounted) toast(context, "Couldn't open ${source == 'camera' ? 'the camera' : 'your files'}");
+      return;
+    }
+    if (file == null || !mounted) return;
+    final upload = file;
+    final ok = await runAction(
+      context,
+      () => Api.I.upload('/api/patients/$patientId/records', files: {'files': [upload]}, fields: {
+        'kind': 'prescription',
+        'scanned': 'true',
+        'title': 'Paper prescription',
+        'uploadSource': source,
+      }),
+    );
+    if (ok == null || !mounted) return;
+    toast(context, 'Paper prescription filed');
+    reload(quiet: true);
+  }
+
   List<_Rx> get _rows {
     final d = data;
     if (d == null) return _sample;
@@ -217,12 +248,12 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
                 const D7Title('File a paper prescription', sub: 'Scan or upload one written on paper'),
                 Row(
                   children: [
-                    Expanded(child: _UploadButton(I.camera, 'Camera', onTap: () => toast(context, 'Opening camera'))),
+                    Expanded(child: _UploadButton(I.camera, 'Camera', onTap: () => _filePaper('camera'))),
                     const SizedBox(width: 8),
-                    Expanded(child: _UploadButton(I.image, 'Gallery', onTap: () => toast(context, 'Opening gallery'))),
+                    Expanded(child: _UploadButton(I.image, 'Gallery', onTap: () => _filePaper('gallery'))),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _UploadButton(I.fileText, 'PDF', onTap: () => toast(context, 'Choose a PDF to file')),
+                      child: _UploadButton(I.fileText, 'PDF', onTap: () => _filePaper('pdf')),
                     ),
                   ],
                 ),

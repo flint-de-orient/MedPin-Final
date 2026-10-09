@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/api.dart';
+import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
@@ -151,13 +152,18 @@ class _ProfileScreenState extends State<ProfileScreen> with LiveData {
     toast(context, v ? 'App lock on' : 'App lock off');
   }
 
-  void _replaceSignature() {
-    if (isLive) {
-      // POST /api/doctor/profile/signature is a file upload, which the app's API client can't send yet.
-      toast(context, 'Signature upload is coming soon');
+  Future<void> _replaceSignature() async {
+    if (!isLive) {
+      toast(context, 'Signature replaced');
       return;
     }
-    toast(context, 'Signature replaced');
+    // A photo of the signature on white paper (or a PNG with a clear background).
+    final file = await Files.chooseSource(context, title: 'Digital signature', allowPdf: false);
+    if (file == null || !mounted) return;
+    final ok = await runAction(context, () => Api.I.upload('/api/doctor/profile/signature', files: {'file': [file]}));
+    if (ok == null || !mounted) return;
+    toast(context, 'Signature saved · printed on every prescription');
+    reload(quiet: true);
   }
 
   Future<void> _editCallNumber() async {

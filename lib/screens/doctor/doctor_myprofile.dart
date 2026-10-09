@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
+import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
@@ -189,7 +190,24 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
   void _go(String stem, [Object? args]) => Nav.go(context, stem, args: args);
 
   /// Rows whose editor is not part of the design yet.
-  void _soon(String what) => toast(context, '$what — coming soon');
+  /// Opens a settings screen and refreshes this hub when you come back.
+  Future<void> _open(String stem) async {
+    await Nav.go(context, stem);
+    if (mounted && isLive) reload(quiet: true);
+  }
+
+  Future<void> _changePhoto() async {
+    if (!isLive) {
+      _open('Profile-About');
+      return;
+    }
+    final file = await Files.chooseSource(context, title: 'Profile photo', allowPdf: false);
+    if (file == null || !mounted) return;
+    final ok = await runAction(context, () => Api.I.upload('/api/doctor/profile/photo', files: {'file': [file]}));
+    if (ok == null || !mounted) return;
+    toast(context, 'Photo updated');
+    reload(quiet: true);
+  }
 
   Future<void> _saveLanguages(List<String> langs, String done) async {
     if (!isLive) {
@@ -261,7 +279,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
             _SettingRow(
               'About and photo',
               sub: 'Bio patients read before booking',
-              onTap: () => _soon('About and photo'),
+              onTap: () => _open('Profile-About'),
             ),
             _SettingRow(
               'Languages',
@@ -305,7 +323,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
             _SettingRow(
               'Chat and urgent messages',
               sub: 'When patients can message you',
-              onTap: () => _soon('Chat and urgent messages'),
+              onTap: () => _open('Profile-Chat'),
             ),
             _SettingRow(
               'Prescription letterhead and signature',
@@ -324,16 +342,16 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
             ),
           ]),
           _Group('Account', [
-            _SettingRow('Notifications', onTap: () => _soon('Notifications')),
+            _SettingRow('Notifications', onTap: () => _open('Profile-Notifications')),
             _SettingRow(
               'Payouts and bank account',
               sub: 'UPI and bank for online fees',
-              onTap: () => _soon('Payouts and bank account'),
+              onTap: () => _open('Profile-Payouts'),
             ),
             _SettingRow('Plan and billing', sub: _planLine, onTap: () => _go('Billing')),
-            _SettingRow('Privacy and data', onTap: () => _soon('Privacy and data')),
+            _SettingRow('Privacy and data', onTap: () => _open('Profile-Privacy')),
             _SettingRow('App language', sub: _appLanguage, onTap: _pickAppLanguage),
-            _SettingRow('Help and support', onTap: () => _soon('Help and support')),
+            _SettingRow('Help and support', onTap: () => _open('Profile-Help')),
           ]),
           D4OutlineButton('Log out', border: MP.redLine, onTap: () => signOut(context)),
           Text('MedPin 3.8.2', textAlign: TextAlign.center, style: tx(12, c: MP.ink3)),
@@ -373,7 +391,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
                           width: 28,
                           height: 28,
                           child: Tap(
-                            onTap: () => _soon('Change photo'),
+                            onTap: _changePhoto,
                             radius: 999,
                             color: MP.primary,
                             border: MP.white,

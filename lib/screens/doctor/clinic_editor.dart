@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/api.dart';
+import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
@@ -139,6 +140,33 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
   List<(String, String, String)> get _doctorRows => _doctorsLive ?? _doctors;
 
   bool get _isNew => isLive && _locationId == null;
+
+  /// Letterhead logo: url / name / "PNG · 48 KB" (live), or the design's sample.
+  Map<String, Object?> get _logo {
+    if (data == null) return const {};
+    final l = data!.obj('letterhead').obj('logo');
+    if (l.isEmpty) return {'name': 'No logo yet', 'meta': 'PNG or JPG, on a plain background'};
+    final kb = (l.numOr('sizeBytes') / 1024).round();
+    final type = l.str('mimeType').split('/').last.toUpperCase();
+    return {'url': l['url'], 'name': l.str('name', 'Logo'), 'meta': '$type · $kb KB', 'isDark': data!.obj('letterhead')['logoIsDark'] == true};
+  }
+
+  Future<void> _replaceLogo() async {
+    if (!isLive) {
+      toast(context, 'Choose a new logo file');
+      return;
+    }
+    if (_locationId == null) {
+      toast(context, 'Save the location first, then add its logo');
+      return;
+    }
+    final file = await Files.chooseSource(context, title: 'Letterhead logo', allowPdf: false);
+    if (file == null || !mounted) return;
+    final ok = await runAction(context, () => Api.I.upload('/api/locations/$_locationId/logo', files: {'file': [file]}));
+    if (ok == null || !mounted) return;
+    toast(context, 'Logo updated');
+    reload(quiet: true);
+  }
 
   /// Hours per day (renderVals().hours). Sunday is closed; its range is the
   /// default used when it is switched on.
@@ -404,7 +432,18 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Semantics(
+                  if (_logo['url'] != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: 72,
+                        height: 72,
+                        color: _logo['isDark'] == true ? MP.ink : MP.bg,
+                        padding: const EdgeInsets.all(6),
+                        child: Image.network('${_logo['url']}', fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                      ),
+                    )
+                  else Semantics(
                     image: true,
                     label: 'Logo preview: City Care Clinic mark on a dark background',
                     excludeSemantics: true,
@@ -430,9 +469,9 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('citycare-logo.png', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(15, w: w600)),
+                        Text(_logo['name'] as String? ?? 'citycare-logo.png', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(15, w: w600)),
                         const SizedBox(height: 2),
-                        Text('PNG · 48 KB', style: tx(13, c: MP.ink3)),
+                        Text(_logo['meta'] as String? ?? 'PNG · 48 KB', style: tx(13, c: MP.ink3)),
                       ],
                     ),
                   ),
@@ -440,7 +479,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                   D7Btn(
                     'Replace',
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    onTap: () => toast(context, 'Choose a new logo file'),
+                    onTap: _replaceLogo,
                   ),
                 ],
               ),

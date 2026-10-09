@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/api.dart';
+import '../../data/files.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
@@ -177,14 +178,18 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> w
     reload(quiet: true);
   }
 
-  void _uploadProof(_Qualification q) {
-    if (isLive) {
-      // POST /api/doctor/qualifications/:qid/proof is a file upload, which the app's API client can't send yet.
-      toast(context, 'Proof upload is coming soon');
+  Future<void> _uploadProof(_Qualification q) async {
+    if (!isLive || q.id == null) {
+      setState(() => q.proof = _Proof.review);
+      toast(context, 'Proof sent for verification');
       return;
     }
-    setState(() => q.proof = _Proof.review);
+    final file = await Files.chooseSource(context, title: 'Proof of ${q.name}');
+    if (file == null || !mounted) return;
+    final ok = await runAction(context, () => Api.I.upload('/api/doctor/qualifications/${q.id}/proof', files: {'file': [file]}));
+    if (ok == null || !mounted) return;
     toast(context, 'Proof sent for verification');
+    reload(quiet: true);
   }
 
   @override

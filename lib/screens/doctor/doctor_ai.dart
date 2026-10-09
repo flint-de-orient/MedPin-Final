@@ -109,7 +109,10 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> with LiveData {
     if (r == 'type') _focus.requestFocus();
   }
 
-  void _history() => toast(context, 'AI Assistant history is not in the design yet');
+  Future<void> _history() async {
+    await Nav.go(context, 'Doctor-AI-History');
+    if (mounted && isLive) reload(quiet: true);
+  }
 
   @override
   Widget build(BuildContext context) {

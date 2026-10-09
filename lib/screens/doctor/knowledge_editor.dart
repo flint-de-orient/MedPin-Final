@@ -166,24 +166,28 @@ class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> with Live
     Nav.back(context);
   }
 
-  /// Doctors can approve a pending entry or retire one (⋮ menu).
+  /// ⋮ Entry options: approve (doctors), duplicate, retire, delete a draft.
   Future<void> _more() async {
-    final doctor = Session.I.role == 'doctor';
-    final options = [
-      if (isLive && doctor && _statusKey == 'pending') 'Approve',
-      if (isLive && doctor && _id != null && _statusKey != 'retired') 'Retire',
-    ];
-    if (options.isEmpty) {
-      toast(context, 'More options are not in the design yet');
+    if (isLive && _id == null) {
+      toast(context, 'Save the entry first');
       return;
     }
-    final v = await D10Picker.show(context, title: 'Entry', options: options, value: '');
-    if (v == null || !mounted) return;
-    final action = v == 'Approve' ? 'approve' : 'retire';
-    final ok = await runAction(context, () => Api.I.post('/api/knowledge/$_id/$action'), busy: _busy);
-    if (ok == null || !mounted) return;
-    toast(context, v == 'Approve' ? 'Approved' : 'Retired');
-    reload(quiet: true);
+    final r = await Nav.go<String>(context, 'Knowledge-Options', args: {
+      'knowledgeId': _id,
+      'status': isLive ? _statusKey : 'approved',
+      'canApprove': Session.I.role == 'doctor',
+    });
+    if (r == null || !mounted) return;
+    if (r == 'deleted') {
+      Nav.back(context);
+    } else if (r.startsWith('duplicated:') && r.length > 11) {
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: Nav.spec('Knowledge-Editor')!.builder,
+        settings: RouteSettings(name: 'Knowledge-Editor', arguments: {'knowledgeId': r.substring(11)}),
+      ));
+    } else if (isLive) {
+      reload(quiet: true);
+    }
   }
 
   (String, Color, Color) get _badge => switch (_statusKey) {
