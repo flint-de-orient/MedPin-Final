@@ -33,7 +33,12 @@ mixin LiveData<W extends StatefulWidget> on State<W> {
   void initState() {
     super.initState();
     if (!isLive) return;
-    reload();
+    // Start after initState: fetch() may read the route arguments (Nav.args),
+    // which Flutter doesn't allow during initState.
+    loading = true;
+    Future.microtask(() {
+      if (mounted) reload();
+    });
     final every = refreshEvery;
     if (every != null) _refreshTimer = Timer.periodic(every, (_) => reload(quiet: true));
   }

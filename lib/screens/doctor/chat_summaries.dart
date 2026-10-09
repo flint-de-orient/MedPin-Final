@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'common_d1.dart';
 import 'common_d10.dart';
 
 /// Design: Chat-Summaries.dc.html — "Chat summaries".
+/// Live data: GET /api/inbox/summaries?date=today|yesterday[&scope=mine].
+/// Flagged rows open Chat-Review-Detail, others Patient-Thread
+/// ({'conversationId', 'patientId'}).
 class ChatSummariesScreen extends StatefulWidget {
   const ChatSummariesScreen({super.key});
 
@@ -57,29 +64,73 @@ const List<_Item> _items = [
   ),
 ];
 
-class _ChatSummariesScreenState extends State<ChatSummariesScreen> {
+class _ChatSummariesScreenState extends State<ChatSummariesScreen> with LiveData {
   int _scope = 0;
   int _day = 0;
 
   @override
+  Future<Object?> fetch() => Api.I.get('/api/inbox/summaries', query: {
+    'date': _day == 1 ? 'yesterday' : 'today',
+    if (_scope == 0) 'scope': 'mine',
+  });
+
+  void _setScope(int i) {
+    if (i == _scope) return;
+    setState(() => _scope = i);
+    if (isLive) reload(quiet: true);
+  }
+
+  void _setDay(int i) {
+    if (i == _day) return;
+    setState(() => _day = i);
+    if (isLive) reload(quiet: true);
+  }
+
+  static _Item _itemOf(Map<String, dynamic> m) {
+    final name = m.obj('patientId').str('name', 'Patient');
+    final n = m.numOr('messageCount').toInt();
+    final last = F.date(m['lastMessageAt']);
+    return (
+      F.initials(name),
+      name,
+      [d1Count(n, 'message'), if (last != null) 'last ${F.time(last)}'].join(' · '),
+      m['needsReply'] == true,
+      m.str('flagLabel'),
+      m.str('summary'),
+    );
+  }
+
+  Future<void> _open(Map<String, dynamic> m, bool flagged) async {
+    final args = {'conversationId': m.str('conversationId'), 'patientId': m.obj('patientId').str('id')};
+    await Nav.go(context, flagged ? 'Chat-Review-Detail' : 'Patient-Thread', args: args);
+    if (mounted) reload(quiet: true);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final bold = tx(16, w: w600, h: 1.5);
+    final placeholder = livePlaceholder();
+    final d = data;
+    final live = d == null ? null : [for (final m in d.list('items')) (m, _itemOf(m))];
+    final wrote = d == null ? '9' : '${d.numOr('patientsWrote')}';
+    final need = d == null ? '3' : '${d.numOr('needReply')}';
+    final dayWord = _day == 1 ? 'yesterday' : 'today';
     return MpPage(
       header: const MpHeader("Today's conversations"),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         gap: 16,
         children: [
           MpSegmented(
             options: const ['My patients', 'Whole practice'],
             index: _scope,
-            onChanged: (i) => setState(() => _scope = i),
+            onChanged: _setScope,
           ),
           Row(
             children: [
-              D10FilterChip('Today', selected: _day == 0, onTap: () => setState(() => _day = 0)),
+              D10FilterChip('Today', selected: _day == 0, onTap: () => _setDay(0)),
               const Gap(8),
-              D10FilterChip('Yesterday', selected: _day == 1, onTap: () => setState(() => _day = 1)),
+              D10FilterChip('Yesterday', selected: _day == 1, onTap: () => _setDay(1)),
             ],
           ),
           Column(
@@ -88,10 +139,10 @@ class _ChatSummariesScreenState extends State<ChatSummariesScreen> {
               Text.rich(
                 TextSpan(
                   children: [
-                    TextSpan(text: '9', style: tx(16, w: w600, h: 1.5, tab: true)),
-                    const TextSpan(text: ' patients wrote today · '),
-                    TextSpan(text: '3', style: tx(16, w: w600, h: 1.5, tab: true)),
-                    const TextSpan(text: ' need a reply'),
+                    TextSpan(text: wrote, style: tx(16, w: w600, h: 1.5, tab: true)),
+                    TextSpan(text: wrote == '1' ? ' patient wrote $dayWord · ' : ' patients wrote $dayWord · '),
+                    TextSpan(text: need, style: tx(16, w: w600, h: 1.5, tab: true)),
+                    TextSpan(text: need == '1' ? ' needs a reply' : ' need a reply'),
                   ],
                 ),
                 style: bold,
@@ -106,15 +157,20 @@ class _ChatSummariesScreenState extends State<ChatSummariesScreen> {
               ),
             ],
           ),
-          for (final c in _items) _SummaryCard(c),
-          MpButton(
-            'Show 4 more patients',
-            kind: MpBtn.ghost,
-            height: 48,
-            radius: 12,
-            fontSize: 15,
-            onTap: () => Nav.go(context, 'Doctor-Messages'),
-          ),
+          if (live == null) ...[
+            for (final c in _items) _SummaryCard(c),
+            MpButton(
+              'Show 4 more patients',
+              kind: MpBtn.ghost,
+              height: 48,
+              radius: 12,
+              fontSize: 15,
+              onTap: () => Nav.go(context, 'Doctor-Messages'),
+            ),
+          ] else ...[
+            if (live.isEmpty) Text('No conversations $dayWord', style: tx(14, c: MP.ink2)),
+            for (final (m, c) in live) _SummaryCard(c, onOpen: () => _open(m, c.$5.isNotEmpty)),
+          ],
         ],
       ),
     );
@@ -123,7 +179,8 @@ class _ChatSummariesScreenState extends State<ChatSummariesScreen> {
 
 class _SummaryCard extends StatelessWidget {
   final _Item c;
-  const _SummaryCard(this.c);
+  final VoidCallback? onOpen;
+  const _SummaryCard(this.c, {this.onOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -156,7 +213,7 @@ class _SummaryCard extends StatelessWidget {
           const Gap(12),
           Tap(
             // Flagged chats open their AI review; others the patient thread.
-            onTap: () => Nav.go(context, flagged ? 'Chat-Review-Detail' : 'Patient-Thread'),
+            onTap: onOpen ?? () => Nav.go(context, flagged ? 'Chat-Review-Detail' : 'Patient-Thread'),
             radius: 0,
             child: Container(
               decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),

@@ -1,0 +1,91 @@
+{
+ "counts": {
+  "all": 4,
+  "care": 3,
+  "app": 1
+ },
+ "averageRating": 4,
+ "items": [
+  {
+   "reply": {
+    "text": "Thank you, Moumita. See you at your follow-up.",
+    "by": {
+     "name": "Tania Ghosh",
+     "id": "6ac8bbcee42c9f0836e9855d"
+    },
+    "at": "2026-10-07T18:30:00.000Z"
+   },
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Moumita Roy",
+    "id": "6ac8bbd08adea6a429a731c5"
+   },
+   "doctorId": "6ac8bbd08adea6a429a73197",
+   "rating": 5,
+   "category": "care",
+   "comment": "Dr. Mitra explained everything patiently.",
+   "readBy": [
+    {
+     "userId": {
+      "name": "Dr. Arjun Sen",
+      "id": "6ac8bbcee42c9f0836e9855b"
+     },
+     "at": "2026-10-07T18:30:00.000Z"
+    },
+    {
+     "userId": {
+      "name": "Tania Ghosh",
+      "id": "6ac8bbcee42c9f0836e9855d"
+     },
+     "at": "2026-10-07T18:30:00.000Z"
+    }
+   ],
+   "createdAt": "2026-10-07T18:30:00.000Z",
+   "updatedAt": "2026-10-07T18:30:00.000Z",
+   "id": "6ac8bbd18adea6a429a73469"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Debasish Bose",
+    "id": "6ac8bbd08adea6a429a731dd"
+   },
+   "rating": 2,
+   "category": "care",
+   "comment": "Waited over an hour past my booked time.",
+   "createdAt": "2026-10-07T18:30:00.000Z",
+   "readBy": [],
+   "updatedAt": "2026-10-07T18:30:00.000Z",
+   "id": "6ac8bbd18adea6a429a7346a"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Aisha Khan",
+    "id": "6ac8bbd08adea6a429a731be"
+   },
+   "rating": 4,
+   "category": "app",
+   "comment": "Reminders are helpful. Uploading reports could be easier.",
+   "createdAt": "2026-10-06T18:30:00.000Z",
+   "readBy": [],
+   "updatedAt": "2026-10-06T18:30:00.000Z",
+   "id": "6ac8bbd18adea6a429a7346b"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Rahul Das",
+    "id": "6ac8bbd08adea6a429a731b7"
+   },
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "rating": 5,
+   "category": "care",
+   "comment": "Quick and clear.",
+   "createdAt": "2026-10-05T18:30:00.000Z",
+   "readBy": [],
+   "updatedAt": "2026-10-05T18:30:00.000Z",
+   "id": "6ac8bbd18adea6a429a7346c"
+  }
+ ]
+}

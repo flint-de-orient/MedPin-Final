@@ -1,0 +1,33 @@
+{
+ "question": {
+  "sessionId": "6ac8bdaf0640a42493dc534d",
+  "role": "user",
+  "text": "Summarise her recent abnormal results",
+  "inputMode": "typed",
+  "voiceLanguage": "en",
+  "sources": {
+   "refs": []
+  },
+  "vote": 0,
+  "createdAt": "2026-10-09T10:11:02.686Z",
+  "updatedAt": "2026-10-09T10:11:02.686Z",
+  "id": "6ac8bdb60640a42493dc539d"
+ },
+ "answer": {
+  "sessionId": "6ac8bdaf0640a42493dc534d",
+  "role": "assistant",
+  "text": "Here is a summary of Priya Sharma’s recent abnormal results from a diabetology and metabolic perspective:\n\n**Glycaemic Markers (Suboptimal Control)**\n* **HbA1c:** 7.2 % (elevated; target for a young adult with T2D is typically <6.5%–7.0%; *test date not specified in record*).\n* **Fasting Blood Glucose:** 138 mg/dL (lab, *date not specified*), concordant with today's fasting blood glucose check of 142 mg/dL (*2026-10-09*).\n\n**Lipid Profile (Atherogenic Dyslipidaemia)**\n* **LDL Cholesterol:** 162 mg/dL (elevated; ADA/lipid targets for T2D are generally <100 mg/dL, or <70 mg/dL if additional risk factors are present; *date not specified*).\n* **Triglycerides:** 210 mg/dL (elevated; target <150 mg/dL; *date not specified*). Common in the setting of insulin resistance/PCOS.\n\n**Micronutrient Status**\n* **Vitamin D:** 14 ng/mL (deficiency; target ≥30 ng/mL; *date not specified*).\n\n---\n\n### Key Clinical Considerations for Consultation\n* **Critical Drug-Allergy Warning:** The patient is currently prescribed **Glimepiride 1 mg**, but has a documented allergy to **Sulfa drugs**. Sulfonylureas carry a potential risk of cross-reactivity and should be reviewed; consider switching to an alternative anti-hyperglycaemic agent (such as a DPP-4i, SGLT2i, or GLP-1 RA, which also offer weight and metabolic benefits in PCOS).\n* **Statin Therapy:** Given LDL 162 mg/dL in a 29-year-old with diabetes and PCOS, initiation of lipid-lowering therapy and lifestyle intervention is indicated.\n* **Referral:** You manage both T2D and PCOS; however, if she has active ovulatory dysfunction, infertility concerns, or pelvic symptoms, an **Obstetrics & Gynaecology** referral may be warranted.",
+  "inputMode": "typed",
+  "sources": {
+   "refs": []
+  },
+  "vote": 0,
+  "aiModel": "gemini-3.8-flash",
+  "latencyMs": 13428,
+  "inputTokens": 835,
+  "outputTokens": 479,
+  "createdAt": "2026-10-09T10:11:16.148Z",
+  "updatedAt": "2026-10-09T10:11:16.148Z",
+  "id": "6ac8bdc40640a42493dc53c5"
+ }
+}

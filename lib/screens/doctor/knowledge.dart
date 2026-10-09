@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d10.dart';
 
 /// Design: Knowledge.dc.html — "Knowledge base".
+/// Live data: GET /api/knowledge (practice + adopted) and
+/// GET /api/knowledge?shared=true; chip counts are of the merged list.
 class KnowledgeScreen extends StatefulWidget {
   const KnowledgeScreen({super.key});
 
@@ -83,22 +88,86 @@ const _filters = [
   ('Retired · 1', 'Retired'),
 ];
 
-class _KnowledgeScreenState extends State<KnowledgeScreen> {
+class _KnowledgeScreenState extends State<KnowledgeScreen> with LiveData {
   int _filter = 0;
+
+  /// The practice's entries (with adopted MedPin ones) plus every shared
+  /// MedPin entry, so shared ones can be found and adopted.
+  @override
+  Future<Object?> fetch() async {
+    final res = await Future.wait([
+      Api.I.get('/api/knowledge'),
+      Api.I.get('/api/knowledge', query: {'shared': 'true'}),
+    ]);
+    final seen = <String>{};
+    final items = <Map<String, dynamic>>[
+      for (final r in res)
+        for (final e in (r as Map).cast<String, dynamic>().list('items'))
+          if (seen.add(e.str('id'))) e,
+    ]..sort((a, b) => b.str('updatedAt').compareTo(a.str('updatedAt')));
+    return {'items': items};
+  }
+
+  static _Entry _entryOf(Map<String, dynamic> e) {
+    final status = d10Cap(e.str('status', 'draft'));
+    final updated = F.date(e['updatedAt']);
+    final retired = F.date(e['retiredAt']);
+    final when = e['status'] == 'retired' && retired != null
+        ? 'Retired ${F.dayMonth(retired)}'
+        : (updated == null ? '' : 'Updated ${d10Since(updated)}');
+    final summary = e.str('summary').trim();
+    return (
+      e.str('title'),
+      status,
+      e['status'] == 'retired' && e.str('retiredNote').isNotEmpty ? e.str('retiredNote') : (summary.isEmpty ? e.str('content') : summary),
+      [
+        d10Languages[e.str('language')] ?? 'English',
+        d10Categories[e.str('category')] ?? d10Cap(e.str('category')),
+        if (when.isNotEmpty) when,
+      ].where((x) => x.isNotEmpty).join(' · '),
+      e['shared'] == true,
+    );
+  }
+
+  Future<void> _open(Map<String, dynamic>? e) async {
+    if (!isLive) {
+      Nav.go(context, 'Knowledge-Editor');
+      return;
+    }
+    final shared = e?['shared'] == true;
+    await Nav.go(context, shared ? 'Knowledge-Shared' : 'Knowledge-Editor', args: e == null ? null : {'knowledgeId': e.str('id')});
+    if (mounted) reload(quiet: true);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final status = _filters[_filter].$2;
+    final placeholder = livePlaceholder();
+    final d = data;
+    final live = d == null ? null : [for (final e in d.list('items')) (e, _entryOf(e))];
+    final filters = live == null
+        ? _filters
+        : [
+            for (final f in _filters)
+              (
+                '${f.$1.split(' · ').first} · ${f.$2 == null ? live.length : live.where((x) => x.$2.$2 == f.$2).length}',
+                f.$2,
+              ),
+          ];
+    final status = filters[_filter].$2;
     final shown = [
       for (final e in _entries)
         if (status == null || e.$2 == status) e,
     ];
+    final liveShown = [
+      for (final x in live ?? const <(Map<String, dynamic>, _Entry)>[])
+        if (status == null || x.$2.$2 == status) x,
+    ];
     return MpPage(
       header: MpHeader(
         'Knowledge base',
-        actions: [MpIconButton(I.plus, label: 'Add entry', onTap: () => Nav.go(context, 'Knowledge-Editor'))],
+        actions: [MpIconButton(I.plus, label: 'Add entry', onTap: () => _open(null))],
       ),
-      body: Padding(
+      body: placeholder ?? Padding(
         padding: const EdgeInsets.only(bottom: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -114,25 +183,32 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
             MpChipRow(
               gap: 8,
               children: [
-                for (var i = 0; i < _filters.length; i++)
-                  D10FilterChip(_filters[i].$1, selected: i == _filter, onTap: () => setState(() => _filter = i)),
+                for (var i = 0; i < filters.length; i++)
+                  D10FilterChip(filters[i].$1, selected: i == _filter, onTap: () => setState(() => _filter = i)),
               ],
             ),
             const Gap(16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Semantics(
+              child: live != null && liveShown.isEmpty
+                  ? Text('No entries here yet', style: tx(14, c: MP.ink2))
+                  : Semantics(
                 label: 'Entries',
                 container: true,
                 child: D10ListCard(
-                  children: [for (var i = 0; i < shown.length; i++) _EntryRow(shown[i], divider: i > 0)],
+                  children: live == null
+                      ? [for (var i = 0; i < shown.length; i++) _EntryRow(shown[i], divider: i > 0)]
+                      : [
+                          for (var i = 0; i < liveShown.length; i++)
+                            _EntryRow(liveShown[i].$2, divider: i > 0, onOpen: () => _open(liveShown[i].$1)),
+                        ],
                 ),
               ),
             ),
           ],
         ),
       ),
-      bottom: MpBottomBar(child: MpButton('Add entry', icon: I.plus, onTap: () => Nav.go(context, 'Knowledge-Editor'))),
+      bottom: MpBottomBar(child: MpButton('Add entry', icon: I.plus, onTap: () => _open(null))),
     );
   }
 }
@@ -140,18 +216,19 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
 class _EntryRow extends StatelessWidget {
   final _Entry e;
   final bool divider;
-  const _EntryRow(this.e, {required this.divider});
+  final VoidCallback? onOpen;
+  const _EntryRow(this.e, {required this.divider, this.onOpen});
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg) = _status[e.$2]!;
+    final (bg, fg) = _status[e.$2] ?? _status['Draft']!;
     final retired = e.$2 == 'Retired';
     final titleColor = retired ? MP.ink3 : MP.ink;
     final bodyColor = retired ? MP.ink3 : MP.ink2;
     return D10ListRow(
       divider: divider,
       vPad: 16,
-      onTap: () => Nav.go(context, e.$5 ? 'Knowledge-Shared' : 'Knowledge-Editor'),
+      onTap: onOpen ?? () => Nav.go(context, e.$5 ? 'Knowledge-Shared' : 'Knowledge-Editor'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

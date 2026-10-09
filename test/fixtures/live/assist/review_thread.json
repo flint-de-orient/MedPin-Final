@@ -1,0 +1,88 @@
+{
+ "conversation": {
+  "lastMessage": {
+   "text": "That reading is high. If the headache is severe or you feel unwell, call 108. I have alerted your doctor.",
+   "senderType": "ai",
+   "senderLabel": "AI",
+   "at": "2026-10-09T10:02:56.988Z"
+  },
+  "type": "care",
+  "practiceId": "6ac8bbcee42c9f0836e98561",
+  "patientId": "6ac8bbd08adea6a429a731b7",
+  "participants": [
+   {
+    "userId": "6ac8bbcee42c9f0836e9855b",
+    "role": "doctor",
+    "unreadCount": 2
+   },
+   {
+    "userId": "6ac8bbcee42c9f0836e9855d",
+    "role": "staff",
+    "unreadCount": 2
+   },
+   {
+    "userId": "6ac8bbd08adea6a429a73197",
+    "role": "doctor",
+    "unreadCount": 2
+   },
+   {
+    "userId": "6ac8bbd08adea6a429a7319f",
+    "role": "staff",
+    "unreadCount": 2
+   }
+  ],
+  "isUrgent": false,
+  "aiEnabled": true,
+  "createdAt": "2026-10-09T10:02:56.981Z",
+  "updatedAt": "2026-10-09T10:02:56.990Z",
+  "triage": "needs_attention",
+  "id": "6ac8bbd08adea6a429a7340c",
+  "aiPaused": false,
+  "patient": {
+   "id": "6ac8bbd08adea6a429a731b7",
+   "name": "Rahul Das",
+   "lastSeenAt": null
+  },
+  "nextVisit": null
+ },
+ "pinned": null,
+ "items": [
+  {
+   "conversationId": "6ac8bbd08adea6a429a7340c",
+   "senderType": "patient",
+   "kind": "text",
+   "text": "BP is 172/104 and I have a headache.",
+   "isUrgent": false,
+   "deliveryStatus": "sent",
+   "hiddenFor": [],
+   "createdAt": "2026-10-09T10:02:56.982Z",
+   "updatedAt": "2026-10-09T10:02:56.982Z",
+   "id": "6ac8bbd08adea6a429a7340e",
+   "deleted": false,
+   "mine": false
+  },
+  {
+   "conversationId": "6ac8bbd08adea6a429a7340c",
+   "senderType": "ai",
+   "kind": "text",
+   "text": "That reading is high. If the headache is severe or you feel unwell, call 108. I have alerted your doctor.",
+   "isUrgent": false,
+   "deliveryStatus": "sent",
+   "hiddenFor": [],
+   "ai": {
+    "flagged": true,
+    "urgency": "high",
+    "responseSource": "model",
+    "fallbackUsed": false,
+    "latencyMs": 1200,
+    "escalated": true,
+    "citations": []
+   },
+   "createdAt": "2026-10-09T10:02:56.988Z",
+   "updatedAt": "2026-10-09T10:02:56.988Z",
+   "id": "6ac8bbd08adea6a429a73416",
+   "deleted": false,
+   "mine": false
+  }
+ ]
+}

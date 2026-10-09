@@ -1,0 +1,94 @@
+{
+ "date": "2026-10-08T18:30:00.000Z",
+ "patientsWrote": 5,
+ "needReply": 3,
+ "items": [
+  {
+   "conversationId": "6ac8bbcee42c9f0836e9858b",
+   "date": "2026-10-08T18:30:00.000Z",
+   "createdAt": "2026-10-09T10:10:00.482Z",
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "lastMessageAt": "2026-10-09T10:02:57.029Z",
+   "messageCount": 2,
+   "needsReply": true,
+   "patientId": {
+    "name": "Priya Sharma",
+    "id": "6ac8bbcee42c9f0836e9857c"
+   },
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "summary": "The patient asked about medication timing with meals while reporting acute chest tightness and difficulty breathing. No advice has been provided yet, leaving both the medication question and the potentially urgent cardiopulmonary symptoms open.",
+   "updatedAt": "2026-10-09T10:10:00.482Z",
+   "id": "6ac8bd78bfcb2f5a9d64d548"
+  },
+  {
+   "date": "2026-10-08T18:30:00.000Z",
+   "conversationId": "6ac8bbd08adea6a429a7340c",
+   "createdAt": "2026-10-09T10:10:15.999Z",
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "flagLabel": "Flagged: symptom question",
+   "lastMessageAt": "2026-10-09T10:02:56.988Z",
+   "messageCount": 2,
+   "needsReply": true,
+   "patientId": {
+    "name": "Rahul Das",
+    "id": "6ac8bbd08adea6a429a731b7"
+   },
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "summary": "The patient reported an elevated blood pressure of 172/104 mmHg with a headache and was advised to seek emergency care if symptoms are severe. Follow-up regarding their current clinical status and need for acute intervention remains pending your evaluation.",
+   "updatedAt": "2026-10-09T10:10:15.999Z",
+   "id": "6ac8bd88bfcb2f5a9d64d54b"
+  },
+  {
+   "conversationId": "6ac8bbd08adea6a429a733f3",
+   "date": "2026-10-08T18:30:00.000Z",
+   "createdAt": "2026-10-09T10:10:21.680Z",
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "flagLabel": "Flagged: dosage question",
+   "lastMessageAt": "2026-10-09T10:02:56.966Z",
+   "messageCount": 2,
+   "needsReply": true,
+   "patientId": {
+    "name": "Sujit Mondal",
+    "id": "6ac8bbd08adea6a429a731ce"
+   },
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "summary": "The patient reported increased foot swelling and asked if they should take an extra tablet, but was advised not to change their medication dose. They are now awaiting your review and guidance regarding their symptoms.",
+   "updatedAt": "2026-10-09T10:10:21.680Z",
+   "id": "6ac8bd8dbfcb2f5a9d64d54c"
+  },
+  {
+   "conversationId": "6ac8bbd18adea6a429a7343b",
+   "date": "2026-10-08T18:30:00.000Z",
+   "createdAt": "2026-10-09T10:10:05.821Z",
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "lastMessageAt": "2026-10-09T10:02:57.021Z",
+   "messageCount": 2,
+   "needsReply": false,
+   "patientId": {
+    "name": "Aisha Khan",
+    "id": "6ac8bbd08adea6a429a731be"
+   },
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "summary": "The patient asked if they could take their iron tablet with tea and was advised to take it with water at least an hour away from tea. There are no remaining open questions.",
+   "updatedAt": "2026-10-09T10:10:05.821Z",
+   "id": "6ac8bd7dbfcb2f5a9d64d549"
+  },
+  {
+   "date": "2026-10-08T18:30:00.000Z",
+   "conversationId": "6ac8bbd08adea6a429a73425",
+   "createdAt": "2026-10-09T10:10:10.277Z",
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "lastMessageAt": "2026-10-09T10:02:57.005Z",
+   "messageCount": 2,
+   "needsReply": false,
+   "patientId": {
+    "name": "Farhana Islam",
+    "id": "6ac8bbd08adea6a429a731d6"
+   },
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "summary": "Farhana submitted today's thyroid lab report, and staff confirmed receipt. The results remain pending your review ahead of her upcoming visit.",
+   "updatedAt": "2026-10-09T10:10:10.277Z",
+   "id": "6ac8bd82bfcb2f5a9d64d54a"
+  }
+ ]
+}

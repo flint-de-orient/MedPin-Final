@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 
 /// Design: Doctor-FollowUps.dc.html — "Doctor · Follow-ups (quick action)".
+/// Live data: GET /api/follow-ups?doctorId=me&locationId&condition (tabs are
+/// filtered here so the counts always match); Remind / Remind all.
 class DoctorFollowupsScreen extends StatefulWidget {
   const DoctorFollowupsScreen({super.key});
 
@@ -23,6 +28,13 @@ class _Fu {
   final List<String> actions;
   final bool booked;
   final List<String> conditions;
+
+  /// Live: follow-up, patient and booked appointment ids, phone, reminders sent.
+  final String? id;
+  final String? patientId;
+  final String? appointmentId;
+  final String phone;
+  final int reminders;
   const _Fu(
     this.name,
     this.status,
@@ -34,7 +46,74 @@ class _Fu {
     this.actions, {
     required this.booked,
     required this.conditions,
+    this.id,
+    this.patientId,
+    this.appointmentId,
+    this.phone = '',
+    this.reminders = 0,
   });
+
+  /// Not booked yet (a reminder can go out).
+  bool get remindable => !booked;
+
+  /// A row from GET /api/follow-ups.
+  factory _Fu.fromApi(Map<String, dynamic> m) {
+    final p = m.obj('patient');
+    final status = m.str('status');
+    final (label, bg, fg) = switch (status) {
+      'no_reply' => ('No reply', MP.redSoft, MP.red),
+      'booked' => ('Booked', MP.greenSoft, MP.green),
+      'reports_in' => ('Reports in', MP.primarySoft, MP.primary),
+      _ => ('Not booked', MP.amberSoft, MP.amber),
+    };
+    final booked = status == 'booked' || status == 'reports_in';
+    final conditions = [for (final c in (p['conditions'] as List? ?? const [])) '$c'];
+    final phone = p.str('phone');
+    final meta = [d1AgeSex(p), conditions.join(', '), if (phone.isNotEmpty) d1Phone(phone)].where((x) => x.isNotEmpty).join(' · ');
+    final advised = F.date(m['advisedOn']);
+    final who = m.str('doctorId') == d1MyId ? 'You advised' : 'Advised';
+    final text = m.str('adviceText').trim();
+    final advice = [
+      '$who${advised == null ? '' : ' on ${F.dayMonth(advised)}'}${text.isEmpty ? '.' : ':'}',
+      if (text.isNotEmpty) '“$text”',
+    ].join(' ');
+    final appt = m['appointmentId'] is Map ? m.obj('appointmentId') : const <String, dynamic>{};
+    final start = F.date(appt['startAt']);
+    final due = F.date(m['dueDate']);
+    final overdue = m.numOr('overdueDays').toInt();
+    final place = m['locationId'] is Map ? m.obj('locationId').str('shortName', m.obj('locationId').str('name')) : '';
+    final String when;
+    if (booked && start != null) {
+      when = [F.when(start), if (place.isNotEmpty) place].join(' · ');
+    } else if (overdue > 0) {
+      when = '${d1Count(overdue, 'day')} overdue';
+    } else {
+      when = due == null ? 'Due soon' : 'Due ${d1Day(due)}';
+    }
+    final actions = switch (status) {
+      'booked' => ['View'],
+      'no_reply' => ['Call', 'Remind'],
+      'reports_in' => start != null ? ['View'] : ['Remind', 'Book'],
+      _ => ['Remind', 'Book'],
+    };
+    return _Fu(
+      p.str('name'),
+      label,
+      bg,
+      fg,
+      meta,
+      advice,
+      when,
+      actions,
+      booked: booked,
+      conditions: conditions,
+      id: m.str('id'),
+      patientId: p.str('id', m.str('patientId')),
+      appointmentId: appt.isEmpty ? (m['appointmentId'] is String ? m['appointmentId'] as String : null) : appt.str('id'),
+      phone: phone,
+      reminders: m.numOr('remindersSent').toInt(),
+    );
+  }
 }
 
 const _overdue = [
@@ -124,10 +203,77 @@ const _locations = [
 ];
 const _conditions = ['All conditions', 'Type 2 diabetes', 'Hypertension', 'Hypothyroidism', 'Cardiology', 'CKD'];
 
-class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> {
+class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> with LiveData {
   int _tab = 0;
   String _loc = _locations.first;
   String _cond = _conditions.first;
+  final _busy = ValueNotifier(false);
+
+  /// Live filter values (null = all) and the picker options.
+  String? _locId;
+  String? _condLive;
+  List<(String, String)>? _locOptions; // (id, name)
+  List<String> _condOptions = const [];
+  int _daysBefore = 3;
+
+  @override
+  Future<Object?> fetch() async {
+    final res = await Future.wait([
+      Api.I.get('/api/follow-ups', query: {'doctorId': 'me', 'locationId': _locId, 'condition': _condLive}),
+      if (_locOptions == null) Api.I.get('/api/doctor/locations'),
+      if (_locOptions == null) Api.I.get('/api/doctor/profile').catchError((_) => null),
+    ]);
+    final fu = (res[0] as Map).cast<String, dynamic>();
+    if (_locOptions == null) {
+      _locOptions = [
+        for (final dl in res[1] as List? ?? const [])
+          if ((dl as Map)['locationId'] is Map)
+            ((dl['locationId'] as Map)['id'] as String? ?? '', (dl['locationId'] as Map)['name'] as String? ?? ''),
+      ];
+      final days = ((res[2] as Map?)?['followUpReminder'] as Map?)?['daysBefore'];
+      if (days is num) _daysBefore = days.toInt();
+    }
+    if (_condLive == null) {
+      _condOptions = {
+        for (final m in fu.list('items'))
+          for (final c in (m.obj('patient')['conditions'] as List? ?? const [])) '$c',
+      }.toList()
+        ..sort();
+    }
+    return fu;
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  List<_Fu> _liveRows(String group) => [
+    for (final m in data!.list('items'))
+      if (m['group'] == group) _Fu.fromApi(m),
+  ].where(_showTab).toList();
+
+  bool _showTab(_Fu r) {
+    if (_tab == 1 && r.booked) return false;
+    if (_tab == 2 && !r.booked) return false;
+    return true;
+  }
+
+  List<String> get _tabLabels {
+    final d = data;
+    if (d == null) return _tabs;
+    final c = d.obj('counts');
+    return ['All due · ${c.numOr('all')}', 'Not booked · ${c.numOr('notBooked')}', 'Booked · ${c.numOr('booked')}'];
+  }
+
+  String get _locLabel {
+    if (_locId == null) return _locations.first;
+    for (final o in _locOptions ?? const <(String, String)>[]) {
+      if (o.$1 == _locId) return o.$2;
+    }
+    return _locations.first;
+  }
 
   bool _show(_Fu r) {
     if (_tab == 1 && r.booked) return false;
@@ -139,33 +285,105 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> {
   }
 
   Future<void> _pickLocation() async {
+    if (isLive) {
+      final opts = [_locations.first, for (final o in _locOptions ?? const <(String, String)>[]) o.$2];
+      final v = await D1Picker.show(context, title: 'Location', options: opts, value: _locLabel);
+      if (v == null || !mounted) return;
+      String? id;
+      for (final o in _locOptions ?? const <(String, String)>[]) {
+        if (o.$2 == v) id = o.$1;
+      }
+      if (id == _locId) return;
+      setState(() => _locId = id);
+      reload(quiet: true);
+      return;
+    }
     final v = await D1Picker.show(context, title: 'Location', options: _locations, value: _loc);
     if (v != null && mounted) setState(() => _loc = v);
   }
 
   Future<void> _pickCondition() async {
+    if (isLive) {
+      final v = await D1Picker.show(context, title: 'Condition', options: [_conditions.first, ..._condOptions], value: _condLive ?? _conditions.first);
+      if (v == null || !mounted) return;
+      final c = v == _conditions.first ? null : v;
+      if (c == _condLive) return;
+      setState(() => _condLive = c);
+      reload(quiet: true);
+      return;
+    }
     final v = await D1Picker.show(context, title: 'Condition', options: _conditions, value: _cond);
     if (v != null && mounted) setState(() => _cond = v);
   }
 
-  void _act(String action, _Fu r) {
+  Future<void> _act(String action, _Fu r) async {
+    if (!isLive) {
+      switch (action) {
+        case 'Call':
+          toast(context, 'Calling ${r.name}…');
+        case 'Remind':
+          toast(context, 'Reminder sent to ${r.name}');
+        default: // Book, View
+          Nav.go(context, 'Appointments-Manage');
+      }
+      return;
+    }
     switch (action) {
       case 'Call':
-        toast(context, 'Calling ${r.name}…');
+        await d1Call(context, r.phone, r.name);
       case 'Remind':
+        final ok = await runAction(context, () => Api.I.post('/api/follow-ups/${r.id}/remind'), busy: _busy);
+        if (ok == null || !mounted) return;
         toast(context, 'Reminder sent to ${r.name}');
+        reload(quiet: true);
       default: // Book, View
-        Nav.go(context, 'Appointments-Manage');
+        await Nav.go(context, 'Appointments-Manage', args: {
+          'patientId': r.patientId,
+          'followUpId': r.id,
+          if (r.appointmentId != null) 'appointmentId': r.appointmentId,
+        });
+        if (mounted) reload(quiet: true);
     }
+  }
+
+  Future<void> _remindAll(List<_Fu> rows) async {
+    final ids = [for (final r in rows) if (r.remindable && r.id != null) r.id!];
+    if (ids.isEmpty) return;
+    final res = await runAction(context, () => Api.I.post('/api/follow-ups/remind', {'ids': ids}), busy: _busy);
+    if (res == null || !mounted) return;
+    final n = res is Map && res['reminded'] is num ? (res['reminded'] as num).toInt() : ids.length;
+    toast(context, n == 0 ? 'No reminders to send' : 'Reminders sent to ${d1Count(n, 'patient')}');
+    reload(quiet: true);
+  }
+
+  void _openPatient(_Fu r) {
+    if (!isLive) {
+      Nav.go(context, 'PP-Summary');
+      return;
+    }
+    Nav.go(context, 'Patient-Profile', args: {'patientId': r.patientId});
+  }
+
+  /// "8 – 31 Oct" / "29 Oct – 6 Nov" for the later group.
+  String _range(List<Map<String, dynamic>> later) {
+    final days = [for (final m in later) F.date(m['dueDate'])].whereType<DateTime>().toList()..sort();
+    if (days.isEmpty) return '';
+    final a = days.first;
+    final b = days.last;
+    if (F.sameDay(a, b)) return F.dayMonth(a);
+    if (a.month == b.month && a.year == b.year) return '${a.day} – ${F.dayMonth(b)}';
+    return '${F.dayMonth(a)} – ${F.dayMonth(b)}';
   }
 
   @override
   Widget build(BuildContext context) {
+    if (data != null) return _live(context);
+    final placeholder = livePlaceholder();
     final overdue = _overdue.where(_show).toList();
     final week = _thisWeek.where(_show).toList();
     return MpPage(
       header: _header(context),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         gap: 12,
         children: [
@@ -199,35 +417,97 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> {
               ),
             ),
           const _SectionHead('Later this month', '22 patients'),
-          MpCard(
-            onTap: () => Nav.go(context, 'Appointments'),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Row(
+          _laterCard('8 – 31 Oct', 3),
+        ],
+      ),
+      bottom: _bottom(context),
+    );
+  }
+
+  /// The same page from live data.
+  Widget _live(BuildContext context) {
+    final overdue = _liveRows('overdue');
+    final week = _liveRows('this_week');
+    final laterItems = [
+      for (final m in data!.list('items'))
+        if (m['group'] == 'later' && _showTab(_Fu.fromApi(m))) m,
+    ];
+    final reminded = overdue.where((r) => r.reminders > 0).length;
+    final overdueOpen = overdue.where((r) => r.remindable).length;
+    final weekOpen = week.where((r) => r.remindable).length;
+    return MpPage(
+      header: _header(context),
+      body: VGap(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        gap: 12,
+        children: [
+          if (overdue.isNotEmpty) ...[
+            _SectionHead(
+              'Overdue',
+              [d1Count(overdue.length, 'patient'), if (reminded > 0) 'reminders sent to $reminded'].join(' · '),
+              action: overdueOpen > 0 ? 'Remind all' : null,
+              onAction: () => _remindAll(overdue),
+            ),
+            _card(overdue),
+          ],
+          if (week.isNotEmpty) ...[
+            _SectionHead(
+              'This week',
+              [d1Count(week.length, 'patient'), if (weekOpen > 0) '$weekOpen not booked yet'].join(' · '),
+              action: weekOpen > 0 ? 'Remind $weekOpen' : null,
+              onAction: () => _remindAll(week),
+            ),
+            _card(week),
+          ],
+          if (overdue.isEmpty && week.isEmpty && laterItems.isEmpty)
+            MpCard(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'No follow-ups match these filters.',
+                textAlign: TextAlign.center,
+                style: tx(15, c: MP.ink2, h: 1.45),
+              ),
+            ),
+          if (laterItems.isNotEmpty) ...[
+            _SectionHead('Later this month', d1Count(laterItems.length, 'patient')),
+            _laterCard(_range(laterItems), _daysBefore),
+          ],
+        ],
+      ),
+      bottom: _bottom(context),
+    );
+  }
+
+  Widget _laterCard(String range, int daysBefore) {
+    return MpCard(
+      onTap: () => Nav.go(context, 'Appointments'),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('8 – 31 Oct', style: tx(15, w: w700)),
-                      const Gap(2),
-                      Text('Reminders go out automatically 3 days before', style: tx(13, c: MP.ink2)),
-                    ],
-                  ),
-                ),
-                const Ico(I.chevronRight, size: 18, color: MP.ink3, stroke: 2),
+                Text(range, style: tx(15, w: w700)),
+                const Gap(2),
+                Text('Reminders go out automatically ${d1Count(daysBefore, 'day')} before', style: tx(13, c: MP.ink2)),
               ],
             ),
           ),
+          const Ico(I.chevronRight, size: 18, color: MP.ink3, stroke: 2),
         ],
       ),
-      bottom: MpBottomBar(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-        child: MpButton(
-          'Schedule a follow-up',
-          icon: I.plus,
-          iconStroke: 1.75,
-          onTap: () => Nav.go(context, 'Appointments'),
-        ),
+    );
+  }
+
+  Widget _bottom(BuildContext context) {
+    return MpBottomBar(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      child: MpButton(
+        'Schedule a follow-up',
+        icon: I.plus,
+        iconStroke: 1.75,
+        onTap: () => Nav.go(context, 'Appointments'),
       ),
     );
   }
@@ -284,7 +564,7 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> {
           const Gap(12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: _Tabs(index: _tab, onChanged: (i) => setState(() => _tab = i)),
+            child: _Tabs(index: _tab, labels: _tabLabels, onChanged: (i) => setState(() => _tab = i)),
           ),
           const Gap(12),
           SingleChildScrollView(
@@ -292,9 +572,15 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                _FilterButton(_loc, active: _loc != _locations.first, onTap: _pickLocation),
+                if (isLive)
+                  _FilterButton(_locLabel, active: _locId != null, onTap: _pickLocation)
+                else
+                  _FilterButton(_loc, active: _loc != _locations.first, onTap: _pickLocation),
                 const Gap(8),
-                _FilterButton(_cond, active: _cond != _conditions.first, onTap: _pickCondition),
+                if (isLive)
+                  _FilterButton(_condLive ?? _conditions.first, active: _condLive != null, onTap: _pickCondition)
+                else
+                  _FilterButton(_cond, active: _cond != _conditions.first, onTap: _pickCondition),
               ],
             ),
           ),
@@ -316,7 +602,7 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> {
 
   Widget _row(_Fu r, {required bool first}) {
     return Tap(
-      onTap: () => Nav.go(context, 'PP-Summary'),
+      onTap: () => _openPatient(r),
       radius: 0,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -367,8 +653,9 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> {
 /// radius 12, hairline shadow, 600 #111827; others 500 #545E72.
 class _Tabs extends StatelessWidget {
   final int index;
+  final List<String> labels;
   final ValueChanged<int> onChanged;
-  const _Tabs({required this.index, required this.onChanged});
+  const _Tabs({required this.index, required this.onChanged, this.labels = _tabs});
 
   @override
   Widget build(BuildContext context) {
@@ -377,7 +664,7 @@ class _Tabs extends StatelessWidget {
       decoration: BoxDecoration(color: MP.fill, borderRadius: BorderRadius.circular(16)),
       child: Row(
         children: [
-          for (var i = 0; i < _tabs.length; i++)
+          for (var i = 0; i < labels.length; i++)
             Expanded(
               child: Semantics(
                 selected: i == index,
@@ -395,7 +682,7 @@ class _Tabs extends StatelessWidget {
                       boxShadow: i == index ? MPShadow.hairline : null,
                     ),
                     child: Text(
-                      _tabs[i],
+                      labels[i],
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tx(14, w: i == index ? w600 : w500, c: i == index ? MP.ink : MP.ink2),

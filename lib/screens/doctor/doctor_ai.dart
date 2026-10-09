@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'doctor_ai_chat.dart';
 
 /// Design: Doctor-AI.dc.html — "Doctor · AI Assistant (landing)".
+/// Live data: GET /api/ai/sessions (Recent). Questions open Doctor-AI-Chat,
+/// which starts a new conversation.
 class DoctorAiScreen extends StatefulWidget {
   const DoctorAiScreen({super.key});
 
@@ -28,9 +34,12 @@ const _recent = [
   ('How many consultations did I do last week?', '28 Sep'),
 ];
 
-class _DoctorAiScreenState extends State<DoctorAiScreen> {
+class _DoctorAiScreenState extends State<DoctorAiScreen> with LiveData {
   final _input = TextEditingController();
   final _focus = FocusNode();
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/ai/sessions');
 
   @override
   void dispose() {
@@ -39,21 +48,64 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> {
     super.dispose();
   }
 
-  void _openChat() {
+  /// Recent conversations: (question, when, session).
+  List<(String, String, Map<String, dynamic>?)> get _recentRows {
+    final d = data;
+    if (d == null) return [for (final r in _recent) (r.$1, r.$2, null)];
+    return [
+      for (final s in d.list('items'))
+        if (s.str('title').trim().isNotEmpty)
+          (s.str('title').trim(), F.date(s['lastAt']) == null ? '' : d1Recent(F.date(s['lastAt'])!), s),
+    ].take(3).toList();
+  }
+
+  String get _greeting {
+    if (!isLive) return 'What do you need, Dr. Sen?';
+    final n = Session.I.name;
+    return n.isEmpty ? 'What do you need?' : 'What do you need, ${F.doctorShort(n)}?';
+  }
+
+  Future<void> _openChat([Map<String, dynamic>? args]) async {
     _input.clear();
     _focus.unfocus();
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        settings: const RouteSettings(name: 'Doctor-AI-Chat'),
+        settings: RouteSettings(name: 'Doctor-AI-Chat', arguments: isLive ? args : null),
         builder: (_) => const DoctorAiChatScreen(fromLanding: true),
       ),
     );
+    if (mounted && isLive) reload(quiet: true);
+  }
+
+  /// Opens a new conversation that asks [text] straight away.
+  void _ask(String text, {bool spoken = false}) =>
+      _openChat({'text': text, if (spoken) 'inputMode': 'spoken'});
+
+  void _openSession(Map<String, dynamic>? s) {
+    if (s == null) {
+      _openChat();
+      return;
+    }
+    final p = s['patientId'];
+    _openChat({
+      'sessionId': s.str('id'),
+      if (p is Map) 'patientId': p['id'],
+      if (p is String) 'patientId': p,
+    });
   }
 
   Future<void> _voice() async {
     final r = await Nav.go<String>(context, 'Doctor-AI-Voice');
     if (!mounted) return;
-    if (r == 'ask') _openChat();
+    if (r == 'ask') {
+      if (isLive) {
+        // No speech-to-text yet: the question has to be typed.
+        toast(context, "Voice questions aren't available yet. Please type your question.");
+        _focus.requestFocus();
+      } else {
+        _openChat();
+      }
+    }
     if (r == 'type') _focus.requestFocus();
   }
 
@@ -61,6 +113,7 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final recent = _recentRows;
     return MpPage(
       header: MpHeader('AI Assistant', background: MP.white, border: true, actions: [_HistoryLink(onTap: _history)]),
       body: Padding(
@@ -84,7 +137,7 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> {
                 ),
                 const Gap(14),
                 Text(
-                  'What do you need, Dr. Sen?',
+                  _greeting,
                   textAlign: TextAlign.center,
                   style: tx(24, w: w800, h: 1.2, em: -0.02),
                 ),
@@ -114,7 +167,7 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Tap(
-                        onTap: _openChat,
+                        onTap: () => _ask(_prompts[i].$2),
                         radius: 0,
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -150,10 +203,16 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> {
               trailing: Tap(onTap: _history, radius: 6, child: Text('See all', style: tx(14, w: w600, c: MP.primary))),
             ),
             const Gap(12),
-            for (var i = 0; i < _recent.length; i++) ...[
+            if (livePlaceholder() case final p?) p,
+            if (data != null && recent.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text('No conversations yet', style: tx(14, c: MP.ink2)),
+              ),
+            for (var i = 0; i < recent.length; i++) ...[
               if (i > 0) const Gap(8),
               Tap(
-                onTap: _openChat,
+                onTap: () => _openSession(recent[i].$3),
                 radius: 16,
                 color: MP.white,
                 border: MP.line,
@@ -164,9 +223,9 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(_recent[i].$1, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(15, w: w600)),
+                          Text(recent[i].$1, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(15, w: w600)),
                           const Gap(2),
-                          Text(_recent[i].$2, style: tx(13, c: MP.ink3)),
+                          Text(recent[i].$2, style: tx(13, c: MP.ink3)),
                         ],
                       ),
                     ),
@@ -184,7 +243,7 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> {
         focusNode: _focus,
         hint: 'Ask anything · type @ for a patient',
         caption: 'Answers come from your records. Check before acting — not a diagnosis.',
-        onSend: (_) => _openChat(),
+        onSend: _ask,
         onMic: _voice,
       ),
     );

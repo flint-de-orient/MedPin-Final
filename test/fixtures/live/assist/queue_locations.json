@@ -1,0 +1,32 @@
+{
+ "_note": "Shape of GET /api/queue/locations (routes/appointments.js). The live endpoint currently answers 500 (see report), so this response is assembled from the recorded doctor_locations.json and queue.json of the same database.",
+ "defaultLocationId": null,
+ "items": [
+  {
+   "locationId": "6ac8bbcee42c9f0836e98563",
+   "name": "City Care Clinic — Salt Lake",
+   "type": "clinic",
+   "sessions": [{ "startMin": 540, "endMin": 780 }],
+   "openNow": true,
+   "opensAt": null,
+   "closedReason": null,
+   "nextSession": null,
+   "booked": 8,
+   "waiting": 2,
+   "slotsLeft": 0
+  },
+  {
+   "locationId": "6ac8bbd08adea6a429a73189",
+   "name": "City Care — New Town",
+   "type": "clinic",
+   "sessions": [],
+   "openNow": false,
+   "opensAt": null,
+   "closedReason": "no_session",
+   "nextSession": "2026-10-10T12:30:00.000Z",
+   "booked": 0,
+   "waiting": 0,
+   "slotsLeft": 0
+  }
+ ]
+}

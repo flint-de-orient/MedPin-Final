@@ -1,53 +1,135 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'queue_list.dart';
 
 /// Design: Queue-Select.dc.html — "Patient queue · choose location"
 /// (sheet over Doctor-Dashboard).
+/// Live data: GET /api/queue/locations; "Don't ask again today" →
+/// PUT /api/doctor/default-queue-location.
 class QueueSelectSheet extends StatefulWidget {
   /// Location selected when the sheet opens (index into [D1Location.all]).
   final int initial;
 
+  /// Live: id of the location selected when the sheet opens.
+  final String? initialId;
+
   /// When true (opened from the queue's "Change"), the sheet pops with the
-  /// chosen index instead of opening the queue.
+  /// chosen index (live: the location id) instead of opening the queue.
   final bool pick;
-  const QueueSelectSheet({super.key, this.initial = 0, this.pick = false});
+  const QueueSelectSheet({super.key, this.initial = 0, this.initialId, this.pick = false});
 
   @override
   State<QueueSelectSheet> createState() => _QueueSelectSheetState();
 }
 
-class _QueueSelectSheetState extends State<QueueSelectSheet> {
+class _QueueSelectSheetState extends State<QueueSelectSheet> with LiveData {
   late int _sel = widget.initial;
   bool _dontAsk = true;
+  final _busy = ValueNotifier(false);
 
-  void _show() {
-    if (widget.pick) {
-      Navigator.pop(context, _sel);
+  @override
+  Future<Object?> fetch() => d1QueueLocations();
+
+  @override
+  Future<void> reload({bool quiet = false}) async {
+    final first = data == null;
+    await super.reload(quiet: quiet);
+    if (!first || !mounted || data == null) return;
+    final locs = _locations;
+    final def = data!.str('defaultLocationId');
+    // "Don't ask again today": go straight to today's chosen queue.
+    if (!widget.pick && def.isNotEmpty && locs.any((l) => l.id == def && !l.closed)) {
+      _open(def);
       return;
     }
+    final want = widget.initialId ?? (def.isNotEmpty ? def : null);
+    var i = want == null ? -1 : locs.indexWhere((l) => l.id == want);
+    if (i < 0 || locs[i].closed) i = locs.indexWhere((l) => l.badge == 'Open now');
+    if (i < 0) i = locs.indexWhere((l) => !l.closed);
+    setState(() {
+      _sel = i < 0 ? 0 : i;
+      _dontAsk = widget.pick ? def.isNotEmpty : true;
+    });
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  List<D1Location> get _locations {
+    final d = data;
+    if (d == null) return D1Location.all;
+    return [for (final m in d.list('items')) D1Location.fromApi(m)];
+  }
+
+  void _open(String id) {
     final nav = Navigator.of(context);
-    final sel = _sel;
     nav.pop();
     nav.push(
       MaterialPageRoute<void>(
-        settings: const RouteSettings(name: 'Queue-List'),
-        builder: (_) => QueueListScreen(location: sel),
+        settings: RouteSettings(name: 'Queue-List', arguments: {'locationId': id}),
+        builder: (_) => const QueueListScreen(),
       ),
     );
   }
 
+  Future<void> _show() async {
+    if (!isLive) {
+      if (widget.pick) {
+        Navigator.pop(context, _sel);
+        return;
+      }
+      final nav = Navigator.of(context);
+      final sel = _sel;
+      nav.pop();
+      nav.push(
+        MaterialPageRoute<void>(
+          settings: const RouteSettings(name: 'Queue-List'),
+          builder: (_) => QueueListScreen(location: sel),
+        ),
+      );
+      return;
+    }
+    final locs = _locations;
+    if (data == null || locs.isEmpty || _sel >= locs.length || locs[_sel].closed) {
+      toast(context, 'Choose a location first');
+      return;
+    }
+    final id = locs[_sel].id!;
+    final hadDefault = data!.str('defaultLocationId').isNotEmpty;
+    if (_dontAsk || hadDefault) {
+      final ok = await runAction(
+        context,
+        () => Api.I.put('/api/doctor/default-queue-location', {'locationId': _dontAsk ? id : null}),
+        busy: _busy,
+      );
+      if (ok == null || !mounted) return;
+    }
+    if (widget.pick) {
+      Navigator.pop(context, id);
+    } else {
+      _open(id);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    const locations = D1Location.all;
+    final placeholder = livePlaceholder();
+    final locations = placeholder == null ? _locations : const <D1Location>[];
     return MpSheet(
       title: 'Which queue are you seeing?',
       subtitle: "Pick the location you're consulting at right now. You can switch any time.",
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (placeholder != null) placeholder,
+          if (placeholder == null && locations.isEmpty) Text('No consulting locations yet', style: tx(14, c: MP.ink2)),
           for (var i = 0; i < locations.length; i++) ...[
             if (i > 0) const Gap(8),
             _Option(

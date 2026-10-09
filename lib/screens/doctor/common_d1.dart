@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch D1: AI Assistant composer, status pill, option
@@ -107,7 +112,11 @@ class D1Location {
   /// Set when the location is closed today (option is disabled).
   final String? note;
 
+  /// API id of the location (live data only).
+  final String? id;
+
   const D1Location({
+    this.id,
     required this.name,
     required this.a11y,
     required this.kind,
@@ -121,6 +130,51 @@ class D1Location {
   });
 
   bool get closed => note != null;
+
+  /// A Queue-Select card from GET /api/queue/locations.
+  factory D1Location.fromApi(Map<String, dynamic> m) {
+    final name = m.str('name');
+    final type = d1LocationType(m.str('type'));
+    final hours = d1Hours(m.list('sessions'));
+    final booked = m.numOr('booked').toInt();
+    final waiting = m.numOr('waiting').toInt();
+    final open = m['closedReason'] == null;
+    String badge;
+    var bg = MP.fill;
+    var fg = MP.ink2;
+    if (m['openNow'] == true) {
+      badge = 'Open now';
+      bg = MP.greenSoft;
+      fg = MP.green;
+    } else if (m['opensAt'] is num) {
+      badge = 'Opens ${d1Minutes((m['opensAt'] as num).toInt())}';
+    } else {
+      badge = 'Closed now';
+    }
+    String? note;
+    if (!open) {
+      final next = F.date(m['nextSession']);
+      final why = switch (m.str('closedReason')) {
+        'doctor_on_leave' => 'On leave today',
+        'location_inactive' => 'Not open',
+        _ => 'Closed today',
+      };
+      note = next == null ? why : '$why · next session ${d1Day(next)}';
+    }
+    return D1Location(
+      id: m.str('locationId'),
+      name: name,
+      a11y: name.replaceAll(' · ', ', ').replaceAll(' — ', ', '),
+      kind: hours.isEmpty ? type : '$type · $hours',
+      hours: hours.isEmpty ? 'Closed today' : 'Today $hours',
+      badge: badge,
+      badgeBg: bg,
+      badgeFg: fg,
+      booked: '$booked booked',
+      waiting: waiting > 0 ? '$waiting waiting' : null,
+      note: note,
+    );
+  }
 
   static const all = [
     D1Location(
@@ -334,3 +388,166 @@ class _D1ComposerState extends State<D1Composer> {
     );
   }
 }
+
+// ── Live helpers (batch D1) ──
+
+/// 540 → "9:00 AM" (minutes after midnight).
+String d1Minutes(int min) => F.time(DateTime(2000, 1, 1, min ~/ 60, min % 60));
+
+/// Sessions [{startMin, endMin}] → "9:00 AM – 1:00 PM, 5:00 PM – 8:00 PM".
+String d1Hours(List<Map<String, dynamic>> sessions) => sessions
+    .map((s) => '${d1Minutes(s.numOr('startMin').toInt())} – ${d1Minutes(s.numOr('endMin').toInt())}')
+    .join(', ');
+
+/// "Thu, 1 Oct"
+String d1Day(DateTime d) {
+  final s = F.dateLong(d);
+  return s.substring(0, s.lastIndexOf(' '));
+}
+
+/// "Today, 8:42 AM", "Yesterday", "28 Sep" — recent-list times.
+String d1Recent(DateTime d, {DateTime? now}) {
+  final n = now ?? DateTime.now();
+  if (F.sameDay(d, n)) return 'Today, ${F.time(d)}';
+  if (F.sameDay(d, n.subtract(const Duration(days: 1)))) return 'Yesterday';
+  return F.dayMonth(d);
+}
+
+String d1LocationType(String t) => switch (t) {
+  'clinic' => 'Clinic',
+  'chamber' => 'Chamber',
+  'hospital' => 'Hospital',
+  'nursing_home' => 'Nursing home',
+  'diagnostic_centre' => 'Diagnostic centre',
+  'video' => 'Video',
+  _ => t.isEmpty ? 'Clinic' : '${t[0].toUpperCase()}${t.substring(1).replaceAll('_', ' ')}',
+};
+
+/// "45 M", "29 F" (empty when unknown).
+String d1AgeSex(Map<String, dynamic> p) {
+  final age = p['age'] is num ? '${(p['age'] as num).toInt()}' : '';
+  final g = switch (p.str('gender')) {
+    'male' => 'M',
+    'female' => 'F',
+    'other' => 'O',
+    _ => '',
+  };
+  return [age, g].where((x) => x.isNotEmpty).join(' ');
+}
+
+/// "9876543210" → "+91 98765 43210"; other numbers unchanged.
+String d1Phone(String phone) {
+  final d = phone.replaceAll(RegExp(r'\D'), '');
+  final ten = d.length == 12 && d.startsWith('91') ? d.substring(2) : d;
+  if (ten.length != 10) return phone;
+  return '+91 ${ten.substring(0, 5)} ${ten.substring(5)}';
+}
+
+/// The signed-in user's id.
+String get d1MyId => Session.I.user.str('id');
+
+/// The AI's Markdown answer as plain text: no ** / __ / # markers, bullets as •.
+String d1PlainText(String md) {
+  final lines = <String>[];
+  for (var line in md.replaceAll('\r', '').split('\n')) {
+    line = line.trimRight();
+    if (RegExp(r'^\s*(-{3,}|\*{3,}|_{3,})\s*$').hasMatch(line)) continue;
+    line = line.replaceFirst(RegExp(r'^\s*#{1,6}\s+'), '');
+    line = line.replaceFirstMapped(RegExp(r'^(\s*)[*\-+]\s+'), (m) => '${m[1]}• ');
+    line = line.replaceAllMapped(RegExp(r'\*\*(.+?)\*\*|__(.+?)__'), (m) => m[1] ?? m[2] ?? '');
+    line = line.replaceAllMapped(RegExp(r'(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])'), (m) => m[1] ?? '');
+    line = line.replaceAll('`', '');
+    lines.add(line);
+  }
+  return lines.join('\n').replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+}
+
+/// Queue-Select cards: GET /api/queue/locations. If that endpoint fails on
+/// the server, the same cards are built from the doctor's weekly schedule
+/// (GET /api/doctor/locations) and each location's queue (GET /api/queue).
+Future<Map<String, dynamic>> d1QueueLocations() async {
+  try {
+    return ((await Api.I.get('/api/queue/locations')) as Map).cast<String, dynamic>();
+  } on ApiException catch (e) {
+    if (e.status < 500) rethrow;
+  }
+  const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  List<Map<String, dynamic>> sessionsOn(Map<String, dynamic> dl, DateTime d) {
+    for (final w in dl.obj('schedule').list('week')) {
+      if (w['weekday'] == days[d.weekday - 1]) return w.list('sessions');
+    }
+    return const [];
+  }
+
+  final dls = <Map<String, dynamic>>[
+    for (final x in (await Api.I.get('/api/doctor/locations')) as List? ?? const [])
+      if ((x as Map)['status'] == 'active' && x['locationId'] is Map) x.cast<String, dynamic>(),
+  ];
+  final queues = await Future.wait([
+    for (final dl in dls) Api.I.get('/api/queue', query: {'locationId': dl.obj('locationId').str('id')}),
+  ]);
+  final now = DateTime.now();
+  final nowMin = now.hour * 60 + now.minute;
+  final items = <Map<String, dynamic>>[];
+  for (var i = 0; i < dls.length; i++) {
+    final dl = dls[i];
+    final loc = dl.obj('locationId');
+    final sessions = sessionsOn(dl, now);
+    final open = sessions.isNotEmpty;
+    String? next;
+    if (!open) {
+      for (var k = 1; k <= 14 && next == null; k++) {
+        final day = DateTime(now.year, now.month, now.day + k);
+        final s = sessionsOn(dl, day);
+        if (s.isNotEmpty) {
+          final m = s.first.numOr('startMin').toInt();
+          next = DateTime(day.year, day.month, day.day, m ~/ 60, m % 60).toUtc().toIso8601String();
+        }
+      }
+    }
+    final stats = ((queues[i] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{}).obj('stats');
+    final starts = [for (final s in sessions) s.numOr('startMin').toInt()];
+    items.add({
+      'locationId': loc.str('id'),
+      'name': loc.str('name'),
+      'type': loc.str('type'),
+      'sessions': sessions,
+      'openNow': sessions.any((s) => nowMin >= s.numOr('startMin') && nowMin < s.numOr('endMin')),
+      'opensAt': open ? starts.where((m) => m > nowMin).firstOrNull : null,
+      'closedReason': open ? null : 'no_session',
+      'nextSession': next,
+      'booked': stats.numOr('all').toInt(),
+      'waiting': stats.numOr('waiting').toInt(),
+    });
+  }
+  return {'defaultLocationId': null, 'items': items};
+}
+
+/// The screen's [Nav.args] map. Safe to call first thing in
+/// `LiveData.fetch()` (which starts during initState): it reads the route
+/// once the State is set up.
+Future<Map<String, dynamic>> d1Args(State s) async {
+  await Future<void>.value();
+  if (!s.mounted) return const {};
+  final a = Nav.args<Map>(s.context);
+  return a == null ? const {} : a.cast<String, dynamic>();
+}
+
+/// Opens the phone dialer for [phone] (toast when there is no number).
+Future<void> d1Call(BuildContext context, String phone, String name) async {
+  final digits = phone.replaceAll(RegExp(r'[^\d+]'), '');
+  if (digits.isEmpty) {
+    toast(context, 'No phone number for $name');
+    return;
+  }
+  bool ok;
+  try {
+    ok = await launchUrl(Uri(scheme: 'tel', path: digits));
+  } catch (_) {
+    ok = false;
+  }
+  if (!ok && context.mounted) toast(context, "Couldn't start a call to $name");
+}
+
+/// "1 patient", "3 patients"
+String d1Count(int n, String one, [String? many]) => '$n ${n == 1 ? one : (many ?? '${one}s')}';

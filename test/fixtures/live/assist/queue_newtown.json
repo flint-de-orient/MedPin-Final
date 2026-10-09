@@ -1,0 +1,13 @@
+{
+ "updatedAt": "2026-10-09T10:15:25.966Z",
+ "stats": {
+  "all": 0,
+  "notArrived": 0,
+  "waiting": 0,
+  "inConsultation": 0,
+  "completed": 0,
+  "missed": 0,
+  "avgWaitMin": null
+ },
+ "items": []
+}
