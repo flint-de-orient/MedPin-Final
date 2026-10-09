@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
 
 /// Design: Patient-Profile.dc.html — "Patient profile".
+/// Live data: GET /api/patients/:id with /vitals, /lab-results,
+/// /trends/HbA1c, /visits and the patient's alerts. "Save draft" starts (or
+/// resumes) today's consultation and saves it; "Send prescription" also
+/// issues it and sends it to the patient.
 class PatientProfileScreen extends StatefulWidget {
   const PatientProfileScreen({super.key});
 
@@ -11,7 +19,7 @@ class PatientProfileScreen extends StatefulWidget {
   State<PatientProfileScreen> createState() => _PatientProfileScreenState();
 }
 
-class _PatientProfileScreenState extends State<PatientProfileScreen> {
+class _PatientProfileScreenState extends State<PatientProfileScreen> with LiveData {
   static const _meds = [
     ('Metformin 500 mg', '1-0-1 · After food · 30 days'),
     ('Atorvastatin 10 mg', '0-0-1 · At night · 30 days'),
@@ -25,11 +33,49 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
   final Set<int> _picked = {0, 1};
   int? _preset = 2;
   final _date = TextEditingController(text: 'Thu, 29 Oct 2026');
+  final _dx = TextEditingController();
+  final _advice = TextEditingController();
+  bool _dxFilled = false;
+  String? _consultationId;
+  final _busy = ValueNotifier(false);
+
+  @override
+  void initState() {
+    super.initState();
+    if (isLive) {
+      _picked.clear();
+      _date.text = _fmt(_today.add(Duration(days: _presets[_preset!].$2)));
+    }
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    final b = await d6Load(context, {
+      'vitals': '/vitals',
+      'labs': '/lab-results',
+      'trend': '/trends/HbA1c',
+      'visits': '/visits',
+      'alerts': '/api/alerts?status=all&patientId={id}',
+    });
+    if (!_dxFilled) {
+      _dxFilled = true;
+      _dx.text = D6Rec(b).conditions.join('; ');
+    }
+    return b;
+  }
 
   @override
   void dispose() {
     _date.dispose();
+    _dx.dispose();
+    _advice.dispose();
+    _busy.dispose();
     super.dispose();
+  }
+
+  static DateTime get _today {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
   }
 
   static String _fmt(DateTime d) {
@@ -38,11 +84,80 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
     return '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]} ${d.year}';
   }
 
+  /// Reads "Thu, 29 Oct 2026" / "29 Oct 2026" / "2026-10-29" back.
+  static DateTime? _parse(String s) {
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    final iso = DateTime.tryParse(s.trim());
+    if (iso != null) return iso;
+    final m = RegExp(r'(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})').firstMatch(s);
+    if (m == null) return null;
+    final mo = months.indexOf(m.group(2)!.toLowerCase());
+    if (mo < 0) return null;
+    return DateTime(int.parse(m.group(3)!), mo + 1, int.parse(m.group(1)!));
+  }
+
+  static String _day(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   void _pickPreset(int i) {
     setState(() {
       _preset = i;
-      _date.text = _fmt(DateTime.utc(2026, 10, 1 + _presets[i].$2));
+      _date.text = isLive ? _fmt(_today.add(Duration(days: _presets[i].$2))) : _fmt(DateTime.utc(2026, 10, 1 + _presets[i].$2));
     });
+  }
+
+  /// "1-0-1" → {morning: 1, afternoon: 0, night: 1}
+  static Map<String, num> _dose(String pattern) {
+    final p = [for (final x in pattern.split('-')) num.tryParse(x.trim()) ?? 0];
+    return {'morning': p.isNotEmpty ? p[0] : 0, 'afternoon': p.length > 1 ? p[1] : 0, 'night': p.length > 2 ? p[2] : 0};
+  }
+
+  /// Starts (or resumes) today's consultation and saves the draft.
+  Future<String> _saveDraft(D6Rec r) async {
+    var id = _consultationId;
+    if (id == null) {
+      final visit = r.nextVisit;
+      final at = F.date(visit['startAt']);
+      final today = at != null && F.sameDay(at, DateTime.now()) && visit.str('id').isNotEmpty;
+      final c = await Api.I.post('/api/consultations', {'patientId': r.id, if (today) 'appointmentId': visit.str('id')});
+      id = '${(c as Map)['id'] ?? c['_id']}';
+      _consultationId = id;
+    }
+    final follow = _parse(_date.text);
+    final dx = [for (final d in _dx.text.split(RegExp(r'[;\n]'))) if (d.trim().isNotEmpty) d.trim()];
+    await Api.I.patch('/api/consultations/$id', {
+      'diagnoses': [for (final d in dx) {'name': d, 'source': 'custom'}],
+      'labOrders': [for (final i in _picked) {'testName': _tests[i], 'source': 'typed', 'selected': true}],
+      'advice': {'items': const [], 'freeText': _advice.text.trim()},
+      'followUp': follow == null ? {'enabled': false} : {'enabled': true, 'date': _day(follow), 'remindPatient': true},
+      'medications': [
+        for (final m in r.medicines)
+          if (_dose(m.str('pattern')).values.any((v) => v > 0) || m['frequency'] == 'weekly' || m['frequency'] == 'as_needed')
+            {
+              'name': m.str('name'),
+              if (m.str('strength').isNotEmpty) 'strength': m.str('strength'),
+              'dose': _dose(m.str('pattern')),
+              'frequency': m.str('frequency', 'daily'),
+              'change': 'continued',
+              'entrySource': 'typed',
+            },
+      ],
+    });
+    return id;
+  }
+
+  Future<void> _draftAction(BuildContext context, D6Rec r, {required bool send}) async {
+    final ok = await runAction(context, () async {
+      final id = await _saveDraft(r);
+      if (!send) return true;
+      final issued = await Api.I.post('/api/consultations/$id/issue');
+      final rx = (issued as Map)['prescription'] as Map?;
+      await Api.I.post('/api/prescriptions/${rx?['id'] ?? rx?['_id']}/send');
+      _consultationId = null;
+      return true;
+    }, busy: _busy);
+    if (ok != true || !context.mounted) return;
+    toast(context, send ? 'Prescription sent to ${r.first}' : 'Draft saved');
+    reload(quiet: true);
   }
 
   void _toggleTest(int i) {
@@ -53,39 +168,62 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return MpPage(
-      header: const MpHeader(
-        'Patient profile',
-        actions: [MpIconButton(I.moreVSmall, label: 'More options', filled: true)],
-      ),
-      body: VGap(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        gap: 16,
-        children: [
-          const D6ProfileHero(consult: true),
-          const D6ConsentNote(),
-          const D6RecordCaption(),
-          const D6OverviewCard(),
-          const D6MeasurementsCard(),
-          const _Nutrition(),
-          const _Hba1cHistory(),
-          const _TestReports(),
-          const _Ecg(),
-          const _RecentAlerts(),
-          const _PastConsultations(),
-          const _AiContext(),
-          Padding(padding: const EdgeInsets.only(top: 8), child: _prescription(context)),
-        ],
+    final rec = data == null ? null : D6Rec(data!);
+    final placeholder = livePlaceholder();
+    return D6Scope(
+      rec: rec,
+      onChanged: () => reload(quiet: true),
+      child: Builder(
+        builder: (context) => MpPage(
+          header: MpHeader(
+            'Patient profile',
+            actions: [
+              MpIconButton(I.moreVSmall, label: 'More options', filled: true, onTap: rec == null ? null : () => d6MoreOptions(context)),
+            ],
+          ),
+          body: placeholder ?? VGap(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+            gap: 16,
+            children: [
+              const D6ProfileHero(consult: true),
+              if (D6ConsentNote.shown(context)) const D6ConsentNote(),
+              const D6RecordCaption(),
+              const D6OverviewCard(),
+              if (D6MeasurementsCard.shown(context)) const D6MeasurementsCard(),
+              if (rec == null || _Nutrition.dietician(rec) != null) const _Nutrition(),
+              if (rec == null || _Hba1cHistory.points(rec).isNotEmpty) const _Hba1cHistory(),
+              if (rec == null || _TestReports.rows(rec).isNotEmpty) const _TestReports(),
+              if (rec == null || _Ecg.ecg(rec) != null) const _Ecg(),
+              if (rec == null || _RecentAlerts.alerts(rec).isNotEmpty) const _RecentAlerts(),
+              if (rec == null || _PastConsultations.visits(rec).isNotEmpty) const _PastConsultations(),
+              if (rec == null || _AiContext.note(rec) != null) const _AiContext(),
+              Padding(padding: const EdgeInsets.only(top: 8), child: _prescription(context, rec)),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _prescription(BuildContext context) {
+  Widget _prescription(BuildContext context, D6Rec? rec) {
+    final meds = rec == null
+        ? _meds
+        : [
+            for (final m in rec.medicines)
+              (
+                '${m.str('name')} ${m.str('strength')}'.trim(),
+                [
+                  m.str('pattern'),
+                  m.str('frequency').replaceAll('_', ' '),
+                  if (F.date(m['endDate']) != null) 'until ${F.dayMonth(F.date(m['endDate'])!)}',
+                ].where((s) => s.isNotEmpty).join(' · '),
+              ),
+          ];
     return MpCard(
       child: VGap(
         gap: 24,
         children: [
-          const D6Title("Today's prescription", sub: 'Draft · Dr. Arjun Sen'),
+          D6Title("Today's prescription", sub: rec == null ? 'Draft · Dr. Arjun Sen' : 'Draft · ${Session.I.name}'),
 
           // Current medications
           Column(
@@ -100,12 +238,13 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                       'Add medicine',
                       leading: I.plus,
                       minHeight: 44,
-                      onTap: () => Nav.go(context, 'Consult-Voice'),
+                      onTap: () => d6Go(context, 'Consult-Voice', {if (_consultationId != null) 'consultationId': _consultationId}),
                     ),
                   ],
                 ),
               ),
-              for (final m in _meds)
+              if (meds.isEmpty) Text('No current medicines', style: tx(14, c: MP.ink2)),
+              for (final m in meds)
                 D6Row(
                   child: Row(
                     children: [
@@ -126,7 +265,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
                         iconSize: 18,
                         color: MP.primary,
                         background: MP.primarySoft,
-                        onTap: () => Nav.go(context, 'Consult-Dosage'),
+                        onTap: () => d6Go(context, 'Consult-Dosage', {if (_consultationId != null) 'consultationId': _consultationId}),
                       ),
                     ],
                   ),
@@ -157,19 +296,28 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
           ),
 
           // Diagnosis and advice
-          const VGap(
-            gap: 16,
-            children: [
-              MpInput(label: 'Diagnosis', value: 'Type 2 diabetes mellitus; PCOS'),
-              MpInput(
-                label: 'Advice',
-                value:
-                    'Walk 30 minutes daily. Avoid sweets and fried food. Come in at once if chest tightness returns.',
-                maxLines: 3,
-                height: 104,
-              ),
-            ],
-          ),
+          if (rec == null)
+            const VGap(
+              gap: 16,
+              children: [
+                MpInput(label: 'Diagnosis', value: 'Type 2 diabetes mellitus; PCOS'),
+                MpInput(
+                  label: 'Advice',
+                  value:
+                      'Walk 30 minutes daily. Avoid sweets and fried food. Come in at once if chest tightness returns.',
+                  maxLines: 3,
+                  height: 104,
+                ),
+              ],
+            )
+          else
+            VGap(
+              gap: 16,
+              children: [
+                MpInput(label: 'Diagnosis', controller: _dx),
+                MpInput(label: 'Advice', controller: _advice, maxLines: 3, height: 104),
+              ],
+            ),
 
           // Follow-up
           Column(
@@ -198,10 +346,19 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
           // Actions
           Row(
             children: [
-              Expanded(child: _ActionButton('Save draft', secondary: true, onTap: () => toast(context, 'Draft saved'))),
+              Expanded(
+                child: _ActionButton(
+                  'Save draft',
+                  secondary: true,
+                  onTap: rec == null ? () => toast(context, 'Draft saved') : () => _draftAction(context, rec, send: false),
+                ),
+              ),
               const Gap(12),
               Expanded(
-                child: _ActionButton('Send prescription', onTap: () => toast(context, 'Prescription sent to Priya')),
+                child: _ActionButton(
+                  'Send prescription',
+                  onTap: rec == null ? () => toast(context, 'Prescription sent to Priya') : () => _draftAction(context, rec, send: true),
+                ),
               ),
             ],
           ),
@@ -218,8 +375,19 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
 class _Nutrition extends StatelessWidget {
   const _Nutrition();
 
+  static Map<String, dynamic>? dietician(D6Rec r) {
+    for (final c in r.careTeam) {
+      if (c['role'] == 'dietician' && c.str('name').isNotEmpty) return c;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final r = D6Scope.recOf(context);
+    final d = r == null ? null : dietician(r);
+    final name = d?.str('name') ?? 'Mou Banerjee';
+    final where = r == null ? 'City Care Clinic' : D6Rec.practiceName;
     return MpCard(
       child: VGap(
         gap: 16,
@@ -227,15 +395,15 @@ class _Nutrition extends StatelessWidget {
           Text('Nutrition', style: tx(20, w: w700, h: 1.25)),
           Row(
             children: [
-              const MpAvatar('MB', size: 40, fontSize: 14),
+              MpAvatar(r == null ? 'MB' : F.initials(name), size: 40, fontSize: 14),
               const Gap(12),
               Flexible(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Covered by Mou Banerjee', style: tx(16, w: w600)),
+                    Text('Covered by $name', style: tx(16, w: w600)),
                     const Gap(2),
-                    Text('Dietician, City Care Clinic', style: tx(14, c: MP.ink2, h: 1.45)),
+                    Text(where.isEmpty ? 'Dietician' : 'Dietician, $where', style: tx(14, c: MP.ink2, h: 1.45)),
                   ],
                 ),
               ),
@@ -275,24 +443,53 @@ class _Hba1cHistory extends StatelessWidget {
 <text x="286" y="142" font-size="12" fill="#69738A" text-anchor="middle">Jul ’26</text>
 </svg>''';
 
+  /// The last 6 HbA1c values, oldest first.
+  static List<(DateTime, num)> points(D6Rec r) {
+    final t = r.m['trend'];
+    final pts = [
+      for (final x in (t is List ? t : const []))
+        if ((x as Map)['value'] is num && F.date(x['at']) != null) (F.date(x['at'])!, x['value'] as num),
+    ];
+    return pts.length > 6 ? pts.sublist(pts.length - 6) : pts;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final r = D6Scope.recOf(context);
+    if (r == null) return _card('Latest 7.2% · target below 7.0%', true, _chart, 'HbA1c: Jun 2025 7.9%, Sep 2025 8.4%, Jan 2026 6.8%, Jul 2026 7.2%. Target 7.0%.');
+    final pts = points(r);
+    final target = r.detail.obj('targets').numOr('hba1c', 7);
+    final last = pts.last.$2;
+    return _card(
+      'Latest ${d6Num(last)}% · target below ${target.toStringAsFixed(1)}%',
+      last >= target,
+      d6HistorySvg(pts, target: target),
+      'HbA1c: ${pts.map((p) => '${d6MonthYear(p.$1)} ${d6Num(p.$2)}%').join(', ')}. Target ${target.toStringAsFixed(1)}%.',
+    );
+  }
+
+  Widget _card(String sub, bool above, String svg, String label) {
     return MpCard(
       child: VGap(
         gap: 16,
         children: [
-          const Row(
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: D6Title('HbA1c history', sub: 'Latest 7.2% · target below 7.0%')),
-              Gap(12),
-              Padding(padding: EdgeInsets.only(top: 2), child: D6Pill('Above target', bg: MP.amberSoft, fg: MP.amber)),
+              Expanded(child: D6Title('HbA1c history', sub: sub)),
+              const Gap(12),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: above
+                    ? const D6Pill('Above target', bg: MP.amberSoft, fg: MP.amber)
+                    : const D6Pill('On target', bg: MP.greenSoft, fg: MP.green),
+              ),
             ],
           ),
           Semantics(
-            label: 'HbA1c: Jun 2025 7.9%, Sep 2025 8.4%, Jan 2026 6.8%, Jul 2026 7.2%. Target 7.0%.',
+            label: label,
             image: true,
-            child: const D6Chart(_chart, width: 310, height: 150),
+            child: D6Chart(svg, width: 310, height: 150),
           ),
         ],
       ),
@@ -334,19 +531,69 @@ class _TestReports extends StatelessWidget {
     ),
   ];
 
+  /// The 3 most recent tests (one row per test name) with a sparkline of
+  /// their key value — the first abnormal one, else the first — over time.
+  static List<(String, String, Color, Color, String, String, String)> rows(D6Rec r) {
+    final labs = r.m.obj('labs').list('items').where((l) => l.str('ecgInterpretation').isEmpty).toList();
+    final byTest = <String, List<Map<String, dynamic>>>{};
+    for (final l in labs) {
+      byTest.putIfAbsent(l.str('testName'), () => []).add(l);
+    }
+    final out = <(String, String, Color, Color, String, String, String)>[];
+    for (final e in byTest.entries.take(3)) {
+      final latest = e.value.first;
+      final values = latest.list('values');
+      if (values.isEmpty) continue;
+      final key = values.firstWhere((v) => v['flag'] != null && v['flag'] != 'normal', orElse: () => values.first);
+      final analyte = key.str('analyte');
+      final flag = key.str('flag', 'normal');
+      final ok = flag == 'normal';
+      final at = F.date(latest['collectedAt']);
+      final unit = key.str('unit');
+      final value = key['value'] != null ? d6Num(key['value']) : key.str('valueText');
+      final history = [
+        for (final l in e.value.reversed)
+          for (final v in l.list('values'))
+            if (v['analyte'] == analyte && v['value'] is num) v['value'] as num,
+      ];
+      final trend = history.length < 2
+          ? 'one report so far'
+          : history.last > history.first
+              ? 'rising over the last ${history.length} reports'
+              : history.last < history.first
+                  ? 'falling over the last ${history.length} reports'
+                  : 'steady over the last ${history.length} reports';
+      out.add((
+        e.key,
+        ok ? 'Normal' : d6Cap(flag),
+        ok ? MP.greenSoft : MP.amberSoft,
+        ok ? MP.green : MP.amber,
+        [
+          '$analyte ${unit == '%' ? '$value%' : [value, unit].where((s) => s.isNotEmpty).join(' ')}',
+          if (at != null) d6Date(at),
+        ].join(' · '),
+        d6Sparkline(history.isEmpty ? [0] : history, flagged: !ok),
+        '$analyte $trend',
+      ));
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final rec = D6Scope.recOf(context);
+    final rows = rec == null ? _rows : _TestReports.rows(rec);
     return MpCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: D6TitleLink('Test reports', action: 'View all', onTap: () => Nav.go(context, 'PP-Tests')),
+            child: D6TitleLink('Test reports', action: 'View all', onTap: () => d6Go(context, 'PP-Tests')),
           ),
-          for (final r in _rows)
+          for (final r in rows)
             D6Row(
-              onTap: () => Nav.go(context, 'PP-Tests'),
+              onTap: () => d6Go(context, 'PP-Tests'),
               child: Row(
                 children: [
                   Expanded(
@@ -386,27 +633,46 @@ class _TestReports extends StatelessWidget {
 class _Ecg extends StatelessWidget {
   const _Ecg();
 
+  /// The newest ECG result.
+  static Map<String, dynamic>? ecg(D6Rec r) {
+    for (final l in r.m.obj('labs').list('items')) {
+      if (l.str('ecgInterpretation').isNotEmpty) return l;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final r = D6Scope.recOf(context);
+    final e = r == null ? null : ecg(r);
+    final at = F.date(e?['collectedAt']);
+    final normal = e == null || e.numOr('abnormalCount') == 0;
     return MpCard(
       child: VGap(
         gap: 16,
         children: [
-          D6TitleLink('ECG', action: 'View tracing', onTap: () => Nav.go(context, 'PP-Tests')),
+          D6TitleLink('ECG', action: 'View tracing', onTap: () => d6Go(context, 'PP-Tests')),
           Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Normal sinus rhythm', style: tx(16, w: w600)),
+                    Text(e == null ? 'Normal sinus rhythm' : e.str('ecgInterpretation'), style: tx(16, w: w600)),
                     const Gap(2),
-                    Text('12 Aug 2026 · 12-lead', style: tx(14, c: MP.ink2, h: 1.45)),
+                    Text(
+                      e == null
+                          ? '12 Aug 2026 · 12-lead'
+                          : [if (at != null) d6Date(at), e.str('ecgNote', e.str('testName'))].where((s) => s.isNotEmpty).join(' · '),
+                      style: tx(14, c: MP.ink2, h: 1.45),
+                    ),
                   ],
                 ),
               ),
               const Gap(12),
-              const D6Pill('Normal', bg: MP.greenSoft, fg: MP.green),
+              normal
+                  ? const D6Pill('Normal', bg: MP.greenSoft, fg: MP.green)
+                  : const D6Pill('Abnormal', bg: MP.amberSoft, fg: MP.amber),
             ],
           ),
         ],
@@ -418,52 +684,88 @@ class _Ecg extends StatelessWidget {
 class _RecentAlerts extends StatelessWidget {
   const _RecentAlerts();
 
+  /// The patient's two most pressing alerts (the API sorts by severity).
+  static List<Map<String, dynamic>> alerts(D6Rec r) => r.m.obj('alerts').list('items').take(2).toList();
+
+  static const _sample = {
+    'severity': 'emergency',
+    'when': 'Today, 9:12 AM · Open',
+    'detail': 'Emergency message: chest tightness and sweating since morning',
+  };
+
   @override
   Widget build(BuildContext context) {
+    final r = D6Scope.recOf(context);
+    final rows = r == null
+        ? [_sample]
+        : [
+            for (final a in alerts(r))
+              {
+                ...a,
+                'when': [
+                  if (F.date(a['createdAt']) != null) d6Cap(d6When(F.date(a['createdAt'])!)),
+                  d6Cap(a.str('status')),
+                ].join(' · '),
+              },
+          ];
     return MpCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: D6TitleLink('Recent alerts', action: 'View all', onTap: () => Nav.go(context, 'Alerts')),
+            child: D6TitleLink('Recent alerts', action: 'View all', onTap: () => d6Go(context, 'Alerts')),
           ),
-          D6Row(
-            padding: const EdgeInsets.only(top: 14),
-            onTap: () => Nav.go(context, 'Patient-Thread'),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const D6Pill('Emergency', bg: MP.redSoft, fg: MP.red),
-                          const Gap(8),
-                          Flexible(
-                            child: Text(
-                              'Today, 9:12 AM · Open',
-                              style: tx(13, c: MP.ink3, tab: true),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+          for (var i = 0; i < rows.length; i++)
+            D6Row(
+              padding: i == rows.length - 1 ? const EdgeInsets.only(top: 14) : const EdgeInsets.symmetric(vertical: 14),
+              onTap: () {
+                final a = rows[i];
+                if (r == null) {
+                  Nav.go(context, 'Patient-Thread');
+                } else if (a['conversationId'] != null) {
+                  Nav.go(context, 'Patient-Thread', args: {'conversationId': '${a['conversationId']}', 'patientId': r.id});
+                } else {
+                  Nav.go(context, 'Alerts', args: {'alertId': '${a['id']}', 'patientId': r.id});
+                }
+              },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            switch (rows[i]['severity']) {
+                              'emergency' => const D6Pill('Emergency', bg: MP.redSoft, fg: MP.red),
+                              'urgent' => const D6Pill('Urgent', bg: MP.amberSoft, fg: MP.amber),
+                              _ => const D6Pill('Watch'),
+                            },
+                            const Gap(8),
+                            Flexible(
+                              child: Text(
+                                '${rows[i]['when']}',
+                                style: tx(13, c: MP.ink3, tab: true),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const Gap(6),
-                      Text(
-                        'Emergency message: chest tightness and sweating since morning',
-                        style: tx(14, c: MP.ink2, h: 1.45),
-                      ),
-                    ],
+                          ],
+                        ),
+                        const Gap(6),
+                        Text(
+                          '${rows[i]['detail'] ?? ''}',
+                          style: tx(14, c: MP.ink2, h: 1.45),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const Gap(12),
-                const Ico(I.chevronRight, size: 18, color: MP.ink3),
-              ],
+                  const Gap(12),
+                  const Ico(I.chevronRight, size: 18, color: MP.ink3),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -479,28 +781,52 @@ class _PastConsultations extends StatelessWidget {
     ('18 Sep 2025', 'Type 2 diabetes, HbA1c 8.4% · Dr. Arjun Sen'),
   ];
 
+  static List<Map<String, dynamic>> visits(D6Rec r) {
+    final v = r.m['visits'];
+    return [for (final x in (v is List ? v : const []).take(3)) (x as Map).cast<String, dynamic>()];
+  }
+
   @override
   Widget build(BuildContext context) {
+    final r = D6Scope.recOf(context);
+    final live = r == null ? const <Map<String, dynamic>>[] : visits(r);
+    final rows = r == null
+        ? _visits
+        : [
+            for (final v in live)
+              (
+                F.date(v['startedAt']) == null ? '' : d6Date(F.date(v['startedAt'])!),
+                [
+                  [for (final d in v.list('diagnoses')) d.str('name')].where((s) => s.isNotEmpty).join(', '),
+                  r.personName(v['doctorId']) ?? '',
+                ].where((s) => s.isNotEmpty).join(' · '),
+              ),
+          ];
     return MpCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: D6TitleLink('Past consultations', action: 'View all', onTap: () => Nav.go(context, 'Prescriptions')),
+            child: D6TitleLink('Past consultations', action: 'View all', onTap: () => d6Go(context, 'Prescriptions')),
           ),
-          for (final v in _visits)
+          for (var i = 0; i < rows.length; i++)
             D6Row(
-              onTap: () => Nav.go(context, 'Prescriptions'),
+              onTap: () => r == null
+                  ? Nav.go(context, 'Prescriptions')
+                  : d6Go(context, 'Prescriptions', {
+                      'consultationId': live[i].str('id'),
+                      if (live[i]['prescriptionId'] != null) 'prescriptionId': '${live[i]['prescriptionId']}',
+                    }),
               child: Row(
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(v.$1, style: tx(16, w: w600, tab: true)),
+                        Text(rows[i].$1, style: tx(16, w: w600, tab: true)),
                         const Gap(2),
-                        Text(v.$2, style: tx(14, c: MP.ink2, h: 1.45), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(rows[i].$2, style: tx(14, c: MP.ink2, h: 1.45), maxLines: 1, overflow: TextOverflow.ellipsis),
                       ],
                     ),
                   ),
@@ -518,8 +844,19 @@ class _PastConsultations extends StatelessWidget {
 class _AiContext extends StatelessWidget {
   const _AiContext();
 
+  /// The AI brief's "asked about" note, split into lead-in and topics.
+  static (String, String)? note(D6Rec r) {
+    final n = r.detail.obj('aiSummary').str('contextNote').trim();
+    if (n.isEmpty) return null;
+    final i = n.indexOf(':');
+    if (i > 0 && i < n.length - 1) return ('${n.substring(0, i + 1)} ', n.substring(i + 1).trim());
+    return ('This week ${r.first} asked about: ', n);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final r = D6Scope.recOf(context);
+    final n = r == null ? ('This week Priya asked about: ', 'missed doses, chest tightness') : note(r)!;
     return MpCard(
       child: VGap(
         gap: 12,
@@ -535,8 +872,8 @@ class _AiContext extends StatelessWidget {
             TextSpan(
               style: tx(16, h: 1.5),
               children: [
-                const TextSpan(text: 'This week Priya asked about: '),
-                TextSpan(text: 'missed doses, chest tightness', style: tx(16, w: w600, h: 1.5)),
+                TextSpan(text: n.$1),
+                TextSpan(text: n.$2, style: tx(16, w: w600, h: 1.5)),
               ],
             ),
           ),
@@ -547,7 +884,7 @@ class _AiContext extends StatelessWidget {
               size: 15,
               icon: I.chevronRight,
               minHeight: 44,
-              onTap: () => Nav.go(context, 'Chat-Review'),
+              onTap: () => d6Go(context, 'Chat-Review'),
             ),
           ),
         ],

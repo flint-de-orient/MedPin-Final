@@ -280,10 +280,67 @@ class D2Caps extends StatelessWidget {
 }
 
 /// Closes the current sheet, then opens [stem] from the screen underneath.
-void d2CloseThenGo(BuildContext context, String stem) {
+void d2CloseThenGo(BuildContext context, String stem, {Object? args}) {
   final nav = Navigator.of(context);
   nav.pop();
-  Nav.go(nav.context, stem);
+  Nav.go(nav.context, stem, args: args);
+}
+
+// ── Live helpers ──
+
+/// "9876543210" → "98765 43210"
+String d2Phone(String phone) {
+  final d = phone.replaceAll(RegExp(r'\D'), '');
+  final ten = d.length == 12 && d.startsWith('91') ? d.substring(2) : d;
+  return ten.length == 10 ? '${ten.substring(0, 5)} ${ten.substring(5)}' : phone;
+}
+
+/// "F" / "M" / "" from the API gender.
+String d2Sex(Object? g) => switch (g) { 'female' => 'F', 'male' => 'M', 'other' => 'O', _ => '' };
+
+/// "29 F" from a patient row.
+String d2AgeSex(Map p) => [if (p['age'] is num) '${p['age']}', d2Sex(p['gender'])].where((s) => s.isNotEmpty).join(' ');
+
+/// "29 F · +91 98765 43210"
+String d2PatientMeta(Map p) {
+  final phone = '${p['phone'] ?? ''}';
+  return [d2AgeSex(p), if (phone.isNotEmpty) '+91 ${d2Phone(phone)}'].where((s) => s.isNotEmpty).join(' · ');
+}
+
+const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/// "02 Sep"
+String d2DayMonth(DateTime d) => '${d.day.toString().padLeft(2, '0')} ${_months[d.month - 1]}';
+
+/// Last visit: "Today", "Yesterday", "24 Sep", or "New" when never seen.
+String d2LastSeen(Object? iso) {
+  final d = iso is String ? DateTime.tryParse(iso)?.toLocal() : null;
+  if (d == null) return 'New';
+  final n = DateTime.now();
+  bool same(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
+  if (same(d, n)) return 'Today';
+  if (same(d, n.subtract(const Duration(days: 1)))) return 'Yesterday';
+  return d2DayMonth(d);
+}
+
+/// Chat-list time: "9:40 AM", "Yesterday", "29 Sep".
+String d2ChatTime(Object? iso) {
+  final d = iso is String ? DateTime.tryParse(iso)?.toLocal() : null;
+  if (d == null) return '';
+  final n = DateTime.now();
+  bool same(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
+  if (same(d, n)) {
+    final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+    return '$h:${d.minute.toString().padLeft(2, '0')} ${d.hour < 12 ? 'AM' : 'PM'}';
+  }
+  if (same(d, n.subtract(const Duration(days: 1)))) return 'Yesterday';
+  return '${d.day} ${_months[d.month - 1]}';
+}
+
+/// Staff role label: "Front desk", "Dietician", "Doctor assistant".
+String d2Role(Object? role) {
+  final s = '${role ?? ''}'.replaceAll('_', ' ');
+  return s.isEmpty ? '' : s[0].toUpperCase() + s.substring(1);
 }
 
 /// Option picker sheet (same look as the MpSelect picker). Returns the choice.

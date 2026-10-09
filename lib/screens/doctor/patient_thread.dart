@@ -1,8 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import 'common_d6.dart';
 
 /// Design: Patient-Thread.dc.html — "Patient thread".
+///
+/// Live (args `{'conversationId'}`, a bare conversation id, or
+/// `{'patientId'}`): GET /api/conversations/:id/messages every 12 s, marks
+/// the thread read on open, and sends / pins / hides / deletes messages.
+/// Voice replies and attachments need a multipart upload (not in Api yet).
 ///
 /// The design shows the voice note long-pressed, with its action menu open;
 /// that is the initial state. Tapping anywhere closes the menu and a long
@@ -43,7 +53,386 @@ const _playIcon = '<path d="M8 5v14l11-7z"/>';
 
 const _menuItems = [('Reply', false), ('Pin', false), ('Hide', false), ('Delete for everyone', true)];
 
-class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTickerProviderStateMixin {
+class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTickerProviderStateMixin, LiveData {
+  // ── Live thread ──
+  String? _convId;
+  String? _patientIdArg;
+  bool _readSent = false;
+  Map<String, dynamic>? _contacts;
+
+  /// Message with its action menu open (live), and the one being replied to.
+  String? _menuFor;
+  Map<String, dynamic>? _replyTo;
+  final _msgKeys = <String, GlobalKey>{};
+  final _busy = ValueNotifier(false);
+
+  @override
+  Duration? get refreshEvery => const Duration(seconds: 12);
+
+  @override
+  Future<Object?> fetch() async {
+    if (_convId == null) {
+      final a = Nav.args<Object>(context);
+      final m = a is Map ? a : (a is String ? {'conversationId': a} : const {});
+      _convId = m['conversationId']?.toString();
+      _patientIdArg = m['patientId']?.toString();
+      if (_convId == null && _patientIdArg != null) {
+        final c = await Api.I.post('/api/inbox', {'patientId': _patientIdArg});
+        _convId = '${(c as Map)['id'] ?? c['_id']}';
+      }
+      if (_convId == null) {
+        // Opened without a thread: the most pressing patient chat.
+        final inbox = await Api.I.get('/api/inbox', query: {'type': 'all'});
+        final items = [for (final x in ((inbox as Map)['items'] as List? ?? const [])) (x as Map).cast<String, dynamic>()];
+        if (items.isEmpty) throw const ApiException(404, 'NO_CONVERSATION', 'No conversations yet');
+        _convId = (items.firstWhere((x) => x['isUrgent'] == true, orElse: () => items.first))['id']?.toString();
+      }
+    }
+    final res = ((await Api.I.get('/api/conversations/$_convId/messages')) as Map).cast<String, dynamic>();
+    if (res.obj('conversation')['patient'] == null && _contacts == null) {
+      _contacts = ((await Api.I.get('/api/inbox/contacts')) as Map).cast<String, dynamic>();
+    }
+    if (!_readSent) {
+      _readSent = true;
+      Api.I.post('/api/conversations/$_convId/read', const {}).catchError((_) => null);
+    }
+    return res;
+  }
+
+  Map<String, dynamic> get _conv => data!.obj('conversation');
+  Map<String, dynamic> get _patient => _conv.obj('patient');
+
+  /// Thread title: the patient, or the colleague in a direct chat.
+  String get _liveName {
+    if (_patient.isNotEmpty) return _patient.str('name');
+    final me = '${Session.I.user['id']}';
+    final other = _conv.list('participants').firstWhere((p) => '${p['userId']}' != me, orElse: () => const {});
+    for (final t in (_contacts ?? const <String, dynamic>{}).list('team')) {
+      if ('${t['userId']}' == '${other['userId']}') return t.str('name');
+    }
+    return 'Conversation';
+  }
+
+  /// "Last seen 2 min ago" / "Next visit Today, 5:00 PM · token 04".
+  String get _liveSubtitle {
+    final seen = F.date(_patient['lastSeenAt']);
+    if (seen != null) {
+      final ago = F.ago(seen);
+      return 'Last seen ${ago == 'Just now' || ago == 'Yesterday' ? ago.toLowerCase() : ago}';
+    }
+    final next = _conv.obj('nextVisit');
+    final at = F.date(next['startAt']);
+    if (at != null) return 'Next visit ${F.when(at)}${next.str('token').isEmpty ? '' : ' · token ${next.str('token')}'}';
+    return _patient.isEmpty ? 'Direct message' : '';
+  }
+
+  String _senderName(Map<String, dynamic> m) {
+    if (m['mine'] == true) return 'You';
+    final s = m['senderId'];
+    if (s is Map && s['name'] != null) return '${s['name']}';
+    return switch (m['senderType']) { 'patient' => _liveName, 'ai' => 'AI assistant', _ => 'Clinic' };
+  }
+
+  /// One-line summary of a message (pinned bar, quotes).
+  String _summary(Map<String, dynamic>? m) {
+    if (m == null) return '';
+    if (m['deleted'] == true) return 'Message deleted';
+    final voice = m.obj('voice');
+    if (m['kind'] == 'voice') return 'Voice note${voice['durationSec'] is num ? ' · ${_dur(voice['durationSec'] as num)}' : ''}';
+    if (m['kind'] == 'attachment') return m.obj('attachment').str('name', 'Attachment');
+    return m.str('text');
+  }
+
+  static String _dur(num s) => '${s ~/ 60}:${(s.round() % 60).toString().padLeft(2, '0')}';
+
+  Future<void> _liveMenuAction(String a, Map<String, dynamic> m) async {
+    setState(() => _menuFor = null);
+    final id = m.str('id');
+    switch (a) {
+      case 'Reply':
+        setState(() => _replyTo = m);
+        _replyFocus.requestFocus();
+        return;
+      case 'Pin':
+        final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/pin', {'messageId': id}), busy: _busy);
+        if (ok != null && mounted) toast(context, 'Pinned at the top of the chat');
+      case 'Hide':
+        final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/messages/$id/hide'), busy: _busy);
+        if (ok != null && mounted) toast(context, 'Message hidden');
+      default:
+        final ok = await runAction(context, () => Api.I.delete('/api/conversations/$_convId/messages/$id'), busy: _busy);
+        if (ok != null && mounted) toast(context, 'Deleted for everyone');
+    }
+    if (mounted) reload(quiet: true);
+  }
+
+  Future<void> _sendLive() async {
+    final text = _reply.text.trim();
+    if (text.isEmpty || _convId == null) return;
+    final reply = _replyTo;
+    final ok = await runAction(
+      context,
+      () => Api.I.post('/api/conversations/$_convId/messages', {'text': text, if (reply != null) 'replyToId': reply.str('id')}),
+      busy: _busy,
+    );
+    if (ok == null || !mounted) return;
+    _reply.clear();
+    setState(() => _replyTo = null);
+    await reload(quiet: true);
+    _toLatest();
+  }
+
+  Future<void> _callLive() async {
+    final pid = _patient.str('id', _patientIdArg ?? '');
+    if (pid.isEmpty) {
+      toast(context, 'No phone number for this chat');
+      return;
+    }
+    final p = await runAction(context, () => Api.I.get('/api/patients/$pid'));
+    if (p is! Map || !mounted) return;
+    final phone = '${(p['patient'] as Map?)?['phone'] ?? ''}';
+    await d6Call(context, phone, _liveName);
+  }
+
+  void _toPinnedLive() {
+    final c = _msgKeys[data!.obj('pinned').str('id')]?.currentContext;
+    if (c != null) {
+      Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.3);
+    }
+  }
+
+  /// "TODAY" / "YESTERDAY" / "28 SEP"
+  static String _dayLabel(DateTime d) {
+    final n = DateTime.now();
+    if (F.sameDay(d, n)) return 'TODAY';
+    if (F.sameDay(d, n.subtract(const Duration(days: 1)))) return 'YESTERDAY';
+    return F.dayMonth(d).toUpperCase();
+  }
+
+  Widget _separator(String label) => Row(
+        children: [
+          const Expanded(child: MpDivider()),
+          const Gap(12),
+          Text(label, style: tx(12, w: w600, c: MP.ink3, em: 0.06)),
+          const Gap(12),
+          const Expanded(child: MpDivider()),
+        ],
+      );
+
+  Widget _liveMessage(Map<String, dynamic> m, Map<String, Map<String, dynamic>> byId) {
+    final at = F.date(m['createdAt']);
+    final time = at == null ? '' : F.time(at);
+    final type = m['senderType'];
+    final clinicSide = m['mine'] == true || type == 'doctor' || type == 'staff';
+    final align = clinicSide ? Alignment.centerRight : Alignment.centerLeft;
+    if (type == 'system') {
+      return Center(child: Text(m.str('text'), textAlign: TextAlign.center, style: tx(13, c: MP.ink3, h: 1.4)));
+    }
+    if (m['deleted'] == true) {
+      return Align(alignment: align, child: Text('Message deleted · $time', style: tx(14, c: MP.ink3)));
+    }
+    if (type == 'ai') return _aiMessage(text: m.str('text'), time: time);
+    if (m['kind'] == 'voice') {
+      final v = m.obj('voice');
+      return Align(
+        alignment: align,
+        child: _liveVoice(v['durationSec'] is num ? _dur(v['durationSec'] as num) : '', time, v.obj('file').str('url')),
+      );
+    }
+    if (m['kind'] == 'attachment' || m['kind'] == 'record') {
+      final f = m.obj('attachment');
+      final mb = f['sizeBytes'] is num ? (f['sizeBytes'] as num) / 1024 : null;
+      final ext = f.str('name').contains('.') ? f.str('name').split('.').last.toUpperCase() : (m['kind'] == 'record' ? 'Record' : 'File');
+      final meta = [ext, if (mb != null) mb >= 1024 ? '${(mb / 1024).toStringAsFixed(1)} MB' : '${mb.round()} KB', time].join(' · ');
+      return Align(
+        alignment: align,
+        child: _attachment(
+          name: f.isEmpty ? m.str('text', 'Shared record') : f.str('name'),
+          meta: meta,
+          onTap: () {
+            if (f.str('url').isNotEmpty) {
+              d6OpenUrl(context, f.str('url'));
+            } else if (m['prescriptionId'] != null) {
+              Nav.go(context, 'Prescriptions', args: {'prescriptionId': '${m['prescriptionId']}', if (_patient.isNotEmpty) 'patientId': _patient.str('id')});
+            } else {
+              Nav.go(context, 'PP-Tests', args: _patient.isEmpty ? null : {'patientId': _patient.str('id')});
+            }
+          },
+        ),
+      );
+    }
+    if (clinicSide) {
+      final quoted = byId[m.str('replyToId')];
+      if (m['replyToId'] != null) {
+        final qAt = F.date(quoted?['createdAt']);
+        return _quotedReply(
+          who: quoted == null ? 'Earlier message' : '${_senderName(quoted)}${qAt == null ? '' : ' · ${F.askedAt(qAt) == 'yesterday' ? 'Yesterday' : F.askedAt(qAt)}'}',
+          quote: quoted == null ? '' : _summary(quoted),
+          text: m.str('text'),
+          time: time,
+        );
+      }
+      return _doctorMessage(m.str('text'), time, read: m['deliveryStatus'] == 'seen' || m['seenAt'] != null);
+    }
+    // Patient text: a white bubble like the patient's voice note / file.
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 288),
+        child: IntrinsicWidth(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: MP.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: m['isUrgent'] == true ? MP.redLine : MP.line),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(m.str('text'), style: tx(16, h: 1.5)),
+                const Gap(4),
+                Align(alignment: Alignment.centerRight, child: Text(time, style: tx(12, c: MP.ink3, tab: true))),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Voice note bubble (live): play opens the recording.
+  Widget _liveVoice(String duration, String time, String url) {
+    return Container(
+      width: 248,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(color: MP.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: MP.line)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Semantics(
+                container: true,
+                button: true,
+                label: 'Play voice note${duration.isEmpty ? '' : ', $duration'}',
+                child: Tap(
+                  onTap: () => d6OpenUrl(context, url, fail: "Couldn't play the voice note"),
+                  radius: 999,
+                  color: MP.primarySoft,
+                  child: const SizedBox(width: 40, height: 40, child: Center(child: Ico(_playIcon, size: 18, color: MP.primary, filled: true))),
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: SizedBox(
+                  height: 28,
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < _wave.length; i++) ...[
+                        if (i > 0) const Gap(3),
+                        Container(
+                          width: 3,
+                          height: _wave[i],
+                          decoration: BoxDecoration(color: MP.primaryLine, borderRadius: BorderRadius.circular(999)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const Gap(12),
+              Text(duration, style: tx(13, c: MP.ink2, tab: true)),
+            ],
+          ),
+          const Gap(4),
+          Align(alignment: Alignment.centerRight, child: Text(time, style: tx(12, c: MP.ink3, tab: true))),
+        ],
+      ),
+    );
+  }
+
+  Widget _liveMessages() {
+    final items = data!.list('items');
+    final byId = {for (final m in items) m.str('id'): m};
+    final children = <Widget>[];
+    DateTime? lastDay;
+    for (final m in items) {
+      final at = F.date(m['createdAt']);
+      if (at != null && (lastDay == null || !F.sameDay(at, lastDay))) {
+        children.add(_separator(_dayLabel(at)));
+        lastDay = at;
+      }
+      final id = m.str('id');
+      final key = _msgKeys.putIfAbsent(id, GlobalKey.new);
+      final open = _menuFor == id;
+      Widget w = KeyedSubtree(key: key, child: _liveMessage(m, byId));
+      if (m['senderType'] != 'system') {
+        w = GestureDetector(
+          onLongPress: () {
+            setState(() => _menuFor = id);
+            _menuPortal.show();
+          },
+          child: w,
+        );
+      }
+      if (open) w = CompositedTransformTarget(link: _menuLink, child: w);
+      children.add(w);
+    }
+    if (items.isEmpty) children.add(Center(child: Text('No messages yet', style: tx(14, c: MP.ink2))));
+    final menuMsg = byId[_menuFor];
+    final mine = menuMsg?['mine'] == true && menuMsg?['deleted'] != true;
+    // The menu opens above the newest messages (next to the composer), below older ones.
+    final below = items.indexWhere((m) => m.str('id') == _menuFor) < items.length - 2;
+    final right = menuMsg?['mine'] == true;
+    return OverlayPortal(
+      controller: _menuPortal,
+      overlayChildBuilder: (_) => Stack(
+        children: [
+          if (menuMsg != null)
+            Positioned(
+              left: 0,
+              top: 0,
+              child: CompositedTransformFollower(
+                link: _menuLink,
+                showWhenUnlinked: false,
+                targetAnchor: below
+                    ? (right ? Alignment.bottomRight : Alignment.bottomLeft)
+                    : (right ? Alignment.topRight : Alignment.topLeft),
+                followerAnchor: below
+                    ? (right ? Alignment.topRight : Alignment.topLeft)
+                    : (right ? Alignment.bottomRight : Alignment.bottomLeft),
+                offset: Offset(0, below ? 8 : -8),
+                child: TapRegion(
+                  onTapOutside: (_) => setState(() => _menuFor = null),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: _menu(
+                      items: [for (final it in _menuItems) if (mine || it.$1 != 'Delete for everyone') it],
+                      onAction: (a) => _liveMenuAction(a, menuMsg),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+      child: SingleChildScrollView(
+        controller: _scroll,
+        reverse: true,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[if (i > 0) const Gap(12), children[i]],
+          ],
+        ),
+      ),
+    );
+  }
+
+  final _menuPortal = OverlayPortalController();
+
   final _scroll = ScrollController();
   final _reply = TextEditingController();
   final _replyFocus = FocusNode();
@@ -59,7 +448,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     if (s == AnimationStatus.completed && mounted) setState(() => _voice.value = 0);
   });
 
-  bool _menuOpen = true;
+  bool _menuOpen = !isLive;
   bool _voiceShown = true;
   bool _voicePinned = false;
   bool _hasText = false;
@@ -68,6 +457,9 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
   @override
   void initState() {
     super.initState();
+    // Create the voice-note controller now: the live thread may never build
+    // it, and a lazy first use in dispose() would need an ancestor lookup.
+    _voice.value;
     _reply.addListener(() {
       final has = _reply.text.trim().isNotEmpty;
       if (has != _hasText) setState(() => _hasText = has);
@@ -80,6 +472,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     _scroll.dispose();
     _reply.dispose();
     _replyFocus.dispose();
+    _busy.dispose();
     super.dispose();
   }
 
@@ -151,14 +544,19 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
+    final placeholder = livePlaceholder();
+    final live = data != null;
+    final pinned = live ? data!.obj('pinned') : const <String, dynamic>{};
+    final showAi = !live || (_conv['aiEnabled'] == true && _conv['type'] != 'direct');
+    final showPinned = !live || pinned.isNotEmpty;
     return MpPage(
       header: _header(context),
       scroll: false,
-      body: Column(
+      body: placeholder ?? Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // AI paused notice
-          Container(
+          if (showAi) Container(
             color: MP.fill,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             child: Row(
@@ -172,8 +570,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
             ),
           ),
           // Pinned message
-          Tap(
-            onTap: _toPinned,
+          if (showPinned) Tap(
+            onTap: live ? _toPinnedLive : _toPinned,
             radius: 0,
             color: MP.white,
             child: Container(
@@ -188,7 +586,9 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                       TextSpan(
                         children: [
                           TextSpan(text: 'Pinned:', style: tx(14, w: w600, c: MP.primary, h: 1.45)),
-                          TextSpan(text: _voicePinned ? ' Voice note · 0:18' : ' Take Metformin after food'),
+                          TextSpan(
+                            text: live ? ' ${_summary(pinned)}' : (_voicePinned ? ' Voice note · 0:18' : ' Take Metformin after food'),
+                          ),
                         ],
                       ),
                       style: tx(14, h: 1.45),
@@ -202,7 +602,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
               ),
             ),
           ),
-          Expanded(child: _messages()),
+          Expanded(child: live ? _liveMessages() : _messages()),
         ],
       ),
       bottom: _composer(),
@@ -233,6 +633,11 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
   }
 
   Widget _header(BuildContext context) {
+    final live = data != null;
+    final waiting = isLive && !live;
+    final name = live ? _liveName : (waiting ? '' : 'Priya Sharma');
+    final sub = live ? _liveSubtitle : (waiting ? '' : 'Last seen 2 min ago');
+    final pid = live ? _patient.str('id') : '';
     return Container(
       height: 64,
       padding: const EdgeInsets.fromLTRB(4, 0, 8, 0),
@@ -243,11 +648,17 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
           const Gap(4),
           Expanded(
             child: Tap(
-              onTap: () => Nav.go(context, 'PP-Summary'),
+              onTap: () {
+                if (!isLive) {
+                  Nav.go(context, 'PP-Summary');
+                } else if (pid.isNotEmpty) {
+                  Nav.go(context, 'PP-Summary', args: {'patientId': pid});
+                }
+              },
               radius: 12,
               child: Row(
                 children: [
-                  const MpAvatar('PS', size: 40, fontSize: 14),
+                  if (!waiting) MpAvatar(live ? F.initials(name) : 'PS', size: 40, fontSize: 14),
                   const Gap(12),
                   Expanded(
                     child: Column(
@@ -255,12 +666,12 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Priya Sharma',
+                          name,
                           style: tx(20, w: w700, h: 1.25),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text('Last seen 2 min ago', style: tx(13, c: MP.ink3)),
+                        if (sub.isNotEmpty) Text(sub, style: tx(13, c: MP.ink3)),
                       ],
                     ),
                   ),
@@ -271,9 +682,9 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
           const Gap(4),
           MpIconButton(
             I.phone,
-            label: 'Call Priya Sharma',
+            label: 'Call $name',
             color: MP.primary,
-            onTap: () => toast(context, 'Calling Priya Sharma…'),
+            onTap: isLive ? (live ? _callLive : null) : () => toast(context, 'Calling Priya Sharma…'),
           ),
         ],
       ),
@@ -420,7 +831,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     );
   }
 
-  Widget _menu() {
+  Widget _menu({List<(String, bool)> items = _menuItems, void Function(String)? onAction}) {
+    final act = onAction ?? _menuAction;
     return Container(
       width: 232,
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -435,16 +847,16 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (var i = 0; i < _menuItems.length; i++)
+          for (var i = 0; i < items.length; i++)
             Tap(
-              onTap: () => _menuAction(_menuItems[i].$1),
+              onTap: () => act(items[i].$1),
               radius: 0,
               child: Container(
                 height: 48,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 alignment: Alignment.centerLeft,
                 decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
-                child: Text(_menuItems[i].$1, style: _menuItems[i].$2 ? tx(16, w: w600, c: MP.red) : tx(16)),
+                child: Text(items[i].$1, style: items[i].$2 ? tx(16, w: w600, c: MP.red) : tx(16)),
               ),
             ),
         ],
@@ -452,7 +864,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     );
   }
 
-  Widget _attachment() {
+  Widget _attachment({String name = 'Lipid profile.pdf', String meta = 'PDF · 240 KB · 9:06 AM', VoidCallback? onTap}) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -464,7 +876,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
           border: Border.all(color: MP.line),
         ),
         child: Tap(
-          onTap: () => Nav.go(context, 'PP-Tests'),
+          onTap: onTap ?? () => Nav.go(context, 'PP-Tests'),
           radius: 12,
           color: MP.bg,
           padding: const EdgeInsets.all(8),
@@ -486,8 +898,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Lipid profile.pdf', style: tx(15, w: w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text('PDF · 240 KB · 9:06 AM', style: tx(13, c: MP.ink3, tab: true)),
+                    Text(name, style: tx(15, w: w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(meta, style: tx(13, c: MP.ink3, tab: true)),
                   ],
                 ),
               ),
@@ -498,7 +910,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     );
   }
 
-  Widget _aiMessage() {
+  Widget _aiMessage({String text = "Thanks, Priya. I've shared your report with Dr. Sen's team.", String time = '9:06 AM'}) {
     return Align(
       alignment: Alignment.centerLeft,
       child: ConstrainedBox(
@@ -518,9 +930,9 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                   ],
                 ),
                 const Gap(4),
-                Text("Thanks, Priya. I've shared your report with Dr. Sen's team.", style: tx(16, h: 1.5)),
+                Text(text, style: tx(16, h: 1.5)),
                 const Gap(4),
-                Align(alignment: Alignment.centerRight, child: Text('9:06 AM', style: tx(12, c: MP.ink3, tab: true))),
+                Align(alignment: Alignment.centerRight, child: Text(time, style: tx(12, c: MP.ink3, tab: true))),
               ],
             ),
           ),
@@ -529,21 +941,26 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     );
   }
 
-  Widget _quotedReply() {
+  Widget _quotedReply({
+    String who = 'Priya Sharma · Yesterday',
+    String quote = 'Should I take the tablet before or after breakfast?',
+    String text = 'After food, not before. Your lipid report looks fine.',
+    String time = '9:22 AM',
+  }) {
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 288),
         child: IntrinsicWidth(
           child: Container(
-            key: _adviceKey,
+            key: data == null ? _adviceKey : null,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(color: MP.primary, borderRadius: BorderRadius.circular(16)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Semantics(
-                  label: 'Replying to Priya Sharma: Should I take the tablet before or after breakfast?',
+                  label: 'Replying to ${who.split(' · ').first}: $quote',
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
@@ -554,10 +971,10 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('Priya Sharma · Yesterday', style: tx(13, w: w600, c: MP.primarySoft)),
+                        Text(who, style: tx(13, w: w600, c: MP.primarySoft)),
                         const Gap(2),
                         Text(
-                          'Should I take the tablet before or after breakfast?',
+                          quote,
                           style: tx(14, c: MP.white, h: 1.45),
                           maxLines: 1,
                           softWrap: false,
@@ -568,11 +985,11 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                   ),
                 ),
                 const Gap(6),
-                Text('After food, not before. Your lipid report looks fine.', style: tx(16, c: MP.white, h: 1.5)),
+                Text(text, style: tx(16, c: MP.white, h: 1.5)),
                 const Gap(6),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: Text('9:22 AM', style: tx(12, c: MP.primarySoft, tab: true)),
+                  child: Text(time, style: tx(12, c: MP.primarySoft, tab: true)),
                 ),
               ],
             ),
@@ -652,11 +1069,11 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                     style: tx(16),
                     cursorColor: MP.primary,
                     textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _send(),
+                    onSubmitted: (_) => data != null ? _sendLive() : _send(),
                     decoration: InputDecoration(
                       isCollapsed: true,
                       border: InputBorder.none,
-                      hintText: 'Write a reply',
+                      hintText: _replyTo == null ? 'Write a reply' : 'Reply to ${_senderName(_replyTo!)}',
                       hintStyle: tx(16, c: MP.ink3),
                     ),
                   ),
@@ -667,7 +1084,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                 button: true,
                 label: _hasText ? 'Send reply' : 'Record a voice reply',
                 child: Tap(
-                  onTap: _hasText ? _send : () => toast(context, 'Hold to record a voice reply'),
+                  onTap: _hasText ? (data != null ? _sendLive : _send) : () => toast(context, 'Hold to record a voice reply'),
                   radius: 999,
                   color: MP.primary,
                   shadow: MPShadow.button,
