@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import 'common_d1.dart';
 import 'common_d10.dart';
 
 /// Design: Feedback.dc.html — "Feedback".
+/// Live data: GET /api/feedback (counts per category); opening the page marks
+/// unread items read (POST /api/feedback/:id/read); Reply opens the patient's
+/// care thread (POST /api/inbox {patientId} → Patient-Thread).
 class FeedbackScreen extends StatefulWidget {
   const FeedbackScreen({super.key});
 
@@ -63,15 +71,84 @@ const List<_Fb> _items = [
 /// Filter chips: (label, kind or null for all).
 const _filters = [('All · 4', null), ('Care · 3', 'Care'), ('App · 1', 'App')];
 
-class _FeedbackScreenState extends State<FeedbackScreen> {
+class _FeedbackScreenState extends State<FeedbackScreen> with LiveData {
   int _filter = 0;
+  final _marked = <String>{};
+  final _busy = ValueNotifier(false);
+
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/feedback');
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  @override
+  Future<void> reload({bool quiet = false}) async {
+    await super.reload(quiet: quiet);
+    if (mounted && data != null) _markRead();
+  }
+
+  /// Opening the page reads the feedback: POST /api/feedback/:id/read for
+  /// every item the signed-in user hasn't read yet.
+  Future<void> _markRead() async {
+    final me = d1MyId;
+    final ids = [
+      for (final f in data!.list('items'))
+        if (!_marked.contains(f.str('id')) &&
+            !f.list('readBy').any((r) => (r['userId'] is Map ? r.obj('userId').str('id') : r.str('userId')) == me))
+          f.str('id'),
+    ];
+    if (ids.isEmpty) return;
+    _marked.addAll(ids);
+    try {
+      await Future.wait([for (final id in ids) Api.I.post('/api/feedback/$id/read')]);
+    } on ApiException {
+      return;
+    }
+    if (mounted) reload(quiet: true);
+  }
+
+  static _Fb _fbOf(Map<String, dynamic> f) {
+    final at = F.date(f['createdAt']);
+    final readers = [
+      for (final r in f.list('readBy'))
+        d10Person(r['userId'] is Map ? r.obj('userId').str('name') : ''),
+    ].where((x) => x.isNotEmpty).toList();
+    final reply = f.obj('reply');
+    final replyAt = F.date(reply['at']);
+    final by = reply['by'] is Map ? reply.obj('by').str('name') : '';
+    return (
+      f.obj('patientId').str('name', 'Patient'),
+      at == null ? '' : F.dayMonth(at),
+      f.numOr('rating').round().clamp(0, 5),
+      d10Cap(f.str('category', 'care')),
+      f.str('comment'),
+      readers.isEmpty ? 'Not read yet' : 'Read by ${readers.join(', ')}',
+      reply.str('text'),
+      ['Clinic replied', if (by.isNotEmpty) by, if (replyAt != null) F.dayMonth(replyAt)].join(' · '),
+    );
+  }
+
+  /// Replies go out over the patient's care thread.
+  Future<void> _reply(Map<String, dynamic> f) async {
+    final pid = f.obj('patientId').str('id');
+    final convo = await runAction(context, () => Api.I.post('/api/inbox', {'patientId': pid}), busy: _busy);
+    if (convo is! Map || !mounted) return;
+    await Nav.go(context, 'Patient-Thread', args: {'conversationId': convo['id'], 'patientId': pid});
+    if (mounted) reload(quiet: true);
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (data != null) return _live(context);
+    final placeholder = livePlaceholder();
     final kind = _filters[_filter].$2;
     return MpPage(
       header: const MpHeader('Patient feedback'),
-      body: VGap(
+      body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         gap: 16,
         children: [
@@ -93,16 +170,55 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       ),
     );
   }
+
+  /// The same page from GET /api/feedback.
+  Widget _live(BuildContext context) {
+    final c = data!.obj('counts');
+    final filters = [
+      ('All · ${c.numOr('all')}', null),
+      ('Care · ${c.numOr('care')}', 'care'),
+      ('App · ${c.numOr('app')}', 'app'),
+    ];
+    final cat = filters[_filter].$2;
+    final items = [for (final f in data!.list('items')) if (cat == null || f['category'] == cat) f];
+    // Replying needs the chat permission (every role except the lab's).
+    final canChat = !const {'lab_manager', 'lab_technician'}.contains(Session.I.role);
+    return MpPage(
+      header: const MpHeader('Patient feedback'),
+      body: VGap(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        gap: 16,
+        children: [
+          Semantics(
+            label: 'Filter feedback',
+            container: true,
+            child: Row(
+              children: [
+                for (var i = 0; i < filters.length; i++) ...[
+                  if (i > 0) const Gap(8),
+                  D10FilterChip(filters[i].$1, selected: i == _filter, onTap: () => setState(() => _filter = i)),
+                ],
+              ],
+            ),
+          ),
+          if (items.isEmpty) Text('No feedback yet', style: tx(14, c: MP.ink2)),
+          for (final f in items) _FeedbackCard(_fbOf(f), canReply: canChat, onReply: () => _reply(f)),
+        ],
+      ),
+    );
+  }
 }
 
 class _FeedbackCard extends StatelessWidget {
   final _Fb f;
-  const _FeedbackCard(this.f);
+  final bool canReply;
+  final VoidCallback? onReply;
+  const _FeedbackCard(this.f, {this.canReply = _hasChatReply, this.onReply});
 
   @override
   Widget build(BuildContext context) {
     final hasReply = f.$7.isNotEmpty;
-    final canReply = !hasReply && _hasChatReply;
+    final canReply = !hasReply && this.canReply;
     return MpCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -150,7 +266,7 @@ class _FeedbackCard extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: Tap(
                 // Replies go out over the patient's chat thread.
-                onTap: () => Nav.go(context, 'Patient-Thread'),
+                onTap: onReply ?? () => Nav.go(context, 'Patient-Thread'),
                 radius: 12,
                 color: MP.primarySoft,
                 child: Padding(

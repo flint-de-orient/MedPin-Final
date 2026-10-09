@@ -1,0 +1,39 @@
+{
+ "flagged": 2,
+ "items": [
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Rahul Das",
+    "id": "6ac8bbd08adea6a429a731b7"
+   },
+   "conversationId": "6ac8bbd08adea6a429a7340c",
+   "messageId": "6ac8bbd08adea6a429a73416",
+   "reason": "symptom_question",
+   "title": "Symptom question: BP with headache",
+   "excerpt": "That reading is high. If the headache is severe or you feel unwell, call 108. I have alerted your doctor.",
+   "urgency": "high",
+   "status": "needs_review",
+   "createdAt": "2026-10-09T10:02:56.994Z",
+   "updatedAt": "2026-10-09T10:02:56.994Z",
+   "id": "6ac8bbd08adea6a429a7341f"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Sujit Mondal",
+    "id": "6ac8bbd08adea6a429a731ce"
+   },
+   "conversationId": "6ac8bbd08adea6a429a733f3",
+   "messageId": "6ac8bbd08adea6a429a733fd",
+   "reason": "dosage_question",
+   "title": "Dosage question answered by AI",
+   "excerpt": "Please do not change your medicine dose. I have asked Dr. Sen to look at this today.",
+   "urgency": "medium",
+   "status": "needs_review",
+   "createdAt": "2026-10-09T10:02:56.974Z",
+   "updatedAt": "2026-10-09T10:02:56.974Z",
+   "id": "6ac8bbd08adea6a429a73406"
+  }
+ ]
+}

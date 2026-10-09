@@ -1,0 +1,341 @@
+{
+ "counts": {
+  "all": 7,
+  "notBooked": 7,
+  "booked": 0
+ },
+ "items": [
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Rahul Das",
+    "phone": "9831120764",
+    "ageYears": 45,
+    "ageRecordedAt": "2026-10-09T10:02:56.157Z",
+    "gender": "male",
+    "conditions": [
+     {
+      "name": "Hypertension",
+      "_id": "6ac8bbd08adea6a429a731b8"
+     }
+    ],
+    "id": "6ac8bbd08adea6a429a731b7"
+   },
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "consultationId": "6ac8bbd08adea6a429a73253",
+   "advisedOn": "2026-09-15T04:00:00.000Z",
+   "adviceText": "Come back with fasting sugar.",
+   "dueDate": "2026-09-28T18:30:00.000Z",
+   "status": "not_booked",
+   "remindPatient": true,
+   "remindersSent": 0,
+   "createdAt": "2026-10-09T10:02:56.495Z",
+   "updatedAt": "2026-10-09T10:02:56.512Z",
+   "id": "6ac8bbd08adea6a429a73265",
+   "patient": {
+    "id": "6ac8bbd08adea6a429a731b7",
+    "name": "Rahul Das",
+    "age": 45,
+    "gender": "male",
+    "phone": "9831120764",
+    "conditions": [
+     "Hypertension"
+    ]
+   },
+   "overdueDays": 10,
+   "group": "overdue"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Sujit Mondal",
+    "phone": "9831120767",
+    "ageYears": 61,
+    "ageRecordedAt": "2026-10-09T10:02:56.169Z",
+    "gender": "male",
+    "conditions": [
+     {
+      "name": "Chronic kidney disease",
+      "_id": "6ac8bbd08adea6a429a731cf"
+     },
+     {
+      "name": "Hypertension",
+      "_id": "6ac8bbd08adea6a429a731d0"
+     }
+    ],
+    "id": "6ac8bbd08adea6a429a731ce"
+   },
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "consultationId": "6ac8bbd08adea6a429a732f4",
+   "advisedOn": "2026-09-09T03:45:00.000Z",
+   "adviceText": "Come back with fasting sugar.",
+   "dueDate": "2026-09-29T18:30:00.000Z",
+   "status": "not_booked",
+   "remindPatient": true,
+   "remindersSent": 0,
+   "createdAt": "2026-10-09T10:02:56.638Z",
+   "updatedAt": "2026-10-09T10:02:56.654Z",
+   "id": "6ac8bbd08adea6a429a73309",
+   "patient": {
+    "id": "6ac8bbd08adea6a429a731ce",
+    "name": "Sujit Mondal",
+    "age": 61,
+    "gender": "male",
+    "phone": "9831120767",
+    "conditions": [
+     "Chronic kidney disease",
+     "Hypertension"
+    ]
+   },
+   "overdueDays": 9,
+   "group": "overdue"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Debasish Bose",
+    "phone": "9831120769",
+    "ageYears": 57,
+    "ageRecordedAt": "2026-10-09T10:02:56.178Z",
+    "gender": "male",
+    "conditions": [
+     {
+      "name": "Type 2 diabetes",
+      "_id": "6ac8bbd08adea6a429a731de"
+     },
+     {
+      "name": "Hypertension",
+      "_id": "6ac8bbd08adea6a429a731df"
+     }
+    ],
+    "id": "6ac8bbd08adea6a429a731dd"
+   },
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "consultationId": "6ac8bbd08adea6a429a73279",
+   "advisedOn": "2026-09-21T04:30:00.000Z",
+   "adviceText": "Come back with fasting sugar.",
+   "dueDate": "2026-10-11T18:30:00.000Z",
+   "status": "not_booked",
+   "remindPatient": true,
+   "remindersSent": 0,
+   "createdAt": "2026-10-09T10:02:56.536Z",
+   "updatedAt": "2026-10-09T10:02:56.552Z",
+   "id": "6ac8bbd08adea6a429a73291",
+   "patient": {
+    "id": "6ac8bbd08adea6a429a731dd",
+    "name": "Debasish Bose",
+    "age": 57,
+    "gender": "male",
+    "phone": "9831120769",
+    "conditions": [
+     "Type 2 diabetes",
+     "Hypertension"
+    ]
+   },
+   "overdueDays": 0,
+   "group": "this_week"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Priya Sharma",
+    "phone": "9876543210",
+    "ageYears": 29,
+    "ageRecordedAt": "2026-10-09T10:02:54.927Z",
+    "gender": "female",
+    "conditions": [
+     {
+      "name": "Type 2 diabetes",
+      "icdCode": "E11.9",
+      "_id": "6ac8bbcee42c9f0836e9857d"
+     },
+     {
+      "name": "PCOS",
+      "icdCode": "E28.2",
+      "_id": "6ac8bbcee42c9f0836e9857e"
+     }
+    ],
+    "id": "6ac8bbcee42c9f0836e9857c"
+   },
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "consultationId": "6ac8bbd08adea6a429a73224",
+   "advisedOn": "2026-09-29T03:34:00.000Z",
+   "adviceText": "Come back with fasting sugar.",
+   "dueDate": "2026-10-12T18:30:00.000Z",
+   "status": "not_booked",
+   "remindPatient": true,
+   "remindersSent": 0,
+   "createdAt": "2026-10-09T10:02:56.443Z",
+   "updatedAt": "2026-10-09T10:02:56.472Z",
+   "id": "6ac8bbd08adea6a429a7323f",
+   "patient": {
+    "id": "6ac8bbcee42c9f0836e9857c",
+    "name": "Priya Sharma",
+    "age": 29,
+    "gender": "female",
+    "phone": "9876543210",
+    "conditions": [
+     "Type 2 diabetes",
+     "PCOS"
+    ]
+   },
+   "overdueDays": 0,
+   "group": "this_week"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Aisha Khan",
+    "phone": "9831120765",
+    "ageYears": 34,
+    "ageRecordedAt": "2026-10-09T10:02:56.162Z",
+    "gender": "female",
+    "conditions": [
+     {
+      "name": "Type 2 diabetes",
+      "_id": "6ac8bbd08adea6a429a731bf"
+     }
+    ],
+    "id": "6ac8bbd08adea6a429a731be"
+   },
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "consultationId": "6ac8bbd08adea6a429a7331d",
+   "advisedOn": "2026-10-03T05:00:00.000Z",
+   "adviceText": "Come back with fasting sugar.",
+   "dueDate": "2026-10-12T18:30:00.000Z",
+   "status": "not_booked",
+   "remindPatient": true,
+   "remindersSent": 0,
+   "createdAt": "2026-10-09T10:02:56.672Z",
+   "updatedAt": "2026-10-09T10:02:56.733Z",
+   "id": "6ac8bbd08adea6a429a73331",
+   "patient": {
+    "id": "6ac8bbd08adea6a429a731be",
+    "name": "Aisha Khan",
+    "age": 34,
+    "gender": "female",
+    "phone": "9831120765",
+    "conditions": [
+     "Type 2 diabetes"
+    ]
+   },
+   "overdueDays": 0,
+   "group": "this_week"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Farhana Islam",
+    "phone": "9831120768",
+    "ageYears": 38,
+    "ageRecordedAt": "2026-10-09T10:02:56.174Z",
+    "gender": "female",
+    "conditions": [
+     {
+      "name": "Hypothyroidism",
+      "_id": "6ac8bbd08adea6a429a731d7"
+     }
+    ],
+    "id": "6ac8bbd08adea6a429a731d6"
+   },
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "locationId": {
+    "name": "City Care Clinic — Salt Lake",
+    "shortName": "Salt Lake",
+    "id": "6ac8bbcee42c9f0836e98563"
+   },
+   "consultationId": "6ac8bbd08adea6a429a732a5",
+   "advisedOn": "2026-09-24T05:30:00.000Z",
+   "adviceText": "Come back with fasting sugar.",
+   "dueDate": "2026-10-21T18:30:00.000Z",
+   "status": "not_booked",
+   "remindPatient": true,
+   "remindersSent": 0,
+   "createdAt": "2026-10-09T10:02:56.571Z",
+   "updatedAt": "2026-10-09T10:02:56.587Z",
+   "id": "6ac8bbd08adea6a429a732b8",
+   "patient": {
+    "id": "6ac8bbd08adea6a429a731d6",
+    "name": "Farhana Islam",
+    "age": 38,
+    "gender": "female",
+    "phone": "9831120768",
+    "conditions": [
+     "Hypothyroidism"
+    ]
+   },
+   "overdueDays": 0,
+   "group": "later"
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "patientId": {
+    "name": "Amit Pal",
+    "phone": "9831120770",
+    "ageYears": 42,
+    "ageRecordedAt": "2026-10-09T10:02:56.182Z",
+    "gender": "male",
+    "conditions": [
+     {
+      "name": "Type 2 diabetes",
+      "_id": "6ac8bbd08adea6a429a731e6"
+     }
+    ],
+    "id": "6ac8bbd08adea6a429a731e5"
+   },
+   "doctorId": "6ac8bbcee42c9f0836e9855b",
+   "locationId": {
+    "name": "City Care — New Town",
+    "shortName": "New Town",
+    "id": "6ac8bbd08adea6a429a73189"
+   },
+   "consultationId": "6ac8bbd08adea6a429a73345",
+   "advisedOn": "2026-10-06T04:15:00.000Z",
+   "adviceText": "Come back with fasting sugar.",
+   "dueDate": "2026-11-04T18:30:00.000Z",
+   "status": "not_booked",
+   "remindPatient": true,
+   "remindersSent": 0,
+   "createdAt": "2026-10-09T10:02:56.762Z",
+   "updatedAt": "2026-10-09T10:02:56.776Z",
+   "id": "6ac8bbd08adea6a429a73357",
+   "patient": {
+    "id": "6ac8bbd08adea6a429a731e5",
+    "name": "Amit Pal",
+    "age": 42,
+    "gender": "male",
+    "phone": "9831120770",
+    "conditions": [
+     "Type 2 diabetes"
+    ]
+   },
+   "overdueDays": 0,
+   "group": "later"
+  }
+ ]
+}

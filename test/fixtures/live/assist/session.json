@@ -1,0 +1,21 @@
+{
+ "user": {
+  "id": "6ac8bbcee42c9f0836e9855b",
+  "name": "Dr. Arjun Sen",
+  "phone": "9330414463",
+  "language": "en",
+  "appLock": true
+ },
+ "memberships": [
+  {
+   "id": "6ac8bbcee42c9f0836e98569",
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "practiceName": "City Care Clinic",
+   "role": "doctor",
+   "isOwner": true,
+   "status": "active"
+  }
+ ],
+ "patientId": null,
+ "landing": "Doctor-Dashboard"
+}

@@ -1,0 +1,16 @@
+[
+ {
+  "ownerType": "doctor",
+  "userId": "6ac8bbcee42c9f0836e9855b",
+  "practiceId": "6ac8bbcee42c9f0836e98561",
+  "patientId": {
+   "name": "Priya Sharma",
+   "id": "6ac8bbcee42c9f0836e9857c"
+  },
+  "title": "Test assist",
+  "lastAt": "2026-10-09T10:11:16.150Z",
+  "createdAt": "2026-10-09T10:10:55.879Z",
+  "updatedAt": "2026-10-09T10:11:16.150Z",
+  "id": "6ac8bdaf0640a42493dc534d"
+ }
+]

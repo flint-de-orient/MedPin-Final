@@ -1,0 +1,22 @@
+{
+ "practiceId": null,
+ "title": "Thyroid tablet on an empty stomach",
+ "summary": "Take levothyroxine 30–60 minutes before breakfast.",
+ "content": "Take levothyroxine with water, 30–60 minutes before breakfast, and keep 4 hours away from calcium or iron.",
+ "status": "approved",
+ "language": "en",
+ "category": "thyroid",
+ "sourceCitation": "American Thyroid Association, Hypothyroidism guidelines",
+ "tags": [
+  "levothyroxine",
+  "thyroid",
+  "dosage timing"
+ ],
+ "authorLabel": "MedPin clinical team",
+ "createdAt": "2026-10-09T10:02:57.050Z",
+ "updatedAt": "2026-10-09T10:02:57.050Z",
+ "id": "6ac8bbd18adea6a429a73467",
+ "shared": true,
+ "adopted": false,
+ "editable": false
+}

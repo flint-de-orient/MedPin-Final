@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import 'common_d1.dart';
 import 'common_d10.dart';
 
 /// Design: Chat-Review-Detail.dc.html — "Chat review · detail".
+/// Live (args {'reviewId'} and/or {'conversationId'}): the review from
+/// GET /api/inbox/reviews, the thread from GET /api/conversations/:id/messages
+/// (AI turn meta: flagged, urgency, citations, latency); reply
+/// POST /api/conversations/:id/messages; POST /api/inbox/reviews/:id/reviewed.
 class ChatReviewDetailScreen extends StatefulWidget {
   const ChatReviewDetailScreen({super.key});
 
@@ -14,23 +23,152 @@ class ChatReviewDetailScreen extends StatefulWidget {
 const _audit = ['Urgency: Medium', 'Model-driven', 'No scripted fallback', '2 citations', '1.4 s'];
 const _citations = ['ADA Standards of Care 2026 §9', 'Clinic knowledge base: “Metformin timing”'];
 
-class _ChatReviewDetailScreenState extends State<ChatReviewDetailScreen> {
+class _ChatReviewDetailScreenState extends State<ChatReviewDetailScreen> with LiveData {
   final _reply = TextEditingController();
   final _pinnedKey = GlobalKey();
   final _endKey = GlobalKey();
+  final _busy = ValueNotifier(false);
 
   /// Replies sent from this screen: (time, text).
   final _sent = <(String, String)>[];
 
+  /// Live: which review / conversation this is.
+  bool _argsRead = false;
+  String? _reviewId;
+  String? _conversationId;
+
   @override
   void dispose() {
     _reply.dispose();
+    _busy.dispose();
     super.dispose();
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    if (!_argsRead) {
+      final a = await d1Args(this);
+      _argsRead = true;
+      _reviewId = a['reviewId'] as String?;
+      _conversationId = a['conversationId'] as String?;
+    }
+    final reviews = ((await Api.I.get('/api/inbox/reviews', query: {'status': 'all'})) as Map).cast<String, dynamic>();
+    Map<String, dynamic>? review;
+    for (final r in reviews.list('items')) {
+      if (_reviewId != null ? r.str('id') == _reviewId : r.str('conversationId') == _conversationId) {
+        // Prefer the one still waiting for review.
+        if (review == null || (review['status'] != 'needs_review' && r['status'] == 'needs_review')) review = r;
+      }
+    }
+    _reviewId ??= review?.str('id');
+    final cid = _conversationId ?? review?.str('conversationId');
+    if (cid == null || cid.isEmpty) throw const ApiException(404, 'NOT_FOUND', 'Choose a conversation first');
+    _conversationId = cid;
+    final thread = ((await Api.I.get('/api/conversations/$cid/messages')) as Map).cast<String, dynamic>();
+    final pid = thread.obj('conversation').obj('patient').str('id');
+    Object? patient;
+    if (pid.isNotEmpty) {
+      try {
+        patient = await Api.I.get('/api/patients/$pid');
+      } on ApiException {
+        patient = null;
+      }
+    }
+    return {'review': review, 'thread': thread, 'patient': patient};
+  }
+
+  Map<String, dynamic> get _thread => data!.obj('thread');
+  Map<String, dynamic> get _review => data!.obj('review');
+  String get _me => isLive ? F.doctorShort(Session.I.name) : 'Dr. Sen';
+
+  String _who(Map<String, dynamic> m) {
+    switch (m.str('senderType')) {
+      case 'patient':
+        return 'Patient';
+      case 'ai':
+        return 'AI assistant';
+      case 'system':
+        return 'MedPin';
+    }
+    final name = m['senderId'] is Map ? m.obj('senderId').str('name') : '';
+    if (m['mine'] == true) return name.isEmpty ? _me : F.doctorShort(name);
+    return name.isEmpty ? 'Care team' : d10Person(name);
+  }
+
+  static String _textOf(Map<String, dynamic> m) {
+    if (m['deleted'] == true) return 'This message was deleted';
+    final t = m.str('text').trim();
+    if (t.isNotEmpty) return t;
+    return switch (m.str('kind')) {
+      'voice' => 'Voice message',
+      'attachment' => m.obj('attachment').str('name', 'Attachment'),
+      'record' => 'Shared a record',
+      'prescription' => 'Prescription',
+      _ => '',
+    };
+  }
+
+  /// "Urgency: High", "Model-driven", "No scripted fallback", "2 citations", "1.2 s".
+  static List<String> _auditOf(Map<String, dynamic> ai) {
+    final n = ai.list('citations').length;
+    final ms = ai['latencyMs'];
+    return [
+      if (ai.str('urgency').isNotEmpty) 'Urgency: ${d10Cap(ai.str('urgency'))}',
+      ai.str('responseSource') == 'scripted' ? 'Scripted answer' : 'Model-driven',
+      ai['fallbackUsed'] == true ? 'Scripted fallback used' : 'No scripted fallback',
+      n == 0 ? 'No citations' : (n == 1 ? '1 citation' : '$n citations'),
+      if (ms is num) '${(ms / 1000).toStringAsFixed(1)} s',
+    ];
+  }
+
+  Future<void> _sendLive(String text) async {
+    final cid = _conversationId;
+    if (cid == null) return;
+    final ok = await runAction(context, () => Api.I.post('/api/conversations/$cid/messages', {'text': text}), busy: _busy);
+    if (ok == null || !mounted) return;
+    _reply.clear();
+    await reload(quiet: true);
+    _scrollToEnd();
+  }
+
+  Future<void> _markReviewed() async {
+    if (!isLive) {
+      toast(context, 'Marked as reviewed');
+      Nav.back(context);
+      return;
+    }
+    final id = _reviewId;
+    if (id == null || id.isEmpty) {
+      toast(context, 'This conversation has no flagged answer');
+      return;
+    }
+    final ok = await runAction(context, () => Api.I.post('/api/inbox/reviews/$id/reviewed'), busy: _busy);
+    if (ok == null || !mounted) return;
+    toast(context, 'Marked as reviewed');
+    Nav.back(context);
+  }
+
+  void _scrollToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final c = _endKey.currentContext;
+      if (c != null && c.mounted) {
+        Scrollable.ensureVisible(
+          c,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        );
+      }
+    });
   }
 
   void _send() {
     final text = _reply.text.trim();
     if (text.isEmpty) return;
+    if (isLive) {
+      _sendLive(text);
+      return;
+    }
     setState(() => _sent.add((TimeOfDay.now().format(context), text)));
     _reply.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -55,6 +193,11 @@ class _ChatReviewDetailScreenState extends State<ChatReviewDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (data != null) return _live(context);
+    final placeholder = livePlaceholder();
+    if (placeholder != null) {
+      return MpPage(header: const MpHeader('Chat review'), body: placeholder, bottom: _bottomBar());
+    }
     return MpPage(
       header: Column(
         mainAxisSize: MainAxisSize.min,
@@ -113,14 +256,102 @@ class _ChatReviewDetailScreenState extends State<ChatReviewDetailScreen> {
           ),
         ],
       ),
-      bottom: MpBottomBar(
+      bottom: _bottomBar(),
+    );
+  }
+
+  /// The same page from live data.
+  Widget _live(BuildContext context) {
+    final convo = _thread.obj('conversation');
+    final review = _review;
+    final name = convo.obj('patient').str('name', 'Patient');
+    final reason = d10Reason(review.str('reason'));
+    final subtitle = review.isEmpty
+        ? 'Patient conversation'
+        : (review['status'] == 'reviewed' ? 'Reviewed · $reason' : 'Flagged · $reason');
+    final pinned = _thread['pinned'] is Map ? _thread.obj('pinned') : null;
+    final phone = (data!['patient'] is Map ? data!.obj('patient').obj('patient').str('phone') : '');
+    final children = <Widget>[];
+    DateTime? lastDay;
+    for (final m in _thread.list('items')) {
+      final at = F.date(m['createdAt']);
+      if (at != null && (lastDay == null || !F.sameDay(at, lastDay))) {
+        children.add(D10Caps(d10DayCaption(at), align: TextAlign.center));
+        lastDay = at;
+      }
+      final time = at == null ? '' : F.time(at);
+      final key = pinned != null && pinned.str('id') == m.str('id') ? _pinnedKey : null;
+      final ai = m.obj('ai');
+      if (m['senderType'] == 'ai' && ai['flagged'] == true) {
+        children.add(_FlaggedTurn(
+          key: key,
+          time: time,
+          text: _textOf(m),
+          audit: _auditOf(ai),
+          citations: [for (final c in ai.list('citations')) c.str('label')].where((x) => x.isNotEmpty).toList(),
+        ));
+        continue;
+      }
+      final kind = switch (m.str('senderType')) {
+        'patient' => _Kind.patient,
+        'ai' || 'system' => _Kind.ai,
+        _ => _Kind.doctor,
+      };
+      children.add(_Bubble(key: key, who: _who(m), time: time, kind: kind, text: _textOf(m)));
+    }
+    if (children.isEmpty) children.add(Text('No messages yet', textAlign: TextAlign.center, style: tx(14, c: MP.ink2)));
+    final paused = convo['aiPaused'] == true;
+    return MpPage(
+      header: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Header(name: name, subtitle: subtitle, onCall: () => d1Call(context, phone, name)),
+          if (pinned != null)
+            _PinnedBar(
+              onTap: _jumpToPinned,
+              who: pinned['senderType'] == 'ai' ? 'AI assistant' : (pinned['senderType'] == 'patient' ? 'Patient' : _who(pinned)),
+              text: _textOf(pinned),
+            ),
+        ],
+      ),
+      body: VGap(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+        gap: 16,
+        children: [
+          ...children,
+          Row(
+            key: _endKey,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (paused) ...[
+                const Ico(I.sparkle, size: 14, color: MP.ink3),
+                const Gap(6),
+                Flexible(
+                  child: Text(
+                    "AI assistant paused while you're in this thread",
+                    textAlign: TextAlign.center,
+                    style: tx(13, c: MP.ink3, h: 18 / 13),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+      bottom: _bottomBar(),
+    );
+  }
+
+  Widget _bottomBar() {
+    return MpBottomBar(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                Expanded(child: MpInput(controller: _reply, hint: 'Reply as Dr. Sen', height: 48)),
+                Expanded(child: MpInput(controller: _reply, hint: 'Reply as $_me', height: 48)),
                 const Gap(8),
                 Semantics(
                   button: true,
@@ -139,24 +370,19 @@ class _ChatReviewDetailScreenState extends State<ChatReviewDetailScreen> {
               ],
             ),
             const Gap(12),
-            MpButton(
-              'Mark reviewed',
-              icon: I.check,
-              onTap: () {
-                toast(context, 'Marked as reviewed');
-                Nav.back(context);
-              },
-            ),
+            MpButton('Mark reviewed', icon: I.check, onTap: _markReviewed),
           ],
         ),
-      ),
-    );
+      );
   }
 }
 
 /// White 64px bar with a bottom border: back, name + reason, call.
 class _Header extends StatelessWidget {
-  const _Header();
+  final String name;
+  final String subtitle;
+  final VoidCallback? onCall;
+  const _Header({this.name = 'Sujit Mondal', this.subtitle = 'Flagged · dosage timing', this.onCall});
 
   @override
   Widget build(BuildContext context) {
@@ -173,9 +399,9 @@ class _Header extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Sujit Mondal', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(20, w: w700, h: 1.25)),
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(20, w: w700, h: 1.25)),
                 Text(
-                  'Flagged · dosage timing',
+                  subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: tx(14, c: MP.ink2, h: 20 / 14),
@@ -184,7 +410,7 @@ class _Header extends StatelessWidget {
             ),
           ),
           const Gap(4),
-          MpIconButton(I.phone, label: 'Call Sujit Mondal', onTap: () => toast(context, 'Calling Sujit Mondal…')),
+          MpIconButton(I.phone, label: 'Call $name', onTap: onCall ?? () => toast(context, 'Calling $name…')),
         ],
       ),
     );
@@ -194,13 +420,19 @@ class _Header extends StatelessWidget {
 /// Pinned message from Dr. Sen; tapping jumps to it in the thread.
 class _PinnedBar extends StatelessWidget {
   final VoidCallback onTap;
-  const _PinnedBar({required this.onTap});
+  final String who;
+  final String text;
+  const _PinnedBar({
+    required this.onTap,
+    this.who = 'Dr. Sen',
+    this.text = 'Metformin 500 mg: 1 after breakfast, 1 after dinner',
+  });
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Pinned message from Dr. Sen, jump to it',
+      label: 'Pinned message from $who, jump to it',
       excludeSemantics: true,
       child: Tap(
         onTap: onTap,
@@ -223,10 +455,10 @@ class _PinnedBar extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const D10Caps('Pinned · Dr. Sen'),
+                      D10Caps('Pinned · $who'),
                       const Gap(2),
                       Text(
-                        'Metformin 500 mg: 1 after breakfast, 1 after dinner',
+                        text,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: tx(14, h: 20 / 14),
@@ -308,14 +540,25 @@ class _Bubble extends StatelessWidget {
 
 /// The AI answer flagged for review, with its audit trail and citations.
 class _FlaggedTurn extends StatelessWidget {
-  const _FlaggedTurn();
+  final String time;
+  final String text;
+  final List<String> audit;
+  final List<String> citations;
+  const _FlaggedTurn({
+    super.key,
+    this.time = '9:42 AM',
+    this.text =
+        "You can take Metformin with dinner instead of breakfast. Since your plan is 1-0-1, take both tablets together with dinner so you don't miss one.",
+    this.audit = _audit,
+    this.citations = _citations,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _Meta('AI assistant', '9:42 AM'),
+        _Meta('AI assistant', time),
         const Gap(4),
         Semantics(
           container: true,
@@ -346,10 +589,7 @@ class _FlaggedTurn extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     color: MP.fill,
-                    child: Text(
-                      "You can take Metformin with dinner instead of breakfast. Since your plan is 1-0-1, take both tablets together with dinner so you don't miss one.",
-                      style: tx(16, h: 1.5),
-                    ),
+                    child: Text(text, style: tx(16, h: 1.5)),
                   ),
                   Container(
                     padding: const EdgeInsets.all(14),
@@ -359,12 +599,14 @@ class _FlaggedTurn extends StatelessWidget {
                       children: [
                         Semantics(
                           label: 'AI audit trail',
-                          child: Wrap(spacing: 8, runSpacing: 8, children: [for (final a in _audit) _AuditPill(a)]),
+                          child: Wrap(spacing: 8, runSpacing: 8, children: [for (final a in audit) _AuditPill(a)]),
                         ),
-                        const Gap(12),
-                        const D10Caps('Citations'),
-                        const Gap(8),
-                        for (var i = 0; i < _citations.length; i++) ...[
+                        if (citations.isNotEmpty) ...[
+                          const Gap(12),
+                          const D10Caps('Citations'),
+                          const Gap(8),
+                        ],
+                        for (var i = 0; i < citations.length; i++) ...[
                           if (i > 0) const Gap(8),
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -374,7 +616,7 @@ class _FlaggedTurn extends StatelessWidget {
                                 child: Ico(I.book, size: 16, color: MP.ink2),
                               ),
                               const Gap(8),
-                              Expanded(child: Text(_citations[i], style: tx(14, h: 20 / 14))),
+                              Expanded(child: Text(citations[i], style: tx(14, h: 20 / 14))),
                             ],
                           ),
                         ],

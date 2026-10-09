@@ -1,10 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'queue_select.dart';
 
 /// Design: Queue-List.dc.html — "Patient queue".
+/// Live data (args {'locationId'}; default: today's chosen / first open
+/// location): GET /api/queue?locationId, refreshed every 15 s.
 class QueueListScreen extends StatefulWidget {
   /// Index into [D1Location.all] of the location whose queue is shown.
   final int location;
@@ -14,7 +21,7 @@ class QueueListScreen extends StatefulWidget {
   State<QueueListScreen> createState() => _QueueListScreenState();
 }
 
-enum _Kind { consult, waiting, booked, done }
+enum _Kind { consult, waiting, booked, done, missed }
 
 /// One patient in the queue.
 class _Q {
@@ -32,6 +39,10 @@ class _Q {
   final bool long;
   final String? button;
   final MpBtn buttonKind;
+
+  /// Live: the appointment and patient ids.
+  final String? id;
+  final String? patientId;
   const _Q(
     this.kind,
     this.token,
@@ -45,7 +56,64 @@ class _Q {
     this.long = false,
     this.button,
     this.buttonKind = MpBtn.tonal,
+    this.id,
+    this.patientId,
   });
+
+  /// A queue row from GET /api/queue.
+  factory _Q.fromApi(Map<String, dynamic> m) {
+    final kind = switch (m.str('status')) {
+      'in_consultation' => _Kind.consult,
+      'waiting' => _Kind.waiting,
+      'completed' => _Kind.done,
+      'missed' => _Kind.missed,
+      _ => _Kind.booked,
+    };
+    final p = m.obj('patient');
+    final conditions = [for (final c in (p['conditions'] as List? ?? const [])) '$c'];
+    final visit = switch (m.str('visitType')) {
+      'new' => 'New',
+      'follow_up' => 'Follow-up',
+      'report_review' => 'Review reports',
+      _ => '',
+    };
+    final about = conditions.isNotEmpty ? conditions.join(', ') : m.str('reason');
+    final meta = [d1AgeSex(p), visit, about].where((x) => x.isNotEmpty).join(' · ');
+    String at(String k) {
+      final d = F.date(m[k]);
+      return d == null ? '' : F.time(d);
+    }
+
+    final mins = m['consultMin'] is num ? (m['consultMin'] as num).round() : null;
+    final time = switch (kind) {
+      _Kind.consult => [if (at('consultStartedAt').isNotEmpty) 'Started ${at('consultStartedAt')}', if (mins != null) '$mins min'].join(' · '),
+      _Kind.waiting => m['waitingMin'] is num ? 'Waiting ${(m['waitingMin'] as num).round()} min' : 'Waiting',
+      _Kind.done => [if (at('completedAt').isNotEmpty) 'Done ${at('completedAt')}' else 'Done', if (mins != null) '$mins min'].join(' · '),
+      _Kind.missed => at('startAt').isEmpty ? 'Missed' : 'Missed · booked for ${at('startAt')}',
+      _Kind.booked => at('startAt').isEmpty ? 'Walk-in' : 'Booked for ${at('startAt')}',
+    };
+    return _Q(
+      kind,
+      m.str('token', '–'),
+      p.str('name'),
+      meta,
+      time,
+      vitals: m['hasVitals'] == true,
+      docs: m.numOr('documents').toInt(),
+      ai: m['aiBrief'] == true,
+      next: m['isNext'] == true,
+      long: m['longWait'] == true,
+      button: switch (kind) {
+        _Kind.consult => 'Resume',
+        _Kind.waiting => 'Start consultation',
+        _Kind.done => 'View prescription',
+        _ => null,
+      },
+      buttonKind: kind == _Kind.done ? MpBtn.secondary : MpBtn.tonal,
+      id: m.str('id'),
+      patientId: m.str('patientId', p.str('id')),
+    );
+  }
 }
 
 class _Group {
@@ -172,36 +240,187 @@ const _dashed = '<circle cx="12" cy="12" r="9" stroke-dasharray="3 3" stroke-lin
   _Kind.waiting => ('Waiting', MP.amberSoft, MP.amber),
   _Kind.booked => ('Not arrived', MP.fill, MP.ink2),
   _Kind.done => ('Completed', MP.greenSoft, MP.green),
+  _Kind.missed => ('Missed', MP.redSoft, MP.red),
 };
 
-class _QueueListScreenState extends State<QueueListScreen> {
+class _QueueListScreenState extends State<QueueListScreen> with LiveData {
   late int _loc = widget.location;
   int _filter = 0;
 
-  Future<void> _changeLocation() async {
-    final r = await openSheet<int>(context, (_) => QueueSelectSheet(initial: _loc, pick: true));
-    if (r != null && mounted) setState(() => _loc = r);
+  /// Live: the location shown, and the Queue-Select cards (for its header).
+  String? _locId;
+  Map<String, dynamic>? _locs;
+  Timer? _clock;
+
+  @override
+  Duration? get refreshEvery => const Duration(seconds: 15);
+
+  @override
+  void initState() {
+    super.initState();
+    // Keeps "Updated Ns ago" current.
+    if (isLive) _clock = Timer.periodic(const Duration(seconds: 1), (_) => mounted && data != null ? setState(() {}) : null);
   }
 
-  void _onButton(_Q r) {
-    if (r.kind == _Kind.done) {
-      Nav.go(context, 'Prescriptions');
-    } else {
-      Nav.go(context, 'Consult-Page');
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    final argId = (await d1Args(this))['locationId'] as String?;
+    final locs = _locs ?? await d1QueueLocations();
+    _locs = locs;
+    var id = _locId ?? argId;
+    if (id == null || id.isEmpty) {
+      final items = locs.list('items');
+      final def = locs.str('defaultLocationId');
+      Map<String, dynamic>? pick;
+      for (final m in items) {
+        if (m.str('locationId') == def) pick ??= m;
+      }
+      for (final m in items) {
+        if (m['openNow'] == true) pick ??= m;
+      }
+      for (final m in items) {
+        if (m['closedReason'] == null) pick ??= m;
+      }
+      pick ??= items.firstOrNull;
+      id = pick?.str('locationId');
     }
+    _locId = id;
+    final queue = id == null ? const {'stats': {}, 'items': []} : await Api.I.get('/api/queue', query: {'locationId': id});
+    return {'queue': queue};
+  }
+
+  Map<String, dynamic> get _queue => data!.obj('queue');
+
+  D1Location get _location {
+    if (data == null) return D1Location.all[_loc];
+    for (final m in _locs?.list('items') ?? const <Map<String, dynamic>>[]) {
+      if (m.str('locationId') == _locId) return D1Location.fromApi(m);
+    }
+    return const D1Location(name: 'No consulting location', a11y: 'No consulting location', kind: '', hours: '');
+  }
+
+  List<(String, String, String, Color)> get _liveStats {
+    if (data == null) return _stats;
+    final s = _queue.obj('stats');
+    final avg = s['avgWaitMin'] is num ? (s['avgWaitMin'] as num).round() : null;
+    return [
+      ('${s.numOr('waiting')}', '', 'Waiting', MP.amber),
+      ('${s.numOr('inConsultation')}', '', 'In consult', MP.ink),
+      ('${s.numOr('completed')}', '', 'Completed', MP.ink),
+      (avg == null ? '–' : '$avg', avg == null ? '' : ' min', 'Avg wait', MP.ink),
+    ];
+  }
+
+  List<String> get _liveFilters {
+    if (data == null) return _filters;
+    final s = _queue.obj('stats');
+    return [
+      'All · ${s.numOr('all')}',
+      'Waiting · ${s.numOr('waiting')}',
+      'In consultation · ${s.numOr('inConsultation')}',
+      'Completed · ${s.numOr('completed')}',
+    ];
+  }
+
+  /// In consultation, waiting, not arrived, completed (latest first), missed.
+  List<_Group> get _liveGroups {
+    if (data == null) return _groups;
+    final rows = [for (final m in _queue.list('items')) _Q.fromApi(m)];
+    final done = _queue.list('items').where((m) => m['status'] == 'completed').toList()
+      ..sort((a, b) => b.str('completedAt').compareTo(a.str('completedAt')));
+    List<_Q> of(_Kind k) => rows.where((r) => r.kind == k).toList();
+    _Group g(String title, List<_Q> rows, {bool hero = false}) => _Group(title, '${rows.length}', rows, hero: hero);
+    return [
+      g('In consultation', of(_Kind.consult), hero: true),
+      g('Waiting', of(_Kind.waiting)),
+      g('Not arrived yet', of(_Kind.booked)),
+      g('Completed', [for (final m in done) _Q.fromApi(m)]),
+      g('Missed', of(_Kind.missed)),
+    ];
+  }
+
+  String get _updatedLine {
+    final at = loadedAt;
+    if (data == null || at == null) return 'Tue, 29 Sep · Updated 4s ago';
+    final s = DateTime.now().difference(at).inSeconds;
+    return '${d1Day(DateTime.now())} · Updated ${s < 60 ? '${s < 0 ? 0 : s}s' : '${s ~/ 60} min'} ago';
+  }
+
+  Future<void> _changeLocation() async {
+    if (!isLive) {
+      final r = await openSheet<int>(context, (_) => QueueSelectSheet(initial: _loc, pick: true));
+      if (r != null && mounted) setState(() => _loc = r);
+      return;
+    }
+    final r = await openSheet<Object>(context, (_) => QueueSelectSheet(initialId: _locId, pick: true));
+    if (r is! String || !mounted || r == _locId) return;
+    setState(() {
+      _locId = r;
+      _locs = null;
+      _filter = 0;
+      data = null;
+    });
+    reload();
+  }
+
+  Future<void> _onButton(_Q r) async {
+    if (!isLive) {
+      if (r.kind == _Kind.done) {
+        Nav.go(context, 'Prescriptions');
+      } else {
+        Nav.go(context, 'Consult-Page');
+      }
+      return;
+    }
+    if (r.kind == _Kind.done) {
+      await Nav.go(context, 'Prescriptions', args: {'patientId': r.patientId, 'appointmentId': r.id});
+    } else {
+      // Consult-Page starts or resumes the consultation itself.
+      await Nav.go(context, 'Consult-Page', args: {'appointmentId': r.id, 'patientId': r.patientId});
+    }
+    if (mounted) reload(quiet: true);
+  }
+
+  Future<void> _recordVitals(_Q r) async {
+    if (!isLive) {
+      Nav.go(context, 'Consult-Vitals');
+      return;
+    }
+    await Nav.go(context, 'Consult-Vitals', args: {'appointmentId': r.id, 'patientId': r.patientId});
+    if (mounted) reload(quiet: true);
+  }
+
+  void _openPatient(_Q r) {
+    if (!isLive) {
+      Nav.go(context, 'PP-Summary');
+      return;
+    }
+    Nav.go(context, 'Patient-Profile', args: {'patientId': r.patientId});
   }
 
   @override
   Widget build(BuildContext context) {
-    final groups = switch (_filter) {
-      1 => [_groups[1]],
-      2 => [_groups[0]],
-      3 => [_groups[3]],
-      _ => _groups,
-    };
+    final placeholder = livePlaceholder();
+    final all = _liveGroups;
+    final filters = _liveFilters;
+    final groups = [
+      for (final g in switch (_filter) {
+        1 => [all[1]],
+        2 => [all[0]],
+        3 => [all[3]],
+        _ => all,
+      })
+        if (data == null || g.rows.isNotEmpty) g,
+    ];
     return MpPage(
-      header: _header(context, D1Location.all[_loc]),
-      body: Padding(
+      header: _header(context, _location),
+      body: placeholder ?? Padding(
         padding: const EdgeInsets.only(top: 20, bottom: 48),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -212,11 +431,11 @@ class _QueueListScreenState extends State<QueueListScreen> {
             MpChipRow(
               gap: 8,
               children: [
-                for (var i = 0; i < _filters.length; i++)
+                for (var i = 0; i < filters.length; i++)
                   Semantics(
                     toggled: i == _filter,
                     child: MpChip(
-                      _filters[i],
+                      filters[i],
                       selected: i == _filter,
                       onTap: () => setState(() => _filter = i),
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -227,6 +446,13 @@ class _QueueListScreenState extends State<QueueListScreen> {
             for (final g in groups) ...[
               const Gap(16),
               Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _group(g)),
+            ],
+            if (groups.isEmpty) ...[
+              const Gap(16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(_filter == 0 ? 'No patients in this queue yet' : 'No patients here right now', style: tx(14, c: MP.ink2)),
+              ),
             ],
           ],
         ),
@@ -323,7 +549,7 @@ class _QueueListScreenState extends State<QueueListScreen> {
                       decoration: const BoxDecoration(color: MP.green, shape: BoxShape.circle),
                     ),
                     const Gap(8),
-                    Expanded(child: Text('Tue, 29 Sep · Updated 4s ago', style: tx(13, c: MP.ink2))),
+                    Expanded(child: Text(_updatedLine, style: tx(13, c: MP.ink2))),
                   ],
                 ),
               ],
@@ -337,11 +563,12 @@ class _QueueListScreenState extends State<QueueListScreen> {
   /// 4-up stats strip: white, 1px border, radius 16, cells split by 1px lines.
   /// Every cell has the same two lines, so the cells (and dividers) line up.
   Widget _statsCard() {
+    final stats = _liveStats;
     return Container(
       decoration: MPDeco.card(radius: 16),
       child: Row(
         children: [
-          for (var i = 0; i < _stats.length; i++)
+          for (var i = 0; i < stats.length; i++)
             Expanded(
               child: Container(
                 padding: const EdgeInsets.all(12),
@@ -351,11 +578,11 @@ class _QueueListScreenState extends State<QueueListScreen> {
                   children: [
                     Text.rich(
                       TextSpan(
-                        text: _stats[i].$1,
-                        style: tx(22, w: w800, h: 1.1, c: _stats[i].$4, tab: true),
+                        text: stats[i].$1,
+                        style: tx(22, w: w800, h: 1.1, c: stats[i].$4, tab: true),
                         children: [
-                          if (_stats[i].$2.isNotEmpty)
-                            TextSpan(text: _stats[i].$2, style: tx(12, w: w600, c: MP.ink3, h: 1.1, tab: true)),
+                          if (stats[i].$2.isNotEmpty)
+                            TextSpan(text: stats[i].$2, style: tx(12, w: w600, c: MP.ink3, h: 1.1, tab: true)),
                         ],
                       ),
                       maxLines: 1,
@@ -366,7 +593,7 @@ class _QueueListScreenState extends State<QueueListScreen> {
                     // On narrow phones a label may run into the cell's own
                     // 12px right padding rather than break mid-word.
                     Text(
-                      _stats[i].$3,
+                      stats[i].$3,
                       maxLines: 1,
                       softWrap: false,
                       overflow: TextOverflow.visible,
@@ -465,7 +692,7 @@ class _QueueListScreenState extends State<QueueListScreen> {
                 const Gap(12),
                 Expanded(
                   child: Tap(
-                    onTap: () => Nav.go(context, 'PP-Summary'),
+                    onTap: () => _openPatient(r),
                     radius: 8,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -526,7 +753,7 @@ class _QueueListScreenState extends State<QueueListScreen> {
                   if (recordVitals) ...[
                     const Gap(12),
                     Tap(
-                      onTap: () => Nav.go(context, 'Consult-Vitals'),
+                      onTap: () => _recordVitals(r),
                       radius: 6,
                       child: Text('Record vitals', style: tx(14, w: w600, c: MP.primary)),
                     ),

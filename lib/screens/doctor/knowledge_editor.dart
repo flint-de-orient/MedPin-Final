@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/api.dart';
+import '../../data/format.dart';
+import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import 'common_d1.dart';
 import 'common_d10.dart';
 
 /// Design: Knowledge-Editor.dc.html — "Knowledge · edit".
+/// Live (args {'knowledgeId'}; none = new entry): GET /api/knowledge/:id;
+/// Save draft POST /api/knowledge or PATCH /api/knowledge/:id; Submit
+/// POST /api/knowledge/:id/submit; ⋮ Approve / Retire (doctors).
 class KnowledgeEditorScreen extends StatefulWidget {
   const KnowledgeEditorScreen({super.key});
 
@@ -23,7 +31,7 @@ const _languages = ['English', 'Bengali', 'Hindi'];
 const _categories = ['Medicines', 'Diabetes', 'Hypertension', 'Diet'];
 const _maxChars = 2000;
 
-class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> {
+class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> with LiveData {
   final _title = TextEditingController(text: 'Metformin timing');
   final _body = TextEditingController(text: _content);
   final _source = TextEditingController(text: 'ADA Standards of Care 2026, Section 9');
@@ -32,12 +40,166 @@ class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> {
   String _category = 'Medicines';
   String _saved = 'Last saved 2 min ago';
 
+  /// Live: the entry being edited (null = new).
+  bool _argsRead = false;
+  String? _id;
+  bool _filled = false;
+  final _busy = ValueNotifier(false);
+
+  @override
+  void initState() {
+    super.initState();
+    if (!isLive) return;
+    _title.text = '';
+    _body.text = '';
+    _source.text = '';
+    _tags.clear();
+    _saved = 'Not saved yet';
+  }
+
   @override
   void dispose() {
     _title.dispose();
     _body.dispose();
     _source.dispose();
+    _busy.dispose();
     super.dispose();
+  }
+
+  @override
+  Future<Object?> fetch() async {
+    if (!_argsRead) {
+      _id = (await d1Args(this))['knowledgeId'] as String?;
+      _argsRead = true;
+    }
+    final id = _id;
+    return {'entry': id == null ? null : await Api.I.get('/api/knowledge/$id')};
+  }
+
+  @override
+  Future<void> reload({bool quiet = false}) async {
+    await super.reload(quiet: quiet);
+    if (!mounted || data == null) return;
+    final e = _entry;
+    setState(() {
+      if (e != null && !_filled) {
+        _filled = true;
+        _title.text = e.str('title');
+        _body.text = e.str('content');
+        _source.text = e.str('sourceCitation');
+        _tags
+          ..clear()
+          ..addAll([for (final t in (e['tags'] as List? ?? const [])) '$t']);
+        _language = d10Languages[e.str('language')] ?? 'English';
+        _category = d10Categories[e.str('category')] ?? 'Other';
+      }
+      final at = F.date(e?['updatedAt']);
+      if (at != null) {
+        final ago = F.ago(at);
+        _saved = 'Last saved ${ago[0].toLowerCase()}${ago.substring(1)}';
+      }
+    });
+  }
+
+  Map<String, dynamic>? get _entry => data?['entry'] is Map ? data!.obj('entry') : null;
+
+  String get _statusKey => _entry?.str('status', 'draft') ?? 'draft';
+
+  static String _codeOf(Map<String, String> m, String label, String fallback) {
+    for (final e in m.entries) {
+      if (e.value == label) return e.key;
+    }
+    return fallback;
+  }
+
+  Map<String, Object?> get _body$ => {
+    'title': _title.text.trim(),
+    'content': _body.text.trim(),
+    'summary': _summaryOf(_body.text.trim()),
+    'language': _codeOf(d10Languages, _language, 'en'),
+    'category': _codeOf(d10Categories, _category, 'other'),
+    'sourceCitation': _source.text.trim(),
+    'tags': _tags,
+  };
+
+  /// First sentence of the content, for list previews.
+  static String _summaryOf(String content) {
+    final m = RegExp(r'^.+?[.!?](\s|$)', dotAll: true).firstMatch(content);
+    final s = (m?.group(0) ?? content).trim();
+    return s.length > 160 ? '${s.substring(0, 157)}…' : s;
+  }
+
+  /// Creates or updates the entry; returns its id (null on failure).
+  Future<String?> _saveLive() async {
+    final res = await runAction(context, () async {
+      final id = _id;
+      final r = id == null ? await Api.I.post('/api/knowledge', _body$) : await Api.I.patch('/api/knowledge/$id', _body$);
+      return (r as Map)['id'] as String?;
+    }, busy: _busy);
+    if (res != null) _id = res;
+    return res;
+  }
+
+  Future<void> _saveDraft() async {
+    if (!isLive) {
+      setState(() => _saved = 'Last saved just now');
+      toast(context, 'Draft saved');
+      return;
+    }
+    final id = await _saveLive();
+    if (id == null || !mounted) return;
+    toast(context, 'Draft saved');
+    reload(quiet: true);
+  }
+
+  Future<void> _submit() async {
+    if (!isLive) {
+      toast(context, 'Submitted for approval');
+      Nav.back(context);
+      return;
+    }
+    final id = await _saveLive();
+    if (id == null || !mounted) return;
+    final ok = await runAction(context, () => Api.I.post('/api/knowledge/$id/submit'), busy: _busy);
+    if (ok == null || !mounted) return;
+    toast(context, 'Submitted for approval');
+    Nav.back(context);
+  }
+
+  /// Doctors can approve a pending entry or retire one (⋮ menu).
+  Future<void> _more() async {
+    final doctor = Session.I.role == 'doctor';
+    final options = [
+      if (isLive && doctor && _statusKey == 'pending') 'Approve',
+      if (isLive && doctor && _id != null && _statusKey != 'retired') 'Retire',
+    ];
+    if (options.isEmpty) {
+      toast(context, 'More options are not in the design yet');
+      return;
+    }
+    final v = await D10Picker.show(context, title: 'Entry', options: options, value: '');
+    if (v == null || !mounted) return;
+    final action = v == 'Approve' ? 'approve' : 'retire';
+    final ok = await runAction(context, () => Api.I.post('/api/knowledge/$_id/$action'), busy: _busy);
+    if (ok == null || !mounted) return;
+    toast(context, v == 'Approve' ? 'Approved' : 'Retired');
+    reload(quiet: true);
+  }
+
+  (String, Color, Color) get _badge => switch (_statusKey) {
+    'approved' => ('Approved', MP.greenSoft, MP.green),
+    'pending' => ('Pending', MP.amberSoft, MP.amber),
+    'retired' => ('Retired', MP.fill, MP.ink3),
+    _ => ('Draft', MP.fill, MP.ink2),
+  };
+
+  String get _note {
+    if (!isLive) return 'The AI assistant only uses this entry once Dr. Sen approves it.';
+    return switch (_statusKey) {
+      'approved' => 'The AI assistant uses this entry in its answers.',
+      'retired' => 'Retired: the AI assistant no longer uses this entry.',
+      _ => 'The AI assistant only uses this entry once a doctor approves it.',
+    };
   }
 
   Future<void> _addTag() async {
@@ -50,13 +212,13 @@ class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> {
   Widget build(BuildContext context) {
     return MpPage(
       header: MpHeader(
-        'Edit entry',
+        isLive && _id == null ? 'New entry' : 'Edit entry',
         actions: [
           Semantics(
             button: true,
             label: 'More options',
             child: Tap(
-              onTap: () => toast(context, 'More options are not in the design yet'),
+              onTap: _more,
               radius: 12,
               child: const SizedBox(
                 width: 44,
@@ -67,7 +229,7 @@ class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> {
           ),
         ],
       ),
-      body: VGap(
+      body: livePlaceholder() ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
         gap: 20,
         children: [
@@ -77,14 +239,14 @@ class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> {
             children: [
               Row(
                 children: [
-                  const MpBadge('Draft', weight: w600),
+                  MpBadge(_badge.$1, bg: _badge.$2, fg: _badge.$3, weight: w600),
                   const Gap(8),
                   Expanded(child: Text(_saved, style: tx(14, c: MP.ink2, h: 20 / 14))),
                 ],
               ),
               const Gap(4),
               Text(
-                'The AI assistant only uses this entry once Dr. Sen approves it.',
+                _note,
                 style: tx(13, c: MP.ink3, h: 18 / 13),
               ),
             ],
@@ -126,7 +288,7 @@ class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> {
                     D10Select(
                       title: 'Language',
                       value: _language,
-                      options: _languages,
+                      options: isLive ? d10Languages.values.toList() : _languages,
                       onChanged: (v) => setState(() => _language = v),
                     ),
                   ],
@@ -141,7 +303,7 @@ class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> {
                     D10Select(
                       title: 'Category',
                       value: _category,
-                      options: _categories,
+                      options: isLive ? d10Categories.values.toList() : _categories,
                       onChanged: (v) => setState(() => _category = v),
                     ),
                   ],
@@ -185,20 +347,14 @@ class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> {
               child: MpButton(
                 'Save draft',
                 kind: MpBtn.secondary,
-                onTap: () {
-                  setState(() => _saved = 'Last saved just now');
-                  toast(context, 'Draft saved');
-                },
+                onTap: _saveDraft,
               ),
             ),
             const Gap(12),
             Expanded(
               child: MpButton(
                 'Submit for approval',
-                onTap: () {
-                  toast(context, 'Submitted for approval');
-                  Nav.back(context);
-                },
+                onTap: _submit,
               ),
             ),
           ],

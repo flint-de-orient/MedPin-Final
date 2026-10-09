@@ -298,3 +298,68 @@ class D10ListRow extends StatelessWidget {
     return Tap(onTap: onTap, radius: 0, child: content);
   }
 }
+
+// ── Live helpers (AI assistant & feedback screens) ──
+
+/// Why an AI answer was flagged: 'dosage_question' → 'dosage question'.
+String d10Reason(String reason) => switch (reason) {
+  'symptom_question' => 'symptom question',
+  'dosage_question' => 'dosage question',
+  'low_confidence' => 'low-confidence answer',
+  'outside_knowledge_base' => 'outside knowledge base',
+  '' => 'needs review',
+  _ => reason.replaceAll('_', ' '),
+};
+
+/// 'high' → 'High'
+String d10Cap(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1).replaceAll('_', ' ')}';
+
+/// Knowledge-base languages: API code → label.
+const d10Languages = {'en': 'English', 'bn': 'Bengali', 'hi': 'Hindi'};
+
+/// Knowledge-base categories: API code → label.
+const d10Categories = {
+  'medicines': 'Medicines',
+  'diabetes': 'Diabetes',
+  'hypertension': 'Hypertension',
+  'diet': 'Diet',
+  'infections': 'Infections',
+  'thyroid': 'Thyroid',
+  'other': 'Other',
+};
+
+const _d10Months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+int _d10DaysAgo(DateTime d, DateTime n) =>
+    DateTime(n.year, n.month, n.day).difference(DateTime(d.year, d.month, d.day)).inDays;
+
+/// "today", "yesterday", "3 days ago", "2 weeks ago", "1 Sep".
+String d10Since(DateTime d, {DateTime? now}) {
+  final days = _d10DaysAgo(d, now ?? DateTime.now());
+  if (days <= 0) return 'today';
+  if (days == 1) return 'yesterday';
+  if (days < 7) return '$days days ago';
+  if (days < 28) return days < 14 ? '1 week ago' : '${days ~/ 7} weeks ago';
+  return '${d.day} ${_d10Months[d.month - 1]}';
+}
+
+/// Day caption above chat messages: "Today", "Yesterday", "Sat, 12 Sep".
+String d10DayCaption(DateTime d, {DateTime? now}) {
+  final n = now ?? DateTime.now();
+  final days = _d10DaysAgo(d, n);
+  if (days == 0) return 'Today';
+  if (days == 1) return 'Yesterday';
+  const wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return '${wd[d.weekday - 1]}, ${d.day} ${_d10Months[d.month - 1]}${d.year == n.year ? '' : ' ${d.year}'}';
+}
+
+/// A person in a "Read by" / "replied" line: "Dr. Sen", "Tania".
+String d10Person(String name) {
+  final n = name.trim();
+  if (n.isEmpty) return '';
+  if (RegExp(r'^Dr\.?\s', caseSensitive: false).hasMatch(n)) {
+    final parts = n.replaceFirst(RegExp(r'^Dr\.?\s+', caseSensitive: false), '').split(RegExp(r'\s+'));
+    return 'Dr. ${parts.last}';
+  }
+  return n.split(RegExp(r'\s+')).first;
+}

@@ -1,0 +1,119 @@
+{
+ "registration": {
+  "council": "West Bengal Medical Council",
+  "councilShort": "WBMC",
+  "number": "64213",
+  "year": 2008,
+  "status": "verified"
+ },
+ "followUpReminder": {
+  "daysBefore": 3,
+  "channels": [
+   "whatsapp",
+   "app"
+  ]
+ },
+ "chatSettings": {
+  "replyHours": {
+   "from": "09:00",
+   "to": "20:00"
+  },
+  "whoCanMessage": "booked",
+  "aiReplies": true,
+  "urgentAlerts": true
+ },
+ "notificationPrefs": {
+  "quietHours": {
+   "enabled": false,
+   "from": "22:00",
+   "to": "07:00"
+  },
+  "types": {
+   "appointments": true,
+   "messages": true,
+   "labResults": true,
+   "followUps": true
+  },
+  "push": true,
+  "whatsapp": true,
+  "email": false,
+  "dailyDigest": true
+ },
+ "userId": "6ac8bbcee42c9f0836e9855b",
+ "displayName": "Dr. Arjun Sen",
+ "gender": "male",
+ "profession": "doctor",
+ "headline": "Diabetologist · Internal medicine",
+ "specialtyKeys": [
+  "diabetes"
+ ],
+ "specialisations": [
+  "Diabetology",
+  "Internal medicine"
+ ],
+ "conditionsTreated": [
+  "Type 2 diabetes",
+  "Hypertension",
+  "Thyroid disorders",
+  "PCOS",
+  "Obesity"
+ ],
+ "memberships": [
+  "RSSDI member",
+  "API member"
+ ],
+ "languagesSpoken": [
+  "English",
+  "Bengali"
+ ],
+ "qualifications": [
+  {
+   "name": "MBBS",
+   "institution": "Calcutta Medical College",
+   "year": 2008,
+   "proofStatus": "verified",
+   "_id": "6ac8bbcee42c9f0836e98572"
+  },
+  {
+   "name": "MD, Internal Medicine",
+   "institution": "IPGMER, Kolkata",
+   "year": 2012,
+   "proofStatus": "verified",
+   "_id": "6ac8bbcee42c9f0836e98573"
+  },
+  {
+   "name": "Fellowship in Diabetology",
+   "institution": "RSSDI",
+   "year": 2014,
+   "proofStatus": "upload",
+   "_id": "6ac8bbcee42c9f0836e98574"
+  }
+ ],
+ "degreesSummary": "MBBS, MD",
+ "practisingSince": 2010,
+ "isVerified": true,
+ "offersVideo": true,
+ "acceptingBookings": true,
+ "presence": "in_clinic",
+ "avgReplyMinutes": 15,
+ "recentSearches": [],
+ "createdAt": "2026-10-09T10:02:54.963Z",
+ "updatedAt": "2026-10-09T10:02:56.153Z",
+ "id": "6ac8bbcee42c9f0836e98571",
+ "yearsExperience": 16,
+ "registrationDisplay": "WBMC 64213",
+ "completionPct": 57,
+ "locations": 2,
+ "services": 7,
+ "upcomingLeave": null,
+ "nextFreeSlot": {
+  "day": "2026-10-09T18:30:00.000Z",
+  "minute": 540,
+  "time": "9:00 AM",
+  "startAt": "2026-10-10T03:30:00.000Z",
+  "booked": 0,
+  "walkIn": false,
+  "available": true,
+  "location": "Salt Lake"
+ }
+}

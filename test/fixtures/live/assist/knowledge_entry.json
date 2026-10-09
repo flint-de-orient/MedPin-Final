@@ -1,0 +1,26 @@
+{
+ "practiceId": "6ac8bbcee42c9f0836e98561",
+ "title": "When to repeat HbA1c",
+ "summary": "HbA1c shows the average sugar of 3 months",
+ "content": "HbA1c shows the average sugar of 3 months. We repeat it every 3 months until it is in target, then every 6 months.",
+ "status": "approved",
+ "language": "en",
+ "category": "diabetes",
+ "sourceCitation": "",
+ "tags": [
+  "hba1c",
+  "diabetes"
+ ],
+ "createdBy": "6ac8bbcee42c9f0836e9855b",
+ "updatedBy": "6ac8bbcee42c9f0836e9855b",
+ "approved": {
+  "by": "6ac8bbcee42c9f0836e9855b",
+  "at": "2026-09-08T18:30:00.000Z"
+ },
+ "createdAt": "2026-10-09T10:02:57.046Z",
+ "updatedAt": "2026-10-09T10:02:57.046Z",
+ "id": "6ac8bbd18adea6a429a73461",
+ "shared": false,
+ "adopted": false,
+ "editable": false
+}

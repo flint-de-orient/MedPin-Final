@@ -1,0 +1,173 @@
+{
+ "counts": {
+  "all": 6,
+  "retired": 1,
+  "pending": 1,
+  "approved": 4
+ },
+ "items": [
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "title": "Monsoon fever: dengue checks",
+   "summary": "Old guidance for fever during monsoon.",
+   "content": "Old guidance for fever during monsoon.",
+   "status": "retired",
+   "language": "en",
+   "category": "infections",
+   "sourceCitation": "",
+   "tags": [
+    "fever",
+    "dengue"
+   ],
+   "createdBy": "6ac8bbcee42c9f0836e9855b",
+   "updatedBy": {
+    "name": "Dr. Arjun Sen",
+    "id": "6ac8bbcee42c9f0836e9855b"
+   },
+   "retiredAt": "2026-09-11T18:30:00.000Z",
+   "retiredNote": "Superseded by the 2026 clinic fever protocol.",
+   "createdAt": "2026-10-09T10:02:57.049Z",
+   "updatedAt": "2026-10-09T10:02:57.049Z",
+   "id": "6ac8bbd18adea6a429a73465",
+   "shared": false,
+   "adopted": false
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "title": "Fasting days with diabetes",
+   "summary": "If you fast, check sugar more often and ask your doctor before changing medicine timing.",
+   "content": "If you fast, check sugar more often and ask your doctor before changing medicine timing.",
+   "status": "pending",
+   "language": "en",
+   "category": "diabetes",
+   "sourceCitation": "",
+   "tags": [
+    "fasting",
+    "diabetes"
+   ],
+   "createdBy": "6ac8bbcee42c9f0836e9855b",
+   "updatedBy": {
+    "name": "Dr. Arjun Sen",
+    "id": "6ac8bbcee42c9f0836e9855b"
+   },
+   "createdAt": "2026-10-09T10:02:57.047Z",
+   "updatedAt": "2026-10-09T10:02:57.047Z",
+   "id": "6ac8bbd18adea6a429a73463",
+   "shared": false,
+   "adopted": false
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "title": "When to repeat HbA1c",
+   "summary": "HbA1c shows the average sugar of 3 months",
+   "content": "HbA1c shows the average sugar of 3 months. We repeat it every 3 months until it is in target, then every 6 months.",
+   "status": "approved",
+   "language": "en",
+   "category": "diabetes",
+   "sourceCitation": "",
+   "tags": [
+    "hba1c",
+    "diabetes"
+   ],
+   "createdBy": "6ac8bbcee42c9f0836e9855b",
+   "updatedBy": {
+    "name": "Dr. Arjun Sen",
+    "id": "6ac8bbcee42c9f0836e9855b"
+   },
+   "approved": {
+    "by": "6ac8bbcee42c9f0836e9855b",
+    "at": "2026-09-08T18:30:00.000Z"
+   },
+   "createdAt": "2026-10-09T10:02:57.046Z",
+   "updatedAt": "2026-10-09T10:02:57.046Z",
+   "id": "6ac8bbd18adea6a429a73461",
+   "shared": false,
+   "adopted": false
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "title": "Iron tablets and tea",
+   "summary": "Take iron tablets with water or orange juice, at least one hour before or two hours after tea or coffee.",
+   "content": "Take iron tablets with water or orange juice, at least one hour before or two hours after tea or coffee.",
+   "status": "approved",
+   "language": "en",
+   "category": "medicines",
+   "sourceCitation": "",
+   "tags": [
+    "iron",
+    "anaemia"
+   ],
+   "createdBy": "6ac8bbcee42c9f0836e9855b",
+   "updatedBy": {
+    "name": "Dr. Arjun Sen",
+    "id": "6ac8bbcee42c9f0836e9855b"
+   },
+   "approved": {
+    "by": "6ac8bbcee42c9f0836e9855b",
+    "at": "2026-09-08T18:30:00.000Z"
+   },
+   "createdAt": "2026-10-09T10:02:57.045Z",
+   "updatedAt": "2026-10-09T10:02:57.045Z",
+   "id": "6ac8bbd18adea6a429a7345f",
+   "shared": false,
+   "adopted": false
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "title": "Home BP: when to call us",
+   "summary": "Check BP sitting, after 5 minutes of rest",
+   "content": "Check BP sitting, after 5 minutes of rest. Call the clinic if it is above 160/100 twice, or call 108 if you have chest pain, weakness or confusion.",
+   "status": "approved",
+   "language": "en",
+   "category": "hypertension",
+   "sourceCitation": "ISH 2020 guideline",
+   "tags": [
+    "blood pressure",
+    "home readings"
+   ],
+   "createdBy": "6ac8bbcee42c9f0836e9855b",
+   "updatedBy": {
+    "name": "Dr. Arjun Sen",
+    "id": "6ac8bbcee42c9f0836e9855b"
+   },
+   "approved": {
+    "by": "6ac8bbcee42c9f0836e9855b",
+    "at": "2026-09-08T18:30:00.000Z"
+   },
+   "createdAt": "2026-10-09T10:02:57.043Z",
+   "updatedAt": "2026-10-09T10:02:57.043Z",
+   "id": "6ac8bbd18adea6a429a7345d",
+   "shared": false,
+   "adopted": false
+  },
+  {
+   "practiceId": "6ac8bbcee42c9f0836e98561",
+   "title": "Metformin timing",
+   "summary": "Take metformin with your meals or right after them",
+   "content": "Take metformin with your meals or right after them. This lowers stomach upset. If you miss a dose, skip it — never take two together.",
+   "status": "approved",
+   "language": "en",
+   "category": "medicines",
+   "sourceCitation": "ADA Standards of Care 2026, Section 9",
+   "tags": [
+    "metformin",
+    "diabetes",
+    "dosage timing"
+   ],
+   "createdBy": "6ac8bbcee42c9f0836e9855b",
+   "updatedBy": {
+    "name": "Dr. Arjun Sen",
+    "id": "6ac8bbcee42c9f0836e9855b"
+   },
+   "approved": {
+    "by": "6ac8bbcee42c9f0836e9855b",
+    "at": "2026-09-08T18:30:00.000Z"
+   },
+   "createdAt": "2026-10-09T10:02:57.040Z",
+   "updatedAt": "2026-10-09T10:02:57.040Z",
+   "id": "6ac8bbd18adea6a429a7345b",
+   "shared": false,
+   "adopted": false
+  }
+ ]
+}
