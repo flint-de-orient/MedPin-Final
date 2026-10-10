@@ -196,7 +196,11 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
     }
     if (appt.cancelledBy === 'patient') {
       const desk = await practiceStaff(appt.practiceId, { roles: ['front_desk'], locationId: appt.locationId });
-      await notify(desk, { type: 'appointment_cancelled', practiceId: appt.practiceId, title: 'A patient cancelled a visit', screen: 'Appointments' });
+      const who = await M.Patient.findById(appt.patientId, 'name');
+      await notify([...desk, appt.doctorId], {
+        type: 'appointment_cancelled', practiceId: appt.practiceId, title: `${who?.name || 'A patient'} cancelled a visit`,
+        body: `${T.dayKey(appt.startAt)} · ${T.fmtTime(T.minuteOfDay(appt.startAt))}`, screen: 'Appointments',
+      });
     }
   }
   return appt;

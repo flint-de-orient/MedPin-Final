@@ -28,7 +28,7 @@ async function fcmAccessToken() {
   return fcmToken.value;
 }
 
-async function sendPush(tokens, { title, body, data }) {
+async function sendPush(tokens, { title, body, data, urgent }) {
   if (!tokens.length) return;
   if (!env.fcm.projectId || !env.fcm.privateKey) {
     console.log(`[push:dev] ${tokens.length} device(s): ${title}`);
@@ -40,21 +40,47 @@ async function sendPush(tokens, { title, body, data }) {
       fetch(`https://fcm.googleapis.com/v1/projects/${env.fcm.projectId}/messages:send`, {
         method: 'POST',
         headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ message: { token, notification: { title, body }, data: data || {} } }),
+        body: JSON.stringify({
+          message: {
+            token, notification: { title, body }, data: data || {},
+            android: { priority: 'high', notification: { channel_id: urgent ? 'medpin_urgent' : 'medpin_general', sound: 'default' } },
+            apns: { payload: { aps: { sound: 'default' } } },
+          },
+        }),
+      }).then(async (res) => {
+        // A token the phone no longer uses: forget it so it isn't retried forever.
+        if (res.status === 404 || res.status === 400) {
+          const b = await res.json().catch(() => ({}));
+          if (/UNREGISTERED|INVALID_ARGUMENT/.test(JSON.stringify(b))) await require('../models').DeviceToken.deleteOne({ token });
+        }
       }),
     ),
   );
 }
 
-async function sendWhatsApp(phone, text) {
+/**
+ * WhatsApp to a patient. Messages MedPin starts must use an approved template
+ * (WHATSAPP_TEMPLATES = {"prescription":"rx_ready", ...}); the message text
+ * becomes the template's single body parameter. Without a template for this
+ * type nothing is sent in production (Meta would reject free text).
+ */
+async function sendWhatsApp(phone, text, { template, params } = {}) {
   if (!env.whatsapp.accessToken || !env.whatsapp.phoneNumberId) {
     console.log(`[whatsapp:dev] +91 ${phone}: ${text}`);
     return;
   }
+  const name = template && env.whatsapp.templates?.[template];
+  if (!name && env.isProd) {
+    console.warn(`[whatsapp] no approved template for "${template}" — not sent`);
+    return;
+  }
+  const message = name
+    ? { type: 'template', template: { name, language: { code: env.whatsapp.templateLanguage || 'en' }, components: [{ type: 'body', parameters: (params || [text]).map((t) => ({ type: 'text', text: String(t).slice(0, 1000) })) }] } }
+    : { type: 'text', text: { body: text } };
   const res = await fetch(`https://graph.facebook.com/v21.0/${env.whatsapp.phoneNumberId}/messages`, {
     method: 'POST',
     headers: { authorization: `Bearer ${env.whatsapp.accessToken}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', to: `91${phone}`, type: 'text', text: { body: text } }),
+    body: JSON.stringify({ messaging_product: 'whatsapp', to: `91${phone}`, ...message }),
   });
   if (!res.ok) console.warn(`[whatsapp] send failed: ${res.status}`);
 }

@@ -9,6 +9,7 @@ import '../core/nav.dart';
 import '../data/config.dart';
 import '../data/session.dart';
 import 'launcher.dart';
+import '../data/push.dart';
 
 /// Hero tag shared by the splash lockup and the launcher's header logo.
 const kLogoHeroTag = 'medpin-logo';
@@ -160,6 +161,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         child: child,
       ),
     ));
+    // A notification tapped while the app was closed opens once the first screen shows.
+    if (spec != null) Future.delayed(const Duration(milliseconds: 900), Push.I.flushPending);
   }
 
   @override

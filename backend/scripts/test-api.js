@@ -516,6 +516,45 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await ctx.doc('PATCH', `/api/members/${tania.id}`, { suspended: false }));
   });
 
+  await step('reminders and notifications go to the right people, once', async () => {
+    const jobs = require('../src/services/jobs');
+    const T = require('../src/lib/time');
+    const patient = await M.Patient.findById(ctx.patientId);
+    const kinds = async (userId) => (await M.Notification.find({ userId }).lean()).map((n) => n.type);
+    // Medicine alarm at the dose time (once).
+    const course = await M.MedicationCourse.findOne({ patientId: patient._id, status: 'active' });
+    const now = new Date();
+    const dose = await M.DoseLog.create({ courseId: course._id, patientId: patient._id, scheduledAt: new Date(now.getTime() - 20000), slot: 'morning', status: 'due' });
+    await jobs.doseReminders(now, new Date(now.getTime() - 60000));
+    await jobs.doseReminders(now, new Date(now.getTime() - 60000));
+    const doseNotes = await M.Notification.find({ userId: patient.userId, type: 'dose_reminder', 'params.doseId': dose._id });
+    assert.equal(doseNotes.length, 1, 'one alarm per dose, never twice');
+    assert.match(doseNotes[0].title, new RegExp(course.name));
+    // Low stock (once a day).
+    course.stockUnits = 2;
+    await course.save();
+    const tenAm = T.atMinute(new Date(), 600);
+    await jobs.lowStock(tenAm);
+    await jobs.lowStock(tenAm);
+    assert.equal((await kinds(patient.userId)).filter((k) => k === 'low_stock').length, 1, 'low-stock warning once a day');
+    // Visit reminder 24 h before.
+    const appt = await M.Appointment.findOne({ patientId: patient._id }).sort({ startAt: -1 });
+    appt.status = 'booked';
+    appt.startAt = new Date(now.getTime() + 24 * 3600e3 - 120000);
+    await appt.save();
+    await jobs.visitReminders(now);
+    assert.ok((await kinds(patient.userId)).includes('visit_reminder'), 'visit reminder sent a day before');
+    // Daily summary at 20:00 for the doctor.
+    await jobs.dailyDigest(T.atMinute(new Date(), 20 * 60 + 5));
+    // An emergency reaches the patient's doctor, not the front desk.
+    const deskUser = (await M.Member.findOne({ practiceId: ctx.practiceId, role: 'front_desk' })).userId;
+    const before = await M.Notification.countDocuments({ userId: deskUser, type: /alert_/ });
+    ok(await ctx.pat('POST', '/api/patient/urgent', { doctorId: ctx.doctorUserId, text: 'Chest pain since morning' }), 201);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await M.Notification.countDocuments({ userId: deskUser, type: /alert_/ }), before, 'front desk does not get clinical alerts');
+    assert.ok((await kinds(ctx.doctorUserId)).some((k) => /alert_emergency|urgent_message/.test(k)), "the patient's doctor is alerted");
+  });
+
   await step('AI endpoints respond without a key (graceful fallback)', async () => {
     const s = ok(await ctx.doc('POST', '/api/ai/sessions', { patientId: ctx.patientId }), 201);
     const out = ok(await ctx.doc('POST', `/api/ai/sessions/${s.id}/messages`, { text: 'Summarise this patient' }), 201);

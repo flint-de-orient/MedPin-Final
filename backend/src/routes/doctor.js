@@ -231,7 +231,21 @@ r.post('/doctor/leaves', async (req, res) => {
   const endDate = T.parseDay(req.body.endDate || req.body.startDate);
   if (endDate < startDate) throw badRequest('End date is before the start date');
   const leave = await M.DoctorLeave.create({ doctorId: req.user._id, locationId: req.body.locationId || null, reason: req.body.reason, startDate, endDate });
-  res.status(201).json(leave);
+  // Patients already booked in those days are told to pick another time.
+  const q = { doctorId: req.user._id, startAt: { $gte: startDate, $lt: T.addDays(endDate, 1) }, status: { $in: ['booked', 'confirmed'] } };
+  if (leave.locationId) q.locationId = leave.locationId;
+  const affected = await M.Appointment.find(q).populate('patientId', 'userId name');
+  const { notify, practiceStaff } = require('../services/notify');
+  const who = req.user.name || 'Your doctor';
+  await notify(affected.map((a) => a.patientId?.userId).filter(Boolean), {
+    type: 'doctor_leave', practiceId: req.practiceId, title: `${who} is on leave`,
+    body: `${T.dayKey(startDate)}${+endDate !== +startDate ? ` to ${T.dayKey(endDate)}` : ''}. Please choose another time for your visit.`, screen: 'Patient-Doctors', whatsapp: true,
+  });
+  if (affected.length) {
+    const desk = await practiceStaff(req.practiceId, { roles: ['front_desk', 'practice_manager'] });
+    await notify(desk, { type: 'doctor_leave', practiceId: req.practiceId, title: `${affected.length} visit${affected.length === 1 ? '' : 's'} to move`, body: `${who} is on leave ${T.dayKey(startDate)}${+endDate !== +startDate ? `–${T.dayKey(endDate)}` : ''}`, screen: 'Appointments' });
+  }
+  res.status(201).json({ ...leave.toJSON(), patientsTold: affected.length });
 });
 
 r.delete('/doctor/leaves/:id', async (req, res) => {

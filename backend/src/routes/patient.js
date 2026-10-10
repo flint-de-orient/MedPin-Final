@@ -333,7 +333,10 @@ r.get('/doctors/:doctorId/slots', async (req, res) => {
   if (req.query.next) {
     const want = Math.min(Math.max(Number(req.query.next) || 3, 1), 12);
     const found = [];
-    for (let i = 0; i < 14 && found.length < want; i += 1) {
+    const dlr = await M.DoctorLocation.findOne({ doctorId: req.params.doctorId, locationId: req.query.locationId, status: 'active' }, 'schedule');
+    if (dlr?.schedule?.onlineBooking === false) return res.json({ open: false, reason: 'online_booking_off', slots: [] });
+    const windowDays = Math.min(dlr?.schedule?.bookingWindowDays || 7, 60) + 1;
+    for (let i = 0; i < windowDays && found.length < want; i += 1) {
       const day = T.addDays(T.dayStart(req.query.date ? T.parseDay(req.query.date) : new Date()), i);
       const { slots } = await S.slotsFor({ doctorId: req.params.doctorId, locationId: req.query.locationId, day });
       for (const s of slots) if (s.available && !s.walkIn && found.length < want) found.push(s);
@@ -381,6 +384,12 @@ r.post('/visit-requests', async (req, res) => {
   if (!isId(doctorId)) throw badRequest('Choose a doctor');
   const dl = await M.DoctorLocation.findOne({ doctorId, status: 'active', ...(locationId ? { locationId } : {}) });
   if (!dl) throw notFound('Doctor');
+  // Booking rules (Profile → Booking rules).
+  if (dl.schedule?.onlineBooking === false) throw conflict("This doctor isn't taking online bookings. Please call the clinic.", 'ONLINE_BOOKING_OFF');
+  if (slot) {
+    const lastDay = T.addDays(T.dayStart(), (dl.schedule?.bookingWindowDays || 7) + 1);
+    if (new Date(slot) >= lastDay) throw badRequest(`You can book up to ${dl.schedule?.bookingWindowDays || 7} days ahead`, 'OUTSIDE_BOOKING_WINDOW');
+  }
   await M.PatientEnrolment.findOneAndUpdate(
     { patientId: req.patient._id, practiceId: dl.practiceId },
     { $setOnInsert: { status: 'linked', shareScope: 'partial', linkedAt: new Date() } },
@@ -401,6 +410,11 @@ r.post('/visit-requests', async (req, res) => {
     appointment = await S.book({ practiceId: dl.practiceId, locationId: dl.locationId, doctorId, patientId: req.patient._id, startAt: slot, visitType, mode, reason, channel: 'app', bookedBy: req.user._id, requestId: request._id });
     Object.assign(request, { status: 'scheduled', appointmentId: appointment._id, handledAt: new Date() });
     await request.save();
+    const desk = await practiceStaff(dl.practiceId, { roles: ['front_desk', 'practice_manager'], locationId: dl.locationId });
+    await notify([...desk, doctorId], {
+      type: 'appointment_booked', practiceId: dl.practiceId, title: `${req.patient.name} booked a visit`,
+      body: `${T.dayKey(appointment.startAt)} · ${T.fmtTime(T.minuteOfDay(appointment.startAt))}`, screen: 'Appointments',
+    });
   } else {
     const desk = await practiceStaff(dl.practiceId, { roles: ['front_desk', 'practice_manager'], locationId: dl.locationId });
     await notify(desk, { type: 'visit_request', practiceId: dl.practiceId, title: `${req.patient.name} asked for a visit`, body: preferredTime || reason, screen: 'Appointments' });

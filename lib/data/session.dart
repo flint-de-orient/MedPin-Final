@@ -217,11 +217,14 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// This phone's push token, sent on sign-out so the backend stops pushing to it.
+  String? Function() deviceToken = () => null;
+
   Future<void> logout() async {
     final token = refreshToken;
     if (token != null) {
       try {
-        await Api.I.post('/api/auth/logout', {'refreshToken': token});
+        await Api.I.post('/api/auth/logout', {'refreshToken': token, if (deviceToken() != null) 'deviceToken': deviceToken()});
       } catch (_) {
         // Signing out locally is enough if the server can't be reached.
       }

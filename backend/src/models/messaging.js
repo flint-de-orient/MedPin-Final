@@ -77,6 +77,7 @@ const messageSchema = new Schema(
     senderType: enumOf(E.SENDER_TYPES, { required: true }),
     kind: enumOf(E.MESSAGE_KINDS, { default: 'text' }),
     text: { type: String, maxlength: 4000 },
+    meta: Schema.Types.Mixed, // e.g. { away: true } for the automatic away reply
     voice: { file: fileSchema, durationSec: Number },
     attachment: fileSchema, // photo / PDF
     recordId: ref('MedicalRecord'), // shared report or prescription card

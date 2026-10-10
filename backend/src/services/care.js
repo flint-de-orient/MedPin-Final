@@ -1,14 +1,14 @@
 // Alerts, care conversations and medicine adherence.
 const M = require('../models');
 const T = require('../lib/time');
-const { notify, practiceStaff } = require('./notify');
+const { notify, practiceStaff, clinicians } = require('./notify');
 
 // ── Alerts ────────────────────────────────────────────────
 
 async function raiseAlert({ practiceId, patientId, doctorId, severity, kind, title, detail, sourceModel, sourceId, conversationId }) {
   const alert = await M.Alert.create({ practiceId, patientId, doctorId, severity, kind, title, detail, sourceModel, sourceId, conversationId });
-  const roles = severity === 'watch' ? ['doctor'] : ['doctor', 'front_desk'];
-  const staffIds = await practiceStaff(practiceId, { roles });
+  // Clinical alerts reach the patient's own doctors (the one named, plus the care team).
+  const staffIds = await clinicians(practiceId, patientId, { doctorId });
   const patient = await M.Patient.findById(patientId, 'name');
   await notify(staffIds, {
     type: `alert_${severity}`, practiceId,
@@ -102,13 +102,49 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', ...
   }
   if (senderType === 'patient') convo.triage = convo.triage || 'needs_attention';
   await convo.save();
-  const recipients = convo.participants.filter((p) => String(p.userId) !== senderId).map((p) => p.userId);
-  await notify(recipients, {
-    type: rest.isUrgent ? 'urgent_message' : 'message', practiceId: convo.practiceId,
-    title: rest.isUrgent ? 'Urgent message' : `New message from ${convo.lastMessage.senderLabel}`,
-    body: (text || '').slice(0, 120), screen: 'Patient-Thread', params: { conversationId: convo._id },
-  });
+  const toPatient = convo.participants.filter((p) => p.role === 'patient' && String(p.userId) !== senderId).map((p) => p.userId);
+  let toStaff = [];
+  if (senderType === 'patient') {
+    // The patient's own clinicians hear about it (dietician for nutrition threads); the front
+    // desk sees it in their inbox. Clinicians who joined later are added to the thread now.
+    toStaff = await clinicians(convo.practiceId, convo.patientId, { roles: convo.type === 'nutrition' ? ['dietician', 'doctor'] : ['doctor'] });
+    let changed = false;
+    for (const id of toStaff) {
+      if (!convo.participants.some((p) => String(p.userId) === String(id))) {
+        convo.participants.push({ userId: id, role: convo.type === 'nutrition' ? 'dietician' : 'doctor', unreadCount: 1 });
+        changed = true;
+      }
+    }
+    if (changed) await convo.save();
+  }
+  const base = { type: rest.isUrgent ? 'urgent_message' : 'message', practiceId: convo.practiceId, body: (text || '').slice(0, 120) };
+  if (toStaff.length) {
+    await notify(toStaff, { ...base, title: rest.isUrgent ? `Urgent message from ${convo.lastMessage.senderLabel}` : `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-Thread', params: { conversationId: convo._id } });
+  }
+  if (toPatient.length) {
+    await notify(toPatient, { ...base, title: `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-DoctorChat', params: { conversationId: convo._id } });
+  }
+  if (senderType === 'patient') await awayReply(convo).catch(() => {});
   return msg;
+}
+
+/**
+ * Chat settings → "Reply hours" and "Away message": a patient writing outside
+ * the primary doctor's reply hours gets the away message once (per 12 h).
+ */
+async function awayReply(convo) {
+  const team = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true });
+  const profile = team && (await M.DoctorProfile.findOne({ userId: team.userId }, 'chatSettings displayName'));
+  const cs = profile?.chatSettings;
+  if (!cs?.awayMessage || !cs.replyHours?.from || !cs.replyHours?.to) return;
+  const now = T.minuteOfDay(new Date());
+  const from = T.hhmmToMin(cs.replyHours.from);
+  const to = T.hhmmToMin(cs.replyHours.to);
+  const inHours = from <= to ? now >= from && now < to : now >= from || now < to;
+  if (inHours) return;
+  const recent = await M.Message.exists({ conversationId: convo._id, senderType: 'system', 'meta.away': true, createdAt: { $gte: new Date(Date.now() - 12 * 3600e3) } });
+  if (recent) return;
+  await M.Message.create({ conversationId: convo._id, senderType: 'system', kind: 'text', text: cs.awayMessage, meta: { away: true } });
 }
 
 /** Marks a thread read for one user. */

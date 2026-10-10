@@ -8,6 +8,7 @@ import '../../data/config.dart';
 import '../../data/firebase_phone.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import '../../data/push.dart';
 
 /// Design: Auth-OTP.dc.html — "Login · code" (Sign in).
 class AuthOtpScreen extends StatefulWidget {
@@ -105,6 +106,7 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
           : ((await Api.I.post('/api/auth/otp/verify', {'phone': phone, 'code': _code.text, ...Session.deviceInfo}) as Map).cast<String, dynamic>());
       await Session.I.signIn(res);
       if (mounted) Nav.reset(context, Session.I.landing);
+      Future.delayed(const Duration(milliseconds: 600), Push.I.flushPending);
     } on ApiException catch (e) {
       if (!mounted) return;
       toast(context, e.message);

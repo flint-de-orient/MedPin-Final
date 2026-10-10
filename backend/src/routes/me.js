@@ -34,8 +34,10 @@ me.post('/active-practice', async (req, res) => {
 });
 
 me.post('/devices', async (req, res) => {
-  const { token, platform } = req.body;
-  if (!token || !E.PLATFORMS.includes(platform)) throw badRequest('token and platform are required');
+  // Plain strings only (a JSON object here would act as a query operator).
+  const token = typeof req.body.token === 'string' ? req.body.token.trim() : '';
+  const platform = String(req.body.platform || '');
+  if (!token || token.length > 4096 || !E.PLATFORMS.includes(platform)) throw badRequest('token and platform are required');
   await M.DeviceToken.findOneAndUpdate({ token }, { userId: req.user._id, platform, lastSeenAt: new Date() }, { upsert: true });
   res.json({ ok: true });
 });
@@ -60,7 +62,7 @@ me.post('/sessions/revoke-others', async (req, res) => {
     { userId: req.user._id, revokedAt: null, ...(req.sessionId ? { _id: { $ne: req.sessionId } } : {}) },
     { revokedAt: new Date() },
   );
-  await M.DeviceToken.deleteMany({ userId: req.user._id, ...(req.body.keepToken ? { token: { $ne: req.body.keepToken } } : {}) });
+  await M.DeviceToken.deleteMany({ userId: req.user._id, ...(typeof req.body.keepToken === 'string' && req.body.keepToken ? { token: { $ne: req.body.keepToken } } : {}) });
   res.json({ ok: true, signedOut: r.modifiedCount });
 });
 

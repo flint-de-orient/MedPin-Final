@@ -58,6 +58,8 @@ const env = {
   whatsapp: {
     accessToken: v('WHATSAPP_ACCESS_TOKEN'),
     phoneNumberId: v('WHATSAPP_PHONE_NUMBER_ID'),
+    templates: (() => { try { return JSON.parse(v('WHATSAPP_TEMPLATES', '{}')); } catch { return {}; } })(),
+    templateLanguage: v('WHATSAPP_TEMPLATE_LANG', 'en'),
   },
   fcm: {
     projectId: v('FCM_PROJECT_ID'),

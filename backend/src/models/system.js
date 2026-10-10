@@ -87,7 +87,13 @@ counterSchema.statics.next = async function next(name) {
   return doc.seq;
 };
 
+// One row per reminder already sent ("dose:<id>", "visit24:<id>"…), so the
+// scheduler never sends the same reminder twice, even after a restart.
+const reminderLogSchema = new Schema({ key: { type: String, required: true, unique: true }, at: { type: Date, default: Date.now } });
+reminderLogSchema.index({ at: 1 }, { expireAfterSeconds: 45 * 24 * 3600 });
+
 module.exports = {
+  ReminderLog: model('ReminderLog', reminderLogSchema),
   Notification: model('Notification', notificationSchema),
   ExportJob: model('ExportJob', exportJobSchema),
   AuditLog: model('AuditLog', auditLogSchema),

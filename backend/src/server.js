@@ -11,7 +11,11 @@ async function start() {
   const server = app.listen(env.port, () => {
     console.log(`MedPin API on http://localhost:${env.port}  (db ${env.mongo.dbName}, ${env.nodeEnv})`);
   });
+  // Reminders and summaries (JOBS=off to run an API-only process).
+  const jobs = require('./services/jobs');
+  if (process.env.JOBS !== 'off') jobs.start();
   const stop = async () => {
+    jobs.stop();
     server.close();
     await disconnect();
     process.exit(0);

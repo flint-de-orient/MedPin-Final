@@ -165,10 +165,10 @@ r.post('/refresh', async (req, res) => {
 });
 
 r.post('/logout', async (req, res) => {
-  if (req.body.refreshToken) {
-    await M.AuthSession.updateOne({ tokenHash: sha256(String(req.body.refreshToken)) }, { revokedAt: new Date(), revokeReason: 'logout' });
+  if (typeof req.body.refreshToken === 'string' && req.body.refreshToken) {
+    await M.AuthSession.updateOne({ tokenHash: sha256(req.body.refreshToken) }, { revokedAt: new Date(), revokeReason: 'logout' });
   }
-  if (req.body.deviceToken) await M.DeviceToken.deleteOne({ token: req.body.deviceToken });
+  if (typeof req.body.deviceToken === 'string' && req.body.deviceToken) await M.DeviceToken.deleteOne({ token: req.body.deviceToken });
   res.json({ ok: true });
 });
 

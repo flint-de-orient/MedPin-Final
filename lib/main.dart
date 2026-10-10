@@ -7,11 +7,22 @@ import 'app/splash.dart';
 import 'core/nav.dart';
 import 'core/tokens.dart';
 import 'data/firebase_phone.dart';
+import 'data/push.dart';
+import 'data/session.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   Nav.registry = screenRegistry;
   FirebasePhone.I.init(); // SMS sign-in on Android; ready long before the Login screen
+  // Push notifications start once someone is signed in (restored or new).
+  Session.I.deviceToken = () => Push.I.token;
+  var wasSignedIn = false;
+  Session.I.addListener(() {
+    final now = Session.I.signedIn;
+    if (now && !wasSignedIn) Push.I.start();
+    if (!now && wasSignedIn) Push.I.forget();
+    wasSignedIn = now;
+  });
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
