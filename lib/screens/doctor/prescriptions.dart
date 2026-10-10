@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
+import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
+import 'signature_gate.dart';
+import 'patient_picker.dart';
 
 /// Design: Prescriptions.dc.html — "Prescriptions" (Priya Sharma's list).
 /// Live: args {'prescriptionId'} and/or {'patientId'} → GET /api/prescriptions/:id
@@ -103,7 +105,8 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
       rx = (await Api.I.get('/api/prescriptions/$rxId') as Map).cast<String, dynamic>();
       patientId ??= rx.str('patientId');
     }
-    if (patientId == null) throw const ApiException(400, 'NO_PATIENT', 'Choose a patient first');
+    if (!mounted) throw const ApiException(400, 'NO_PATIENT', 'Choose a patient');
+    patientId = await patientOrPick(context, patientId, title: 'Prescriptions for…');
     final r = await Future.wait([
       Api.I.get('/api/patients/$patientId/prescriptions'),
       Api.I.get('/api/patients/$patientId'),
@@ -197,7 +200,8 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
         '$pages ${pages == 1 ? 'page' : 'pages'}',
       ].join(' · '),
       url: file['url'] is String ? file.str('url') : null,
-      sendable: ours && !scanned && x['sentAt'] == null,
+      // Only roles that prescribe can send (the front desk sees the prescription only).
+      sendable: ours && !scanned && x['sentAt'] == null && Session.I.can('prescribe'),
     );
   }
 
@@ -211,8 +215,8 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
       toast(context, 'No PDF for this prescription yet');
       return;
     }
-    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication).catchError((_) => false);
-    if (!ok && mounted) toast(context, "Couldn't open the PDF");
+    // Opens in the phone's PDF viewer (it can save or print); without a viewer, the share sheet.
+    await Downloads.open(context, url, name: 'Prescription ${rx.date}');
   }
 
   final _busy = ValueNotifier(false);
@@ -224,7 +228,7 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
   }
 
   Future<void> _send(_Rx rx) async {
-    final ok = await runAction(context, () => Api.I.post('/api/prescriptions/${rx.id}/send', const {}), busy: _busy);
+    final ok = await withSignature(context, () => Api.I.post('/api/prescriptions/${rx.id}/send', const {}), busy: _busy);
     if (ok == null || !mounted) return;
     toast(context, 'Prescription sent to ${F.firstName(_patientName)}');
     reload(quiet: true);

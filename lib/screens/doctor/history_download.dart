@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
 
@@ -117,20 +117,17 @@ class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> with LiveDa
     nav.pop();
     final url = res['url'] as String?;
     var ok = false;
-    if (url != null) {
-      try {
-        ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      } catch (_) {
-        ok = false;
-      }
-    }
     final under = nav.context;
+    if (url != null && under.mounted) {
+      await Downloads.open(under, url, name: 'MedPin-appointment-history');
+      ok = true;
+    }
     if (!under.mounted) return;
     if (!ok) {
       toast(under, "The file is ready but couldn't be opened");
       return;
     }
-    toast(under, _email ? 'Download started · a copy is on its way to your email' : 'Download started');
+    if (_email && res['emailed'] == true) toast(under, 'A copy is on its way to your email');
   }
 
   void _download() {

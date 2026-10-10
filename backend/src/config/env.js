@@ -28,7 +28,9 @@ const env = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
-  publicUrl: v('PUBLIC_URL', `http://localhost:${v('PORT', '4000')}`),
+  publicUrl: v('PUBLIC_URL', `http://localhost:${v('PORT', '4000')}`).replace(/\/+$/, ''),
+  // A localhost PUBLIC_URL can't be opened from a phone, so links then use the request's own address.
+  publicUrlSet: Boolean(v('PUBLIC_URL')) && !/\/\/(localhost|127\.0\.0\.1)([:/]|$)/.test(v('PUBLIC_URL')),
   mongo: {
     uri: v('MONGODB_URI', 'mongodb://127.0.0.1:27017'),
     dbName: v('MONGODB_DB_NAME', 'medpin'),

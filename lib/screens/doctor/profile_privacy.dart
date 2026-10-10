@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import 'common_d11.dart';
@@ -77,9 +77,8 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> with LiveDa
     final r = await runAction(context, () => Api.I.post('/api/me/export'));
     if (r == null || !mounted) return;
     final url = (r as Map)['url'] as String?;
-    if (url == null || !await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
-      if (mounted) toast(context, "Couldn't open the file");
-    }
+    if (!mounted) return;
+    await Downloads.share(context, url, name: 'MedPin-my-data');
   }
 
   Future<void> _deleteAccount() async {

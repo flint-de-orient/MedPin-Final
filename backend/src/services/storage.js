@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const env = require('../config/env');
+const { publicBase } = require('../lib/request-base');
 const { hmac, safeEqual } = require('../lib/security');
 
 const useS3 = Boolean(env.s3.bucket && env.s3.accessKeyId && env.s3.secretAccessKey);
@@ -55,8 +56,9 @@ async function read(key) {
     const out = await s3Client().send(new GetObjectCommand({ Bucket: env.s3.bucket, Key: key }));
     return Buffer.from(await out.Body.transformToByteArray());
   }
-  const full = path.resolve(env.uploadsDir, key);
-  if (!full.startsWith(env.uploadsDir)) throw new Error('Invalid key');
+  const root = path.resolve(env.uploadsDir);
+  const full = path.resolve(root, key);
+  if (!full.startsWith(root + path.sep)) throw new Error('Invalid key');
   return fs.promises.readFile(full);
 }
 
@@ -66,7 +68,7 @@ const signature = (key, exp) => hmac(`file:${key}:${exp}`);
 function signedUrl(key, ttlSec = 3600) {
   if (!key) return null;
   const exp = Math.floor(Date.now() / 1000) + ttlSec;
-  return `${env.publicUrl}/files/${key}?exp=${exp}&sig=${signature(key, exp)}`;
+  return `${publicBase()}/files/${key}?exp=${exp}&sig=${signature(key, exp)}`;
 }
 
 function verifySignature(key, exp, sig) {

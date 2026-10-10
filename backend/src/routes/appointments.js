@@ -299,7 +299,7 @@ r.post('/payments/:id/link', async (req, res) => {
     if (!resp.ok) throw conflict(`Razorpay: ${body.error?.description || resp.status}`, 'PAYMENT_LINK_FAILED');
     url = body.short_url;
   } else {
-    url = `${env.publicUrl}/dev/pay/${p._id}`; // dev stand-in until Razorpay keys are set
+    url = `${require('../lib/request-base').publicBase()}/dev/pay/${p._id}`; // dev stand-in until Razorpay keys are set
   }
   Object.assign(p, { paymentLinkUrl: url, paymentLinkSentAt: new Date() });
   await p.save();

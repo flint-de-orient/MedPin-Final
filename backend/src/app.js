@@ -17,6 +17,7 @@ function createApp() {
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  app.use(require('./lib/request-base').middleware);
   app.use(cors({
     origin: env.corsOrigins.length ? env.corsOrigins : !env.isProd, // dev: allow any origin (Flutter web on localhost)
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Practice-Id'],

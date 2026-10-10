@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
+import 'signature_gate.dart';
 
 /// Design: Patient-Profile.dc.html — "Patient profile".
 /// Live data: GET /api/patients/:id with /vitals, /lab-results,
@@ -37,6 +38,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> with LiveDa
   final _advice = TextEditingController();
   bool _dxFilled = false;
   String? _consultationId;
+  String? _issuedRxId;
   final _busy = ValueNotifier(false);
 
   @override
@@ -146,13 +148,22 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> with LiveDa
   }
 
   Future<void> _draftAction(BuildContext context, D6Rec r, {required bool send}) async {
-    final ok = await runAction(context, () async {
+    final ok = await withSignature(context, () async {
+      // Issued but not sent yet (e.g. the send failed): just send it again.
+      if (send && _issuedRxId != null) {
+        await Api.I.post('/api/prescriptions/$_issuedRxId/send');
+        _issuedRxId = null;
+        return true;
+      }
       final id = await _saveDraft(r);
       if (!send) return true;
       final issued = await Api.I.post('/api/consultations/$id/issue');
       final rx = (issued as Map)['prescription'] as Map?;
-      await Api.I.post('/api/prescriptions/${rx?['id'] ?? rx?['_id']}/send');
+      // The draft is now a prescription; a retry must not edit it again.
       _consultationId = null;
+      _issuedRxId = '${rx?['id'] ?? rx?['_id']}';
+      await Api.I.post('/api/prescriptions/$_issuedRxId/send');
+      _issuedRxId = null;
       return true;
     }, busy: _busy);
     if (ok != true || !context.mounted) return;

@@ -247,6 +247,12 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.match(draft.medications[1].caution, /Sulfa/i, 'sulfa allergy flagged on a sulfonylurea');
     const checks = ok(await ctx.doc('GET', `/api/consultations/${c.id}/checks`));
     assert.ok(checks[1].warnings.some((w) => w.type === 'strength'), '3 mg is not a catalog strength');
+    // No signature yet: issuing is refused and the draft stays a draft (nothing half-issued).
+    const noSig = await ctx.doc('POST', `/api/consultations/${c.id}/issue`);
+    assert.equal(noSig.status, 409);
+    assert.equal(noSig.body.error.code, 'SIGNATURE_REQUIRED');
+    assert.equal(ok(await ctx.doc('GET', `/api/consultations/${c.id}`)).consultation.status, 'draft', 'still editable');
+    ok(await ctx.doc('POST', '/api/doctor/profile/signature', undefined, { form: fileForm('file', tinyPng(), 'sig.png', 'image/png') }));
     const issued = ok(await ctx.doc('POST', `/api/consultations/${c.id}/issue`));
     ctx.rxId = issued.prescription.id;
     assert.equal(issued.prescription.rxNumber, 1);
@@ -254,15 +260,13 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const pdf = await fetch(issued.prescription.file.url);
     assert.equal(pdf.status, 200);
     assert.equal(pdf.headers.get('content-type'), 'application/pdf');
+    assert.match(Buffer.from(await pdf.arrayBuffer()).toString('latin1'), /\/Subtype\s*\/Image/, 'the signature image is printed');
     // Flip one hex digit of the signature (always a real change).
     const tampered = await fetch(issued.prescription.file.url.replace(/sig=(\w)/, (_, c) => `sig=${c === '0' ? '1' : '0'}`));
     assert.equal(tampered.status, 403, 'signed links cannot be forged');
     assert.equal((await ctx.doc('POST', `/api/consultations/${c.id}/issue`)).status, 409);
     const appt = ok(await ctx.doc('GET', `/api/appointments/${ctx.apptId}`));
     assert.equal(appt.status, 'completed');
-    const noSig = await ctx.doc('POST', `/api/prescriptions/${ctx.rxId}/send`);
-    assert.equal(noSig.body.error.code, 'SIGNATURE_REQUIRED');
-    ok(await ctx.doc('POST', '/api/doctor/profile/signature', undefined, { form: fileForm('file', tinyPng(), 'sig.png', 'image/png') }));
     ok(await ctx.doc('POST', `/api/prescriptions/${ctx.rxId}/send`));
   });
 
@@ -492,6 +496,13 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       assert.equal((await fetch(job.url)).status, 200);
     }
     assert.equal((await ctx.desk('POST', '/api/exports', { kind: 'data_export', format: 'csv', datasets: ['patients'] })).status, 403, 'front desk cannot export patient data');
+    // Each report download has its own rows (not the consultations register).
+    for (const [type, key] of [['fees', 'fees'], ['follow_ups', 'follow_ups'], ['referrals', 'referrals'], ['daily', 'daily'], ['prescriptions', 'prescriptions'], ['consultations', 'consultations']]) {
+      const job = ok(await ctx.doc('POST', '/api/exports', { kind: 'report', reportType: type, format: 'json', filters: { from: '2026-01-01' } }), 201);
+      const data = await (await fetch(job.url)).json();
+      assert.deepEqual(Object.keys(data), [key], `${type} export has its own data`);
+      assert.equal(job.emailed, false);
+    }
     const data = ok(await ctx.doc('POST', '/api/exports', { kind: 'data_export', format: 'csv', datasets: ['patients', 'clinical_summary', 'alerts'] }), 201);
     assert.ok(data.rowCount >= 1);
     assert.ok(await M.AuditLog.exists({ action: 'export.create' }), 'exports are audited');

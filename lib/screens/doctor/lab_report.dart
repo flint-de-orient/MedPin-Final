@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import 'common_d6.dart';
@@ -84,7 +84,7 @@ class _LabReportScreenState extends State<LabReportScreen> with LiveData {
       toast(context, isLive ? 'This report has no file' : 'Opening ${f.str('name', 'report')}');
       return;
     }
-    if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication) && mounted) toast(context, "Couldn't open the report");
+    await Downloads.open(context, url, name: f.str('name', 'Lab report'));
   }
 
   Future<void> _review() async {

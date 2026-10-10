@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 
@@ -130,6 +131,10 @@ String p3MedName(Map<String, dynamic> m) => [m.str('name'), m.str('strength')].w
 Future<void> p3Open(BuildContext context, String? url, {String what = 'the file'}) async {
   if (url == null || url.isEmpty) {
     toast(context, 'There is no file to open');
+    return;
+  }
+  if (Downloads.isFile(url)) {
+    await Downloads.open(context, url);
     return;
   }
   var ok = false;

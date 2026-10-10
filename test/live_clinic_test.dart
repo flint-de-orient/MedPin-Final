@@ -354,7 +354,9 @@ void main() {
 
     await _tap(t, find.text('Send to patient'));
     expect(_sent.single.$2, '/api/prescriptions/${rx['id']}/send');
-    expect(find.text('Add your digital signature first'), findsOneWidget);
+    // No signature yet: the doctor is asked to add one right there.
+    expect(find.text('Add your digital signature'), findsOneWidget);
+    expect(find.text('Add signature'), findsOneWidget);
     expect(t.takeException(), isNull);
     await _tearDown(t);
   });

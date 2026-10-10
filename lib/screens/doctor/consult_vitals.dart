@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
+import 'patient_picker.dart';
 
 /// Design: Consult-Vitals.dc.html — "Consult 1 · Vitals".
 /// Live: args {'consultationId'} → GET /api/consultations/:id, saved with
@@ -73,7 +74,8 @@ class _ConsultVitalsScreenState extends State<ConsultVitalsScreen> with LiveData
         final a = (await Api.I.get('/api/appointments/$_appointmentId') as Map).cast<String, dynamic>();
         _patientId = a.str('patientId');
       }
-      if (_patientId == null) throw const ApiException(400, 'NO_PATIENT', 'Choose a patient first');
+      if (!mounted) throw const ApiException(400, 'NO_PATIENT', 'Choose a patient');
+      _patientId = await patientOrPick(context, _patientId, title: 'Record vitals for…');
       summary = (await Api.I.get('/api/patients/$_patientId') as Map).cast<String, dynamic>();
     }
     vitals ??= summary['latestVitals'] is Map ? summary.obj('latestVitals') : null;

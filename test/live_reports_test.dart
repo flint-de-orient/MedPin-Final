@@ -300,7 +300,7 @@ void main() {
 
   testWidgets('Report-Download: POST /api/exports and opens the file', (t) async {
     _serve(actions: {
-      '/api/exports': {'id': 'x1', 'status': 'done', 'url': 'http://localhost:4000/files/exports/medpin-prescriptions.xlsx?sig=1'},
+      '/api/exports': {'id': 'x1', 'status': 'done', 'url': 'http://localhost:4000/files/exports/medpin-prescriptions.xlsx?sig=1', 'emailed': true},
     });
     t.view.physicalSize = const Size(390, 844);
     t.view.devicePixelRatio = 1;
@@ -333,7 +333,7 @@ void main() {
     expect(body['includeMobiles'], false);
     expect(body['emailCopy'], true);
     expect(launched.single.toString(), 'http://localhost:4000/files/exports/medpin-prescriptions.xlsx?sig=1');
-    expect(find.text('Excel downloaded · copy sent to your email'), findsOneWidget);
+    expect(find.text('Excel ready · copy sent to your email'), findsOneWidget);
     expect(t.takeException(), isNull);
     await _tearDown(t);
   });

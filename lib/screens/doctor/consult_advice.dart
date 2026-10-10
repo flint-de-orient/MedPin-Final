@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
+import 'signature_gate.dart';
 
 /// Design: Consult-Advice.dc.html — "Consult 3 · Advice".
 /// Live: args {'consultationId'} → GET /api/consultations/:id (+ /checks for
@@ -185,7 +186,7 @@ class _ConsultAdviceScreenState extends State<ConsultAdviceScreen> with LiveData
     final id = _consultationId;
     if (d == null || id == null) return;
     final consult = d.obj('consultation');
-    final res = await runAction(context, busy: _busy, () async {
+    final res = await withSignature(context, busy: _busy, () async {
       await Api.I.patch('/api/consultations/$id', {
         'labOrders': [
           for (final t in _tests)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/format.dart';
+import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch D9 (dashboard cards, team, plan & billing, export and
@@ -747,7 +748,14 @@ class D9Open {
   D9Open._();
 
   /// Replaced in tests.
-  static Future<bool> Function(Uri) launcher = (uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
+  static Future<bool> Function(Uri) launcher = (uri) async {
+    final ctx = Nav.key.currentContext;
+    if (Downloads.isFile('$uri') && ctx != null && ctx.mounted) {
+      await Downloads.open(ctx, '$uri');
+      return true;
+    }
+    return launchUrl(uri, mode: LaunchMode.externalApplication);
+  };
 
   static Future<bool> url(BuildContext context, Object? url, {String failed = "Couldn't open the file"}) async {
     final uri = url is String && url.isNotEmpty ? Uri.tryParse(url) : null;

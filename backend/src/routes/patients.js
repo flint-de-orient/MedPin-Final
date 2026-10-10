@@ -275,7 +275,19 @@ r.post('/patients/:id/records', upload.array('files', 10), async (req, res) => {
     uploadSource: req.body.uploadSource, files, uploadedBy: req.user._id, flagLabel: 'New', flagTone: 'new',
   });
   if (kind === 'prescription' && req.body.scanned === 'true') {
-    await M.Prescription.create({ practiceId: req.practiceId, patientId: patient._id, doctorId: req.user._id, kind: 'scanned', source: 'this_clinic', uploadedBy: req.user._id, file: files[0], issuedAt: record.recordDate });
+    // A paper prescription belongs to the doctor who wrote it, not to whoever scanned it:
+    // the uploading doctor, the doctor of the visit, or the patient's doctor here.
+    let doctorId = req.member.role === 'doctor' ? req.user._id : undefined;
+    if (!doctorId && req.body.appointmentId) doctorId = (await M.Appointment.findOne({ _id: req.body.appointmentId, practiceId: req.practiceId }, 'doctorId'))?.doctorId;
+    if (!doctorId) {
+      const doctors = await M.Member.find({ practiceId: req.practiceId, role: 'doctor', status: 'active' }).distinct('userId');
+      doctorId = (await M.CareTeamAccess.findOne({ patientId: patient._id, userId: { $in: doctors } }).sort({ isPrimary: -1 }))?.userId;
+    }
+    const doctor = doctorId ? await M.User.findById(doctorId, 'name') : null;
+    await M.Prescription.create({
+      practiceId: req.practiceId, patientId: patient._id, doctorId, doctorName: doctor?.name || req.body.sourceName, kind: 'scanned', source: 'this_clinic',
+      uploadedBy: req.user._id, file: files[0], issuedAt: record.recordDate,
+    });
   }
   let extracted = null;
   if (kind === 'test_result') extracted = await extractLabReport(req.files[0].buffer, req.files[0].mimetype).catch(() => null);

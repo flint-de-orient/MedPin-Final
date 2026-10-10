@@ -57,6 +57,11 @@ r.post('/consultations', staff({ perm: 'prescribe' }), async (req, res) => {
   }
   const pid = appt ? appt.patientId : patientId;
   await patientInPractice(req, pid);
+  if (!appt) {
+    // One open consultation per doctor and patient: reopen the draft instead of adding another.
+    const draft = await M.Consultation.findOne({ practiceId: req.practiceId, doctorId: req.user._id, patientId: pid, status: 'draft' }).sort({ startedAt: -1 });
+    if (draft) return res.json(draft);
+  }
   // The treating doctor joins the patient's care team (the patient can change access later).
   const hasPrimary = await M.CareTeamAccess.exists({ patientId: pid, isPrimary: true });
   await M.CareTeamAccess.updateOne(
@@ -70,6 +75,16 @@ r.post('/consultations', staff({ perm: 'prescribe' }), async (req, res) => {
     vitalsId: appt ? (await M.Vitals.findOne({ appointmentId: appt._id }).sort({ recordedAt: -1 }))?._id : undefined,
   });
   return res.status(201).json(consult);
+});
+
+// Leaving a consultation that was never filled in: the empty draft is removed.
+r.delete('/consultations/:id', need('prescribe'), async (req, res) => {
+  const c = ownPractice(req, await M.Consultation.findById(req.params.id), 'Consultation');
+  if (String(c.doctorId) !== String(req.user._id)) throw Object.assign(new Error('Only the treating doctor can discard this draft'), { status: 403, code: 'NOT_YOURS' });
+  const empty = c.status === 'draft' && !c.chiefComplaint && !c.diagnoses?.length && !c.medications?.length && !c.labOrders?.length && !c.advice?.items?.length && !c.advice?.freeText;
+  if (!empty) return res.json({ ok: true, kept: true });
+  await c.deleteOne();
+  res.json({ ok: true, deleted: true });
 });
 
 r.get('/consultations/:id', need('clinical'), async (req, res) => {

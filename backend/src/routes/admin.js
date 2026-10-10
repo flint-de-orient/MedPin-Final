@@ -3,6 +3,7 @@ const { Router } = require('express');
 const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
+const { setupFonts, write } = require('../lib/pdftext');
 const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
@@ -124,20 +125,27 @@ r.get('/billing/invoices/:id/download', async (req, res) => {
 // ── Exports ──
 function simplePdf(title, rows, header) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40, layout: header ? 'landscape' : 'portrait' });
+    const doc = setupFonts(new PDFDocument({ size: 'A4', margin: 40, layout: header ? 'landscape' : 'portrait' }));
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
-    doc.fontSize(16).text(title).moveDown().fontSize(9);
-    if (header) doc.text(header.join('  |  ')).moveDown(0.3);
-    for (const row of rows) doc.text(row.map((c) => (c == null ? '' : String(c))).join('  |  '));
+    doc.fontSize(16);
+    write(doc, title);
+    doc.moveDown().fontSize(9);
+    if (header) {
+      write(doc, header.join('  |  '));
+      doc.moveDown(0.3);
+    }
+    if (!rows.length) write(doc, 'Nothing in this period.');
+    for (const row of rows) write(doc, row.map((c) => (c == null ? '' : String(c))).join('  |  '));
     doc.end();
   });
 }
 
+const safeCell = (v) => (typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
 const csvCell = (v) => {
-  const s = v == null ? '' : v instanceof Date ? v.toISOString() : String(v);
+  const s = v == null ? '' : v instanceof Date ? v.toISOString() : String(safeCell(v));
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
@@ -156,17 +164,64 @@ async function buildRows(req, job) {
     };
   }
   if (job.kind === 'report') {
-    const rx = job.reportType === 'prescriptions';
-    if (rx) {
-      const items = await M.Prescription.find({ practiceId: req.practiceId, issuedAt: { $gte: from, $lt: to } }).populate('patientId', 'name phone').lean();
-      sets.prescriptions = { header: ['Rx', 'Date', 'Patient', 'Medicines', 'Tests'], rows: items.map((p) => [String(p.rxNumber || '').padStart(4, '0'), T.dayKey(p.issuedAt), p.patientId?.name, p.items.map((i) => `${i.name} ${i.strength || ''}`).join('; '), p.tests.join('; ')]) };
+    const { filtersOf, visits } = require('./reports');
+    const f = filtersOf(job.filters || {});
+    const type = job.reportType || 'consultations';
+    const mob = job.includeMobiles ? ['Mobile'] : [];
+    const day = (d) => (d ? T.dayKey(d) : '');
+    if (type === 'prescriptions') {
+      const q = { practiceId: req.practiceId, issuedAt: { $gte: from, $lt: to } };
+      if (f.doctorId) q.doctorId = f.doctorId === 'me' ? req.user._id : f.doctorId;
+      if (f.locationIds.length || f.visitTypes.length || f.modes.length || f.ageGroups.length) {
+        const appts = await visits(req, T.addDays(from, -1), to, f);
+        q.consultationId = { $in: await M.Consultation.find({ appointmentId: { $in: appts.map((a) => a._id) } }).distinct('_id') };
+      }
+      const items = await M.Prescription.find(q).sort({ issuedAt: 1 }).populate('patientId', 'name phone').lean();
+      sets.prescriptions = {
+        header: ['Rx', 'Date', 'Patient', ...mob, 'Medicines', 'Tests'],
+        rows: items.map((p) => [String(p.rxNumber || '').padStart(4, '0'), day(p.issuedAt), p.patientId?.name, ...(job.includeMobiles ? [mobile(p.patientId)] : []), p.items.map((i) => `${i.name} ${i.strength || ''}`.trim()).join('; '), p.tests.join('; ')]),
+      };
+    } else if (type === 'fees') {
+      const appts = await visits(req, from, to, f, { status: { $in: ['completed', 'missed', 'cancelled', 'booked', 'confirmed', 'waiting', 'in_consultation'] } });
+      const pays = await M.Payment.find({ practiceId: req.practiceId, appointmentId: { $in: appts.map((a) => a._id) } }).lean();
+      const byAppt = new Map(pays.map((x) => [String(x.appointmentId), x]));
+      sets.fees = {
+        header: ['Date', 'Patient', ...mob, 'Location', 'Type', 'Fee', 'Status', 'Method', 'Paid on'],
+        rows: appts.filter((a) => a.fee != null).sort((a, b) => a.date - b.date).map((a) => {
+          const pay = byAppt.get(String(a._id));
+          return [day(a.date), a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.locationId?.name, a.visitType, a.fee, pay?.status || a.feeStatus, pay?.method || '', day(pay?.paidAt)];
+        }),
+      };
+    } else if (type === 'follow_ups') {
+      const q = { practiceId: req.practiceId, dueDate: { $gte: from, $lt: to } };
+      if (f.doctorId) q.doctorId = f.doctorId === 'me' ? req.user._id : f.doctorId;
+      if (f.locationIds.length) q.locationId = { $in: f.locationIds };
+      const items = await M.FollowUp.find(q).sort({ dueDate: 1 }).populate('patientId', 'name phone').lean();
+      sets.follow_ups = {
+        header: ['Due', 'Patient', ...mob, 'Advice', 'Status', 'Reminders sent', 'Last reminded'],
+        rows: items.map((x) => [day(x.dueDate), x.patientId?.name, ...(job.includeMobiles ? [mobile(x.patientId)] : []), x.adviceText || '', x.status, x.remindersSent || 0, day(x.lastRemindedAt)]),
+      };
+    } else if (type === 'referrals') {
+      const q = { practiceId: req.practiceId, referredAt: { $gte: from, $lt: to } };
+      if (f.doctorId) q.doctorId = f.doctorId === 'me' ? req.user._id : f.doctorId;
+      const items = await M.Referral.find(q).sort({ referredAt: 1 }).populate('patientId', 'name phone').lean();
+      sets.referrals = {
+        header: ['Date', 'Patient', ...mob, 'Direction', 'To / from', 'Specialty', 'Reason', 'Status'],
+        rows: items.map((x) => [day(x.referredAt), x.patientId?.name, ...(job.includeMobiles ? [mobile(x.patientId)] : []), x.direction, x.counterpartName, x.specialty || '', x.reason || '', x.status]),
+      };
+    } else if (type === 'daily') {
+      const appts = await visits(req, from, to, f, { status: { $in: ['completed', 'missed', 'cancelled', 'booked', 'confirmed', 'waiting', 'in_consultation', 'rescheduled'] } });
+      sets.daily = {
+        header: ['Date', 'Time', 'Token', 'Patient', ...mob, 'Location', 'Type', 'Mode', 'Status', 'Fee', 'Fee status'],
+        rows: appts.sort((a, b) => a.startAt - b.startAt).map((a) => [day(a.date), T.fmtTime(T.minuteOfDay(a.startAt)), a.tokenNo, a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.locationId?.name, a.visitType, a.mode, a.status, a.fee, a.feeStatus]),
+      };
     } else {
-      const appts = await M.Appointment.find({ practiceId: req.practiceId, date: { $gte: from, $lt: to }, status: 'completed' }).populate('patientId', 'name phone').populate('locationId', 'name').lean();
+      const appts = await visits(req, from, to, f);
       const consults = await M.Consultation.find({ appointmentId: { $in: appts.map((a) => a._id) } }, 'appointmentId diagnoses').lean();
       const dx = new Map(consults.map((c) => [String(c.appointmentId), c.diagnoses.map((d) => d.name).join('; ')]));
       sets.consultations = {
-        header: ['Date', 'Patient', ...(job.includeMobiles ? ['Mobile'] : []), 'Type', 'Mode', 'Location', 'Diagnosis', 'Fee', 'Fee status'],
-        rows: appts.map((a) => [T.dayKey(a.date), a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.visitType, a.mode, a.locationId?.name, dx.get(String(a._id)) || '', a.fee, a.feeStatus]),
+        header: ['Date', 'Patient', ...mob, 'Age', 'Type', 'Mode', 'Location', 'Diagnosis', 'Fee', 'Fee status'],
+        rows: appts.sort((a, b) => a.date - b.date).map((a) => [day(a.date), a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.age ?? '', a.visitType, a.mode, a.locationId?.name, dx.get(String(a._id)) || '', a.fee, a.feeStatus]),
       };
     }
   }
@@ -210,7 +265,7 @@ async function render(sets, format, title) {
     for (const [k, s] of Object.entries(sets)) {
       const ws = wb.addWorksheet(k.slice(0, 31));
       ws.addRow(s.header).font = { bold: true };
-      s.rows.forEach((row) => ws.addRow(row));
+      s.rows.forEach((row) => ws.addRow(row.map(safeCell)));
     }
     return { buffer: Buffer.from(await wb.xlsx.writeBuffer()), mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
   }
@@ -237,11 +292,14 @@ r.post('/exports', async (req, res) => {
     job.status = 'done';
     job.completedAt = new Date();
     await job.save();
+    let emailed = false;
     if (emailCopy && req.user.email) {
-      await sendEmail({ to: req.user.email, subject: title, text: 'Your MedPin export is attached.', attachments: [{ filename: job.file.name, content: buffer }] });
+      emailed = await sendEmail({ to: req.user.email, subject: title, text: 'Your MedPin export is attached.', attachments: [{ filename: job.file.name, content: buffer }] })
+        .then((r) => r?.provider === 'smtp')
+        .catch(() => false);
     }
     await M.AuditLog.create({ practiceId: req.practiceId, userId: req.user._id, action: 'export.create', entity: 'ExportJob', entityId: job._id, meta: { kind, format, includeMobiles, rows: job.rowCount }, ip: req.ip });
-    res.status(201).json({ ...job.toJSON(), url: storage.signedUrl(job.file.key) });
+    res.status(201).json({ ...job.toJSON(), url: storage.signedUrl(job.file.key), emailed, emailMissing: Boolean(emailCopy && !req.user.email) });
   } catch (err) {
     job.status = 'failed';
     job.error = err.message;

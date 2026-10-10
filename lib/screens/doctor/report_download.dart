@@ -84,11 +84,8 @@ class _ReportDownloadSheetState extends State<ReportDownloadSheet> {
     final url = res is Map ? res['url'] as String? : null;
     final opened = url != null && await d3Launch(Uri.parse(url));
     if (!mounted) return;
-    if (!opened) {
-      toast(context, _email ? 'Report ready · copy sent to your email' : "Couldn't open the $name file");
-    } else {
-      toast(context, _email ? '$name downloaded · copy sent to your email' : '$name downloaded');
-    }
+    final note = _email && res is Map ? ' · ${d3EmailNote(res)}' : '';
+    toast(context, opened ? '$name ready$note' : "Couldn't open the $name file$note");
     Navigator.pop(context);
   }
 

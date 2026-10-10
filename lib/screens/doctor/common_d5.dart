@@ -7,6 +7,7 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'signature_gate.dart';
 
 // Shared pieces for the consultation screens of batch D5:
 // Consult-Page, Consult-Voice, Consult-Dosage, Consult-Pick,
@@ -1768,6 +1769,12 @@ mixin D5Draft<W extends StatefulWidget> on LiveData<W> {
   final _pending = <String, dynamic>{};
   Future<void>? _saving;
 
+  /// Something was typed or picked on this screen (so the draft is kept).
+  bool _edited = false;
+
+  /// This screen started (or reopened) the draft; only it may discard an empty one.
+  bool _openedHere = false;
+
   /// True while a change to [field] is still waiting to be sent.
   bool pendingHas(String field) => _pending.containsKey(field);
 
@@ -1833,6 +1840,7 @@ mixin D5Draft<W extends StatefulWidget> on LiveData<W> {
       }
       final c = await Api.I.post('/api/consultations', body);
       id = '${(c as Map)['id']}';
+      _openedHere = true;
     }
     final res = await Future.wait([
       Api.I.get('/api/consultations/$id'),
@@ -1865,6 +1873,7 @@ mixin D5Draft<W extends StatefulWidget> on LiveData<W> {
   /// Queues [fields] for PATCH /api/consultations/:id.
   void save(Map<String, dynamic> fields, {Duration delay = const Duration(milliseconds: 700)}) {
     if (!isLive || consultId == null || issuedRxId != null) return;
+    _edited = true;
     _pending.addAll(fields);
     _saveTimer?.cancel();
     _saveTimer = Timer(delay, flush);
@@ -1941,7 +1950,7 @@ mixin D5Draft<W extends StatefulWidget> on LiveData<W> {
     } finally {
       busy.value = false;
     }
-    final res = await runAction(context, () => Api.I.post('/api/consultations/$consultId/issue'), busy: busy);
+    final res = await withSignature(context, () => Api.I.post('/api/consultations/$consultId/issue'), busy: busy);
     if (res is! Map || !mounted) return;
     final rx = res['prescription'] is Map ? (res['prescription'] as Map) : const {};
     setState(() {
@@ -1955,8 +1964,23 @@ mixin D5Draft<W extends StatefulWidget> on LiveData<W> {
   @override
   void dispose() {
     _saveTimer?.cancel();
-    if (_pending.isNotEmpty) flush();
+    if (_pending.isNotEmpty) {
+      flush();
+    } else if (isLive && _openedHere && consultId != null && issuedRxId == null && !_edited && _isEmptyDraft) {
+      // Opened and left without entering anything: don't leave an empty draft behind
+      // (the server deletes it only if it is still empty).
+      // A few seconds later, so a save still on its way from another consult screen lands first.
+      final id = consultId;
+      Future.delayed(const Duration(seconds: 4), () => Api.I.delete('/api/consultations/$id')).catchError((_) => null);
+    }
     busy.dispose();
     super.dispose();
   }
+
+  bool get _isEmptyDraft =>
+      consult.str('status', 'draft') == 'draft' &&
+      consult.str('chiefComplaint').isEmpty &&
+      consult.list('diagnoses').isEmpty &&
+      consult.list('medications').isEmpty &&
+      consult.list('labOrders').isEmpty;
 }

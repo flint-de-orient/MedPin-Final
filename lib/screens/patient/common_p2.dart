@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch P2 (patient app: records, doctors, medicines).
@@ -43,6 +44,10 @@ void p2Missing(BuildContext context, String what) => toast(context, '$what is no
 Future<void> p2Open(BuildContext context, String? url, {String failed = "Couldn't open this"}) async {
   if (url == null || url.isEmpty) {
     toast(context, failed);
+    return;
+  }
+  if (Downloads.isFile(url)) {
+    await Downloads.open(context, url);
     return;
   }
   var ok = false;

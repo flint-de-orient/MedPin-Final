@@ -7,8 +7,10 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
+import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
+import 'patient_picker.dart';
 
 // Shared pieces for batch D6: Patient-Profile, Patient-Profile-Desk and the
 // four doctor-view profile tabs (PP-Summary, PP-Prescriptions, PP-Tests,
@@ -953,7 +955,6 @@ class D6ShieldNote extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The patient last opened on these screens, for a screen opened without one.
-String? _lastPatientId;
 
 /// Route arguments as a map. A bare id string comes back as `{'id': …}`.
 /// Waits a microtask first: route arguments are an inherited lookup, which
@@ -967,25 +968,14 @@ Future<Map<String, dynamic>> d6Args(BuildContext context) async {
   return const {};
 }
 
-/// The patient a profile screen is about: the `patientId` it was opened with,
-/// else the patient opened last, else the doctor's patient in consultation
-/// now, else the most recently seen patient.
+/// The patient a profile screen is about: the `patientId` it was opened
+/// with; otherwise the doctor chooses one (never a guess — a wrong patient's
+/// record must not appear).
 Future<String> d6PatientId(BuildContext context) async {
   final a = await d6Args(context);
-  var id = (a['patientId'] ?? a['id'])?.toString();
-  id ??= _lastPatientId;
-  if (id == null) {
-    final now = await Api.I.get('/api/appointments', query: {'view': 'today', 'doctorId': 'me', 'status': 'in_consultation'});
-    final items = now is Map ? (now['items'] as List? ?? const []) : const [];
-    if (items.isNotEmpty) id = (items.first as Map)['patientId']?.toString();
-  }
-  if (id == null) {
-    final res = await Api.I.get('/api/patients', query: {'limit': 1});
-    final items = res is Map ? (res['items'] as List? ?? const []) : const [];
-    if (items.isNotEmpty) id = (items.first as Map)['id']?.toString();
-  }
-  if (id == null) throw const ApiException(404, 'NO_PATIENT', 'Choose a patient first');
-  return _lastPatientId = id;
+  final id = (a['patientId'] ?? a['id'])?.toString();
+  if (!context.mounted) throw const ApiException(400, 'NO_PATIENT', 'Choose a patient');
+  return patientOrPick(context, id);
 }
 
 /// Loads GET /api/patients/:id plus [extra] resources (key → path under
@@ -1044,6 +1034,10 @@ String d6Cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 Future<void> d6OpenUrl(BuildContext context, String? url, {String fail = "Couldn't open the file"}) async {
   if (url == null || url.isEmpty) {
     toast(context, 'There is no file for this yet');
+    return;
+  }
+  if (Downloads.isFile(url)) {
+    await Downloads.open(context, url);
     return;
   }
   var ok = false;

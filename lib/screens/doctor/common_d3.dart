@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 
 // Shared pieces for batch D3 — Doctor · Reports tab (report registers).
@@ -512,7 +513,15 @@ class D3DownloadBar extends StatelessWidget {
         'emailCopy': true,
       }),
     );
-    if (res != null && context.mounted) toast(context, 'Report sent to your email');
+    if (res is! Map || !context.mounted) return;
+    if (res['emailed'] == true) {
+      toast(context, 'Report sent to your email');
+      return;
+    }
+    // Not emailed (no email on the account, or email isn't set up): open it instead.
+    toast(context, d3EmailNote(res));
+    final url = res['url'] as String?;
+    if (url != null) await d3Launch(Uri.parse(url));
   }
 
   @override
@@ -568,8 +577,20 @@ String d3RupeesShort(num v) => v.abs() >= 100000 ? '₹${(v / 100000).toStringAs
 
 // ── Live report helpers ──
 
+/// What happened to the "email me a copy" part of an export.
+String d3EmailNote(Map res) {
+  if (res['emailed'] == true) return 'copy sent to your email';
+  if (res['emailMissing'] == true) return 'add your email in My profile to get a copy';
+  return "email isn't set up yet, so no copy was sent";
+}
+
 /// Opens a link outside the app (tests replace it).
 Future<bool> Function(Uri uri) d3Launch = (uri) async {
+  final ctx = Nav.key.currentContext;
+  if (Downloads.isFile('$uri') && ctx != null && ctx.mounted) {
+    await Downloads.open(ctx, '$uri');
+    return true;
+  }
   try {
     return await launchUrl(uri, mode: LaunchMode.externalApplication);
   } catch (_) {
