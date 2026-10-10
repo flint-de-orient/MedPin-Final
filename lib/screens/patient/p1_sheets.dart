@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
+import '../../widgets/i18n.dart';
 
 // Live-only sheets for batch P1. The design has no screen for these, so they
 // reuse the sheet header, inputs, pills and row rules of the P1 sheets.
@@ -533,6 +534,114 @@ class _P1AiAnswerSheetState extends State<P1AiAnswerSheet> {
           ],
         ),
         Text('MedPin AI gives guidance, not a diagnosis.', style: tx(13, h: 1.45, c: MP.ink3)),
+      ],
+    );
+  }
+}
+
+/// Health score details: GET /api/patient/health-score (what the score is made of).
+class P1HealthScoreSheet extends StatefulWidget {
+  const P1HealthScoreSheet({super.key});
+
+  @override
+  State<P1HealthScoreSheet> createState() => _P1HealthScoreSheetState();
+}
+
+class _P1HealthScoreSheetState extends State<P1HealthScoreSheet> with LiveData {
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/patient/health-score');
+
+  static Color _tone(num s) => s >= 80 ? MP.green : (s >= 55 ? MP.amber : MP.red);
+
+  @override
+  Widget build(BuildContext context) {
+    final d = data;
+    final value = d?['value'] as num?;
+    final delta = d?['weeklyDelta'] as num?;
+    final parts = d?.list('parts') ?? const <Map<String, dynamic>>[];
+    return P1PlainSheet(
+      title: 'Health score',
+      subtitle: d == null ? null : (value == null ? 'Not enough data yet' : '$value of 100${delta == null || delta == 0 ? '' : ' · ${delta > 0 ? '+' : ''}$delta this week'}'),
+      children: [
+        livePlaceholder() ??
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (value == null)
+                  Text('Take your medicines in MedPin, add a few readings and log your day — your score appears once there is enough to go on.', style: tx(15, c: MP.ink2, h: 1.45)),
+                for (var i = 0; i < parts.length; i++)
+                  P1Row(
+                    first: i == 0,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: Text(parts[i].str('label'), style: tx(15, w: w600))),
+                            Text('${parts[i].numOr('score')}', style: tx(15, w: w700, tab: true, c: _tone(parts[i].numOr('score')))),
+                          ],
+                        ),
+                        const Gap(6),
+                        MpProgress(parts[i].numOr('score') / 100, height: 6, color: _tone(parts[i].numOr('score')), track: MP.line),
+                        const Gap(6),
+                        Text(parts[i].str('detail'), style: tx(13, c: MP.ink2)),
+                      ],
+                    ),
+                  ),
+                const Gap(12),
+                Text(d?.str('note') ?? '', style: tx(13, c: MP.ink3, h: 1.4)),
+              ],
+            ),
+      ],
+    );
+  }
+}
+
+/// The full health summary in simple words: GET /api/patient/health-summary.
+class P1HealthSummarySheet extends StatefulWidget {
+  const P1HealthSummarySheet({super.key});
+
+  @override
+  State<P1HealthSummarySheet> createState() => _P1HealthSummarySheetState();
+}
+
+class _P1HealthSummarySheetState extends State<P1HealthSummarySheet> with LiveData {
+  @override
+  Future<Object?> fetch() => Api.I.get('/api/patient/health-summary');
+
+  @override
+  Widget build(BuildContext context) {
+    final d = data;
+    final at = F.date(d?['generatedAt']);
+    final focus = [for (final f in (d?['focusItems'] as List? ?? const [])) '$f'];
+    return P1PlainSheet(
+      title: 'Your health summary',
+      subtitle: at == null ? null : 'Updated ${F.ago(at)}',
+      children: [
+        livePlaceholder() ??
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(d?.str('body') ?? '', style: tx(16, h: 1.5)),
+                if (focus.isNotEmpty) ...[
+                  const Gap(16),
+                  Text('THIS WEEK', style: tx(12, w: w700, c: MP.ink3, em: 0.06)),
+                  for (final f in focus) ...[
+                    const Gap(8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(padding: EdgeInsets.only(top: 2), child: Ico(I.check, size: 16, color: MP.green, stroke: 2.2)),
+                        const Gap(8),
+                        Expanded(child: Text(f, style: tx(15, h: 1.4))),
+                      ],
+                    ),
+                  ],
+                ],
+                const Gap(16),
+                Text('From your own records. Not a diagnosis — ask your doctor about anything that worries you.', style: tx(13, c: MP.ink3, h: 1.4)),
+              ],
+            ),
       ],
     );
   }

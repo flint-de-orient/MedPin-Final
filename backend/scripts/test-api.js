@@ -349,9 +349,15 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const req = ok(await ctx.pat('POST', '/api/patient/visit-requests', { doctorId: ctx.doctorUserId, visitType: 'follow_up', preferredTime: 'Thu or Fri, after 5 PM' }), 201);
     const pending = ok(await ctx.desk('GET', '/api/appointment-requests'));
     assert.ok(pending.some((x) => x.id === req.request.id));
-    const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
-    const slots = ok(await ctx.desk('GET', `/api/doctors/${ctx.doctorUserId}/slots?locationId=${ctx.locationId}&date=${tomorrow}`));
-    const free = slots.slots.find((s) => s.available && !s.walkIn);
+    // The next day the clinic is open (slots follow the clinic's weekly hours: closed Sundays).
+    let free;
+    let slots;
+    for (let i = 1; i <= 7 && !free; i += 1) {
+      const date = new Date(Date.now() + i * 864e5).toISOString().slice(0, 10);
+      slots = ok(await ctx.desk('GET', `/api/doctors/${ctx.doctorUserId}/slots?locationId=${ctx.locationId}&date=${date}`));
+      if (new Date(`${date}T12:00:00+05:30`).getUTCDay() === 0) assert.equal(slots.open, false, 'no slots on the clinic closed day');
+      free = slots.slots.find((x) => x.available && !x.walkIn);
+    }
     const assigned = ok(await ctx.desk('POST', `/api/appointment-requests/${req.request.id}/assign`, { startAt: free.startAt }));
     assert.equal(assigned.request.status, 'scheduled');
     const fus = ok(await ctx.doc('GET', '/api/follow-ups'));
@@ -654,6 +660,71 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const s = ok(await ctx.doc('POST', '/api/ai/sessions', {}), 201);
     ok(await ctx.doc('DELETE', `/api/ai/sessions/${s.id}`));
     assert.equal((await ctx.doc('GET', `/api/ai/sessions/${s.id}/messages`)).status, 404);
+  });
+
+  await step('maps, payments, walk-ins, health score, device sync, proofs', async () => {
+    // Map: coordinates from a pasted Google Maps link; bad points are ignored.
+    const loc = ok(await ctx.doc('PATCH', `/api/locations/${ctx.locationId}`, { googleMapsUrl: 'https://www.google.com/maps/place/City+Care/@22.5867,88.4171,17z' }));
+    assert.deepEqual(loc.geo.coordinates, [88.4171, 22.5867]);
+    ok(await ctx.pat('PATCH', '/api/patient/me', { lat: 'x', lng: 91 }));
+    ok(await ctx.pat('PATCH', '/api/patient/me', { lat: 22.58, lng: 88.43 }));
+    const found = ok(await ctx.pat('GET', '/api/patient/doctors/search'));
+    const card = found.items.find((d) => String(d.doctorId) === String(ctx.doctorUserId));
+    assert.ok(card && card.km != null && card.km < 5, 'distance from the patient to the clinic');
+    const detail = ok(await ctx.pat('GET', `/api/patient/doctors/${ctx.doctorUserId}`));
+    assert.ok(detail.places.some((x) => x.lat === 22.5867), 'directions get the clinic pin');
+    assert.equal((await ctx.doc('PATCH', '/api/doctor/profile', { hprId: 'nope' })).status, 400, 'HPR ID format is checked');
+
+    // Walk-in: straight into today's queue with a token; not twice.
+    const walk = ok(await ctx.doc('POST', '/api/appointments/walk-in', { patientId: ctx.patientId }), 201);
+    assert.equal(walk.status, 'waiting');
+    assert.ok(walk.tokenNo >= 1);
+    assert.equal((await ctx.doc('POST', '/api/appointments/walk-in', { patientId: ctx.patientId })).body.error.code, 'ALREADY_TODAY');
+
+    // Pay online: the patient's link opens a page (dev stand-in) and paying marks the visit paid.
+    const fee = await M.Payment.findOne({ appointmentId: walk.id, status: 'pending' });
+    if (fee) {
+      const link = ok(await ctx.pat('POST', `/api/patient/appointments/${walk.id}/pay`));
+      const page = await fetch(link.url);
+      assert.equal(page.status, 200, 'the payment link opens (was a 404)');
+      assert.match(await page.text(), /Pay ₹/);
+      assert.equal((await fetch(link.url, { method: 'POST', headers: { accept: 'application/json' } })).status, 200);
+      assert.equal((await M.Appointment.findById(walk.id)).feeStatus, 'paid');
+      assert.equal((await ctx.pat('POST', `/api/patient/appointments/${walk.id}/pay`)).status, 409, 'nothing left to pay');
+    }
+
+    // Setup checklist for a doctor; Home health score and summary; device readings once only.
+    const dash = ok(await ctx.doc('GET', '/api/dashboard'));
+    assert.ok(!dash.setup || dash.setup.steps.some((x) => x.key === 'pin' && x.done), 'the clinic pin step is done');
+    const day = new Date().toISOString().slice(0, 10);
+    const at = new Date(Date.now() - 3600e3).toISOString();
+    const sync = { source: 'Health Connect', days: [{ date: day, steps: 6400 }], readings: [{ kind: 'pulse', at, value: 72 }, { kind: 'bp', at, value: 128, value2: 82 }, { kind: 'spo2', at, value: 300 }] };
+    const first = ok(await ctx.pat('POST', '/api/patient/device-sync', sync));
+    assert.equal(first.readings, 2, 'an impossible SpO2 is skipped');
+    const again = ok(await ctx.pat('POST', '/api/patient/device-sync', sync));
+    assert.equal(again.readings, 0, 'the same readings are not added twice');
+    assert.equal(await M.HealthLog.countDocuments({ patientId: ctx.patientId, type: 'steps', fromDevice: true }), 1);
+    const score = ok(await ctx.pat('GET', '/api/patient/health-score'));
+    assert.ok(score.parts.length >= 1);
+    assert.ok(score.value == null || (score.value >= 0 && score.value <= 100));
+    const summary = ok(await ctx.pat('GET', '/api/patient/health-summary'));
+    assert.ok(summary.body.length > 10, 'a summary even without AI');
+    const home = ok(await ctx.pat('GET', '/api/patient/home'));
+    assert.ok(home.deviceSync?.at, 'Home shows the last sync');
+
+    // Proof review: the signed link works, a wrong token doesn't, approving tells the doctor.
+    const prof = ok(await ctx.doc('POST', '/api/doctor/qualifications', { name: 'MBBS', institution: 'Calcutta Medical College', year: 2010 }), 201);
+    const q = prof.qualifications.find((x) => x.name === 'MBBS');
+    ok(await ctx.doc('POST', `/api/doctor/qualifications/${q.id || q._id}/proof`, undefined, { form: fileForm('file', tinyPng(), 'mbbs.png', 'image/png') }));
+    const { reviewUrl } = require('../src/services/verification');
+    const url = reviewUrl(ctx.doctorUserId, q.id || q._id).replace(/^https?:\/\/[^/]+/, base);
+    assert.equal((await fetch(url.replace(/t=\w+/, 't=bad'))).status, 404);
+    assert.equal((await fetch(url)).status, 200);
+    const t = new URL(url).searchParams.get('t');
+    const decided = await fetch(url.split('?')[0], { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: `t=${t}&decision=approve` });
+    assert.equal(decided.status, 303);
+    const after = ok(await ctx.doc('GET', '/api/doctor/profile'));
+    assert.equal(after.qualifications.find((x) => x.name === 'MBBS').proofStatus, 'verified');
   });
 
   server.close();

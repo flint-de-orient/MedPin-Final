@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Add-Patient-Existing.dc.html — "Add patient · existing account".
 /// Sheet over 'Add-Patient'.

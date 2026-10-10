@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -7,6 +7,7 @@ import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 import 'signature_gate.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Consult-Advice.dc.html — "Consult 3 · Advice".
 /// Live: args {'consultationId'} → GET /api/consultations/:id (+ /checks for

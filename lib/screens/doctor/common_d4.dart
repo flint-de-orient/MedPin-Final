@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for batch D4: the doctor's "My profile" hub and its editors
 // (Profile-Professional, Profile-Location, Profile-Schedule).
@@ -660,6 +662,12 @@ class D4AbdmCard extends StatefulWidget {
   /// Saves the entered ID; resolves true when it was linked. Without it the
   /// card only marks itself linked (design preview).
   final Future<bool> Function(String id)? onLink;
+
+  /// The ABDM site where a new ID is made ("New? Register").
+  final String? registerUrl;
+
+  /// What a valid ID looks like (checked before saving).
+  final RegExp? pattern;
   const D4AbdmCard({
     super.key,
     required this.title,
@@ -668,6 +676,8 @@ class D4AbdmCard extends StatefulWidget {
     required this.hint,
     this.linkedId,
     this.onLink,
+    this.registerUrl,
+    this.pattern,
   });
 
   @override
@@ -691,8 +701,13 @@ class _D4AbdmCardState extends State<D4AbdmCard> {
       confirm: 'Link',
     );
     if (!mounted || r == null || r.isEmpty || r.first.isEmpty) return;
+    final id = r.first.trim();
+    if (widget.pattern != null && !widget.pattern!.hasMatch(id)) {
+      toast(context, "That doesn't look like an ${widget.idName} (${widget.hint})");
+      return;
+    }
     final save = widget.onLink;
-    if (save != null && !await save(r.first)) return;
+    if (save != null && !await save(id)) return;
     if (!mounted) return;
     setState(() => _linked = true);
     toast(context, '${widget.idName} linked');
@@ -733,7 +748,14 @@ class _D4AbdmCardState extends State<D4AbdmCard> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
           const SizedBox(width: 16),
-          Flexible(child: D4TextLink('New? Register', onTap: () => toast(context, 'Opening ABDM registration'))),
+          Flexible(
+            child: D4TextLink('New? Register', onTap: () async {
+              final url = widget.registerUrl;
+              if (url == null) return toast(context, 'Opening ABDM registration');
+              final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication).catchError((_) => false);
+              if (!ok && context.mounted) toast(context, "Couldn't open $url");
+            }),
+          ),
         ],
       ),
     ],

@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../core/icons.dart';
 import '../core/nav.dart';
 import '../core/tokens.dart';
+import 'i18n.dart';
 
 export '../core/icons.dart';
 export '../core/nav.dart';
@@ -557,7 +558,7 @@ class _MpInputState extends State<MpInput> {
       decoration: InputDecoration(
         isCollapsed: true,
         border: InputBorder.none,
-        hintText: widget.hint,
+        hintText: widget.hint == null ? null : tr(context, widget.hint!),
         hintStyle: tx(widget.fontSize, c: MP.ink3, h: multi ? 1.5 : null),
       ),
     );

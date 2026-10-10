@@ -1,7 +1,8 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 /// Shared pieces for the sign-up screens (Auth-Welcome, Auth-Clinic-Setup,
 /// Auth-Patient-Setup), in the style of Auth-Register.

@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Home-States.dc.html — "Home · states" (Clinician · tabs): how the
 /// dashboard cards look while loading, stale, empty, failed or all clear.

@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-Messages-New.dc.html — "Doctor · Messages · start a new chat".
 /// Sheet over 'Doctor-Messages'. In the design the sheet is pinned 72px below

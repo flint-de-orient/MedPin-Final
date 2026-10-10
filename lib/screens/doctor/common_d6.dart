@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
@@ -11,6 +11,7 @@ import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
 import 'patient_picker.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for batch D6: Patient-Profile, Patient-Profile-Desk and the
 // four doctor-view profile tabs (PP-Summary, PP-Prescriptions, PP-Tests,

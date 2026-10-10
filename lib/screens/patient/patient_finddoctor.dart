@@ -1,13 +1,15 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/voice.dart';
+import '../../data/where.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import '../../widgets/i18n.dart';
 
 /// Patient app · Find a doctor. Not an artboard in the design canvas: opened
 /// from the "Find a new doctor" banner on the Doctor tab. Lists every doctor
@@ -633,7 +635,16 @@ String _joinAnd(List<String> xs) {
 class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
     with SingleTickerProviderStateMixin, LiveData {
   @override
-  Future<Object?> fetch() => Api.I.get('/api/patient/doctors/search');
+  Future<Object?> fetch() async {
+    final here = await Where.here().timeout(const Duration(seconds: 8), onTimeout: () => null);
+    if (here != null && !_savedHere) {
+      _savedHere = true;
+      Api.I.patch('/api/patient/me', {'lat': here.lat, 'lng': here.lng}).catchError((_) => null);
+    }
+    return Api.I.get('/api/patient/doctors/search', query: here == null ? null : {'lat': '${here.lat}', 'lng': '${here.lng}'});
+  }
+
+  static bool _savedHere = false;
 
   bool _argsRead = false;
 
@@ -969,7 +980,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
               decoration: InputDecoration(
                 isCollapsed: true,
                 border: InputBorder.none,
-                hintText: 'e.g. High sugar and always tired, Bengali-speaking doctor near Salt Lake',
+                hintText: tr(context, 'e.g. High sugar and always tired, Bengali-speaking doctor near Salt Lake'),
                 hintMaxLines: 3,
                 hintStyle: tx(16, c: MP.ink3, h: 1.45),
               ),

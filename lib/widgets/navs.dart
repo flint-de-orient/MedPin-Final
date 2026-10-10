@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../core/icons.dart';
 import '../core/nav.dart';
 import '../core/tokens.dart';
+import 'i18n.dart';
 
 class NavItem {
   final String label;

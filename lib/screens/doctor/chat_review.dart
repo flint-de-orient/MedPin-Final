@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d10.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Chat-Review.dc.html — "Chat review".
 /// Live data: GET /api/inbox/reviews?status=all (flagged count, urgency

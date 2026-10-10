@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
+import '../../widgets/i18n.dart';
 
 /// Doctor · AI Assistant history — every past conversation, grouped Today /
 /// Yesterday / Earlier, with search. Tap to continue a conversation (opens

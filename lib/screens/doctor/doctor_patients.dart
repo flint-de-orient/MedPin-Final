@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-Patients.dc.html — "Doctor · Patients tab".
 /// Live data: GET /api/patients?filter=all|today|follow_up_due|abnormal&sort=recent|name.

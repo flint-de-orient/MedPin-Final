@@ -63,7 +63,8 @@ r.patch('/me', async (req, res) => {
   if (req.body.settings) p.settings = { ...p.settings.toObject(), ...req.body.settings, reminderTimes: { ...p.settings.reminderTimes.toObject(), ...(req.body.settings.reminderTimes || {}) } };
   if (req.body.conditions) p.conditions = req.body.conditions.map((c) => (typeof c === 'string' ? { name: c } : c));
   if (req.body.allergies) p.allergies = req.body.allergies.map((a) => (typeof a === 'string' ? { allergen: a } : a));
-  if (req.body.lat != null && req.body.lng != null) p.geo = { type: 'Point', coordinates: [Number(req.body.lng), Number(req.body.lat)] };
+  const here = require('../lib/geo').pointFrom(req.body.lat, req.body.lng);
+  if (here) p.geo = here;
   await p.save();
   const userBody = pick(req.body, ['language', 'appLock']);
   if (Object.keys(userBody).length || body.name) {
@@ -131,6 +132,7 @@ r.get('/home', async (req, res) => {
   const now = new Date();
   const today = T.dayStart();
   await care.ensureDoses(p, today);
+  await require('../services/health').currentScore(p).catch((err) => console.warn('[score]', err.message));
   const [doses, nextVisit, newReport, courses, steps, logs, summary, plan] = await Promise.all([
     M.DoseLog.find({ patientId: p._id, scheduledAt: { $gte: today, $lt: T.addDays(today, 1) } }).sort({ scheduledAt: 1 }).populate('courseId', 'name strength foodRelation'),
     M.Appointment.findOne({ patientId: p._id, startAt: { $gte: today }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }).sort({ startAt: 1 }).populate('doctorId', 'name').populate('locationId', 'name shortName'),
@@ -166,9 +168,14 @@ r.get('/home', async (req, res) => {
   const unread = await M.Conversation.aggregate([{ $match: { patientId: p._id } }, { $unwind: '$participants' }, { $match: { 'participants.userId': req.user._id } }, { $group: { _id: null, n: { $sum: '$participants.unreadCount' } } }]);
 
   // Cards further down the home screen.
-  const [rx, lab, plans, team, adh, readings] = await Promise.all([
+  const [rx, lab] = await Promise.all([
     M.Prescription.findOne({ patientId: p._id }).sort({ issuedAt: -1 }),
     M.LabResult.findOne({ patientId: p._id }).sort({ collectedAt: -1 }),
+  ]);
+  // "Latest prescription": the newest one, issued in MedPin or uploaded by the patient.
+  const upRx = await M.MedicalRecord.findOne({ patientId: p._id, kind: 'prescription', deletedAt: null, prescriptionId: null }).sort({ recordDate: -1 });
+  const useUpload = upRx && (!rx || upRx.recordDate > rx.issuedAt);
+  const [plans, team, adh, readings] = await Promise.all([
     M.ActivityPlan.find({ patientId: p._id, active: true }).limit(1),
     M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $in: ['full_with_logs', 'daily_log_only'] } }).populate('userId', 'name'),
     care.adherence(p, 30),
@@ -185,9 +192,14 @@ r.get('/home', async (req, res) => {
     spo2: series((v) => ({ value: v.spo2 })),
   };
   res.json({
-    latestPrescription: rx && {
-      id: rx._id, issuedAt: rx.issuedAt, doctorName: rx.doctorName, medicines: rx.items.length, validUntil: rx.validUntil, url: storage.signedUrl(rx.file?.key),
-    },
+    latestPrescription: useUpload
+      ? {
+        id: upRx._id, recordId: upRx._id, uploaded: true, issuedAt: upRx.recordDate, doctorName: upRx.extractedDoctor || upRx.sourceName,
+        medicines: upRx.extractedMedicines?.length || 0, url: storage.signedUrl(upRx.files?.[0]?.key),
+      }
+      : rx && {
+        id: rx._id, issuedAt: rx.issuedAt, doctorName: rx.doctorName, medicines: rx.items.length, validUntil: rx.validUntil, url: storage.signedUrl(rx.file?.key),
+      },
     latestLab: lab && {
       id: lab._id, recordId: lab.recordId, testName: lab.testName, collectedAt: lab.collectedAt, abnormalCount: lab.abnormalCount,
       abnormal: lab.values.filter((v) => v.flag !== 'normal').map((v) => v.analyte),
@@ -213,6 +225,7 @@ r.get('/home', async (req, res) => {
     nextVisit,
     aiSummary: summary || (plan?.healthSummary ? { body: plan.healthSummary, focusItems: plan.focusItems, generatedAt: plan.updatedAt } : null),
     healthScore: p.healthScore,
+    deviceSync: p.deviceSync?.at ? p.deviceSync : null,
     unreadMessages: unread[0]?.n || 0,
     unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, readAt: null }),
   });
@@ -267,7 +280,7 @@ r.get('/doctors/search', async (req, res) => {
     q.$or = [{ displayName: re }, { specialisations: re }, { conditionsTreated: re }, { headline: re }];
   }
   const profiles = await M.DoctorProfile.find(q).limit(100);
-  const origin = req.query.lat && req.query.lng ? [Number(req.query.lng), Number(req.query.lat)] : req.patient.geo?.coordinates;
+  const origin = require('../lib/geo').pointFrom(req.query.lat, req.query.lng)?.coordinates || req.patient.geo?.coordinates;
   let cards = await doctorCards(req, profiles, origin);
   if (req.query.today === 'true') cards = cards.filter((c) => c.availableToday);
   if (req.query.withinKm) cards = cards.filter((c) => c.km != null && c.km <= Number(req.query.withinKm));
@@ -305,7 +318,7 @@ r.get('/doctors/:doctorId', async (req, res) => {
     specialty: spec?.label || null,
     avgReplyMinutes: prof.avgReplyMinutes,
     qualifications: prof.qualifications.map((q) => ({ name: q.name, institution: q.institution, year: q.year })),
-    places: places.map((d) => ({ locationId: d.locationId._id, name: d.locationId.name, address: d.locationId.address, mapUrl: d.locationId.googleMapsUrl, services: d.services })),
+    places: places.map((d) => ({ locationId: d.locationId._id, name: d.locationId.name, address: d.locationId.address, area: d.locationId.area, mapUrl: d.locationId.googleMapsUrl, lat: d.locationId.geo?.coordinates?.[1] ?? null, lng: d.locationId.geo?.coordinates?.[0] ?? null, km: haversineKm(req.patient.geo?.coordinates, d.locationId.geo?.coordinates), services: d.services })),
     access: access && { level: access.accessLevel, since: access.since },
     nextVisit,
     lastVisit: lastVisit && {
@@ -444,6 +457,18 @@ r.post('/appointments/:id/todos/:todoId', async (req, res) => {
   t.doneAt = t.done ? new Date() : undefined;
   await a.save();
   res.json(a.todos);
+});
+
+// "Pay online" for a visit fee still pending (a Razorpay link the app opens).
+r.post('/appointments/:id/pay', async (req, res) => {
+  const appt = await M.Appointment.findOne({ _id: req.params.id, patientId: req.patient._id });
+  if (!appt) throw notFound('Appointment');
+  const p = await M.Payment.findOne({ appointmentId: appt._id, status: 'pending' });
+  if (!p) throw conflict(appt.feeStatus === 'paid' ? 'This visit is already paid' : 'Nothing to pay for this visit', 'NOT_PENDING');
+  const loc = await M.Location.findById(appt.locationId, 'paymentMethods');
+  if (loc?.paymentMethods?.length && loc.paymentMethods.every((m) => m === 'cash')) throw conflict('This clinic takes the fee at the visit', 'ONLINE_PAY_OFF');
+  const url = await require('../services/payments').feeLink(p, req.patient);
+  res.json({ url, amount: p.amount });
 });
 
 r.post('/appointments/:id/cancel', async (req, res) => {
@@ -722,6 +747,50 @@ r.post('/readings', async (req, res) => {
   res.status(201).json({ reading: vitals, alerted: alerts.length > 0 });
 });
 
+// Watch / phone sync (Health Connect, Apple Health): daily steps and readings.
+// Sent again and again; the same day / reading is never counted twice.
+r.post('/device-sync', async (req, res) => {
+  const p = req.patient;
+  const days = (Array.isArray(req.body.days) ? req.body.days : []).slice(0, 31);
+  const readings = (Array.isArray(req.body.readings) ? req.body.readings : []).slice(0, 300);
+  let steps = 0;
+  for (const d of days) {
+    const day = T.parseDay(d.date);
+    const n = Math.round(Number(d.steps));
+    if (!day || !Number.isFinite(n) || n < 0 || n > 200000) continue;
+    await M.HealthLog.findOneAndUpdate(
+      { patientId: p._id, type: 'steps', fromDevice: true, loggedAt: { $gte: day, $lt: T.addDays(day, 1) } },
+      { $set: { steps: n }, $setOnInsert: { patientId: p._id, type: 'steps', fromDevice: true, loggedAt: T.addMinutes(day, 12 * 60) } },
+      { upsert: true },
+    );
+    steps += 1;
+  }
+  const FIELDS = { pulse: 'pulse', spo2: 'spo2', weight: 'weightKg', sugar: 'bloodSugar', bp: 'bpSystolic' };
+  let added = 0;
+  let alerted = false;
+  for (const x of readings) {
+    const field = FIELDS[x.kind];
+    const at = new Date(x.at);
+    const value = Number(x.value);
+    if (!field || Number.isNaN(at.getTime()) || at > new Date(Date.now() + 5 * 60e3) || !Number.isFinite(value)) continue;
+    if (await M.Vitals.exists({ patientId: p._id, source: 'device', recordedAt: at, [field]: { $ne: null } })) continue;
+    const v = { [field]: value };
+    if (x.kind === 'bp') v.bpDiastolic = Number(x.value2);
+    if (x.kind === 'sugar') v.sugarType = ['fasting', 'random', 'post_meal'].includes(x.sugarType) ? x.sugarType : 'random';
+    try {
+      const vitals = await M.Vitals.create({ ...v, patientId: p._id, recordedBy: req.user._id, recordedByRole: 'patient', source: 'device', recordedAt: at });
+      added += 1;
+      // Only fresh readings can raise an alert (not last month's history).
+      if (at > T.addDays(new Date(), -1)) alerted = (await care.checkReading(vitals, p)).length > 0 || alerted;
+    } catch (err) {
+      if (err.name !== 'ValidationError') throw err; // out-of-range values are skipped
+    }
+  }
+  const source = String(req.body.source || 'device').slice(0, 40);
+  await M.Patient.updateOne({ _id: p._id }, { deviceSync: { at: new Date(), source } });
+  res.json({ days: steps, readings: added, alerted, at: new Date(), source });
+});
+
 r.get('/readings', async (req, res) => {
   const days = Math.min(Number(req.query.days) || 30, 365);
   const field = { blood_sugar: 'bloodSugar', blood_pressure: 'bpSystolic', weight: 'weightKg', heart_rate: 'pulse', spo2: 'spo2' }[req.query.measure];
@@ -731,6 +800,15 @@ r.get('/readings', async (req, res) => {
 
 // ── Records ──
 r.get('/records', async (req, res) => {
+  // Results a clinic typed in before they were filed as records: file them now (once).
+  for (const lab of await M.LabResult.find({ patientId: req.patient._id, recordId: null }).limit(50)) {
+    const n = lab.abnormalCount || 0;
+    const rec = await M.MedicalRecord.create({
+      patientId: lab.patientId, kind: 'test_result', title: lab.testName || 'Test result', recordDate: lab.collectedAt || lab.createdAt,
+      origin: 'from_doctor', sourceName: lab.labName || undefined, practiceId: lab.practiceId, flagLabel: n ? `${n} abnormal` : 'Normal', flagTone: n ? 'high' : 'ok',
+    });
+    await M.LabResult.updateOne({ _id: lab._id, recordId: null }, { recordId: rec._id });
+  }
   const q = { patientId: req.patient._id, deletedAt: null };
   if (req.query.kind) q.kind = req.query.kind;
   let items = await M.MedicalRecord.find(q).sort({ recordDate: -1 }).limit(300);
@@ -1081,5 +1159,17 @@ r.post('/feedback', async (req, res) => {
 
 // The patient's own summary (also what the AI sees).
 r.get('/summary', async (req, res) => res.json(await patientSummary(req.patient)));
+
+// Health score details: the parts it is made of, from the patient's own data.
+r.get('/health-score', async (req, res) => {
+  const out = await require('../services/health').refreshScore(req.patient);
+  res.json({ value: out.value, weeklyDelta: out.weeklyDelta, parts: out.parts, note: 'Based on your medicines, readings, activity and reports. It is a guide, not a diagnosis.' });
+});
+
+// The full health summary in simple words (made once a day; ?fresh=true makes a new one).
+r.get('/health-summary', async (req, res) => {
+  const s = await require('../services/health').patientSummaryFor(req.patient, { fresh: req.query.fresh === 'true' });
+  res.json({ body: s.body, focusItems: s.focusItems, generatedAt: s.generatedAt, byAi: Boolean(s.aiModel) });
+});
 
 module.exports = r;

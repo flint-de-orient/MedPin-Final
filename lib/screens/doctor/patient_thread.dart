@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/files.dart';
@@ -9,6 +9,7 @@ import '../../data/voice.dart';
 import '../../widgets/chat_tools.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Patient-Thread.dc.html — "Patient thread".
 ///

@@ -69,6 +69,18 @@ function createApp() {
     const order = await M.Order.findById(req.params.id).select('+pharmacyTokenHash');
     return order && order.pharmacyTokenHash && safeEqual(order.pharmacyTokenHash, sha256(token)) ? { order, token } : null;
   };
+  // Doctor proof review (private signed link sent to the MedPin team).
+  app.get('/review/proofs/:userId/:qid', async (req, res) => {
+    const html = await require('./services/verification').reviewPage(req.params.userId, req.params.qid, req.query.t);
+    if (!html) return res.status(404).type('html').send('<p>Not found</p>');
+    res.type('html').send(html);
+  });
+  app.post('/review/proofs/:userId/:qid', express.urlencoded({ extended: false, limit: '10kb' }), async (req, res) => {
+    const q = await require('./services/verification').decide(req.params.userId, req.params.qid, req.body.t, req.body.decision, req.body.note);
+    if (!q) return res.status(404).type('html').send('<p>Not found</p>');
+    res.redirect(303, `/review/proofs/${req.params.userId}/${req.params.qid}?t=${encodeURIComponent(req.body.t)}`);
+  });
+
   app.get('/pharmacy/orders/:id', async (req, res) => {
     const found = await pharmacyOrder(req);
     if (!found) return res.status(404).type('html').send('<p>This order link is not valid.</p>');
@@ -102,15 +114,36 @@ function createApp() {
   app.use('/api', require('./routes/knowledge'));
   app.use('/api', require('./routes/reports'));
 
-  // Dev stand-in for a Razorpay payment link (only when Razorpay isn't configured).
-  if (!env.isProd && !env.razorpay.keyId) {
+  // Dev stand-in for a Razorpay payment link (never in production; only without Razorpay keys).
+  if (!env.isProd && !require('./services/payments').configured()) {
+    const pay = require('./services/payments');
+    const page = (title, body) => `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
+<body style="font-family:system-ui,sans-serif;max-width:420px;margin:40px auto;padding:0 16px;color:#111827">
+<p style="color:#B45309;font-weight:600">Test payment · no money moves</p>${body}</body>`;
+    const button = (amount) => `<form method="post"><button style="width:100%;height:52px;border:0;border-radius:14px;background:#003399;color:#fff;font-size:17px;font-weight:600">Pay ₹${amount} (test)</button></form>`;
+    app.get('/dev/pay/plan/:subId/:planKey', async (req, res) => {
+      const plan = await M.Plan.findOne({ key: req.params.planKey });
+      if (!plan || !(await M.Subscription.exists({ _id: req.params.subId }))) return res.status(404).send(page('Not found', '<h2>Payment not found</h2>'));
+      res.send(page('Pay for plan', `<h2>MedPin ${plan.name || plan.key} plan</h2><p>1 month</p>${button(plan.priceMonthly)}`));
+    });
+    app.post('/dev/pay/plan/:subId/:planKey', async (req, res) => {
+      const sub = await pay.planPaid(req.params.subId, req.params.planKey);
+      if (!sub) return res.status(404).send(page('Not found', '<h2>Payment not found</h2>'));
+      if (req.accepts(['html', 'json']) === 'json') return res.json({ ok: true, subscription: sub });
+      res.send(page('Paid', '<h2>Paid ✓</h2><p>You can go back to the MedPin app.</p>'));
+    });
+    app.get('/dev/pay/:paymentId', async (req, res) => {
+      const p = /^[a-f\d]{24}$/i.test(req.params.paymentId) ? await M.Payment.findById(req.params.paymentId).populate('locationId', 'name') : null;
+      if (!p) return res.status(404).send(page('Not found', '<h2>Payment not found</h2>'));
+      if (p.status !== 'pending') return res.send(page('Paid', '<h2>Already paid ✓</h2>'));
+      res.send(page('Pay fee', `<h2>Consultation fee</h2><p>${p.locationId?.name || ''}</p>${button(p.amount)}`));
+    });
     app.post('/dev/pay/:paymentId', async (req, res) => {
-      const p = await M.Payment.findById(req.params.paymentId);
-      if (!p) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Payment not found' } });
-      Object.assign(p, { status: 'paid', method: 'online', paidAt: new Date() });
-      await p.save();
-      if (p.appointmentId) await M.Appointment.updateOne({ _id: p.appointmentId }, { feeStatus: 'paid' });
-      return res.json({ ok: true, payment: p });
+      const exists = /^[a-f\d]{24}$/i.test(req.params.paymentId) && (await M.Payment.exists({ _id: req.params.paymentId }));
+      if (!exists) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Payment not found' } });
+      const p = (await pay.feePaid(req.params.paymentId)) || (await M.Payment.findById(req.params.paymentId));
+      if (req.accepts(['html', 'json']) === 'json') return res.json({ ok: true, payment: p });
+      res.send(page('Paid', '<h2>Paid ✓</h2><p>You can go back to the MedPin app.</p>'));
     });
   }
 

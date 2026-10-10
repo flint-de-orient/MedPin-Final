@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'add_patient.dart';
 import 'common_d5.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Consult-QuickAdd.dc.html — "Consultation · add new patient".
 /// Bottom sheet opened over Consult-NotFound.

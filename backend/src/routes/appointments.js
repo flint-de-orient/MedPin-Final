@@ -4,7 +4,6 @@ const { Router } = require('express');
 const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
-const env = require('../config/env');
 const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
 const { badRequest, notFound, conflict, list, paging } = require('../lib/http');
 const S = require('../services/scheduling');
@@ -83,6 +82,39 @@ r.post('/appointments', async (req, res) => {
     practiceId: req.practiceId, locationId, doctorId: doctorId === 'me' || !doctorId ? req.user._id : doctorId, patientId,
     startAt, visitType, mode, reason, walkIn: Boolean(walkIn), channel: 'desk', bookedBy: req.user._id, requestId,
   });
+  res.status(201).json(view(await populate(M.Appointment.findById(appt._id))));
+});
+
+// "Register walk-in": into today's queue now (token, status waiting). The doctor
+// is the one asking, else the only doctor seeing patients here; with several,
+// the desk chooses (CHOOSE_DOCTOR lists them).
+r.post('/appointments/walk-in', async (req, res) => {
+  const { patientId } = req.body;
+  await patientInPractice(req, patientId);
+  const dls = await M.DoctorLocation.find({ practiceId: req.practiceId, status: 'active' }).populate('doctorId', 'name').populate('locationId', 'name status');
+  const mine = req.member.allLocations || !req.member.locationIds?.length ? null : new Set(req.member.locationIds.map(String));
+  let options = dls.filter((d) => d.locationId?.status === 'active' && (!mine || mine.has(String(d.locationId._id))));
+  if (req.body.locationId) options = options.filter((d) => String(d.locationId._id) === String(req.body.locationId));
+  const doctorId = req.body.doctorId || (req.member.role === 'doctor' ? String(req.user._id) : null);
+  if (doctorId) options = options.filter((d) => String(d.doctorId?._id) === String(doctorId));
+  if (!options.length) throw conflict('No doctor sees patients at this clinic yet. Add a doctor schedule first.', 'NO_DOCTOR_HERE');
+  if (options.length > 1) {
+    const choices = options.map((d) => ({ doctorId: d.doctorId._id, doctorName: d.doctorId.name, locationId: d.locationId._id, locationName: d.locationId.name }));
+    throw conflict('Choose the doctor for this walk-in', 'CHOOSE_DOCTOR', { choices });
+  }
+  const dl = options[0];
+  if (await M.Appointment.exists({ patientId, doctorId: dl.doctorId._id, date: T.dayStart(), status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } })) {
+    throw conflict("This patient is already in today's list for this doctor", 'ALREADY_TODAY');
+  }
+  const appt = await S.book({
+    practiceId: req.practiceId, locationId: dl.locationId._id, doctorId: dl.doctorId._id, patientId,
+    startAt: new Date(), visitType: req.body.visitType || 'new', mode: 'in_clinic', reason: req.body.reason, walkIn: true, channel: 'desk', bookedBy: req.user._id,
+  });
+  // The doctor sees a new patient waiting (unless they added them themselves).
+  if (String(dl.doctorId._id) !== String(req.user._id)) {
+    const patient = await M.Patient.findById(patientId, 'name');
+    await notify([dl.doctorId._id], { type: 'queue_update', practiceId: req.practiceId, title: `Walk-in: ${patient?.name || 'patient'} · token ${appt.tokenNo}`, body: `Waiting at ${dl.locationId.name}`, screen: 'Queue-List' }).catch(() => {});
+  }
   res.status(201).json(view(await populate(M.Appointment.findById(appt._id))));
 });
 
@@ -288,21 +320,7 @@ r.post('/payments/:id/link', async (req, res) => {
   const p = ownPractice(req, await M.Payment.findById(req.params.id), 'Payment');
   if (p.status !== 'pending') throw conflict('This fee is not pending');
   const patient = await M.Patient.findById(p.patientId, 'name phone userId');
-  let url;
-  if (env.razorpay.keyId && env.razorpay.keySecret) {
-    const resp = await fetch('https://api.razorpay.com/v1/payment_links', {
-      method: 'POST',
-      headers: { authorization: `Basic ${Buffer.from(`${env.razorpay.keyId}:${env.razorpay.keySecret}`).toString('base64')}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ amount: p.amount * 100, currency: 'INR', description: 'Consultation fee', customer: { name: patient.name, contact: `+91${patient.phone}` }, notify: { sms: true }, reference_id: String(p._id) }),
-    });
-    const body = await resp.json();
-    if (!resp.ok) throw conflict(`Razorpay: ${body.error?.description || resp.status}`, 'PAYMENT_LINK_FAILED');
-    url = body.short_url;
-  } else {
-    url = `${require('../lib/request-base').publicBase()}/dev/pay/${p._id}`; // dev stand-in until Razorpay keys are set
-  }
-  Object.assign(p, { paymentLinkUrl: url, paymentLinkSentAt: new Date() });
-  await p.save();
+  const url = await require('../services/payments').feeLink(p, patient);
   if (patient.userId) await notify([patient.userId], { type: 'payment_link', practiceId: req.practiceId, title: `Pay ₹${p.amount} for your visit`, body: url, whatsapp: true });
   res.json(p);
 });

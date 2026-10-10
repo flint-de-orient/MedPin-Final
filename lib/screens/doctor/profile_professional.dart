@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Profile-Professional.dc.html — "Profile · professional details".
 class ProfileProfessionalScreen extends StatefulWidget {
@@ -65,7 +66,12 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> w
       for (final q in data!.list('qualifications'))
         _Qualification(
           q.str('name'),
-          [q.str('institution'), q.str('year')].where((s) => s.isNotEmpty).join(' · '),
+          [
+            q.str('institution'),
+            q.str('year'),
+            // Why the MedPin team didn't accept the last proof.
+            if (q.str('proofNote').isNotEmpty) 'Proof not accepted: ${q.str('proofNote')}',
+          ].where((s) => s.isNotEmpty).join(' · '),
           switch (q['proofStatus']) {
             'verified' => _Proof.verified,
             'review' => _Proof.review,
@@ -263,6 +269,8 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> w
                 'Link your HPR ID to be verified through ABDM and to share records with patients’ ABHA accounts, '
                 'with their consent.',
             idName: 'HPR ID',
+            registerUrl: 'https://hpr.abdm.gov.in/',
+            pattern: RegExp(r'^(\d{2}-?\d{4}-?\d{4}-?\d{4}|[a-zA-Z0-9._]{3,}@hpr\.abdm)$'),
             hint: 'e.g. 71-1234-5678-9012',
             linkedId: data?.str('hprId'),
             onLink: isLive ? _linkHpr : null,

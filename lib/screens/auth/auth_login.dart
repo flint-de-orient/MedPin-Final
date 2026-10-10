@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../app/splash.dart' show kLogoHeroTag;
@@ -8,6 +8,7 @@ import '../../data/firebase_phone.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'auth_register.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Auth-Login.dc.html — "Login" (Sign in).
 class AuthLoginScreen extends StatefulWidget {

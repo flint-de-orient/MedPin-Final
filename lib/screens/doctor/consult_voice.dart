@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/live.dart';
 import '../../data/voice.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Consult-Voice.dc.html — "Consultation · medicine by voice".
 /// Bottom sheet opened over Consult-Page; pops with a [D5MedResult].

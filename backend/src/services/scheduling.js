@@ -26,10 +26,16 @@ async function slotsFor({ doctorId, locationId, day, now = new Date() }) {
   const sessions = (s.week.find((w) => w.weekday === T.weekday(d)) || {}).sessions || [];
   if (!sessions.length) return { open: false, reason: 'no_session', slots: [] };
   const step = s.slotLengthMin + (s.breakBetweenMin || 0);
+  // Only while the clinic is open that day (its weekly hours), when hours are set.
+  const hours = (location.weeklyHours || []).find((h) => h.weekday === T.weekday(d));
+  if (hours && hours.isOpen === false) return { open: false, reason: 'clinic_closed', slots: [] };
+  const opens = hours?.opensAt ?? 0;
+  const closes = hours?.closesAt ?? 24 * 60;
   const minutes = [];
   for (const { startMin, endMin } of sessions) {
-    for (let t = startMin; t + s.slotLengthMin <= endMin; t += step) minutes.push(t);
+    for (let t = Math.max(startMin, opens); t + s.slotLengthMin <= Math.min(endMin, closes); t += step) minutes.push(t);
   }
+  if (!minutes.length) return { open: false, reason: 'clinic_closed', slots: [] };
   const walkIns = new Set(minutes.slice(Math.max(0, minutes.length - (s.walkInPlaces || 0))));
   const booked = await M.Appointment.aggregate([
     { $match: { doctorId: dl.doctorId, locationId: dl.locationId, date: d, status: ACTIVE } },

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/files.dart';
@@ -10,6 +10,7 @@ import '../../widgets/mp.dart';
 import 'common_d7.dart';
 import 'signature_gate.dart';
 import 'patient_picker.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Prescriptions.dc.html — "Prescriptions" (Priya Sharma's list).
 /// Live: args {'prescriptionId'} and/or {'patientId'} → GET /api/prescriptions/:id

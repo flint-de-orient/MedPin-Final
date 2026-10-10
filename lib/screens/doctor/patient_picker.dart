@@ -1,10 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 /// "Choose a patient" sheet for screens opened without one (quick actions
 /// such as Prescriptions, Test results, Record vitals, Follow-ups).

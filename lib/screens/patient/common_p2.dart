@@ -1,13 +1,15 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/downloads.dart';
+import '../../data/where.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for batch P2 (patient app: records, doctors, medicines).
 
@@ -58,10 +60,12 @@ Future<void> p2Open(BuildContext context, String? url, {String failed = "Couldn'
 }
 
 /// Directions to a clinic: its Google Maps link, or a maps search for the address.
-Future<void> p2Directions(BuildContext context, {String? mapUrl, String? address}) {
-  final url = (mapUrl != null && mapUrl.isNotEmpty)
-      ? mapUrl
-      : (address == null || address.isEmpty ? null : 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}');
+Future<void> p2Directions(BuildContext context, {String? mapUrl, String? address, num? lat, num? lng}) {
+  final url = lat != null && lng != null
+      ? directionsUrl(lat.toDouble(), lng.toDouble())
+      : (mapUrl != null && mapUrl.isNotEmpty)
+          ? mapUrl
+          : (address == null || address.isEmpty ? null : 'https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeComponent(address)}');
   return p2Open(context, url, failed: "Couldn't open the map");
 }
 
@@ -621,7 +625,7 @@ class _P2FieldState extends State<P2Field> {
                     decoration: InputDecoration(
                       isCollapsed: true,
                       border: InputBorder.none,
-                      hintText: widget.hint,
+                      hintText: widget.hint == null ? null : tr(context, widget.hint!),
                       hintStyle: tx(16, c: MP.ink3),
                     ),
                   ),

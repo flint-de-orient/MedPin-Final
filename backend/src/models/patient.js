@@ -49,6 +49,7 @@ const patientSchema = new Schema(
     area: String, // "near Salt Lake" for doctor search
     geo: pointSchema,
     riskLevel: enumOf(E.RISK_LEVELS),
+    deviceSync: { at: Date, source: String }, // last watch / phone sync
     healthScore: { value: { type: Number, min: 0, max: 100 }, weeklyDelta: Number, computedAt: Date },
     trackedMeasures: {
       type: [enumOf(E.TRACKED_MEASURES)],

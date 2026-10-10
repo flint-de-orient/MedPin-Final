@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
@@ -7,6 +7,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import 'common_d11.dart';
+import '../../widgets/i18n.dart';
 
 /// Doctor · Help and support — contact MedPin, common questions, and
 /// "Report a problem".

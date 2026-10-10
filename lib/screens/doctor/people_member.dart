@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d9.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: People-Member.dc.html — "People · member".
 /// Live data (args `{'memberId'}`): GET /api/members/:id, /api/departments,

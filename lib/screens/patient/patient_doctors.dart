@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'patient_finddoctor.dart' show openDoctorBooking;
+import '../../widgets/i18n.dart';
 
 /// Design: Patient-Doctors.dc.html — "Patient · Doctor tab: my doctors".
 ///

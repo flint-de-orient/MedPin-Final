@@ -1,15 +1,73 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
+import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Add-Patient.dc.html — "Add patient".
 ///
 /// Editing the phone number replaces "Verified" with a Verify button (as in
 /// the form behind Add-Patient-Existing). Verifying a number that already has
 /// a MedPin account (+91 98765 43210) opens 'Add-Patient-Existing'.
+/// Puts a patient into today's queue as a walk-in (POST /api/appointments/walk-in).
+/// With several doctors here, the desk picks one. Returns the token number.
+Future<int?> addWalkIn(BuildContext context, String patientId, {String? doctorId, String? locationId}) async {
+  try {
+    final a = await Api.I.post('/api/appointments/walk-in', {
+      'patientId': patientId,
+      if (doctorId != null) 'doctorId': doctorId,
+      if (locationId != null) 'locationId': locationId,
+    }) as Map;
+    return (a['tokenNo'] as num?)?.toInt();
+  } on ApiException catch (e) {
+    if (!context.mounted) return null;
+    if (e.code == 'CHOOSE_DOCTOR') {
+      final choices = [for (final c in (e.details?['choices'] as List? ?? const [])) (c as Map).cast<String, dynamic>()];
+      final pick = await openSheet<Map<String, dynamic>>(
+        context,
+        (ctx) => MpSheet(
+          title: 'Which doctor will see them?',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final c in choices)
+                Tap(
+                  onTap: () => Navigator.pop(ctx, c),
+                  radius: 12,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                  child: Row(
+                    children: [
+                      MpAvatar(F.initials('${c['doctorName'] ?? ''}'), size: 40, fontSize: 14),
+                      const Gap(12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${c['doctorName'] ?? 'Doctor'}', style: tx(16, w: w600)),
+                            Text('${c['locationName'] ?? ''}', style: tx(13, c: MP.ink2)),
+                          ],
+                        ),
+                      ),
+                      const Ico(I.chevronRight, size: 18, color: MP.ink3),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (pick == null || !context.mounted) return null;
+      return addWalkIn(context, patientId, doctorId: '${pick['doctorId']}', locationId: '${pick['locationId']}');
+    }
+    toast(context, e.message);
+    return null;
+  }
+}
+
 class AddPatientScreen extends StatefulWidget {
   const AddPatientScreen({super.key});
 
@@ -82,6 +140,9 @@ class PatientOtpSheetState extends State<PatientOtpSheet> {
 }
 
 class _AddPatientScreenState extends State<AddPatientScreen> {
+  /// Opened from "Register walk-in": the new patient goes straight into today's queue.
+  bool get _walkIn => (Nav.args<Map>(context) ?? const {})['walkIn'] == true;
+
   // Live: the form starts empty; the design's sample values only in preview.
   final _phone = TextEditingController(text: isLive ? '' : '98301 22457');
   String? _verifiedNumber = isLive ? null : '98301 22457';
@@ -133,6 +194,13 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
       if (look['exists'] == true) {
         final p = look['patient'];
         if (look['linked'] == true && p is Map) {
+          if (_walkIn) {
+            final token = await addWalkIn(context, '${p['id']}');
+            if (token == null || !mounted) return;
+            toast(context, '${p['name']} added to today\'s queue · token ${'$token'.padLeft(2, '0')}');
+            Nav.back(context);
+            return;
+          }
           toast(context, '${p['name']} is already your patient');
           Nav.go(context, 'Patient-Profile', args: {'patientId': '${p['id']}'});
         } else {
@@ -197,10 +265,18 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
         if (vitals.isNotEmpty) 'vitals': vitals,
       });
       if (!mounted) return;
+      final id = '${(p as Map)['id']}';
+      if (_walkIn) {
+        final token = await addWalkIn(context, id);
+        if (!mounted) return;
+        toast(context, token == null ? 'Patient added. Add them to the queue from Appointments.' : 'Patient added to today\'s queue · token ${'$token'.padLeft(2, '0')}');
+        Nav.back(context);
+        return;
+      }
       final nav = Navigator.of(context);
       toast(context, 'Patient added');
       nav.pop();
-      Nav.go(nav.context, 'Patient-Profile', args: {'patientId': '${(p as Map)['id']}'});
+      Nav.go(nav.context, 'Patient-Profile', args: {'patientId': id});
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.code == 'PATIENT_EXISTS') {

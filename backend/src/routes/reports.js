@@ -263,7 +263,26 @@ r.get('/dashboard', async (req, res) => {
   const user = await M.User.findById(req.user._id, 'name');
   const location = req.user.activeLocationId ? await M.Location.findById(req.user.activeLocationId, 'name shortName') : null;
   const practice = await M.Practice.findById(req.practiceId, 'name');
+  // "Set up your clinic" for doctors until every step is done.
+  let setup;
+  if (req.member.role === 'doctor') {
+    const [prof, pinned, patients, team] = await Promise.all([
+      M.DoctorProfile.findOne({ userId: req.user._id }, 'signature photo'),
+      M.Location.exists({ practiceId: req.practiceId, status: 'active', geo: { $exists: true } }),
+      M.PatientEnrolment.countDocuments({ practiceId: req.practiceId, status: 'linked' }),
+      M.Member.countDocuments({ practiceId: req.practiceId, status: 'active' }),
+    ]);
+    const steps = [
+      { key: 'signature', title: 'Add your signature', detail: 'Needed to issue prescriptions', screen: 'Profile', done: Boolean(prof?.signature?.key) },
+      { key: 'photo', title: 'Add a profile photo', detail: 'Patients see it when they book', screen: 'Doctor-MyProfile', done: Boolean(prof?.photo?.key) },
+      { key: 'pin', title: 'Pin your clinic on the map', detail: 'For “near me” search and directions', screen: 'Profile-Location', done: Boolean(pinned) },
+      { key: 'patient', title: 'Add your first patient', detail: 'Or share your booking link', screen: 'Add-Patient', done: patients > 0 },
+      ...(req.member.isOwner ? [{ key: 'team', title: 'Invite your front desk', detail: 'Optional · if someone helps you', screen: 'People-Add', done: team > 1, optional: true }] : []),
+    ];
+    if (steps.some((x) => !x.done && !x.optional)) setup = { done: steps.filter((x) => x.done).length, total: steps.length, steps };
+  }
   res.json({
+    setup,
     greetingName: user.name,
     date: today,
     practiceName: practice?.name,

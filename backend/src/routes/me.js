@@ -160,6 +160,9 @@ me.post('/practices', async (req, res) => {
     practiceId: practice._id, name: b.locationName || name, shortName: b.area, area: b.area, address: b.address, city: b.city, pincode: b.pincode,
     phone: b.clinicPhone ? String(b.clinicPhone).replace(/\D/g, '').slice(-10) : undefined,
     weeklyHours: WEEK.map((weekday) => ({ weekday, isOpen: days.includes(weekday), opensAt, closesAt })),
+    // Map pin: "I'm at the clinic now" (lat / lng) or a pasted Google Maps link.
+    googleMapsUrl: b.googleMapsUrl ? String(b.googleMapsUrl).slice(0, 500) : undefined,
+    geo: require('../lib/geo').pointFromBody(b),
   });
   await M.Member.create({
     practiceId: practice._id, userId: req.user._id, role: 'doctor', isOwner: true, allLocations: true, phone: req.user.phone,

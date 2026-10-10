@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
@@ -9,6 +9,7 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-AI-Chat.dc.html — "Doctor · AI Assistant · answers with Listen".
 /// Live (args {'sessionId'} and/or {'patientId'}, optional {'text'} to ask

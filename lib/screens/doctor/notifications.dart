@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 /// Staff notifications (doctor, front desk, every clinic role): visit requests,
 /// cancellations, messages, shared records, reminders — for the active clinic.

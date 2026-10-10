@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/files.dart';
@@ -11,6 +11,7 @@ import '../../widgets/chat_tools.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import 'common_p2.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Patient-Chat.dc.html — "Patient · urgent chat with doctor".
 ///
@@ -129,10 +130,11 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
 
   // ── Messages ──
 
+  /// "Seen by the clinic" once read; an urgent message also says the clinic was alerted.
   static String _status(Map<String, dynamic> m) => switch (m['deliveryStatus']) {
-        'seen' => 'Seen',
+        'seen' => 'Seen by the clinic',
         'delivered' => 'Delivered',
-        _ => 'Sent',
+        _ => m['isUrgent'] == true ? 'Sent · clinic alerted' : 'Sent',
       };
 
   static String _textOf(Map<String, dynamic> m) {
@@ -529,7 +531,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
                         if (has != _hasText) setState(() => _hasText = has);
                       },
                       decoration: InputDecoration.collapsed(
-                        hintText: 'Type a message',
+                        hintText: tr(context, 'Type a message'),
                         hintStyle: tx(16, c: P1.placeholder),
                       ),
                     ),

@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Departments.dc.html — "Departments".
 /// Live data: GET /api/departments; add: POST /api/departments {name};

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-Messages.dc.html — "Doctor · Messages tab".
 /// Live data: GET /api/inbox?type=all (care + nutrition), ?type=direct

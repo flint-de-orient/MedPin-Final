@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'patient_finddoctor.dart' show openDoctorBooking;
+import '../../widgets/i18n.dart';
 
 /// Design: Patient-DoctorDetail.dc.html — "Patient · doctor page (Dr. Sen)".
 ///
@@ -157,18 +158,23 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
     return l == null ? null : '$l';
   }
 
+  /// To the clinic of the next visit, else the doctor's first clinic.
   Future<void> _directions() async {
     final next = _next;
-    if (next == null) {
+    final places = _d.list('places');
+    if (next == null && places.isEmpty) {
       p2Missing(context, 'The map');
       return;
     }
-    final loc = next['locationId'] is Map ? (next['locationId'] as Map).cast<String, dynamic>() : const <String, dynamic>{};
-    final place = _d.list('places').where((p) => p.str('locationId') == _locationId(next)).firstOrNull;
+    final loc = next != null && next['locationId'] is Map ? (next['locationId'] as Map).cast<String, dynamic>() : const <String, dynamic>{};
+    final place = (next == null ? null : places.where((p) => p.str('locationId') == _locationId(next)).firstOrNull) ?? places.firstOrNull;
+    final address = [place?.str('name') ?? loc.str('name'), place?.str('address') ?? '', place?.str('area') ?? ''].where((x) => x.isNotEmpty).join(', ');
     await p2Directions(
       context,
+      lat: place?['lat'] as num?,
+      lng: place?['lng'] as num?,
       mapUrl: loc['googleMapsUrl'] as String? ?? place?['mapUrl'] as String?,
-      address: place?.str('address') ?? loc.str('name'),
+      address: address,
     );
   }
 
@@ -497,9 +503,34 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
               ),
             ],
           ),
+          if (next != null && next['feeStatus'] == 'pending' && (next['fee'] as num? ?? 0) > 0) ...[
+            const Gap(8),
+            P2Box(
+              onTap: _payOnline,
+              label: 'Pay the visit fee online',
+              height: 48,
+              radius: 12,
+              color: MP.primary,
+              alignment: Alignment.center,
+              child: Text('Pay ₹${(next['fee'] as num).round()} online', style: tx(14, w: w700, c: MP.white)),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// Opens the clinic's payment link for the next visit's fee.
+  Future<void> _payOnline() async {
+    final next = _next;
+    if (next == null) return;
+    final res = await runAction(context, () => Api.I.post('/api/patient/appointments/${next.str('id')}/pay'));
+    if (res is! Map || !mounted) return;
+    await p2Open(context, res['url'] as String?, failed: "Couldn't open the payment page");
+    // The clinic sees it as paid once the payment goes through.
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted) reload(quiet: true);
+    });
   }
 
   Widget _todo(String text, bool done, VoidCallback onTap) => Semantics(

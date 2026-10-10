@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
@@ -6,6 +6,7 @@ import '../../data/voice.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import 'p1_sheets.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Patient-AskAI.dc.html — "Patient · Ask MedPin AI" (sheet over 'Main').
 class PatientAskaiSheet extends StatefulWidget {
@@ -217,7 +218,7 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
                   style: tx(16, h: 1.5),
                   cursorColor: MP.primary,
                   decoration: InputDecoration.collapsed(
-                    hintText: "E.g. I've had a headache and fever for 2 days",
+                    hintText: tr(context, "E.g. I've had a headache and fever for 2 days"),
                     hintStyle: tx(16, h: 1.5, c: P1.placeholder),
                   ),
                 ),

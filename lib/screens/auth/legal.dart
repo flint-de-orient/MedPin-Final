@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 /// Terms of Use / Privacy Policy, opened with {'doc': 'terms' | 'privacy'}.
 ///

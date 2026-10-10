@@ -72,6 +72,7 @@ r.patch('/doctor/profile', async (req, res) => {
     body.registration = { ...(p.registration?.toObject?.() || {}), ...body.registration };
     if (req.body.registration.number && req.body.registration.number !== p.registration?.number) body.registration.status = 'in_review';
   }
+  if (body.hprId && !/^(\d{2}-?\d{4}-?\d{4}-?\d{4}|[a-zA-Z0-9._]{3,}@hpr\.abdm)$/.test(String(body.hprId).trim())) throw badRequest('Enter your HPR ID like 71-1234-5678-9012 or name@hpr.abdm', 'BAD_HPR_ID');
   if (body.hprId && body.hprId !== p.hprId) p.hprLinkedAt = new Date();
   // Payouts: keep only the last 4 digits of a full account number.
   if (body.payout) {
@@ -134,7 +135,9 @@ r.post('/doctor/qualifications/:qid/proof', proofUpload.single('file'), async (r
   if (!req.file) throw badRequest('Choose the proof document');
   q.proof = await storage.save(req.file.buffer, { folder: 'proofs', name: req.file.originalname, mimeType: req.file.mimetype });
   q.proofStatus = 'review';
+  q.proofNote = undefined;
   await p.save();
+  await require('../services/verification').requestReview(p, q);
   res.json(profileView(p));
 });
 

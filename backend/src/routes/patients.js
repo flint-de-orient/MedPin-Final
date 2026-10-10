@@ -332,6 +332,19 @@ r.post('/patients/:id/lab-results', need('labs'), async (req, res) => {
     values, abnormalCount: values.filter((v) => v.flag && v.flag !== 'normal').length, hasCritical: values.some((v) => v.flag === 'critical'),
     ecgInterpretation: req.body.ecgInterpretation, ecgNote: req.body.ecgNote,
   });
+  // Results typed in at the clinic (no uploaded file) still show in the patient's Records.
+  if (!result.recordId) {
+    const n = result.abnormalCount;
+    const low = result.values.some((v) => v.flag === 'low') && !result.values.some((v) => ['high', 'critical'].includes(v.flag));
+    const rec = await M.MedicalRecord.create({
+      patientId: patient._id, kind: 'test_result', title: result.testName || 'Test result', recordDate: result.collectedAt || new Date(),
+      origin: 'from_doctor', sourceName: result.labName || undefined, practiceId: req.practiceId,
+      doctorId: req.member.role === 'doctor' ? req.user._id : undefined, uploadedBy: req.user._id,
+      flagLabel: n ? `${n} ${low ? 'low' : 'high'}` : 'Normal', flagTone: n ? 'high' : 'ok',
+    });
+    result.recordId = rec._id;
+    await result.save();
+  }
   if (result.hasCritical) {
     const { raiseAlert } = require('../services/care');
     await raiseAlert({ practiceId: req.practiceId, patientId: patient._id, severity: 'urgent', kind: 'lab', detail: `Critical result in ${result.testName}`, sourceModel: 'LabResult', sourceId: result._id });

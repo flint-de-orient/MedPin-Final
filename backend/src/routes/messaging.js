@@ -41,7 +41,7 @@ const messageView = (m, userId) => ({
   deleted: Boolean(m.deletedForEveryoneAt),
   attachment: storage.withUrl(m.attachment),
   voice: m.voice?.file ? { ...m.voice.toJSON?.(), file: storage.withUrl(m.voice.file) } : undefined,
-  mine: String(m.senderId) === String(userId),
+  mine: String(m.senderId?._id || m.senderId) === String(userId), // senderId may be populated
 });
 
 // ── Shared thread endpoints (staff + patient) ──

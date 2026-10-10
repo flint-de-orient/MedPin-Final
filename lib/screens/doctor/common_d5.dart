@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
@@ -8,6 +8,7 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'signature_gate.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for the consultation screens of batch D5:
 // Consult-Page, Consult-Voice, Consult-Dosage, Consult-Pick,

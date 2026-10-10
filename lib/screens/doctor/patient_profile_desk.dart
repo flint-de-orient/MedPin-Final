@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Patient-Profile-Desk.dc.html — "Patient profile · front desk".
 /// Live data: GET /api/patients/:id, /vitals and /prescriptions.

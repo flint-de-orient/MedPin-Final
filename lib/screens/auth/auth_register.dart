@@ -1,11 +1,12 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
 import '../../data/config.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Auth-Register.dc.html — "Register" (Sign in).
 class AuthRegisterScreen extends StatefulWidget {

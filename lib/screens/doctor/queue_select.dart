@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'queue_list.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Queue-Select.dc.html — "Patient queue · choose location"
 /// (sheet over Doctor-Dashboard).

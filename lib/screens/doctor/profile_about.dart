@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/files.dart';
@@ -7,6 +7,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import 'common_d11.dart';
+import '../../widgets/i18n.dart';
 
 /// Doctor · About and photo — the bio and photo patients see before booking.
 /// Live data: GET/PATCH /api/doctor/profile, POST /api/doctor/profile/photo.

@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for batch D10 (AI assistant & feedback, front desk).
 

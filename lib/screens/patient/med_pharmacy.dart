@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Med-Pharmacy.dc.html — "Medicines · choose pharmacy".
 class MedPharmacyScreen extends StatefulWidget {

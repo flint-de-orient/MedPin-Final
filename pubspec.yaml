@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.8
   flutter_svg: ^2.2.0
   http: ^1.6.0
@@ -30,6 +32,8 @@ dependencies:
   flutter_tts: ^4.2.5
   record: ^6.2.1
   just_audio: ^0.10.6
+  geolocator: ^14.1.1
+  health: ^13.3.2
 
 dev_dependencies:
   flutter_test:

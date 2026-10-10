@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'appointments_manage.dart';
 import 'common_d7.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Appointments.dc.html — "Appointments".
 /// Live data: GET /api/appointments?view=today|upcoming|past and

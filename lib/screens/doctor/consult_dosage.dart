@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Consult-Dosage.dc.html — "Consultation · set dosage".
 /// Bottom sheet opened over Consult-Page; pops with a [D5MedResult].

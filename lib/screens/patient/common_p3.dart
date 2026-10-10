@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
@@ -9,6 +9,7 @@ import '../../data/live.dart';
 import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for batch P3 (patient app live data: records, medicines, cart,
 // pharmacy). Visuals reuse the P2 components so the design stays the same.

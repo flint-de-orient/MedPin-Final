@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -8,6 +8,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'queue_select.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Queue-List.dc.html — "Patient queue".
 /// Live data (args {'locationId'}; default: today's chosen / first open

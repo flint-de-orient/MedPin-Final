@@ -23,6 +23,7 @@ const qualificationSchema = new Schema({
   year: { type: Number, min: 1950, max: 2100 },
   proofStatus: enumOf(E.PROOF_STATUSES, { default: 'upload' }),
   proof: fileSchema,
+  proofNote: String, // why a proof was not accepted
 });
 
 const doctorProfileSchema = new Schema(

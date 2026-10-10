@@ -1,12 +1,13 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d3.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-Reports-Filter.dc.html — "Doctor · Reports · filters".
 /// Sheet over 'Doctor-Reports': starts 72px below the top, pinned footer.

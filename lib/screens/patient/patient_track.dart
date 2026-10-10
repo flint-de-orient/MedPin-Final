@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Patient-Track.dc.html — "Patient · choose what to track" (sheet over 'Main').
 class PatientTrackSheet extends StatefulWidget {

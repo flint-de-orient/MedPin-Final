@@ -23,14 +23,15 @@ r.post('/billing/webhook', async (req, res) => {
   if (!safeEqual(expected, req.headers['x-razorpay-signature'] || '')) return res.status(400).json({ error: 'Bad signature' });
   const { event, payload } = req.body;
   if (event === 'payment_link.paid') {
-    const ref = payload.payment_link?.entity?.reference_id;
-    if (ref) {
-      const p = await M.Payment.findById(ref);
-      if (p && p.status === 'pending') {
-        Object.assign(p, { status: 'paid', method: 'online', paidAt: new Date(), razorpayPaymentId: payload.payment?.entity?.id });
-        await p.save();
-        if (p.appointmentId) await M.Appointment.updateOne({ _id: p.appointmentId }, { feeStatus: 'paid' });
-      }
+    const pay = require('../services/payments');
+    const link = payload.payment_link?.entity || {};
+    const notes = link.notes || {};
+    const paymentId = payload.payment?.entity?.id;
+    if (notes.kind === 'plan') await pay.planPaid(notes.subscriptionId, notes.planKey, paymentId);
+    else {
+      // Fee links: notes.paymentId (older links: reference_id was the payment id).
+      const ref = notes.paymentId || String(link.reference_id || '').split('.')[0];
+      if (/^[a-f\d]{24}$/i.test(ref)) await pay.feePaid(ref, paymentId);
     }
   }
   if (event === 'invoice.paid') {
@@ -79,7 +80,7 @@ r.get('/billing', async (req, res) => {
       aiChats: { used: usage?.aiChats || 0, limit: plan?.aiChatsPerMonth },
     },
     invoices: invoices.map((i) => ({ ...i.toJSON(), file: storage.withUrl(i.file) })),
-    checkout: env.razorpay.keyId ? 'razorpay' : 'not_configured',
+    checkout: require('../services/payments').configured() ? 'razorpay' : env.isProd ? 'not_configured' : 'dev',
   });
 });
 
@@ -95,13 +96,19 @@ r.post('/billing/switch', ownerOnly, async (req, res) => {
     throw conflict(`Your team has ${seats} people, so ${seats - plan.seats} would need to be removed first`, 'TOO_MANY_SEATS', { seats, limit: plan.seats });
   }
   const upgrade = (plan.priceMonthly || 0) > (sub.price || 0);
-  if (upgrade && sub.status !== 'trialing' && !env.razorpay.keyId && env.isProd) {
+  const pay = require('../services/payments');
+  if (upgrade && sub.status !== 'trialing' && !pay.configured() && env.isProd) {
     throw Object.assign(conflict('Online payment is not set up yet, so the plan cannot be upgraded. Contact MedPin support.', 'PAYMENTS_OFF'), { status: 503 });
+  }
+  // A paid upgrade starts once paid: the doctor gets a payment link to open.
+  if (upgrade && sub.status !== 'trialing' && pay.configured()) {
+    const checkoutUrl = await pay.planLink(sub, plan, req.user);
+    return res.json({ ...sub.toJSON(), checkoutUrl, awaitingPayment: true });
   }
   sub.pendingPlanKey = plan.key;
   sub.pendingFrom = sub.currentPeriodEnd || new Date();
   // Trials (and practices without online billing yet) switch straight away.
-  if (sub.status === 'trialing' || !env.razorpay.keyId) {
+  if (sub.status === 'trialing' || !pay.configured()) {
     Object.assign(sub, { planKey: plan.key, price: plan.priceMonthly, pendingPlanKey: undefined, pendingFrom: undefined });
   }
   await sub.save();

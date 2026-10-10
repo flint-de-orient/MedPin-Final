@@ -1,11 +1,14 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/session.dart';
+import '../../data/where.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Clinic-Editor.dc.html — "Location editor" (Edit location).
 /// Live: args {'locationId'} → GET /api/locations/:id, saved with PATCH;
@@ -29,6 +32,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
   final _printedName = TextEditingController(text: 'Dr. Arjun Sen, MBBS, MD (Medicine)');
   final _regNo = TextEditingController(text: 'WBMC 64213');
   final _mapUrl = TextEditingController(text: 'https://maps.app.goo.gl/Qx7bR2mLk9');
+  ({double lat, double lng})? _pinAt;
 
   /// Live: the location being edited (null = adding a new one).
   String? _locationId;
@@ -192,6 +196,9 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     ('RM', 'Dr. Rina Mitra', 'Tue · Thu · 5:00 – 8:00 PM'),
   ];
 
+  /// Clinic details are the owner's (the API refuses others); preview edits freely.
+  bool get _canEdit => !isLive || Session.I.isOwner;
+
   Future<void> _save() async {
     if (isLive) {
       if (_name.text.trim().isEmpty) {
@@ -205,6 +212,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
         'address': _address.text.trim(),
         'phone': _phone.text.trim(),
         'googleMapsUrl': _mapUrl.text.trim(),
+        if (_pinAt != null) ...{'lat': _pinAt!.lat, 'lng': _pinAt!.lng},
         'letterhead': {
           ...d.obj('letterhead'),
           'tagline': _tagline.text.trim(),
@@ -352,21 +360,33 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
       header: MpHeader(
         _isNew ? 'Add location' : 'Edit location',
         actions: [
-          D7Btn('Save', height: 44, size: 16, padding: const EdgeInsets.symmetric(horizontal: 12), onTap: _save),
+          if (_canEdit) D7Btn('Save', height: 44, size: 16, padding: const EdgeInsets.symmetric(horizontal: 12), onTap: _save),
         ],
       ),
       body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         gap: 16,
         children: [
-          _details(),
-          _letterhead(),
-          _mapLink(),
-          _weeklyHours(),
-          _closuresCard(),
-          _perDoctor(),
-          Padding(padding: const EdgeInsets.only(top: 8), child: MpButton(_isNew ? 'Add location' : 'Save changes', onTap: _save)),
-          if (!_isNew) Padding(
+          // Only the owner changes clinic details; others see them read-only.
+          if (!_canEdit)
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: MP.primarySoft, borderRadius: BorderRadius.circular(14)),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Ico(I.lock, size: 18, color: MP.primary),
+                  const Gap(10),
+                  Expanded(child: Text('Only the clinic owner can change these details. Ask them if something needs updating.', style: tx(14, c: MP.ink2, h: 1.4))),
+                ],
+              ),
+            ),
+          IgnorePointer(
+            ignoring: !_canEdit,
+            child: VGap(gap: 16, children: [_details(), _letterhead(), _mapLink(), _weeklyHours(), _closuresCard(), _perDoctor()]),
+          ),
+          if (_canEdit) Padding(padding: const EdgeInsets.only(top: 8), child: MpButton(_isNew ? 'Add location' : 'Save changes', onTap: _save)),
+          if (!_isNew && _canEdit) Padding(
             padding: const EdgeInsets.only(top: 16),
             child: D7Ruled(
               padding: const EdgeInsets.only(top: 24),
@@ -520,6 +540,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
         gap: 16,
         children: [
           const D7Title('Map link'),
+          if (isLive) UseHereRow(value: _pinAt, onPicked: (p) => setState(() => _pinAt = p)),
           D7Labeled(
             'Google Maps link',
             help: 'Patients get this with every booking confirmation.',

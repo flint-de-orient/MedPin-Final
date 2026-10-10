@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../data/format.dart';
 import 'mp.dart';
+import 'i18n.dart';
 
 /// Round "jump to latest" button for a chat whose list is `reverse: true`
 /// (offset 0 = newest). It shows only once the reader has scrolled up.

@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'p1_sheets.dart';
+import '../../widgets/i18n.dart';
 
 /// Shared pieces for batch P1 (patient home, its sheets and the carousel).
 class P1 {
@@ -51,10 +53,10 @@ class P1 {
     ),
   ];
 
-  /// Opens a slide's destination (health score details has no screen yet).
+  /// Opens a slide's destination (the health score opens its details sheet).
   static void openSlide(BuildContext context, P1Slide slide) {
-    if (slide.stem == null) {
-      toast(context, 'Health score details are coming soon');
+    if (slide.stem == null || slide.stem == 'Patient-Home') {
+      openSheet<void>(context, (_) => const P1HealthScoreSheet());
     } else {
       Nav.go(context, slide.stem!, args: slide.args);
     }

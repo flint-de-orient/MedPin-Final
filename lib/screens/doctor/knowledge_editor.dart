@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
@@ -8,6 +8,7 @@ import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'common_d10.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Knowledge-Editor.dc.html — "Knowledge · edit".
 /// Live (args {'knowledgeId'}; none = new entry): GET /api/knowledge/:id;

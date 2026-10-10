@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -13,6 +13,7 @@ import '../widgets/mp.dart';
 import 'api.dart';
 import 'live.dart';
 import 'session.dart';
+import '../widgets/i18n.dart';
 
 /// Voice in MedPin: speak-to-type (speech to text) in English, Bengali or
 /// Hindi; reading answers aloud (text to speech); and recording / playing

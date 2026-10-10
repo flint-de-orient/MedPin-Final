@@ -150,7 +150,7 @@ void main() {
     expect(find.text('Upload HbA1c report'), findsOneWidget);
     expect(find.text('Note down questions for Dr. Sen'), findsOneWidget);
     expect(find.text('Visit with Dr. Sen'), findsOneWidget);
-    expect(find.text('0 of 7 done'), findsOneWidget);
+    expect(find.text('0 of 7 tasks done'), findsOneWidget);
     expect(find.text('Shared with Dr. Sen and Mou (dietician)'), findsOneWidget);
 
     await _tap(t, find.text('Glimepiride 1 mg'));

@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/config.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_a1.dart';
+import '../../widgets/i18n.dart';
 
 /// "I'm a patient" — name, gender and age, then the patient home.
 /// POST /api/patient/register (links an existing clinic record for this number).

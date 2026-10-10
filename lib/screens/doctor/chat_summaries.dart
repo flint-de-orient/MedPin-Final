@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'common_d10.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Chat-Summaries.dc.html — "Chat summaries".
 /// Live data: GET /api/inbox/summaries?date=today|yesterday[&scope=mine].

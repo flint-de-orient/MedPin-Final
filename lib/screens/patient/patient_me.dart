@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
@@ -9,6 +9,7 @@ import '../../data/live.dart';
 import '../../data/photo.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import '../../widgets/i18n.dart';
 
 /// Patient app · Profile tab ("My profile"). Not an artboard in the design
 /// canvas: built from the front-desk Profile pattern (Staff-Profile) and the

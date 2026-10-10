@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app/app_lock.dart';
 import 'app/registry.dart';
@@ -15,7 +16,8 @@ import 'data/session.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   Nav.registry = screenRegistry;
-  FirebasePhone.I.init(); // SMS sign-in on Android; ready long before the Login screen
+  FirebasePhone.I
+      .init(); // SMS sign-in on Android; ready long before the Login screen
   // Push notifications start once someone is signed in (restored or new).
   Session.I.deviceToken = () => Push.I.token;
   Api.I.onMedicinesChanged = MedAlarms.I.sync;
@@ -32,12 +34,14 @@ void main() {
     }
     wasSignedIn = now;
   });
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
-    systemNavigationBarColor: MP.bg,
-    systemNavigationBarIconBrightness: Brightness.dark,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: MP.bg,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
   runApp(const MedPinApp());
 }
 
@@ -46,19 +50,33 @@ class MedPinApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'MedPin',
-      debugShowCheckedModeBanner: false,
-      theme: medpinTheme(),
-      navigatorKey: Nav.key,
-      // App lock covers every screen when it's on (see AppLockGate).
-      builder: (context, child) => AppLockGate(child: child ?? const SizedBox.shrink()),
-      home: const SplashScreen(),
-      onGenerateRoute: (settings) {
-        final s = Nav.spec(settings.name ?? '');
-        if (s == null) return null;
-        return MaterialPageRoute(settings: settings, builder: s.builder);
-      },
+    // The account language (English, বাংলা, हिन्दी) sets the app locale; every Text follows it.
+    return ListenableBuilder(
+      listenable: Session.I,
+      builder:
+          (context, _) => MaterialApp(
+            title: 'MedPin',
+            debugShowCheckedModeBanner: false,
+            locale: Locale(switch (Session.I.user['language']) {
+              'bn' => 'bn',
+              'hi' => 'hi',
+              _ => 'en',
+            }),
+            supportedLocales: const [Locale('en'), Locale('bn'), Locale('hi')],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
+            theme: medpinTheme(),
+            navigatorKey: Nav.key,
+            // App lock covers every screen when it's on (see AppLockGate).
+            builder:
+                (context, child) =>
+                    AppLockGate(child: child ?? const SizedBox.shrink()),
+            home: const SplashScreen(),
+            onGenerateRoute: (settings) {
+              final s = Nav.spec(settings.name ?? '');
+              if (s == null) return null;
+              return MaterialPageRoute(settings: settings, builder: s.builder);
+            },
+          ),
     );
   }
 }

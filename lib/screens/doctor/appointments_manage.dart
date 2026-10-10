@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Appointments-Manage.dc.html — "Appointments · manage" (sheet over
 /// 'Appointments'). The optional parameters default to the design's
@@ -150,7 +151,60 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
       'locationId': locationId,
       'visitType': args['visitType'] ?? 'follow_up',
       'days': open,
+      'prefers': mode == 'assign' ? when.replaceFirst('Requested: ', '') : '',
     };
+  }
+
+  /// First free date + time matching the patient's wish ("Thu or Fri, after 5 PM",
+  /// "morning", "Sat evening"); null when it says nothing usable.
+  static (int, String)? preferredSlot(String wish, List<Map<String, dynamic>> days) {
+    final w = wish.toLowerCase();
+    if (w.isEmpty || w.contains('any')) return null;
+    const names = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    final wantDays = {for (var i = 0; i < 7; i++) if (RegExp('\\b${names[i]}').hasMatch(w)) i + 1};
+    int? toMin(String h, String? m, String? ap) {
+      var hh = int.parse(h) % 12;
+      if ((ap ?? (int.parse(h) < 8 ? 'pm' : 'am')) == 'pm') hh += 12;
+      return hh * 60 + (m == null ? 0 : int.parse(m));
+    }
+    int? after;
+    int? before;
+    final a = RegExp(r'after\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?').firstMatch(w);
+    if (a != null) after = toMin(a.group(1)!, a.group(2), a.group(3));
+    final b = RegExp(r'before\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?').firstMatch(w);
+    if (b != null) before = toMin(b.group(1)!, b.group(2), b.group(3));
+    if (w.contains('morning')) before ??= 12 * 60;
+    if (w.contains('afternoon')) {
+      after ??= 12 * 60;
+      before ??= 17 * 60;
+    }
+    if (w.contains('evening')) after ??= 17 * 60;
+    if (wantDays.isEmpty && after == null && before == null) return null;
+    for (var i = 0; i < days.length; i++) {
+      for (final s in days[i].list('slots')) {
+        if (s['available'] != true) continue;
+        final at = F.date(s['startAt']);
+        if (at == null) continue;
+        final m = at.hour * 60 + at.minute;
+        if (wantDays.isNotEmpty && !wantDays.contains(at.weekday)) break;
+        if (after != null && m < after) continue;
+        if (before != null && m >= before) continue;
+        return (i, s.str('time'));
+      }
+    }
+    return null;
+  }
+
+  /// Once the slots load, start on the time the patient asked for.
+  bool _prefApplied = false;
+  void _applyPreference() {
+    if (_prefApplied || data == null) return;
+    _prefApplied = true;
+    final pick = preferredSlot(data!.str('prefers'), _liveDays);
+    if (pick != null && _slot == null) {
+      _date = pick.$1;
+      _slot = pick.$2;
+    }
   }
 
   bool get _assign => data == null ? widget.assign : data!['mode'] != 'reschedule';
@@ -269,6 +323,7 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
 
   @override
   Widget build(BuildContext context) {
+    _applyPreference();
     final placeholder = livePlaceholder();
     final first = F.firstName(_name);
     final dates = _dateList;

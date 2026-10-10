@@ -98,7 +98,7 @@ r.get('/locations', async (req, res) => {
 });
 
 const LOCATION_FIELDS = ['name', 'shortName', 'type', 'address', 'area', 'city', 'pincode', 'landmark', 'phone', 'patientPhone', 'googleMapsUrl', 'hfrId', 'facilities', 'paymentMethods', 'collectFeeAtBooking', 'slotMinutes', 'weeklyHours', 'letterhead'];
-const geoFrom = (body) => (body.lat != null && body.lng != null ? { type: 'Point', coordinates: [Number(body.lng), Number(body.lat)] } : undefined);
+const geoFrom = (body) => require('../lib/geo').pointFromBody(body);
 const validHours = (hours) => {
   for (const h of hours || []) {
     if (h.isOpen !== false && h.closesAt <= h.opensAt) throw badRequest('Closing time must be after opening time', 'BAD_HOURS');
@@ -140,6 +140,7 @@ r.patch('/locations/:id', ownerOnly, async (req, res) => {
   validHours(body.weeklyHours);
   Object.assign(loc, body);
   if (geoFrom(req.body)) loc.geo = geoFrom(req.body);
+  if (req.body.hfrId && !/^IN\d{10}$/.test(String(req.body.hfrId).trim())) throw badRequest('Enter the HFR ID like IN1910000123', 'BAD_HFR_ID');
   if (req.body.hfrId) loc.hfrLinkedAt = new Date();
   await loc.save();
   res.json(loc);

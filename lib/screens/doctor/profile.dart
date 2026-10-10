@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/files.dart';
@@ -8,6 +8,7 @@ import '../../data/photo.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import 'common_d8.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Profile.dc.html — "Profile" (Clinician · tabs): the doctor's
 /// profile tab with clinic tools, letterhead, security and log out.

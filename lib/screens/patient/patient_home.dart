@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
+import '../../data/device_sync.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/photo.dart';
@@ -13,6 +14,7 @@ import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import 'p1_sheets.dart';
 import 'patient_log.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Main.dc.html — "Patient · Home".
 class PatientHomeScreen extends StatefulWidget {
@@ -41,7 +43,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
   bool _walkDone = false;
 
   @override
-  Future<Object?> fetch() => Api.I.get('/api/patient/home');
+  Future<Object?> fetch() async {
+    final home = await Api.I.get('/api/patient/home');
+    // Once connected, new watch readings go up quietly (at most every 30 min).
+    if (home is Map && home['deviceSync'] != null) DeviceSync.sync(null);
+    return home;
+  }
 
   static const _food = {
     'before_food': 'before food',
@@ -156,6 +163,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
   // ── Header ──
   String get _name => data == null ? 'Priya' : data!.str('greetingName', F.firstName(Session.I.name));
   String get _hello => data == null ? 'Good morning,' : '${F.greeting()},';
+  /// Last watch / phone sync (null: never connected).
+  DateTime? get _synced => F.date(data?.obj('deviceSync')['at']);
+
   int get _unread => data == null ? 1 : data!.numOr('unreadNotifications').toInt();
   String get _initials => data == null ? 'PS' : F.initials(Session.I.name.isEmpty ? _name : Session.I.name);
 
@@ -545,7 +555,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
                   textBaseline: TextBaseline.alphabetic,
                   children: [
                     Expanded(child: _cardTitle('Today')),
-                    Text('$n of ${tasks.length} done', style: tx(14, c: MP.ink2, tab: true)),
+                    Text('$n of ${tasks.length} tasks done', style: tx(14, c: MP.ink2, tab: true)),
                   ],
                 ),
                 const Gap(10),
@@ -692,7 +702,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
             columns: 2,
             children: [
               _Tile(
-                onTap: () => toast(context, 'Health score details are coming soon'),
+                onTap: () => isLive ? openSheet<void>(context, (_) => const P1HealthScoreSheet()) : toast(context, 'Health score details'),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -821,9 +831,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
               const Gap(12),
               _TextLink(
                 'Read more',
-                onTap: () => isLive
-                    ? Nav.go(context, 'Patient-AskAI', args: {'prefill': 'Can you explain my health summary in simple words?'})
-                    : toast(context, 'The full summary is coming soon'),
+                onTap: () => isLive ? openSheet<void>(context, (_) => const P1HealthSummarySheet()) : toast(context, 'Your health summary'),
               ),
             ],
           ),
@@ -868,7 +876,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
           ),
           const Gap(14),
           Tap(
-            onTap: () => toast(context, 'Device sync is coming soon'),
+            onTap: () async {
+              if (!isLive) return toast(context, 'Smartwatch and ring sync');
+              final run = _synced == null ? DeviceSync.connect(context) : DeviceSync.sync(context, force: true);
+              final ok = await run;
+              if (ok && mounted) reload(quiet: true);
+            },
             radius: 0,
             child: Container(
               padding: const EdgeInsets.only(top: 14),
@@ -877,9 +890,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
                 children: [
                   const Ico(_watch, size: 20, color: MP.ink2),
                   const Gap(12),
-                  Expanded(child: Text('Smartwatch and ring sync', style: tx(14, c: MP.ink2))),
+                  Expanded(child: Text(_synced == null ? 'Smartwatch and ring sync' : 'Synced ${F.ago(_synced!)} · tap to sync now', style: tx(14, c: MP.ink2))),
                   const Gap(12),
-                  const MpBadge.grey('Coming soon'),
+                  if (!isLive) const MpBadge.grey('Coming soon') else if (_synced == null) const MpBadge.blue('Connect') else const Ico(I.check, size: 18, color: MP.green, stroke: 2.2),
                 ],
               ),
             ),

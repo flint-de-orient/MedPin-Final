@@ -1,12 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Consult-Diagnosis.dc.html — "Consult 2 · Diagnosis".
 /// Live: args {'consultationId'} → GET /api/consultations/:id (draft

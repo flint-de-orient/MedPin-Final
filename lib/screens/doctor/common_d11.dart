@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
+import '../../widgets/i18n.dart';
 
 /// Shared pieces for the doctor's settings screens added after the design
 /// (About and photo, Chat, Notifications, Payouts, Privacy, Help), the lab

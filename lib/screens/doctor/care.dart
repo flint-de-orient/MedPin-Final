@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Care.dc.html — "Care" (Clinician · tabs): the care inbox.
 class CareScreen extends StatefulWidget {

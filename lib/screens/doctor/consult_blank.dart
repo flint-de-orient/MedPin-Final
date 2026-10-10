@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/voice.dart';
@@ -6,6 +6,7 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Consult-Blank.dc.html — "Consultation · fresh start, no records".
 /// Live: the same draft as Consult-Page (args {'consultationId'} or

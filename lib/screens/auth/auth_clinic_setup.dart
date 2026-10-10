@@ -1,11 +1,13 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/config.dart';
 import '../../data/session.dart';
+import '../../data/where.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d11.dart';
 import 'common_a1.dart';
+import '../../widgets/i18n.dart';
 
 /// "I'm a doctor" — start a clinic: about you, the clinic, hours and fee.
 /// Creates the practice, its first location and the doctor's schedule there
@@ -29,6 +31,7 @@ class _AuthClinicSetupScreenState extends State<AuthClinicSetupScreen> {
   final _address = TextEditingController();
   final _city = TextEditingController(text: 'Kolkata');
   final _pincode = TextEditingController();
+  ({double lat, double lng})? _pinAt;
   final _clinicPhone = TextEditingController();
   final _fee = TextEditingController(text: '500');
 
@@ -108,6 +111,7 @@ class _AuthClinicSetupScreenState extends State<AuthClinicSetupScreen> {
         if (_city.text.trim().isNotEmpty) 'city': _city.text.trim(),
         if (_pincode.text.trim().isNotEmpty) 'pincode': _pincode.text.trim(),
         if (_clinicPhone.text.trim().isNotEmpty) 'clinicPhone': _clinicPhone.text.trim(),
+        if (_pinAt != null) ...{'lat': _pinAt!.lat, 'lng': _pinAt!.lng},
         'openDays': [for (final d in _days) if (_open.contains(d)) d],
         'opensAt': _minutes(_opens),
         'closesAt': _minutes(_closes),
@@ -193,6 +197,8 @@ class _AuthClinicSetupScreenState extends State<AuthClinicSetupScreen> {
                 Expanded(child: _field('Pincode', _pincode, keyboard: TextInputType.number, optional: true)),
               ],
             ),
+            UseHereRow(value: _pinAt, onPicked: (p) => setState(() => _pinAt = p)),
+            const Gap(8),
             _field('Clinic phone', _clinicPhone, keyboard: TextInputType.phone, optional: true, prefix: '+91'),
             const Gap(8),
             const A1Step('3 · Hours and fee'),

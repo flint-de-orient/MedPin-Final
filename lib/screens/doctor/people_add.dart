@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d9.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: People-Add.dc.html — "People · add".
 /// Live data: GET /api/departments, /api/locations. "Add to team" verifies

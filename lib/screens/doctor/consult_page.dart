@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/voice.dart';
@@ -8,6 +8,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Consult-Page.dc.html — "Consultation · from patient (auto-filled)".
 /// Live: args {'consultationId'} or {'appointmentId'} / {'patientId'} (starts

@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:local_auth/local_auth.dart';
 
 import '../data/config.dart';
 import '../data/session.dart';
 import '../widgets/mp.dart';
+import '../widgets/i18n.dart';
 
 /// App lock: when the signed-in user has "App lock" on, MedPin asks for the
 /// phone's fingerprint / face / PIN when it opens and when it comes back after

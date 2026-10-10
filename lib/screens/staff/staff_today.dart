@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
 
 import '../../data/api.dart';
@@ -7,6 +7,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Staff-Today.dc.html — "Today" (front desk).
 class StaffTodayScreen extends StatefulWidget {
@@ -451,7 +452,7 @@ class _ActionTile extends StatelessWidget {
     return SizedBox(
       height: 84,
       child: Tap(
-        onTap: () => Nav.go(context, a.$3),
+        onTap: () => Nav.go(context, a.$3, args: a.$2 == 'Register walk-in' ? const {'walkIn': true} : null),
         radius: 12,
         color: MP.white,
         border: MP.line,

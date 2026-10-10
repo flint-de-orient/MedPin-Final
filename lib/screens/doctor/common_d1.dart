@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
@@ -6,6 +6,7 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for batch D1: AI Assistant composer, status pill, option
 // picker sheet and the doctor's consulting locations.

@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/config.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_a1.dart';
+import '../../widgets/i18n.dart';
 
 /// First screen for a new mobile number (after the code is verified):
 /// start a clinic as a doctor, or sign up as a patient. Clinic staff are

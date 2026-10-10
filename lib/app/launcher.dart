@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../data/config.dart';
 import '../widgets/mp.dart';
 import 'splash.dart';
+import '../widgets/i18n.dart';
 
 /// Entry point: pick the doctor app, the front desk or the patient app,
 /// or browse every design screen.

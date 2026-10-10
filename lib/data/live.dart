@@ -1,11 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../widgets/mp.dart';
 import 'api.dart';
 import 'config.dart';
 import 'session.dart';
+import '../widgets/i18n.dart';
 
 /// True when screens should load real data: signed in and not in the
 /// design launcher / gallery.

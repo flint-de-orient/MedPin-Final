@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -7,6 +7,7 @@ import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import 'common_d6.dart';
+import '../../widgets/i18n.dart';
 
 /// Doctor · Lab report — one test result: values with reference ranges and
 /// flags, the previous reading of each value, the report file, and "Mark as

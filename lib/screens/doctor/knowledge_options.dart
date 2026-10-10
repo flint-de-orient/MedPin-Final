@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
+import '../../widgets/i18n.dart';
 
 /// Knowledge editor · "More options" sheet: duplicate as a new draft, retire
 /// an approved entry, or delete a draft. Opened with

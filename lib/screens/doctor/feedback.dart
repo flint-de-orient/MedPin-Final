@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -7,6 +7,7 @@ import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'common_d10.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Feedback.dc.html — "Feedback".
 /// Live data: GET /api/feedback (counts per category); opening the page marks

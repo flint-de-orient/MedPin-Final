@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d9.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Billing.dc.html — "Plan & billing".
 /// Live data: GET /api/billing (`?invoices=50` for "View all"); actions:
@@ -149,6 +150,12 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
     }
     final res = await runAction(context, () => Api.I.post('/api/billing/switch', {'planKey': key}), busy: _busy);
     if (res is! Map || !mounted) return;
+    if (res['checkoutUrl'] is String) {
+      // Paid upgrade: the plan changes once the payment goes through.
+      await D9Open.url(context, res['checkoutUrl'], failed: "Couldn't open the payment page");
+      if (mounted) toast(context, 'Your plan changes to $plan as soon as the payment is done');
+      return;
+    }
     final from = _date(res['pendingFrom']);
     toast(context, res['planKey'] == key || from.isEmpty ? 'Switched to the $plan plan' : 'Switching to $plan on $from');
     reload(quiet: true);

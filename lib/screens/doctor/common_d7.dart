@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/format.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for batch D7: the three consultation steps (Consult-Vitals,
 // Consult-Diagnosis, Consult-Advice) and the clinic-operations screens.

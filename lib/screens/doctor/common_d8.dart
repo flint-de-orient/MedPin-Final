@@ -1,12 +1,13 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for batch D8: the clinician tabs (Doctor-Home, Care,
 // Nutrition, Profile), Home-States and Practice.

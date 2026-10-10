@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -7,6 +7,7 @@ import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
 import 'signature_gate.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Patient-Profile.dc.html — "Patient profile".
 /// Live data: GET /api/patients/:id with /vitals, /lab-results,

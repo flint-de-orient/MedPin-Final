@@ -176,6 +176,22 @@ async function dailyDigest(now) {
   }
 }
 
+/** Health scores once a night (03:00 IST) for patients with recent data. */
+async function healthScores(now) {
+  if (T.minuteOfDay(now) < 3 * 60) return;
+  await once(`scores:${T.dayKey(now)}`, async () => {
+    const since = T.addDays(T.dayStart(now), -14);
+    const ids = new Set([
+      ...(await M.DoseLog.find({ scheduledAt: { $gte: since } }).distinct('patientId')),
+      ...(await M.Vitals.find({ recordedAt: { $gte: since } }).distinct('patientId')),
+    ].map(String));
+    const { refreshScore } = require('./health');
+    for (const p of await M.Patient.find({ _id: { $in: [...ids].slice(0, 5000) } })) {
+      await refreshScore(p).catch((err) => console.warn('[jobs] score', err.message));
+    }
+  });
+}
+
 // ── Runner ───────────────────────────────────────────────
 
 let timer = null;
@@ -191,6 +207,7 @@ async function tick() {
   for (const [name, job] of [
     ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)],
     ['followUps', () => followUpReminders(now)], ['lowStock', () => lowStock(now)], ['dailyLog', () => dailyLogReminders(now)], ['digest', () => dailyDigest(now)],
+    ['scores', () => healthScores(now)],
   ]) {
     try {
       await job();
@@ -214,4 +231,4 @@ function stop() {
   timer = null;
 }
 
-module.exports = { start, stop, tick, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses };
+module.exports = { start, stop, tick, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };

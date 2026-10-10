@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/files.dart';
@@ -7,6 +7,7 @@ import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Records-Add.dc.html — "Records · add a record" (sheet over Patient-Records).
 ///

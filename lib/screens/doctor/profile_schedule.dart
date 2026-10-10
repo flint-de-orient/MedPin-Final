@@ -1,12 +1,13 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Profile-Schedule.dc.html — "Profile · schedules and slots".
 class ProfileScheduleScreen extends StatefulWidget {

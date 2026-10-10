@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/voice.dart';
@@ -9,6 +9,7 @@ import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'doctor_ai_chat.dart';
 import 'patient_picker.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-AI.dc.html — "Doctor · AI Assistant (landing)".
 /// Live data: GET /api/ai/sessions (Recent). Questions open Doctor-AI-Chat,

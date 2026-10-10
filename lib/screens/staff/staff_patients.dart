@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Staff-Patients.dc.html — "Patients" (front desk).
 class StaffPatientsScreen extends StatefulWidget {

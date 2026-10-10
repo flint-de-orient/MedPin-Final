@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/format.dart';
 import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/i18n.dart';
 
 // Shared pieces for batch D9 (dashboard cards, team, plan & billing, export and
 // the daily report). Every public name is prefixed with `D9`.

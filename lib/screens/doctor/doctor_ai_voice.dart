@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-AI-Voice.dc.html — "Doctor · AI Assistant · voice"
 /// (sheet over Doctor-AI). Pops with 'ask' (stop and ask), 'type'

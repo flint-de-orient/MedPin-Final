@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d3.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Report-Fees.dc.html — "Report · Fees and collections".
 /// Live data: GET /api/reports/fees (+ /api/locations, /api/payments for

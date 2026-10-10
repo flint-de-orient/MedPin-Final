@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../data/config.dart';
 import 'tokens.dart';
+import '../widgets/i18n.dart';
 
 /// One screen from the design canvas.
 class ScreenSpec {

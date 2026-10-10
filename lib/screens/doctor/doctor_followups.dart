@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-FollowUps.dc.html — "Doctor · Follow-ups (quick action)".
 /// Live data: GET /api/follow-ups?doctorId=me&locationId&condition (tabs are

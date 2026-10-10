@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -8,6 +8,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-Home.dc.html — "Home" (Clinician · tabs).
 /// Live data: GET /api/dashboard, plus /api/queue, /api/alerts?status=open,

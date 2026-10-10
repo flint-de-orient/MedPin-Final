@@ -20,7 +20,10 @@ class ApiException implements Exception {
   final int status;
   final String code;
   final String message;
-  const ApiException(this.status, this.code, this.message);
+
+  /// Extra facts the server sent with the error (e.g. the doctors to choose from).
+  final Map<String, dynamic>? details;
+  const ApiException(this.status, this.code, this.message, [this.details]);
 
   bool get isNetwork => status == 0;
 
@@ -84,6 +87,7 @@ class Api {
         res.statusCode,
         err is Map ? '${err['code'] ?? 'ERROR'}' : 'ERROR',
         err is Map && err['message'] != null ? '${err['message']}' : 'The upload failed. Please try again.',
+        err is Map && err['details'] is Map ? (err['details'] as Map).cast<String, dynamic>() : null,
       );
     }
     return json;
@@ -127,7 +131,8 @@ class Api {
     }
 
     if (res.statusCode < 300 && method != 'GET' && _alarmPaths.hasMatch(path)) onMedicinesChanged?.call();
-    if (res.statusCode < 300 && method == 'PATCH' && path == '/api/me' && body is Map) {
+    // Account language / app lock also change from the patient's own settings.
+    if (res.statusCode < 300 && method == 'PATCH' && (path == '/api/me' || path == '/api/patient/me') && body is Map) {
       await session.patchUser(body.cast<String, dynamic>());
     }
     final text = res.body;
@@ -145,6 +150,7 @@ class Api {
         res.statusCode,
         err is Map ? '${err['code'] ?? 'ERROR'}' : 'ERROR',
         err is Map && err['message'] != null ? '${err['message']}' : 'Something went wrong. Please try again.',
+        err is Map && err['details'] is Map ? (err['details'] as Map).cast<String, dynamic>() : null,
       );
     }
     return json;

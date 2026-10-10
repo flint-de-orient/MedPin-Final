@@ -1,13 +1,16 @@
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/session.dart';
+import '../../data/where.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Profile-Location.dc.html — "Profile · location: map, address, fees".
 class ProfileLocationScreen extends StatefulWidget {
@@ -51,6 +54,9 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
 
   /// Pin offset from the map centre (dragged while "Move pin" is on).
   Offset _pin = Offset.zero;
+
+  /// Set with "Here" on the map (the phone's location); wins over a dragged pin.
+  ({double lat, double lng})? _here;
 
   final List<(String, String, String)> _sampleFees = [
     ('New consultation', '15 min · in clinic', '₹600'),
@@ -178,14 +184,21 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
       }
       body['paymentMethods'] = keys;
     }
-    if (_pin != Offset.zero) {
+    if (_here != null) {
+      body['lat'] = _here!.lat;
+      body['lng'] = _here!.lng;
+    } else if (_pin != Offset.zero) {
       final c = _loc.obj('geo')['coordinates'] as List?;
       if (c != null && c.length == 2) {
         body['lat'] = (c[1] as num) - _pin.dy * _degPerPx;
         body['lng'] = (c[0] as num) + _pin.dx * _degPerPx;
       }
     }
-    if (body.isNotEmpty) {
+    // Address, hours and payment details are the clinic owner's; a doctor here saves their own services.
+    if (body.isNotEmpty && !Session.I.isOwner) {
+      toast(context, 'Only the clinic owner can change the address and clinic details');
+      if (_services == null) return;
+    } else if (body.isNotEmpty) {
       final ok = await runAction(context, () => Api.I.patch('/api/locations/$_id', body));
       if (ok == null || !mounted) return;
     }
@@ -360,6 +373,8 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
             title: 'Health Facility Registry',
             body: 'Link this location’s HFR ID so records created here are recognised across ABDM.',
             idName: 'HFR ID',
+            registerUrl: 'https://facility.abdm.gov.in/',
+            pattern: RegExp(r'^IN\d{10}$'),
             hint: 'e.g. IN1910000123',
             linkedId: data == null ? null : _loc.str('hfrId'),
             onLink: isLive ? _linkHfr : null,
@@ -434,6 +449,34 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
                 ),
                 // translate(-50%, -100%): the 32px pin box sits on top of the point.
                 Positioned(left: tip.dx - 16, top: tip.dy - 32, child: const IgnorePointer(child: _Pin())),
+                if (isLive)
+                  Positioned(
+                    left: 10,
+                    bottom: 10,
+                    child: Semantics(
+                      button: true,
+                      label: 'Put the pin where I am now',
+                      child: Tap(
+                        onTap: () async {
+                          final p = await Where.pick(context);
+                          if (p == null || !context.mounted) return;
+                          setState(() {
+                            _here = p;
+                            _pin = Offset.zero;
+                          });
+                          toast(context, 'Pin set to your location · tap Save');
+                        },
+                        radius: 999,
+                        color: _here == null ? MP.white : MP.primarySoft,
+                        shadow: const [BoxShadow(color: Color(0x26111827), offset: Offset(0, 1), blurRadius: 3)],
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: SizedBox(
+                          height: 34,
+                          child: Center(widthFactor: 1, child: Text(_here == null ? 'Use my location' : 'Pinned here', style: tx(13, w: w600, c: MP.primary))),
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   right: 10,
                   bottom: 10,

@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Practice.dc.html — "Practice" (Clinic operations): masthead,
 /// readiness checklist, summary tiles and the food-log review cadence.

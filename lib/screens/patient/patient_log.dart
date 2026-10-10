@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/files.dart';
@@ -7,6 +7,7 @@ import '../../data/live.dart';
 import '../../data/voice.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Patient-Log.dc.html — "Patient · log meal, exercise, steps" (sheet over 'Main').
 class PatientLogSheet extends StatefulWidget {
@@ -270,7 +271,7 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
                 textAlignVertical: TextAlignVertical.top,
                 style: tx(15, h: 1.45),
                 cursorColor: MP.primary,
-                decoration: InputDecoration.collapsed(hintText: hint, hintStyle: tx(15, h: 1.45, c: P1.placeholder)),
+                decoration: InputDecoration.collapsed(hintText: tr(context, hint), hintStyle: tx(15, h: 1.45, c: P1.placeholder)),
               ),
             ),
           ),

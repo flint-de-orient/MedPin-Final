@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
+import '../../widgets/i18n.dart';
 
 /// Design: Doctor-History.dc.html — "Doctor · History (all appointments)".
 /// Live data: GET /api/history?period=this_month|last_3_months|this_year.
