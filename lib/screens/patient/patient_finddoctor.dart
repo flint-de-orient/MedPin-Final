@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/voice.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 
@@ -1007,7 +1008,10 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
                 radius: 16,
                 background: MP.primarySoft,
                 color: MP.primary,
-                onTap: () => toast(context, 'Voice search is not in the design yet'),
+                onTap: () async {
+                  final said = await Voice.dictate(context, title: 'Describe what you need', hint: 'e.g. “Skin doctor near me for an itchy rash”');
+                  if (said != null && mounted) _search(said);
+                },
               ),
               const Gap(8),
               Expanded(child: MpButton('Find doctors', icon: I.sparkles, height: 52, onTap: _search)),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/photo.dart';
 import '../../widgets/mp.dart';
 
 /// Design: Doctor-Dashboard.dc.html — "Doctor · dashboard (redesign)".
@@ -120,7 +121,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                 Tap(
                   onTap: () => Nav.go(context, 'Doctor-MyProfile'),
                   radius: 999,
-                  child: MpAvatar(F.initials(_name), size: 44, fontSize: 15),
+                  child: MpAvatar(F.initials(_name), size: 44, fontSize: 15, photo: isLive ? myPhotoUrl : null),
                 ),
               ],
             ),

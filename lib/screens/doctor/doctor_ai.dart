@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/api.dart';
+import '../../data/voice.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
@@ -105,17 +106,14 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> with LiveData {
   }
 
   Future<void> _voice() async {
+    if (isLive) {
+      final said = await Voice.dictate(context, title: 'Ask MedPin AI', hint: 'e.g. “Which patients have abnormal kidney results this month?”');
+      if (said != null && mounted) _ask(said, spoken: true);
+      return;
+    }
     final r = await Nav.go<String>(context, 'Doctor-AI-Voice');
     if (!mounted) return;
-    if (r == 'ask') {
-      if (isLive) {
-        // No speech-to-text yet: the question has to be typed.
-        toast(context, "Voice questions aren't available yet. Please type your question.");
-        _focus.requestFocus();
-      } else {
-        _openChat();
-      }
-    }
+    if (r == 'ask') _openChat();
     if (r == 'type') _focus.requestFocus();
   }
 

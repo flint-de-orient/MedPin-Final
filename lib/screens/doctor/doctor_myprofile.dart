@@ -5,6 +5,7 @@ import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/photo.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
@@ -207,6 +208,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
     if (ok == null || !mounted) return;
     toast(context, 'Photo updated');
     reload(quiet: true);
+    Session.I.reloadAccount().catchError((_) {}); // headers show the new photo
   }
 
   Future<void> _saveLanguages(List<String> langs, String done) async {
@@ -373,13 +375,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Container(
-                      width: 72,
-                      height: 72,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(color: MP.primarySoft, shape: BoxShape.circle),
-                      child: Text(F.initials(_name), style: tx(24, w: w800, c: MP.primary)),
-                    ),
+                    MpAvatar(F.initials(_name), size: 72, fontSize: 24, weight: w800, photo: isLive ? ((_p['photo'] as Map?)?['url'] as String?) ?? myPhotoUrl : null),
                     Positioned(
                       right: -2,
                       bottom: -2,

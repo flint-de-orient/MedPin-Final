@@ -1006,9 +1006,13 @@ class MpAvatar extends StatelessWidget {
   final double? radius;
   final Color? border;
   final FontWeight weight;
+
+  /// Profile photo link; the initials show while it loads or if it fails.
+  final String? photo;
   const MpAvatar(
     this.initials, {
     super.key,
+    this.photo,
     this.size = 40,
     this.bg = MP.primarySoft,
     this.fg = MP.primary,
@@ -1029,7 +1033,16 @@ class MpAvatar extends StatelessWidget {
         borderRadius: BorderRadius.circular(radius ?? size / 2),
         border: border == null ? null : Border.all(color: border!, width: 2),
       ),
-      child: Text(initials, style: tx(fontSize ?? (size * 0.35).roundToDouble(), w: weight, c: fg, h: 1)),
+      clipBehavior: photo == null ? Clip.none : Clip.antiAlias,
+      child: photo == null
+          ? Text(initials, style: tx(fontSize ?? (size * 0.35).roundToDouble(), w: weight, c: fg, h: 1))
+          : Image.network(
+              photo!,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Text(initials, style: tx(fontSize ?? (size * 0.35).roundToDouble(), w: weight, c: fg, h: 1)),
+            ),
     );
   }
 }

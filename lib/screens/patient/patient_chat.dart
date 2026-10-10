@@ -6,8 +6,11 @@ import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/voice.dart';
+import '../../widgets/chat_tools.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
+import 'common_p2.dart';
 
 /// Design: Patient-Chat.dc.html — "Patient · urgent chat with doctor".
 ///
@@ -24,7 +27,7 @@ class PatientChatScreen extends StatefulWidget {
   State<PatientChatScreen> createState() => _PatientChatScreenState();
 }
 
-typedef _Message = ({String text, bool mine, String meta, DateTime? at});
+typedef _Message = ({String text, bool mine, String meta, DateTime? at, Map<String, dynamic>? raw});
 
 class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
   static const _replies = ["I'm on my way", 'Share my vitals'];
@@ -35,16 +38,19 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
       mine: true,
       meta: '9:12 AM · Delivered',
       at: null,
+      raw: null,
     ),
     (
       text: "Priya, please come to the clinic now. I'm informing the front desk. If the pain gets worse on the way, call 108.",
       mine: false,
       meta: 'Dr. Sen · 9:14 AM',
       at: null,
+      raw: null,
     ),
   ];
   final _input = TextEditingController();
   final _busy = ValueNotifier(false);
+  final _scroll = ScrollController();
   bool _showReplies = true;
   bool _hasText = false;
 
@@ -83,6 +89,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
 
   @override
   void dispose() {
+    _scroll.dispose();
     _input.dispose();
     _busy.dispose();
     super.dispose();
@@ -156,7 +163,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
                     : m['senderType'] == 'doctor'
                         ? F.doctorShort(_doctorName)
                         : 'Clinic';
-            return (text: _textOf(m), mine: mine, meta: mine ? '$time · ${_status(m)}' : '$who · $time', at: at);
+            return (text: _textOf(m), mine: mine, meta: mine ? '$time · ${_status(m)}' : '$who · $time', at: at, raw: m);
           }(),
     ];
   }
@@ -172,7 +179,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
     if (t.isEmpty) return;
     if (!isLive) {
       setState(() {
-        _messages.add((text: t, mine: true, meta: 'Just now · Sent', at: null));
+        _messages.add((text: t, mine: true, meta: 'Just now · Sent', at: null, raw: null));
         _showReplies = false;
         _input.clear();
         _hasText = false;
@@ -215,9 +222,14 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
     await _send('My latest readings: ${latest.values.join(', ')}.');
   }
 
+  Future<void> _voiceNote() async {
+    if (!isLive) return toast(context, 'Recording…');
+    if (await sendVoiceNote(context, _conversationId, busy: _busy, fields: const {'isUrgent': 'true'}) && mounted) reload(quiet: true);
+  }
+
   Future<void> _attach() async {
     if (!isLive) {
-      toast(context, 'Attachments are coming soon');
+      toast(context, 'Attach a photo or report');
       return;
     }
     final id = _conversationId;
@@ -250,6 +262,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
       body: placeholder ??
           LayoutBuilder(
             builder: (context, c) => SingleChildScrollView(
+              controller: _scroll,
               reverse: true,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: ConstrainedBox(
@@ -264,6 +277,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
             ),
           ),
       bottom: _composer(context),
+      overlays: [Positioned(left: 16, bottom: 96 + MediaQuery.paddingOf(context).bottom, child: JumpToLatest(controller: _scroll))],
     );
   }
 
@@ -369,7 +383,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
         items.add(Center(child: Text(label, style: tx(12, w: w600, c: MP.ink3))));
       }
       items
-        ..add(m.mine ? _outgoing(m.text) : _incoming(m.text))
+        ..add(m.mine ? _outgoing(m.text, m.raw) : _incoming(m.text, m.raw))
         ..add(m.mine ? Align(alignment: Alignment.centerRight, child: Text(m.meta, style: meta)) : Text(m.meta, style: meta));
     }
     if (messages.isEmpty) {
@@ -395,7 +409,37 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
   }
 
   /// Patient bubble: max 270px text, #003399, radius 16 16 4 16.
-  Widget _outgoing(String text) {
+  /// A voice note plays here; a photo or PDF opens; else the text.
+  Widget _body(String text, Map<String, dynamic>? raw, {required bool mine}) {
+    final c = mine ? MP.white : MP.ink;
+    if (raw != null && raw['deleted'] != true) {
+      if (raw['kind'] == 'voice') {
+        final v = raw.obj('voice');
+        return VoiceNoteChip(url: v.obj('file').str('url'), seconds: v['durationSec'] as num?, color: c);
+      }
+      final f = raw.obj('attachment');
+      if (raw['kind'] == 'attachment' && f.str('url').isNotEmpty) {
+        return Semantics(
+          button: true,
+          label: 'Open ${f.str('name', 'file')}',
+          child: GestureDetector(
+            onTap: () => p2Open(context, f.str('url'), failed: "Couldn't open the file"),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Ico(I.fileText, size: 20, color: c),
+                const Gap(8),
+                Flexible(child: Text(text == 'Sent a file' || text == 'Attachment' ? f.str('name', 'Attachment') : text, style: tx(15, h: 1.45, c: c, w: w600))),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+    return Text(text, style: tx(15, h: 1.45, c: c));
+  }
+
+  Widget _outgoing(String text, [Map<String, dynamic>? raw]) {
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
@@ -411,14 +455,14 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
               bottomLeft: Radius.circular(16),
             ),
           ),
-          child: Text(text, style: tx(15, h: 1.45, c: MP.white)),
+          child: _body(text, raw, mine: true),
         ),
       ),
     );
   }
 
   /// Doctor bubble: max 280px text, white, 1px #E5E9F0, radius 16 16 16 4.
-  Widget _incoming(String text) {
+  Widget _incoming(String text, [Map<String, dynamic>? raw]) {
     return Align(
       alignment: Alignment.centerLeft,
       child: ConstrainedBox(
@@ -435,7 +479,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
               bottomLeft: Radius.circular(4),
             ),
           ),
-          child: Text(text, style: tx(15, h: 1.45)),
+          child: _body(text, raw, mine: false),
         ),
       ),
     );
@@ -497,7 +541,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
                 button: true,
                 label: _hasText ? 'Send' : 'Record a voice message',
                 child: Tap(
-                  onTap: () => _hasText ? _send(_input.text) : toast(context, 'Voice messages are coming soon'),
+                  onTap: () => _hasText ? _send(_input.text) : _voiceNote(),
                   radius: 999,
                   color: MP.primary,
                   child: SizedBox(

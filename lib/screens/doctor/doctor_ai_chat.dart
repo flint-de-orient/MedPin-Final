@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
+import '../../data/voice.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
@@ -102,6 +103,7 @@ class _DoctorAiChatScreenState extends State<DoctorAiChatScreen> with LiveData {
   @override
   void dispose() {
     _tick?.cancel();
+    Voice.stopSpeaking();
     _input.dispose();
     _focus.dispose();
     _scroll.dispose();
@@ -170,7 +172,7 @@ class _DoctorAiChatScreenState extends State<DoctorAiChatScreen> with LiveData {
       return Api.I.post('/api/ai/sessions/$_sessionId/messages', {
         'text': text,
         'inputMode': mode,
-        if (mode == 'spoken') 'voiceLanguage': 'en',
+        if (mode == 'spoken') 'voiceLanguage': Voice.localeId.substring(0, 2),
       });
     }, busy: _busy);
     if (!mounted) return;
@@ -239,10 +241,7 @@ class _DoctorAiChatScreenState extends State<DoctorAiChatScreen> with LiveData {
   }
 
   void _listen(int i) {
-    if (isLive) {
-      toast(context, "Reading answers aloud isn't available yet");
-      return;
-    }
+    if (isLive) return; // live answers are read by [Voice.speak]
     setState(() => _playing = _playing == i ? null : i);
     if (_playing == null) {
       _tick?.cancel();
@@ -316,17 +315,15 @@ class _DoctorAiChatScreenState extends State<DoctorAiChatScreen> with LiveData {
   }
 
   Future<void> _voice() async {
+    if (isLive) {
+      if (_pending != null || data == null) return;
+      final said = await Voice.dictate(context, title: 'Ask MedPin AI');
+      if (said != null && mounted) _askLive(said, mode: 'spoken');
+      return;
+    }
     final r = await Nav.go<String>(context, 'Doctor-AI-Voice');
     if (!mounted) return;
-    if (r == 'ask') {
-      if (isLive) {
-        // No speech-to-text yet: the question has to be typed.
-        toast(context, "Voice questions aren't available yet. Please type your question.");
-        _focus.requestFocus();
-      } else {
-        _ask('Which patients have abnormal kidney results this month', spoken: true);
-      }
-    }
+    if (r == 'ask') _ask('Which patients have abnormal kidney results this month', spoken: true);
     if (r == 'type') _focus.requestFocus();
   }
 
@@ -719,7 +716,10 @@ class _DoctorAiChatScreenState extends State<DoctorAiChatScreen> with LiveData {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _AnswerHead(playing: false, time: _fmt(0), onTap: () => _listen(0)),
+          ValueListenableBuilder<String?>(
+            valueListenable: Voice.speaking,
+            builder: (_, id, _) => _AnswerHead(playing: id == m.str('id'), time: '', onTap: () => Voice.speak(text, id: m.str('id'))),
+          ),
           if (patient != null) ...[const Gap(16), ..._livePatientBlock(patient), const Gap(16)] else const Gap(12),
           Text(text, style: tx(15, h: 1.55)),
           const Gap(16),

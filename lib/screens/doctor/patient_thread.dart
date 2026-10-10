@@ -5,6 +5,8 @@ import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
+import '../../data/voice.dart';
+import '../../widgets/chat_tools.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
 
@@ -183,6 +185,14 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     _toLatest();
   }
 
+  /// Records a voice reply and sends it.
+  Future<void> _voiceLive() async {
+    if (data == null) return toast(context, 'Recording…');
+    if (!await sendVoiceNote(context, _convId, busy: _busy) || !mounted) return;
+    await reload(quiet: true);
+    _toLatest();
+  }
+
   /// Sends a photo or PDF into the chat.
   Future<void> _attachLive() async {
     if (_convId == null) return;
@@ -210,6 +220,12 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     if (p is! Map || !mounted) return;
     final phone = '${(p['patient'] as Map?)?['phone'] ?? ''}';
     await d6Call(context, phone, _liveName);
+  }
+
+  Future<void> _searchLive() async {
+    final id = await searchChat(context, data!.list('items'), sender: _senderName);
+    final c = id == null ? null : _msgKeys[id]?.currentContext;
+    if (c != null && c.mounted) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.3);
   }
 
   void _toPinnedLive() {
@@ -334,11 +350,14 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                 container: true,
                 button: true,
                 label: 'Play voice note${duration.isEmpty ? '' : ', $duration'}',
-                child: Tap(
-                  onTap: () => d6OpenUrl(context, url, fail: "Couldn't play the voice note"),
-                  radius: 999,
-                  color: MP.primarySoft,
-                  child: const SizedBox(width: 40, height: 40, child: Center(child: Ico(_playIcon, size: 18, color: MP.primary, filled: true))),
+                child: ValueListenableBuilder<String?>(
+                  valueListenable: VoiceNotes.playing,
+                  builder: (context, now, _) => Tap(
+                    onTap: () => VoiceNotes.toggle(context, url),
+                    radius: 999,
+                    color: MP.primarySoft,
+                    child: SizedBox(width: 40, height: 40, child: Center(child: Ico(now == url ? I.pause : _playIcon, size: 18, color: MP.primary, filled: true))),
+                  ),
                 ),
               ),
               const Gap(12),
@@ -628,23 +647,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
         Positioned(
           left: 16,
           bottom: 92 + safeBottom,
-          child: Semantics(
-            button: true,
-            label: 'Jump to latest message',
-            // <button>: border-box, 44×44 including the 1px border.
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Tap(
-                onTap: _toLatest,
-                radius: 999,
-                color: MP.white,
-                border: MP.line,
-                shadow: MPShadow.float,
-                child: const Center(child: Ico(I.chevronDown, size: 20, color: MP.primary)),
-              ),
-            ),
-          ),
+          child: JumpToLatest(controller: _scroll, always: !live),
         ),
       ],
     );
@@ -698,6 +701,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
             ),
           ),
           const Gap(4),
+          if (live) MpIconButton(I.search, label: 'Search this chat', color: MP.ink2, onTap: _searchLive),
           MpIconButton(
             I.phone,
             label: 'Call $name',
@@ -1102,7 +1106,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                 button: true,
                 label: _hasText ? 'Send reply' : 'Record a voice reply',
                 child: Tap(
-                  onTap: _hasText ? (data != null ? _sendLive : _send) : () => toast(context, 'Hold to record a voice reply'),
+                  onTap: _hasText ? (data != null ? _sendLive : _send) : _voiceLive,
                   radius: 999,
                   color: MP.primary,
                   shadow: MPShadow.button,

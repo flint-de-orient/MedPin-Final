@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/api.dart';
+import '../../data/voice.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
@@ -305,7 +306,12 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
 
   void _openProfile() => Nav.go(context, 'PP-Summary', args: isLive ? {'patientId': patientId} : null);
 
-  void _listen() => toast(context, isLive ? 'Voice input isn\'t available yet. Please type.' : 'Listening…');
+  /// Speak-to-type into a field; for list fields (diagnosis, tests) the words are added at once.
+  Future<void> _listen(TextEditingController c, {String title = 'Speak now', void Function(String)? submit}) async {
+    if (!isLive) return toast(context, 'Listening…');
+    final said = await dictateInto(context, c, title: title);
+    if (said != null && submit != null && mounted) submit(c.text);
+  }
 
   String _cautionFor(String name) => name.startsWith('Glimepiride') ? _sulfaCaution : '';
 
@@ -444,12 +450,10 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
 
   Future<void> _voiceMed() async {
     if (isLive) {
-      // No speech-to-text service yet: the sheet reads the typed line.
-      final text = _medCtrl.text.trim();
-      if (text.isEmpty) {
-        toast(context, 'Voice input isn\'t available yet. Type the medicine, e.g. “Metformin 500 twice daily”.');
-        return;
-      }
+      // Say the medicine (or use the typed line); the voice screen reads dose and timing from it.
+      var text = _medCtrl.text.trim();
+      if (text.isEmpty) text = await Voice.dictate(context, title: 'Say the medicine', hint: 'e.g. “Metformin 500 twice daily after food”') ?? '';
+      if (text.isEmpty || !mounted) return;
       final r = await Nav.go<D5MedResult>(context, 'Consult-Voice', args: {'text': text, 'consultationId': consultId});
       if (r?.item == null || !mounted) return;
       _medCtrl.clear();
@@ -862,7 +866,7 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
           controller: _ccCtrl,
           hint: isLive ? 'What brings $firstName in today?' : null,
           speakLabel: 'Dictate chief complaint',
-          onSpeak: _listen,
+          onSpeak: () => _listen(_ccCtrl, title: 'Chief complaint'),
         ),
         Text('Type or speak in English, বাংলা or हिन्दी.', style: tx(13, c: MP.ink3)),
       ],
@@ -885,7 +889,7 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
           controller: _dxCtrl,
           hint: 'Type or speak a diagnosis',
           micLabel: 'Dictate diagnosis',
-          onMic: _listen,
+          onMic: () => _listen(_dxCtrl, title: 'Diagnosis', submit: _addDx),
           onSubmitted: _addDx,
         ),
         if (_dxSuggest.isNotEmpty)
@@ -954,7 +958,7 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
             controller: _labCtrl,
             hint: 'Type or speak a test name',
             micLabel: 'Dictate lab test',
-            onMic: _listen,
+            onMic: () => _listen(_labCtrl, title: 'Lab test', submit: _addLab),
             onSubmitted: _addLab,
           ),
           if (!isLive || _labs.isNotEmpty) ...[
@@ -1013,7 +1017,7 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
             height: 96,
             bottomPad: 52,
             speakLabel: 'Dictate advice',
-            onSpeak: _listen,
+            onSpeak: () => _listen(_advCtrl, title: 'Advice'),
           ),
         ],
       ),

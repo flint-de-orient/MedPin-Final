@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/api.dart';
 import '../../data/live.dart';
+import '../../data/voice.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import 'p1_sheets.dart';
@@ -79,10 +80,10 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
     openSheet<void>(nav.context, (_) => P1AiAnswerSheet(question: q, result: res.cast<String, dynamic>()));
   }
 
-  void _speak() {
+  Future<void> _speak() async {
     if (isLive) {
-      toast(context, 'Voice input is coming soon. Please type your question.');
-      _focus.requestFocus();
+      final said = await dictateInto(context, _ask, title: 'Ask MedPin AI');
+      if (said != null && mounted) _send();
       return;
     }
     setState(() => _listening = !_listening);

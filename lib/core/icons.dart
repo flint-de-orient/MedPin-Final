@@ -195,6 +195,7 @@ class I {
   static const thumbDown = '<path d="M17 14V3M9 18.1 10 14H4.2a2 2 0 0 1-2-2.3l1.4-7A2 2 0 0 1 5.6 3H17v11l-4 8a3 3 0 0 1-4-3.9z"/>';
   static const pause = '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>';
   static const stop = '<rect x="6" y="6" width="12" height="12" rx="2.5"/>';
+  static const play = '<path d="M8 5v14l11-7z"/>';
   static const emergency = '<path d="M12 4v16M5.1 8l13.8 8M5.1 16l13.8-8"/>';
   static const star = '<path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>';
   static const drop = '<path d="M12 2.7 6.3 9.4a7 7 0 1 0 11.4 0z"/>';

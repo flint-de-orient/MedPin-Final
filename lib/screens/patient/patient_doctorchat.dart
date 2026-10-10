@@ -6,6 +6,8 @@ import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/voice.dart';
+import '../../widgets/chat_tools.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 
@@ -36,6 +38,8 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
   final _text = TextEditingController();
   final _sent = <String>[];
   final _busy = ValueNotifier(false);
+  final _scroll = ScrollController();
+  final _keys = <String, GlobalKey>{};
   bool _showReplies = true;
   String? _convId;
 
@@ -47,6 +51,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
 
   @override
   void dispose() {
+    _scroll.dispose();
     _text.dispose();
     _busy.dispose();
     super.dispose();
@@ -109,6 +114,13 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
     await reload(quiet: true);
   }
 
+  Future<void> _voiceNote() async {
+    if (data == null) return p2Missing(context, 'Voice recording');
+    if (!await sendVoiceNote(context, _convId, busy: _busy) || !mounted) return;
+    setState(() => _showReplies = false);
+    await reload(quiet: true);
+  }
+
   Future<void> _attach() async {
     if (data == null) {
       Nav.go(context, 'Records-Add');
@@ -128,6 +140,13 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       _text.clear();
     });
     await reload(quiet: true);
+  }
+
+  Future<void> _search() async {
+    if (data == null) return p2Missing(context, 'Chat search');
+    final id = await searchChat(context, data!.list('items'), sender: (m) => m.str('senderType') == 'patient' ? 'You' : _sender(m));
+    final c = id == null ? null : _keys[id]?.currentContext;
+    if (c != null && c.mounted) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.3);
   }
 
   Future<void> _detail() async {
@@ -191,8 +210,11 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
         ));
       } else {
         out.add(Align(
+          key: _keys.putIfAbsent(m.str('id'), GlobalKey.new),
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-          child: _Bubble(kind == 'voice' && text.isEmpty ? 'Voice message' : text, mine: mine),
+          child: kind == 'voice' && m['deleted'] != true
+              ? _Bubble('', mine: mine, child: VoiceNoteChip(url: m.obj('voice').obj('file').str('url'), seconds: m.obj('voice')['durationSec'] as num?, color: mine ? MP.white : MP.ink))
+              : _Bubble(text, mine: mine),
         ));
       }
       out.add(mine
@@ -300,7 +322,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
             ),
             const Gap(8),
             P2Box(
-              onTap: typing ? () => _send(_text.text) : () => p2Missing(context, 'Voice recording'),
+              onTap: typing ? () => _send(_text.text) : _voiceNote,
               label: typing ? 'Send' : 'Record a voice message',
               width: 48,
               height: 48,
@@ -318,6 +340,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
           LayoutBuilder(
             builder:
                 (context, c) => SingleChildScrollView(
+                  controller: _scroll,
                   reverse: true,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   child: ConstrainedBox(
@@ -332,6 +355,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
                   ),
                 ),
           ),
+      overlays: [if (data != null) Positioned(left: 16, bottom: 96 + MediaQuery.paddingOf(context).bottom, child: JumpToLatest(controller: _scroll))],
     );
   }
 
@@ -385,7 +409,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
                   ),
                 ),
                 const Gap(8),
-                MpIconButton(I.search, label: 'Search this chat', onTap: () => p2Missing(context, 'Chat search')),
+                MpIconButton(I.search, label: 'Search this chat', onTap: _search),
               ],
             ),
           ),
@@ -515,7 +539,8 @@ class _Attachment extends StatelessWidget {
 class _Bubble extends StatelessWidget {
   final String text;
   final bool mine;
-  const _Bubble(this.text, {required this.mine});
+  final Widget? child;
+  const _Bubble(this.text, {required this.mine, this.child});
 
   @override
   Widget build(BuildContext context) => ConstrainedBox(
@@ -527,7 +552,7 @@ class _Bubble extends StatelessWidget {
         borderRadius: mine ? _mine : _theirs,
         border: mine ? null : Border.all(color: MP.line),
       ),
-      child: Text(text, style: tx(15, h: 1.45, c: mine ? MP.white : MP.ink)),
+      child: child ?? Text(text, style: tx(15, h: 1.45, c: mine ? MP.white : MP.ink)),
     ),
   );
 }

@@ -9,6 +9,9 @@ const env = require('../config/env');
 const { sendEmail } = require('../services/email');
 const { notify } = require('../services/notify');
 const { accountSummary } = require('./auth');
+const { uploader } = require('../lib/uploads');
+
+const photoUpload = uploader({ kinds: ['image'], maxMb: 5, maxFiles: 1 });
 
 const me = Router();
 me.use(requireAuth);
@@ -19,6 +22,22 @@ me.patch('/', async (req, res) => {
   const body = pick(req.body, ['name', 'email', 'language', 'appLock']);
   if (body.language && !E.LANGUAGES.includes(body.language)) throw badRequest('Unknown language');
   Object.assign(req.user, body);
+  await req.user.save();
+  res.json(await accountSummary(req.user));
+});
+
+// Profile photo for any account (patients, staff; doctors also see it on their public profile).
+me.post('/photo', photoUpload.single('file'), async (req, res) => {
+  if (!req.file) throw badRequest('Choose a photo');
+  const file = await storage.save(req.file.buffer, { folder: 'photos', name: req.file.originalname, mimeType: req.file.mimetype });
+  req.user.photo = file;
+  await req.user.save();
+  await M.DoctorProfile.updateOne({ userId: req.user._id }, { photo: file });
+  res.json(await accountSummary(req.user));
+});
+
+me.delete('/photo', async (req, res) => {
+  req.user.photo = undefined;
   await req.user.save();
   res.json(await accountSummary(req.user));
 });

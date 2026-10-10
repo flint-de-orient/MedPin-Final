@@ -152,6 +152,18 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Uses an account summary an API call returned (e.g. after a new photo).
+  Future<void> adoptAccount(Map<String, dynamic> body) async {
+    if (account == null) return;
+    account = {
+      ...account!,
+      for (final k in ['user', 'memberships', 'patientId', 'landing'])
+        if (body.containsKey(k)) k: body[k],
+    };
+    await _save();
+    notifyListeners();
+  }
+
   /// Re-reads the account (after registering, joining a practice…).
   Future<void> reloadAccount() async {
     account = ((await Api.I.get('/api/auth/session')) as Map).cast<String, dynamic>();

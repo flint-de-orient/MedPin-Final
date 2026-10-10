@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/photo.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
@@ -482,7 +483,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
             child: Tap(
               onTap: () => Nav.tab(context, 'Patient-Me'),
               radius: 999,
-              child: MpAvatar(_initials, size: 44, fontSize: 15),
+              child: MpAvatar(_initials, size: 44, fontSize: 15, photo: isLive ? myPhotoUrl : null),
             ),
           ),
         ],

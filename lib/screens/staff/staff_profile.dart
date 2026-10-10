@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/photo.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
@@ -155,7 +156,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
-                    ExcludeSemantics(child: MpAvatar(data == null ? 'TG' : F.initials(_name), size: 72, fontSize: 24)),
+                    data == null ? const ExcludeSemantics(child: MpAvatar('TG', size: 72, fontSize: 24)) : MyPhotoAvatar(F.initials(_name)),
                     const Gap(16),
                     Expanded(
                       child: Column(

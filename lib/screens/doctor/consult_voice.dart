@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/live.dart';
+import '../../data/voice.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
 
@@ -64,11 +65,24 @@ class _ConsultVoiceSheetState extends State<ConsultVoiceSheet> with SingleTicker
     super.dispose();
   }
 
-  /// Live: there is no speech-to-text service, so the sheet reads the line
-  /// the doctor typed in the medicine field (args {'text', 'caution'?}).
+  /// Live: the line the doctor said (or typed) in the medicine field
+  /// (args {'text', 'caution'?}); "Say again" listens once more.
   Map<String, dynamic> get _args => (Nav.args<Map>(context) ?? const {}).cast<String, dynamic>();
-  String get _text => _args.str('text').trim();
-  late final Map<String, dynamic> _item = D5Live.parse(_text, source: 'voice');
+  String? _said;
+  String get _text => (_said ?? _args.str('text')).trim();
+  Map<String, dynamic>? _parsedItem;
+  Map<String, dynamic> get _item => _parsedItem ??= D5Live.parse(_text, source: 'voice');
+
+  Future<void> _sayAgain() async {
+    _wave.forward(from: 0);
+    if (!isLive) return;
+    final said = await Voice.dictate(context, title: 'Say the medicine', hint: 'e.g. “Metformin 500 twice daily after food”');
+    if (said == null || !mounted) return;
+    setState(() {
+      _said = said;
+      _parsedItem = null;
+    });
+  }
 
   List<(String, String)> get _items {
     if (!isLive) return _parsed;
@@ -198,7 +212,7 @@ class _ConsultVoiceSheetState extends State<ConsultVoiceSheet> with SingleTicker
           Text('Try: “Atorvastatin 20 at night for 3 months”', style: tx(13, c: MP.ink3)),
           Row(
             children: [
-              Expanded(child: D5Button.secondary('Say again', onTap: () => _wave.forward(from: 0))),
+              Expanded(child: D5Button.secondary('Say again', onTap: _sayAgain)),
               const Gap(8),
               Expanded(flex: 2, child: D5Button('Add medicine', onTap: _add)),
             ],

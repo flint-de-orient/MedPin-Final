@@ -4,6 +4,7 @@ import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/voice.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 
@@ -102,9 +103,11 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
     if (f != null && mounted) setState(() => _photoFile = f);
   }
 
-  void _toggleMic() {
+  Future<void> _toggleMic(TextEditingController c) async {
     if (isLive) {
-      toast(context, 'Voice input is coming soon. Please type it.');
+      setState(() => _listening = true);
+      await dictateInto(context, c, title: 'Say it in your words');
+      if (mounted) setState(() => _listening = false);
       return;
     }
     setState(() => _listening = !_listening);
@@ -279,7 +282,7 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
               toggled: _listening,
               label: 'Speak instead',
               child: Tap(
-                onTap: _toggleMic,
+                onTap: () => _toggleMic(controller),
                 radius: 12,
                 color: _listening ? MP.primary : MP.primarySoft,
                 child: SizedBox(

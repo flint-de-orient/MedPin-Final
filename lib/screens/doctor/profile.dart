@@ -4,6 +4,7 @@ import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/photo.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import 'common_d8.dart';
@@ -328,7 +329,7 @@ class _ProfileScreenState extends State<ProfileScreen> with LiveData {
   Widget _identity() {
     return Row(
       children: [
-        MpAvatar(F.initials(_name), size: 72, fontSize: 26, weight: w600),
+        isLive ? MyPhotoAvatar(F.initials(_name), size: 72, fontSize: 26, weight: w600) : MpAvatar(F.initials(_name), size: 72, fontSize: 26, weight: w600),
         const Gap(16),
         Expanded(
           child: Column(

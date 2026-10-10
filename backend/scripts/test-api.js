@@ -253,6 +253,11 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(noSig.body.error.code, 'SIGNATURE_REQUIRED');
     assert.equal(ok(await ctx.doc('GET', `/api/consultations/${c.id}`)).consultation.status, 'draft', 'still editable');
     ok(await ctx.doc('POST', '/api/doctor/profile/signature', undefined, { form: fileForm('file', tinyPng(), 'sig.png', 'image/png') }));
+    // Profile photo: saved on the account (shown in app headers) and on the doctor profile.
+    const withPhoto = ok(await ctx.doc('POST', '/api/me/photo', undefined, { form: fileForm('file', tinyPng(), 'me.png', 'image/png') }));
+    assert.ok(withPhoto.user.photoUrl, 'the session shows the photo');
+    assert.equal((await fetch(withPhoto.user.photoUrl)).status, 200);
+    assert.ok(ok(await ctx.doc('GET', '/api/doctor/profile')).photo?.url, 'the public profile has it too');
     const issued = ok(await ctx.doc('POST', `/api/consultations/${c.id}/issue`));
     ctx.rxId = issued.prescription.id;
     assert.equal(issued.prescription.rxNumber, 1);
@@ -313,6 +318,12 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const convos = ok(await ctx.pat('GET', '/api/patient/conversations'));
     assert.ok(convos.length >= 1, 'care thread exists (prescription was sent there)');
     ctx.convoId = convos[0].id;
+    // Voice notes go into chats as audio (content-checked like every upload).
+    const m4a = Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypM4A '), Buffer.alloc(24)]);
+    const vn = ok(await ctx.doc('POST', `/api/conversations/${ctx.convoId}/messages`, undefined, { form: fileForm('file', m4a, 'voice-note.m4a', 'audio/mp4', { durationSec: '7' }) }), 201);
+    assert.equal(vn.message.kind, 'voice');
+    assert.equal(vn.message.voice.durationSec, 7);
+    assert.equal((await fetch(vn.message.voice.file.url)).status, 200, 'the note plays from its link');
     ok(await ctx.pat('POST', `/api/conversations/${ctx.convoId}/messages`, { text: 'Should I take the tablet before food?' }), 201);
     assert.equal((await ctx.pat('POST', `/api/conversations/${ctx.convoId}/messages`, { text: '  ' })).status, 400);
     const inbox = ok(await ctx.desk('GET', '/api/inbox?tab=unread'));

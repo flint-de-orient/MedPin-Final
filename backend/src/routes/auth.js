@@ -74,7 +74,11 @@ async function accountSummary(user) {
   if (first) landing = LANDING[first.role] || 'Staff-Today';
   else if (patient) landing = 'Main'; // patient home's screen name in the app
   return {
-    user: { id: user._id, name: user.name, phone: user.phone, email: user.email, language: user.language, appLock: user.appLock },
+    user: {
+      id: user._id, name: user.name, phone: user.phone, email: user.email, language: user.language, appLock: user.appLock,
+      // Week-long link so the saved session can show the photo between sign-ins.
+      photoUrl: user.photo?.key ? require('../services/storage').signedUrl(user.photo.key, 7 * 24 * 3600) : null,
+    },
     memberships: members.map((m) => ({
       id: m._id, practiceId: m.practiceId?._id, practiceName: m.practiceId?.name, role: m.role, isOwner: m.isOwner, status: m.status,
       permissions: M.ROLE_PERMISSIONS[m.role] || {},

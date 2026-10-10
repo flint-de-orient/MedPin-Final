@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/photo.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 
@@ -585,7 +586,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
         padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           children: [
-            MpAvatar(me.initials, size: 72, fontSize: 24),
+            isLive ? MyPhotoAvatar(me.initials) : MpAvatar(me.initials, size: 72, fontSize: 24),
             const Gap(16),
             Expanded(
               child: Column(

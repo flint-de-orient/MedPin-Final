@@ -2,7 +2,7 @@
 // Profile / Staff-Profile / Patient-Me settings).
 const { Schema, model } = require('mongoose');
 const E = require('./enums');
-const { ref, phone, enumOf, baseOptions } = require('./common');
+const { ref, phone, enumOf, fileSchema, baseOptions } = require('./common');
 
 // One account per phone number. The same person can be a team member of
 // several practices (Member) and/or a patient (Patient.userId).
@@ -13,6 +13,7 @@ const userSchema = new Schema(
     name: { type: String, trim: true, maxlength: 120 },
     email: { type: String, trim: true, lowercase: true, match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
     avatarUrl: String,
+    photo: fileSchema, // profile photo (doctors: the same file as DoctorProfile.photo)
     language: enumOf(E.LANGUAGES, { default: 'en' }), // "App language"
     appLock: { type: Boolean, default: true }, // "Fingerprint or PIN to open"
     termsAcceptedAt: Date, // Register: "agree to the Terms of Use and Privacy Policy"

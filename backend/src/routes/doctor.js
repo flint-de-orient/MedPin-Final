@@ -98,6 +98,7 @@ r.post('/doctor/profile/photo', photoUpload.single('file'), async (req, res) => 
   const p = await profileOf(req.user._id);
   p.photo = await storage.save(req.file.buffer, { folder: 'photos', name: req.file.originalname, mimeType: req.file.mimetype });
   await p.save();
+  await M.User.updateOne({ _id: req.user._id }, { photo: p.photo }); // shown in the app's headers too
   res.json(profileView(p));
 });
 
