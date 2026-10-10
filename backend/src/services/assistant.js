@@ -358,4 +358,51 @@ async function extractLabReport(buffer, mimeType) {
   return out?.data || null;
 }
 
-module.exports = { replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, isEmergencyText, useAiChat };
+const RX_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['doctor_name', 'medicines'],
+  properties: {
+    doctor_name: { type: 'string', description: 'Prescribing doctor as printed, or empty' },
+    medicines: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'strength', 'morning', 'afternoon', 'night', 'food', 'duration_days', 'instructions'],
+        properties: {
+          name: { type: 'string' },
+          strength: { type: 'string', description: 'e.g. "500 mg"; empty if not printed' },
+          morning: { type: 'number' },
+          afternoon: { type: 'number' },
+          night: { type: 'number' },
+          food: { type: 'string', enum: ['before_food', 'after_food', 'with_food', 'empty_stomach', 'any'] },
+          duration_days: { type: 'number', description: '0 when not printed or ongoing' },
+          instructions: { type: 'string' },
+        },
+      },
+    },
+  },
+};
+
+/**
+ * Reads the medicines on an uploaded prescription exactly as written (no
+ * advice, no changes). The patient reviews them before anything is added.
+ */
+async function extractPrescription(buffer, mimeType) {
+  if (!ai.enabled()) return null;
+  const block = mimeType === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') } }
+    : { type: 'image', source: { type: 'base64', media_type: mimeType, data: buffer.toString('base64') } };
+  const out = await ai.completeJson({
+    system: 'You transcribe Indian doctor prescriptions. List every medicine exactly as written: name, strength, how many to take in the morning / afternoon / night (1-0-1 means 1 morning and 1 night), food relation and duration. Do not add, remove, change or recommend anything. If a field is not written, leave it empty or 0.',
+    messages: [{ role: 'user', content: [block, { type: 'text', text: 'Transcribe the medicines on this prescription.' }] }],
+    schema: RX_SCHEMA,
+    effort: 'medium',
+    vision: true,
+    maxTokens: 4000,
+  });
+  return out?.data || null;
+}
+
+module.exports = { replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };

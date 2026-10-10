@@ -97,6 +97,10 @@ class Api {
     return Uri.parse('${AppConfig.apiBaseUrl}$path').replace(queryParameters: q.isEmpty ? null : q);
   }
 
+  /// Doses, medicines or reminder settings changed: medicine alarms re-sync (set in main).
+  void Function()? onMedicinesChanged;
+  static final _alarmPaths = RegExp(r'^/api/patient/(doses|medicines|me$|records/[^/]+/add-medicines)');
+
   Future<dynamic> _send(String method, String path, {Object? body, Map<String, Object?>? query, bool retried = false}) async {
     final session = Session.I;
     final headers = <String, String>{'accept': 'application/json'};
@@ -122,6 +126,7 @@ class Api {
       await session.expire();
     }
 
+    if (res.statusCode < 300 && method != 'GET' && _alarmPaths.hasMatch(path)) onMedicinesChanged?.call();
     if (res.statusCode < 300 && method == 'PATCH' && path == '/api/me' && body is Map) {
       await session.patchUser(body.cast<String, dynamic>());
     }

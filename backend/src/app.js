@@ -59,6 +59,31 @@ function createApp() {
   });
 
   app.use('/files', files);
+
+  // Pharmacy order page (private link from the order WhatsApp / email; no account).
+  app.use('/pharmacy', express.urlencoded({ extended: false, limit: '10kb' }));
+  const pharmacyOrder = async (req) => {
+    const { sha256, safeEqual } = require('./lib/security');
+    const token = String(req.query.t || req.body?.t || '');
+    if (!/^[0-9a-f]{24}$/.test(req.params.id) || !token) return null;
+    const order = await M.Order.findById(req.params.id).select('+pharmacyTokenHash');
+    return order && order.pharmacyTokenHash && safeEqual(order.pharmacyTokenHash, sha256(token)) ? { order, token } : null;
+  };
+  app.get('/pharmacy/orders/:id', async (req, res) => {
+    const found = await pharmacyOrder(req);
+    if (!found) return res.status(404).type('html').send('<p>This order link is not valid.</p>');
+    res.set('Cache-Control', 'no-store').type('html').send(await require('./services/orders').pharmacyPage(found.order, found.token));
+  });
+  app.post('/pharmacy/orders/:id/status', async (req, res) => {
+    const found = await pharmacyOrder(req);
+    if (!found) return res.status(404).type('html').send('<p>This order link is not valid.</p>');
+    try {
+      await require('./services/orders').setStatus(found.order, String(req.body.status || ''), { by: 'pharmacy' });
+    } catch (err) {
+      return res.status(409).type('html').send(`<p>${String(err.message).replace(/[<>&]/g, '')}</p><p><a href="/pharmacy/orders/${found.order._id}?t=${found.token}">Back</a></p>`);
+    }
+    res.redirect(303, `/pharmacy/orders/${found.order._id}?t=${encodeURIComponent(found.token)}`);
+  });
   app.use('/api/auth', auth.router);
   app.use('/api/me', me);
   app.use('/api/notifications', notifications);

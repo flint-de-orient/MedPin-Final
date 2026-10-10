@@ -8,6 +8,10 @@ const { ref, enumOf, fileSchema, actionStamp, baseOptions } = require('./common'
 // into several records (one per test), each pointing at its page range.
 const medicalRecordSchema = new Schema(
   {
+    // Medicines read from an uploaded prescription (AI), until the patient adds them.
+    extractedMedicines: [Schema.Types.Mixed],
+    extractedDoctor: String,
+    medicinesAddedAt: Date,
     patientId: ref('Patient', true),
     kind: enumOf(E.RECORD_KINDS, { required: true }),
     title: { type: String, required: true }, // "Lipid profile"

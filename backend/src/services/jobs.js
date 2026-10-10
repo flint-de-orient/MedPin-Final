@@ -52,10 +52,12 @@ async function doseReminders(now, since) {
   if (!doses.length) return;
   const patients = new Map((await M.Patient.find({ _id: { $in: doses.map((d) => d.patientId) } }, 'userId settings')).map((p) => [String(p._id), p]));
   const courses = new Map((await M.MedicationCourse.find({ _id: { $in: doses.map((d) => d.courseId) } }, 'name strength foodRelation dose')).map((c) => [String(c._id), c]));
+  // Phones that ring alarms themselves don't need the server's push too.
+  const alarmUsers = new Set((await M.DeviceToken.find({ localAlarms: true }, 'userId')).map((t) => String(t.userId)));
   for (const d of doses) {
     const p = patients.get(String(d.patientId));
     const c = courses.get(String(d.courseId));
-    if (!p?.userId || p.settings?.medReminders === false || !c) continue;
+    if (!p?.userId || p.settings?.medReminders === false || !c || alarmUsers.has(String(p.userId))) continue;
     await once(`dose:${d._id}`, () =>
       notify([p.userId], {
         type: 'dose_reminder', title: `Time for ${c.name}${c.strength ? ` ${c.strength}` : ''}`,

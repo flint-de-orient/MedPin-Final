@@ -500,7 +500,35 @@ r.get('/medicines', async (req, res) => {
     running: items.length, fromDoctors: doctors.size, adherence30d: adh.overallPct, allergies, items,
     safety: { checked: items.length, warnings }, nextVisitAt: nextVisit?.startAt || null, pastCount,
     reminderTimes: req.patient.settings?.reminderTimes || null,
+    // Medicines read from prescriptions the patient uploaded, not added yet.
+    fromUploads: (await M.MedicalRecord.find({ patientId: req.patient._id, kind: 'prescription', deletedAt: null, medicinesAddedAt: null, 'extractedMedicines.0': { $exists: true }, createdAt: { $gte: T.addDays(new Date(), -60) } }).sort({ createdAt: -1 }).limit(5))
+      .map((r) => ({ recordId: r._id, title: r.title, date: r.recordDate, doctor: r.extractedDoctor || r.sourceName, medicines: r.extractedMedicines })),
   });
+});
+
+// Uploaded prescription → "Add these to my medicines" (the patient picks which).
+r.post('/records/:id/add-medicines', async (req, res) => {
+  const record = await M.MedicalRecord.findOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null });
+  if (!record) throw notFound('Prescription');
+  const all = record.extractedMedicines || [];
+  if (!all.length) throw badRequest('No medicines were found on this prescription', 'NO_MEDICINES');
+  const pickIdx = Array.isArray(req.body.indices) ? req.body.indices.filter((i) => Number.isInteger(i) && i >= 0 && i < all.length) : all.map((_, i) => i);
+  const created = [];
+  for (const i of pickIdx) {
+    const m = all[i];
+    const dose = { morning: Number(m.morning) || 0, afternoon: Number(m.afternoon) || 0, night: Number(m.night) || 0 };
+    if (!dose.morning && !dose.afternoon && !dose.night) dose.morning = 1;
+    const days = Number(m.duration_days) || 0;
+    created.push(await M.MedicationCourse.create({
+      patientId: req.patient._id, name: String(m.name).slice(0, 80), strength: m.strength || undefined, dose,
+      foodRelation: ['before_food', 'after_food', 'with_food', 'empty_stomach'].includes(m.food) ? m.food : undefined,
+      instructions: m.instructions || undefined, prescriberName: record.extractedDoctor || record.sourceName || undefined,
+      startDate: T.dayStart(), endDate: days ? T.addDays(T.dayStart(), days) : undefined,
+    }));
+  }
+  record.medicinesAddedAt = new Date();
+  await record.save();
+  res.status(201).json({ added: created.length, items: created });
 });
 
 r.post('/medicines', async (req, res) => {
@@ -737,6 +765,14 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
     status: kind === 'test_result' ? 'processing' : 'ready', uploadedBy: req.user._id, flagLabel: 'New', flagTone: 'new',
   });
   let extracted = null;
+  if (kind === 'prescription') {
+    const rx = await assistant.extractPrescription(req.files[0].buffer, req.files[0].mimetype).catch((err) => { console.warn('[extract-rx]', err.message); return null; });
+    if (rx?.medicines?.length) {
+      record.extractedMedicines = rx.medicines.filter((m) => m.name);
+      record.extractedDoctor = rx.doctor_name || undefined;
+      await record.save();
+    }
+  }
   if (kind === 'test_result') {
     extracted = await assistant.extractLabReport(req.files[0].buffer, req.files[0].mimetype).catch((err) => { console.warn('[extract]', err.message); return null; });
     if (!extracted) { record.status = 'ready'; await record.save(); }
@@ -744,7 +780,7 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
   if (sharedWith.length) {
     await notify(sharedWith.map((s) => s.userId), { type: 'record_shared', title: `${req.patient.name} shared a ${kind === 'prescription' ? 'prescription' : 'report'}`, screen: 'Patient-Profile', params: { patientId: req.patient._id } });
   }
-  res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted });
+  res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted, medicines: record.extractedMedicines || [] });
 });
 
 // Records-Review reopened for a report still waiting to be checked: read it again.
@@ -919,16 +955,33 @@ r.post('/orders', async (req, res) => {
   const address = req.patient.addresses.id(req.body.addressId) || req.patient.addresses.find((a) => a.isDefault) || req.patient.addresses[0];
   if (mode === 'delivery' && !address) throw badRequest('Add a delivery address first', 'ADDRESS_REQUIRED');
   const prescriptionIds = await M.Prescription.find({ patientId: req.patient._id, validUntil: { $gte: new Date() } }).distinct('_id');
+  const byName = new Map(cart.items.map((i) => [`${i.name}|${i.strength || ''}`, i]));
+  const { randomToken, sha256 } = require('../lib/security');
+  const pharmacyToken = randomToken(24);
   const order = await M.Order.create({
-    patientId: req.patient._id, pharmacyId: pharmacy._id, mode, items: q.lines.map((l) => ({ ...l, unitPrice: l.unitPrice ?? undefined, lineTotal: l.lineTotal ?? undefined })),
+    pharmacyTokenHash: sha256(pharmacyToken),
+    patientId: req.patient._id, pharmacyId: pharmacy._id, mode,
+    items: q.lines.map((l) => {
+      const c = byName.get(`${l.name}|${l.strength || ''}`);
+      return { ...l, courseId: c?.courseId, unitsPerStrip: c?.unitsPerStrip || 10, unitPrice: l.unitPrice ?? undefined, lineTotal: l.lineTotal ?? undefined };
+    }),
     prescriptionIds, deliveryAddress: mode === 'delivery' ? pick(address, ['line', 'area', 'city', 'pincode']) : undefined,
     subtotal: q.subtotal, deliveryFee: q.deliveryFee, total: q.total, statusHistory: [{ status: 'placed', at: new Date() }],
     etaText: mode === 'delivery' ? pharmacy.deliveryEtaText : pharmacy.pickupEtaMin ? `Ready in ${pharmacy.pickupEtaMin} min` : undefined,
   });
   cart.items = [];
   await cart.save();
+  await require('../services/orders').notifyPharmacy(order, pharmacy, req.patient, pharmacyToken).catch((err) => console.warn('[order]', err.message));
   // No online payment yet: paid in cash on delivery or at the pharmacy counter.
   res.status(201).json({ ...order.toJSON(), payment: mode === 'delivery' ? 'cash_on_delivery' : 'pay_at_pharmacy', pharmacyName: pharmacy.name });
+});
+
+r.post('/orders/:id/cancel', async (req, res) => {
+  const order = await M.Order.findOne({ _id: req.params.id, patientId: req.patient._id });
+  if (!order) throw notFound('Order');
+  if (!['placed', 'confirmed'].includes(order.status)) throw conflict('This order is already being packed. Call the pharmacy to cancel it.', 'TOO_LATE');
+  await require('../services/orders').setStatus(order, 'cancelled', { by: 'patient' });
+  res.json(order);
 });
 
 r.get('/orders', async (req, res) => {

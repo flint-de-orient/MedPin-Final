@@ -54,7 +54,12 @@ class Push {
     token = t;
     if (!Session.I.signedIn) return;
     try {
-      await Api.I.post('/api/me/devices', {'token': t, 'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'});
+      await Api.I.post('/api/me/devices', {
+        'token': t,
+        'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android',
+        // Patients' medicine alarms ring on the phone itself (MedAlarms), so the server doesn't push them.
+        'localAlarms': Session.I.landing == 'Main' && LocalNotes.I.supported,
+      });
     } on ApiException catch (e) {
       debugPrint('Device not registered: ${e.message}');
     }

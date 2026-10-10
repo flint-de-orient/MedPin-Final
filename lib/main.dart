@@ -6,7 +6,9 @@ import 'app/registry.dart';
 import 'app/splash.dart';
 import 'core/nav.dart';
 import 'core/tokens.dart';
+import 'data/api.dart';
 import 'data/firebase_phone.dart';
+import 'data/med_alarms.dart';
 import 'data/push.dart';
 import 'data/session.dart';
 
@@ -16,11 +18,18 @@ void main() {
   FirebasePhone.I.init(); // SMS sign-in on Android; ready long before the Login screen
   // Push notifications start once someone is signed in (restored or new).
   Session.I.deviceToken = () => Push.I.token;
+  Api.I.onMedicinesChanged = MedAlarms.I.sync;
   var wasSignedIn = false;
   Session.I.addListener(() {
     final now = Session.I.signedIn;
-    if (now && !wasSignedIn) Push.I.start();
-    if (!now && wasSignedIn) Push.I.forget();
+    if (now && !wasSignedIn) {
+      Push.I.start();
+      MedAlarms.I.start(); // patients only; staff have no medicine alarms
+    }
+    if (!now && wasSignedIn) {
+      Push.I.forget();
+      MedAlarms.I.clear();
+    }
     wasSignedIn = now;
   });
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(

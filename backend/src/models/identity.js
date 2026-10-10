@@ -67,6 +67,8 @@ const deviceTokenSchema = new Schema(
     userId: ref('User', true),
     token: { type: String, required: true, unique: true },
     platform: enumOf(E.PLATFORMS, { required: true }),
+    // The app rings medicine alarms on this phone itself (so the server doesn't push them too).
+    localAlarms: { type: Boolean, default: false },
     lastSeenAt: Date,
   },
   baseOptions,

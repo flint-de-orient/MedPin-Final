@@ -380,6 +380,45 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const order = ok(await ctx.pat('POST', '/api/patient/orders', { pharmacyId: quotes.items[0].pharmacy.id, mode: 'delivery' }), 201);
     assert.equal(order.status, 'placed');
     assert.equal(ok(await ctx.pat('GET', '/api/patient/cart')).count, 0);
+    assert.ok(order.prescriptionIds.length > 0, 'valid prescriptions go with the order');
+
+    // The pharmacy works the order from its private link (token sent by WhatsApp / email).
+    const { sha256 } = require('../src/lib/security');
+    await M.Order.updateOne({ _id: order.id }, { pharmacyTokenHash: sha256('pharmacy-test-token') });
+    assert.equal((await fetch(`${base}/pharmacy/orders/${order.id}?t=wrong`)).status, 404, 'the link needs its token');
+    const page = await fetch(`${base}/pharmacy/orders/${order.id}?t=pharmacy-test-token`);
+    assert.equal(page.status, 200);
+    const html = await page.text();
+    assert.match(html, /Priya Sharma/);
+    assert.match(html, /Rx \d{4}/, 'the prescription is shown to the pharmacy');
+    const course = await M.MedicationCourse.findOne({ patientId: ctx.patientId, name: 'Metformin' });
+    const stockBefore = course.stockUnits || 0;
+    for (const status of ['confirmed', 'packed', 'out_for_delivery', 'delivered']) {
+      const r = await fetch(`${base}/pharmacy/orders/${order.id}/status`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: `t=pharmacy-test-token&status=${status}` });
+      assert.equal(r.status, 303, `pharmacy sets ${status}`);
+    }
+    const delivered = (ok(await ctx.pat('GET', '/api/patient/orders')))[0];
+    assert.equal(delivered.status, 'delivered');
+    assert.equal((await M.MedicationCourse.findById(course._id)).stockUnits, stockBefore + 6 * 10, 'stock goes up by what was delivered');
+    assert.ok((await M.Notification.find({ userId: (await M.Patient.findById(ctx.patientId)).userId, type: 'order_update' })).length >= 4, 'the patient hears each step');
+    const skip = await fetch(`${base}/pharmacy/orders/${order.id}/status`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 't=pharmacy-test-token&status=confirmed' });
+    assert.equal(skip.status, 409, 'no going back after delivery');
+    // A second order the patient cancels.
+    ok(await ctx.pat('POST', '/api/patient/cart/items', { courseId: course._id, packOption: '1_month' }), 201);
+    const second = ok(await ctx.pat('POST', '/api/patient/orders', { pharmacyId: quotes.items[0].pharmacy.id, mode: 'pickup' }), 201);
+    assert.equal(ok(await ctx.pat('POST', `/api/patient/orders/${second.id}/cancel`)).status, 'cancelled');
+
+    // An uploaded prescription's medicines (read by AI) are added when the patient says so.
+    const rec = await M.MedicalRecord.create({
+      patientId: ctx.patientId, kind: 'prescription', title: 'Paper prescription', origin: 'uploaded_by_patient', recordDate: new Date(),
+      extractedDoctor: 'Dr. Outside', extractedMedicines: [{ name: 'Atorvastatin', strength: '10 mg', morning: 0, afternoon: 0, night: 1, food: 'after_food', duration_days: 30, instructions: '' }],
+    });
+    const list = ok(await ctx.pat('GET', '/api/patient/medicines'));
+    assert.ok(list.fromUploads.some((u) => String(u.recordId) === String(rec._id)), 'suggested from the upload');
+    const added = ok(await ctx.pat('POST', `/api/patient/records/${rec._id}/add-medicines`, {}), 201);
+    assert.equal(added.added, 1);
+    assert.ok(ok(await ctx.pat('GET', '/api/patient/medicines')).items.some((m) => m.name === 'Atorvastatin'));
+    assert.ok(!ok(await ctx.pat('GET', '/api/patient/medicines')).fromUploads.some((u) => String(u.recordId) === String(rec._id)), 'not suggested again');
   });
 
   await step('consent code links the patient to a second practice', async () => {

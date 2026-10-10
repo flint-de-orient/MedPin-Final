@@ -136,7 +136,13 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
       Nav.go(nav.context, 'Records-Review', args: {'record': body.obj('record'), 'extracted': extracted, 'shareWith': _shareWith.toList()});
       return;
     }
-    toast(context, kind == 'prescription' ? 'Prescription saved' : 'Report saved');
+    final meds = body.list('medicines');
+    toast(
+      context,
+      kind == 'prescription'
+          ? (meds.isEmpty ? 'Prescription saved' : 'Prescription saved · ${meds.length} ${meds.length == 1 ? 'medicine' : 'medicines'} found — add them in Medicines')
+          : 'Report saved',
+    );
     Navigator.of(context).pop(recordId);
   }
 

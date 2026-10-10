@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
+import '../doctor/common_d4.dart';
 
 /// Design: Patient-Medicines.dc.html — "Patient · Medicines tab".
 class PatientMedicinesScreen extends StatefulWidget {
@@ -253,7 +254,8 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
         final saved = await openSheet<bool>(context, (_) => _ReminderSheet(times: _medsData.obj('reminderTimes'), slots: _usedSlots));
         if (saved == true && mounted) reload(quiet: true);
       case 1:
-        await openSheet<void>(context, (_) => _OrdersSheet(orders: d.list('orders')));
+        final changed = await openSheet<bool>(context, (_) => _OrdersSheet(orders: d.list('orders')));
+        if (changed == true && mounted) reload(quiet: true);
       case 2:
         await openSheet<void>(context, (_) => const _PastSheet());
       default:
@@ -386,6 +388,7 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
               gap: 16,
               children: [
                 if (!live || total > 0) _todaysDoses(taken, total, liveSlots),
+                if (live) for (final u in _medsData.list('fromUploads')) _fromUpload(u),
                 if (!live) _refill() else if (refill != null) _refill(refill),
                 _runningNow(),
                 if (!live || _safetyShown) _safety(),
@@ -561,6 +564,40 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
         trailing,
       ],
     );
+  }
+
+  /// Medicines read from a prescription the patient uploaded: add them here.
+  Widget _fromUpload(Map<String, dynamic> u) {
+    final meds = u.list('medicines');
+    final at = F.date(u['date']);
+    String dose(Map<String, dynamic> m) => '${m.numOr('morning')}-${m.numOr('afternoon')}-${m.numOr('night')}';
+    return MpCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('From your uploaded prescription', style: tx(18, w: w700, h: 1.3)),
+          const Gap(2),
+          Text([if (u.str('doctor').isNotEmpty) u.str('doctor'), if (at != null) F.dayMonth(at)].join(' · '), style: tx(14, c: MP.ink2, h: 1.4)),
+          const Gap(10),
+          for (final m in meds)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text('${m.str('name')} ${m.str('strength')} · ${dose(m)}', style: tx(15, h: 1.4)),
+            ),
+          const Gap(8),
+          Text('Check these against the paper before adding.', style: tx(13, c: MP.ink3, h: 1.4)),
+          const Gap(12),
+          MpButton('Add ${meds.length == 1 ? 'it' : 'all ${meds.length}'} to my medicines', onTap: () => _addFromUpload(u)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addFromUpload(Map<String, dynamic> u) async {
+    final r = await runAction(context, () => Api.I.post('/api/patient/records/${u['recordId']}/add-medicines', const {}));
+    if (r == null || !mounted) return;
+    toast(context, 'Added · reminders are on for them');
+    reload(quiet: true);
   }
 
   Widget _refill([Map<String, dynamic>? c]) {
@@ -1295,16 +1332,33 @@ class _OrdersSheet extends StatelessWidget {
               final o = orders[i];
               final at = F.date(o['createdAt']);
               final items = o.list('items');
-              return P3Row(
+              final cancellable = const {'placed', 'confirmed'}.contains(o.str('status'));
+              final row = P3Row(
                 o.obj('pharmacyId').str('name', 'Pharmacy'),
                 [
                   if (at != null) F.dayMonth(at),
                   '${items.length} ${items.length == 1 ? 'medicine' : 'medicines'}',
                   p3Rupees(o.numOr('total')),
                   o.str('mode') == 'pickup' ? 'pick up' : 'delivery',
+                  if (cancellable && o.str('etaText').isNotEmpty) o.str('etaText'),
+                  if (cancellable) 'tap to cancel',
                 ].join(' · '),
                 first: i == 0,
-                trailing: P2Pill(p3Cap(o.str('status').replaceAll('_', ' ')), bg: MP.primarySoft, fg: MP.primary),
+                trailing: P2Pill(p3Cap(o.str('status').replaceAll('_', ' ')), bg: o.str('status') == 'cancelled' ? MP.fill : MP.primarySoft, fg: o.str('status') == 'cancelled' ? MP.ink3 : MP.primary),
+              );
+              if (!cancellable || !isLive) return row;
+              return Tap(
+                onTap: () async {
+                  final nav = Navigator.of(context);
+                  final yes = await d4Confirm(context, title: 'Cancel this order?', body: 'The pharmacy is told straight away.', confirm: 'Cancel order');
+                  if (!yes || !context.mounted) return;
+                  final r = await runAction(context, () => Api.I.post('/api/patient/orders/${o['id']}/cancel'));
+                  if (r == null || !context.mounted) return;
+                  toast(context, 'Order cancelled');
+                  nav.pop(true);
+                },
+                radius: 12,
+                child: row,
               );
             }),
         ],

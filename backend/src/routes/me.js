@@ -38,7 +38,7 @@ me.post('/devices', async (req, res) => {
   const token = typeof req.body.token === 'string' ? req.body.token.trim() : '';
   const platform = String(req.body.platform || '');
   if (!token || token.length > 4096 || !E.PLATFORMS.includes(platform)) throw badRequest('token and platform are required');
-  await M.DeviceToken.findOneAndUpdate({ token }, { userId: req.user._id, platform, lastSeenAt: new Date() }, { upsert: true });
+  await M.DeviceToken.findOneAndUpdate({ token }, { userId: req.user._id, platform, localAlarms: req.body.localAlarms === true, lastSeenAt: new Date() }, { upsert: true });
   res.json({ ok: true });
 });
 

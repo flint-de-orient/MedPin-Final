@@ -76,6 +76,7 @@ const pharmacySchema = new Schema(
     address: String,
     geo: pointSchema,
     phone: anyPhone,
+    email: { type: String, trim: true, lowercase: true },
     deliveryFee: { ...rupees, default: 0 },
     freeDeliveryAbove: rupees,
     discountPct: { type: Number, min: 0, max: 50, default: 0 }, // off MRP
@@ -115,6 +116,8 @@ const orderSchema = new Schema(
       {
         name: { type: String, required: true },
         strength: String,
+        courseId: { type: Schema.Types.ObjectId, ref: 'MedicationCourse' },
+        unitsPerStrip: { type: Number, default: 10 },
         strips: { type: Number, min: 1 },
         unitPrice: rupees,
         lineTotal: rupees,
@@ -131,7 +134,11 @@ const orderSchema = new Schema(
     etaText: String,
     deliveredAt: Date,
     cancelledAt: Date,
+    cancelledBy: enumOf(['patient', 'pharmacy']),
     paymentId: ref('Payment'),
+    // The pharmacy confirms / packs / delivers through a private link (no account needed).
+    pharmacyTokenHash: { type: String, select: false },
+    pharmacyNotifiedAt: Date,
   },
   baseOptions,
 );
