@@ -305,10 +305,14 @@ ai.post('/sessions/:id/messages', async (req, res) => {
   const text = String(req.body.text || '').trim();
   if (!text) throw badRequest('Ask a question', 'EMPTY_MESSAGE');
   const question = await M.AiMessage.create({ sessionId: s._id, role: 'user', text, inputMode: req.body.inputMode, voiceLanguage: req.body.voiceLanguage });
-  const out = await assistant.doctorAnswer(s, text, req.practiceId);
+  // A failed AI call still answers, so the chat never has a question left hanging.
+  const out = await assistant.doctorAnswer(s, text, req.practiceId, { excludeId: question._id }).catch((err) => {
+    console.warn('[ai]', err.message);
+    return { text: "I couldn't answer just now. Please try again in a moment.", scripted: true, failed: true };
+  });
   const answer = await M.AiMessage.create({
     sessionId: s._id, role: 'assistant', text: out.text, aiModel: out.model, latencyMs: out.latencyMs, inputTokens: out.inputTokens, outputTokens: out.outputTokens,
-    payload: out.scripted ? { scripted: true } : undefined,
+    payload: out.scripted ? { scripted: true, ...(out.failed ? { failed: true } : {}) } : undefined,
   });
   s.title = s.title || text.slice(0, 80);
   s.lastAt = new Date();

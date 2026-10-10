@@ -188,25 +188,37 @@ async function doctorContext(userId, practiceId) {
 }
 
 /** Doctor assistant answer in an AI session. */
-async function doctorAnswer(session, question, practiceId) {
+async function doctorAnswer(session, question, practiceId, { excludeId } = {}) {
   if (!ai.enabled()) {
     return { text: 'The AI assistant is not set up yet. Add GEMINI_API_KEY (or ANTHROPIC_API_KEY) to the backend .env to turn it on.', scripted: true };
   }
   await useAiChat(practiceId);
   const doc = await doctorContext(session.userId, practiceId);
   let context = '';
+  const { accessFor } = require('./access');
+  const { practiceBrief, patientsMentioned } = require('./practice_brief');
+  // The patient this chat is about, plus anyone the question names ("How is Priya's sugar?").
+  // Only what this doctor may see of each patient goes to the AI.
+  const about = [];
   if (session.patientId) {
-    const patient = await M.Patient.findById(session.patientId);
-    if (patient) {
-      // Only what this doctor may see of the patient goes to the AI.
-      const { accessFor } = require('./access');
-      const acc = await accessFor({ userId: session.userId, practiceId }, patient);
-      context = `\n\nPatient being discussed (JSON): ${patientContext(await patientSummary(patient, practiceId, acc))}`;
-    }
+    const p = await M.Patient.findById(session.patientId);
+    if (p) about.push(p);
   }
-  const today = await M.Appointment.find({ practiceId, doctorId: session.userId, date: T.dayStart() }).populate('patientId', 'name');
-  const history = await M.AiMessage.find({ sessionId: session._id }).sort({ createdAt: 1 }).limit(30);
-  const messages = history.map((m) => ({ role: m.role, content: m.text || '' })).filter((m) => m.content);
+  for (const p of await patientsMentioned(question, practiceId)) {
+    if (!about.some((a) => String(a._id) === String(p._id))) about.push(await M.Patient.findById(p._id));
+  }
+  for (const patient of about.slice(0, 3)) {
+    const acc = await accessFor({ userId: session.userId, practiceId }, patient);
+    context += `\n\nPatient ${patient.name} (JSON): ${patientContext(await patientSummary(patient, practiceId, acc))}`;
+  }
+  const [today, brief, kb] = await Promise.all([
+    M.Appointment.find({ practiceId, doctorId: session.userId, date: T.dayStart() }).populate('patientId', 'name'),
+    practiceBrief(session.userId, practiceId),
+    knowledgeFor(practiceId, question).catch(() => []),
+  ]);
+  // Earlier turns of this chat (the new question is added once, at the end).
+  const history = await M.AiMessage.find({ sessionId: session._id, ...(excludeId ? { _id: { $ne: excludeId } } : {}) }).sort({ createdAt: -1 }).limit(30);
+  const messages = history.reverse().map((m) => ({ role: m.role, content: m.text || '' })).filter((m) => m.content);
   messages.push({ role: 'user', content: question });
   const system = [
     'You are MedPin AI, a clinical assistant for a doctor in an Indian outpatient practice. Be concise and precise; use bullet points for lists. Quote values with units and dates from the record. Say clearly when something is not in the record. You support the doctor\'s judgement and do not replace it.',
@@ -215,6 +227,9 @@ async function doctorAnswer(session, question, practiceId) {
       : '',
     `Doctor profile (JSON): ${JSON.stringify(doc.parts)}`,
     `Today: ${T.dayKey(new Date())}. Today's appointments: ${JSON.stringify(today.map((a) => ({ time: a.startAt, patient: a.patientId?.name, status: a.status, type: a.visitType })))}`,
+    `This clinic's records (JSON; use for questions across patients): ${JSON.stringify(brief)}`,
+    kb.length ? `The clinic's approved knowledge base (prefer it when relevant): ${JSON.stringify(kb.map((e) => ({ title: e.title, text: e.summary || e.content })))}` : '',
+    'If a question needs data that is not given here, say exactly what is missing instead of guessing.',
   ].join('\n') + context;
   const out = await ai.complete({ system, messages, effort: 'medium' });
   if (out.refused) return { text: "I can't help with that request.", refused: true, ...out };
@@ -222,15 +237,15 @@ async function doctorAnswer(session, question, practiceId) {
 }
 
 /** Patient "Ask MedPin AI". */
-async function patientAnswer(session, question, patient) {
+async function patientAnswer(session, question, patient, { excludeId } = {}) {
   if (!ai.enabled()) {
     return { text: 'MedPin AI is not available right now. You can message your doctor from the Doctors tab.', scripted: true };
   }
   const practiceIds = await M.PatientEnrolment.find({ patientId: patient._id, status: 'linked' }).distinct('practiceId');
   if (practiceIds[0]) await useAiChat(practiceIds[0]);
   const summary = await patientSummary(patient, practiceIds[0]);
-  const history = await M.AiMessage.find({ sessionId: session._id }).sort({ createdAt: 1 }).limit(20);
-  const messages = history.map((m) => ({ role: m.role, content: m.text || '' })).filter((m) => m.content);
+  const history = await M.AiMessage.find({ sessionId: session._id, ...(excludeId ? { _id: { $ne: excludeId } } : {}) }).sort({ createdAt: -1 }).limit(20);
+  const messages = history.reverse().map((m) => ({ role: m.role, content: m.text || '' })).filter((m) => m.content);
   messages.push({ role: 'user', content: question });
   const system = [
     'You are MedPin AI in the MedPin patient app, helping a patient in India understand their own health record and use the app.',

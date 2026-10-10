@@ -430,22 +430,51 @@ class _P1LogHistorySheetState extends State<P1LogHistorySheet> with LiveData {
   }
 }
 
-/// MedPin AI's answer to a Patient-AskAI question (POST /api/patient/ai/ask).
+/// MedPin AI's answer to a Patient-AskAI question (POST /api/patient/ai/ask),
+/// with follow-up questions in the same conversation (the AI remembers it).
 /// Emergencies get the 108 strip; a suggested specialist opens Find a doctor.
-class P1AiAnswerSheet extends StatelessWidget {
+class P1AiAnswerSheet extends StatefulWidget {
   final String question;
   final Map<String, dynamic> result;
   const P1AiAnswerSheet({super.key, required this.question, required this.result});
 
   @override
-  Widget build(BuildContext context) {
+  State<P1AiAnswerSheet> createState() => _P1AiAnswerSheetState();
+}
+
+class _P1AiAnswerSheetState extends State<P1AiAnswerSheet> {
+  late final List<(String, Map<String, dynamic>)> _turns = [(widget.question, widget.result)];
+  final _follow = TextEditingController();
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _follow.dispose();
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _ask() async {
+    final q = _follow.text.trim();
+    if (q.isEmpty) return;
+    if (!isLive) {
+      setState(() => _turns.add((q, {'answer': {'text': 'MedPin AI answers here.'}})));
+      _follow.clear();
+      return;
+    }
+    final res = await runAction(context, () => Api.I.post('/api/patient/ai/ask', {'text': q, 'inputMode': 'typed'}), busy: _busy);
+    if (res is! Map || !mounted) return;
+    setState(() => _turns.add((q, res.cast<String, dynamic>())));
+    _follow.clear();
+  }
+
+  Widget _answer(BuildContext context, Map<String, dynamic> result) {
     final emergency = result['emergency'] == true;
     final specialist = result.str('specialistKey');
-    return P1PlainSheet(
-      title: 'MedPin AI',
-      subtitle: question,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (emergency)
+        if (emergency) ...[
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(color: MP.redSoft, borderRadius: BorderRadius.circular(12)),
@@ -460,11 +489,49 @@ class P1AiAnswerSheet extends StatelessWidget {
               ),
             ),
           ),
+          const Gap(12),
+        ],
         Text(result.obj('answer').str('text'), style: tx(16, h: 1.55)),
-        if (emergency)
-          MpButton('Message your doctor now', onTap: () => P1.closeThen(context, 'Patient-Emergency'))
-        else if (specialist.isNotEmpty)
+        if (emergency) ...[
+          const Gap(12),
+          MpButton('Message your doctor now', onTap: () => P1.closeThen(context, 'Patient-Emergency')),
+        ] else if (specialist.isNotEmpty) ...[
+          const Gap(12),
           MpButton('Find a doctor', icon: I.stethoscope, onTap: () => P1.closeThen(context, 'Patient-FindDoctor', args: {'specialty': specialist})),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return P1PlainSheet(
+      title: 'MedPin AI',
+      subtitle: _turns.first.$1,
+      children: [
+        for (var i = 0; i < _turns.length; i++) ...[
+          if (i > 0)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                margin: const EdgeInsets.only(left: 48),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(color: MP.primarySoft, borderRadius: BorderRadius.circular(14)),
+                child: Text(_turns[i].$1, style: tx(15, h: 1.45)),
+              ),
+            ),
+          _answer(context, _turns[i].$2),
+        ],
+        Row(
+          children: [
+            Expanded(child: MpInput(controller: _follow, hint: 'Ask a follow-up', height: 52)),
+            const Gap(8),
+            ValueListenableBuilder<bool>(
+              valueListenable: _busy,
+              builder: (_, busy, _) => MpIconButton(I.send, label: 'Send', onTap: busy ? null : _ask, background: MP.primary, color: MP.white, size: 52, radius: 14),
+            ),
+          ],
+        ),
         Text('MedPin AI gives guidance, not a diagnosis.', style: tx(13, h: 1.45, c: MP.ink3)),
       ],
     );

@@ -7,6 +7,7 @@ import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'doctor_ai_chat.dart';
+import 'patient_picker.dart';
 
 /// Design: Doctor-AI.dc.html — "Doctor · AI Assistant (landing)".
 /// Live data: GET /api/ai/sessions (Recent). Questions open Doctor-AI-Chat,
@@ -80,6 +81,15 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> with LiveData {
   /// Opens a new conversation that asks [text] straight away.
   void _ask(String text, {bool spoken = false}) =>
       _openChat({'text': text, if (spoken) 'inputMode': 'spoken'});
+
+  /// "Summarise a patient": choose who, then the chat is about that patient
+  /// (the AI gets their record, as far as this doctor may see it).
+  Future<void> _askAboutPatient() async {
+    if (!isLive) return _ask(_prompts[0].$2);
+    final id = await pickPatient(context, title: 'Summarise which patient?');
+    if (id == null || !mounted) return;
+    _openChat({'patientId': id, 'text': 'Summarise this patient — abnormal results, medicines, adherence and what needs attention.'});
+  }
 
   void _openSession(Map<String, dynamic>? s) {
     if (s == null) {
@@ -170,7 +180,7 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> with LiveData {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Tap(
-                        onTap: () => _ask(_prompts[i].$2),
+                        onTap: () => i == 0 ? _askAboutPatient() : _ask(_prompts[i].$2),
                         radius: 0,
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 14),
