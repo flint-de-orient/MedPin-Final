@@ -122,6 +122,9 @@ class Api {
       await session.expire();
     }
 
+    if (res.statusCode < 300 && method == 'PATCH' && path == '/api/me' && body is Map) {
+      await session.patchUser(body.cast<String, dynamic>());
+    }
     final text = res.body;
     dynamic json;
     if (text.isNotEmpty) {

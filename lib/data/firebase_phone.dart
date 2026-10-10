@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'session.dart';
 
 /// Firebase Phone Authentication: Firebase sends the SMS code and checks it;
 /// the backend then signs the user in with Firebase's ID token.
@@ -79,7 +80,7 @@ class FirebasePhone {
     final result = await FirebaseAuth.instance.signInWithCredential(credential);
     final idToken = await result.user?.getIdToken();
     if (idToken == null) throw const ApiException(401, 'FIREBASE_NO_TOKEN', 'Sign-in failed. Please try again.');
-    final body = await Api.I.post('/api/auth/firebase', {'idToken': idToken}) as Map;
+    final body = await Api.I.post('/api/auth/firebase', {'idToken': idToken, ...Session.deviceInfo}) as Map;
     // The backend session is what the app uses from here on.
     await FirebaseAuth.instance.signOut();
     return body.cast<String, dynamic>();

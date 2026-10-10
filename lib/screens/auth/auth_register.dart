@@ -41,8 +41,8 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
   Map<String, dynamic>? _inviteInfo;
   bool _busy = false;
   final _inviteFocus = FocusNode();
-  late final _terms = TapGestureRecognizer()..onTap = () => toast(context, 'Terms of Use is not in the design yet');
-  late final _privacy = TapGestureRecognizer()..onTap = () => toast(context, 'Privacy Policy is not in the design yet');
+  late final _terms = TapGestureRecognizer()..onTap = () => Nav.go(context, 'Legal', args: {'doc': 'terms'});
+  late final _privacy = TapGestureRecognizer()..onTap = () => Nav.go(context, 'Legal', args: {'doc': 'privacy'});
   String _lang = _languages.first;
   bool _agree = true;
 

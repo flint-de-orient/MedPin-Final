@@ -113,20 +113,55 @@ me.post('/support', async (req, res) => {
 });
 
 // A doctor with no invite starts their own practice (they become its owner).
+// "Start my clinic" (Auth-Clinic-Setup): the doctor, their clinic, its first
+// location and a schedule there, so patients can book straight away.
+const WEEK = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 me.post('/practices', async (req, res) => {
-  const { name, locationName, area, address, city, pincode } = req.body;
-  if (!name) throw badRequest('Enter the practice name');
-  if (!req.user.name && !req.body.doctorName) throw badRequest('Enter your name first');
-  if (req.body.doctorName) req.user.name = req.body.doctorName;
-  const practice = await M.Practice.create({ name, ownerUserId: req.user._id, tagline: req.body.tagline });
+  const b = req.body;
+  const name = String(b.name || '').trim();
+  const doctorName = String(b.doctorName || req.user.name || '').trim();
+  if (!doctorName) throw badRequest('Enter your full name', 'NAME_REQUIRED');
+  if (!name) throw badRequest('Enter the clinic name', 'CLINIC_NAME_REQUIRED');
+  const opensAt = Number.isInteger(b.opensAt) ? b.opensAt : 540;
+  const closesAt = Number.isInteger(b.closesAt) ? b.closesAt : 1200;
+  if (opensAt < 0 || closesAt > 1440 || closesAt - opensAt < 30) throw badRequest('Closing time must be at least 30 minutes after opening', 'BAD_HOURS');
+  const days = Array.isArray(b.openDays) && b.openDays.length ? b.openDays.filter((d) => WEEK.includes(d)) : WEEK.filter((d) => d !== 'sun');
+  if (!days.length) throw badRequest('Choose at least one open day', 'BAD_HOURS');
+  const fee = b.fee == null || b.fee === '' ? 500 : Number(b.fee);
+  if (!Number.isFinite(fee) || fee < 0 || fee > 100000) throw badRequest('Enter a valid consultation fee', 'BAD_FEE');
+  if (b.pincode && !/^\d{6}$/.test(String(b.pincode))) throw badRequest('Pincode must be 6 digits', 'BAD_PINCODE');
+  const specialty = b.specialtyKey ? await M.Specialty.findOne({ key: String(b.specialtyKey) }) : null;
+
+  req.user.name = doctorName;
+  if (b.termsAccepted) req.user.termsAcceptedAt = new Date();
+  const practice = await M.Practice.create({ name, ownerUserId: req.user._id, tagline: b.tagline });
   const location = await M.Location.create({
-    practiceId: practice._id, name: locationName || name, shortName: area, area, address, city, pincode,
-    weeklyHours: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((weekday) => ({ weekday, isOpen: weekday !== 'sun', opensAt: 540, closesAt: 1200 })),
+    practiceId: practice._id, name: b.locationName || name, shortName: b.area, area: b.area, address: b.address, city: b.city, pincode: b.pincode,
+    phone: b.clinicPhone ? String(b.clinicPhone).replace(/\D/g, '').slice(-10) : undefined,
+    weeklyHours: WEEK.map((weekday) => ({ weekday, isOpen: days.includes(weekday), opensAt, closesAt })),
   });
-  await M.Member.create({ practiceId: practice._id, userId: req.user._id, role: 'doctor', isOwner: true, allLocations: true, phone: req.user.phone });
-  if (!(await M.DoctorProfile.exists({ userId: req.user._id }))) {
-    await M.DoctorProfile.create({ userId: req.user._id, displayName: req.user.name });
+  await M.Member.create({
+    practiceId: practice._id, userId: req.user._id, role: 'doctor', isOwner: true, allLocations: true, phone: req.user.phone,
+    qualifications: b.qualifications, registrationNo: b.registrationNo,
+  });
+  const profile = (await M.DoctorProfile.findOne({ userId: req.user._id })) || new M.DoctorProfile({ userId: req.user._id });
+  profile.displayName = doctorName;
+  if (specialty) {
+    profile.specialtyKeys = [specialty.key];
+    if (!profile.headline) profile.headline = specialty.label;
   }
+  if (b.qualifications) profile.degreesSummary = String(b.qualifications).slice(0, 120);
+  if (b.registrationNo) profile.registration = { ...(profile.registration?.toObject?.() || {}), number: String(b.registrationNo).slice(0, 40) };
+  await profile.save();
+  // The doctor practises at their first location with the clinic hours.
+  await M.DoctorLocation.create({
+    doctorId: req.user._id, locationId: location._id, practiceId: practice._id,
+    services: [
+      { name: 'New consultation', details: '15 min · in clinic', durationMin: 15, visitType: 'new', fee },
+      { name: 'Follow-up', details: 'Repeat visit for the same problem', visitType: 'follow_up', fee },
+    ],
+    schedule: { week: WEEK.map((weekday) => ({ weekday, sessions: days.includes(weekday) ? [{ startMin: opensAt, endMin: closesAt }] : [] })), slotLengthMin: 15, walkInPlaces: 4 },
+  });
   const now = new Date();
   await M.Subscription.create({
     practiceId: practice._id, planKey: 'starter', status: 'trialing', price: 999,

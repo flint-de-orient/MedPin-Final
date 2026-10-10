@@ -38,10 +38,10 @@ void main() {
   test('every design artboard has a screen', () {
     // 96 artboards + the patient Profile tab + Find a doctor + 9 doctor screens
     // added after the design (settings, AI history, lab report, entry options).
-    expect(screenRegistry.length, 107);
-    expect(screenRegistry.values.where((s) => s.panel == 'doctor').length, 84);
+    expect(screenRegistry.length, 111);
+    expect(screenRegistry.values.where((s) => s.panel == 'doctor').length, 87);
     expect(screenRegistry.values.where((s) => s.panel == 'staff').length, 3);
-    expect(screenRegistry.values.where((s) => s.panel == 'patient').length, 20);
+    expect(screenRegistry.values.where((s) => s.panel == 'patient').length, 21);
     for (final s in screenRegistry.values.where((s) => s.sheet)) {
       expect(screenRegistry.containsKey(s.parent), isTrue, reason: '${s.stem} parent ${s.parent}');
     }

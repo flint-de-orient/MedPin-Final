@@ -17,8 +17,15 @@ async function requireAuth(req, _res, next) {
   } catch {
     return next(unauthorized('Session expired', 'TOKEN_EXPIRED'));
   }
-  const user = await M.User.findById(payload.sub);
+  const [user, session] = await Promise.all([
+    M.User.findById(payload.sub),
+    payload.sid ? M.AuthSession.findById(payload.sid, 'revokedAt expiresAt') : null,
+  ]);
   if (!user || user.disabledAt) return next(unauthorized('Account not available'));
+  // Signed out on this device, or from another device ("sign out other devices").
+  if (payload.sid && (!session || session.revokedAt || session.expiresAt < new Date())) {
+    return next(unauthorized('Signed out on this device', 'SESSION_REVOKED'));
+  }
   req.user = user;
   req.sessionId = payload.sid;
   return next();

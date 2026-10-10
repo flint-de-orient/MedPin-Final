@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'app/app_lock.dart';
 import 'app/registry.dart';
 import 'app/splash.dart';
 import 'core/nav.dart';
@@ -30,6 +31,8 @@ class MedPinApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: medpinTheme(),
       navigatorKey: Nav.key,
+      // App lock covers every screen when it's on (see AppLockGate).
+      builder: (context, child) => AppLockGate(child: child ?? const SizedBox.shrink()),
       home: const SplashScreen(),
       onGenerateRoute: (settings) {
         final s = Nav.spec(settings.name ?? '');

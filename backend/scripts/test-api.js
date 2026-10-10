@@ -117,7 +117,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
 
   await step('doctor signs in with OTP and creates a practice', async () => {
     const s = await login('+91 98300 41275');
-    assert.equal(s.landing, 'Auth-Register');
+    assert.equal(s.landing, 'Auth-Welcome', 'a new number chooses doctor / patient / invite');
     ctx.doc = api(s.accessToken);
     ctx.docRefresh = s.refreshToken;
     const out = ok(await ctx.doc('POST', '/api/me/practices', { name: 'City Care Clinic', doctorName: 'Dr. Arjun Sen', locationName: 'City Care Clinic — Salt Lake', area: 'Salt Lake', city: 'Kolkata' }), 201);
@@ -126,7 +126,17 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(out.landing, 'Doctor-Dashboard');
     const refreshed = ok(await api()('POST', '/api/auth/refresh', { refreshToken: ctx.docRefresh }));
     assert.ok(refreshed.accessToken);
-    assert.equal((await api()('POST', '/api/auth/refresh', { refreshToken: ctx.docRefresh })).status, 401, 'refresh tokens rotate');
+    const late = await api()('POST', '/api/auth/refresh', { refreshToken: ctx.docRefresh });
+    assert.equal(late.status, 401, 'refresh tokens rotate');
+    assert.equal(late.body.error.code, 'REFRESH_RACE', 'a late duplicate is a race, not a theft');
+    // Two requests racing with the same token: exactly one wins.
+    const both = await Promise.all([1, 2, 3].map(() => api()('POST', '/api/auth/refresh', { refreshToken: refreshed.refreshToken })));
+    assert.equal(both.filter((r) => r.status === 200).length, 1, 'only one parallel refresh succeeds');
+    const winner = both.find((r) => r.status === 200).body;
+    ok(await api(winner.accessToken)('GET', '/api/me'));
+    // The clinic is bookable at once: the doctor practises at its first location.
+    const slots = ok(await ctx.doc('GET', `/api/doctors/${out.user.id}/slots?locationId=${ctx.locationId}&date=${new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10)}`));
+    assert.notEqual(slots.reason, 'not_practising_here', 'new clinic has a schedule');
   });
 
   await step('practice readiness, location hours, departments', async () => {
@@ -438,7 +448,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const team = ok(await ctx.doc('GET', '/api/members'));
     const tania = team.items.find((m) => m.role === 'front_desk');
     ok(await ctx.doc('PATCH', `/api/members/${tania.id}`, { suspended: true }));
-    assert.equal((await ctx.desk('GET', '/api/staff/today')).status, 403);
+    assert.equal((await ctx.desk('GET', '/api/staff/today')).status, 401, 'suspension signs them out at once');
     ok(await ctx.doc('PATCH', `/api/members/${tania.id}`, { suspended: false }));
   });
 

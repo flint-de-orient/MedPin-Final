@@ -51,7 +51,8 @@ async function createSession(user, req) {
     userId: user._id,
     tokenHash: sha256(refreshToken),
     platform: ['android', 'ios', 'web', 'windows'].includes(req.body?.platform) ? req.body.platform : undefined,
-    deviceName: req.body?.deviceName,
+    deviceName: typeof req.body?.deviceName === 'string' ? req.body.deviceName.slice(0, 60) : undefined,
+    lastUsedAt: new Date(),
     ip: req.ip,
     expiresAt: new Date(Date.now() + ttlMs(env.jwt.refreshTtl)),
   });
@@ -64,7 +65,8 @@ async function accountSummary(user) {
   const patient = await M.Patient.findOne({ userId: user._id }, 'name');
   const active = members.filter((m) => m.status === 'active');
   const first = active[0];
-  let landing = 'Auth-Register';
+  // New number: choose "start my clinic", "I'm a patient" or "I have an invite code".
+  let landing = 'Auth-Welcome';
   if (first) landing = first.role === 'front_desk' ? 'Staff-Today' : 'Doctor-Dashboard';
   else if (patient) landing = 'Main'; // patient home's screen name in the app
   return {
@@ -126,20 +128,40 @@ r.post('/firebase', async (req, res) => {
   res.json(await completeLogin(phone, req));
 });
 
+// Rotation happens in place (same session id) and atomically: of two requests
+// with the same token only one wins. The loser gets REFRESH_RACE (the app then
+// uses the token the winner saved). A token reused long after it was rotated
+// out means it leaked — the whole session is revoked.
+const RACE_GRACE_MS = 60 * 1000;
 r.post('/refresh', async (req, res) => {
   const token = String(req.body.refreshToken || '');
-  const session = await M.AuthSession.findOne({ tokenHash: sha256(token), revokedAt: null, expiresAt: { $gt: new Date() } });
-  if (!session) throw unauthorized('Sign in again', 'REFRESH_INVALID');
+  if (!token) throw unauthorized('Sign in again', 'REFRESH_INVALID');
+  const hash = sha256(token);
+  const now = new Date();
+  const fresh = randomToken();
+  const session = await M.AuthSession.findOneAndUpdate(
+    { tokenHash: hash, revokedAt: null, expiresAt: { $gt: now } },
+    { $set: { tokenHash: sha256(fresh), prevTokenHash: hash, rotatedAt: now, lastUsedAt: now, ip: req.ip } },
+    { new: true },
+  );
+  if (!session) {
+    const old = await M.AuthSession.findOne({ prevTokenHash: hash, revokedAt: null });
+    if (old && now - old.rotatedAt < RACE_GRACE_MS) throw unauthorized('Signing in again', 'REFRESH_RACE');
+    if (old) {
+      old.revokedAt = now;
+      old.revokeReason = 'refresh_token_reuse';
+      await old.save();
+    }
+    throw unauthorized('Sign in again', 'REFRESH_INVALID');
+  }
   const user = await M.User.findById(session.userId);
   if (!user || user.disabledAt) throw unauthorized('Account not available');
-  session.revokedAt = new Date(); // rotate
-  await session.save();
-  res.json(await createSession(user, req));
+  res.json({ accessToken: signAccess(user, session._id), refreshToken: fresh, expiresIn: Math.round(ttlMs(env.jwt.accessTtl) / 1000) });
 });
 
 r.post('/logout', async (req, res) => {
   if (req.body.refreshToken) {
-    await M.AuthSession.updateOne({ tokenHash: sha256(String(req.body.refreshToken)) }, { revokedAt: new Date() });
+    await M.AuthSession.updateOne({ tokenHash: sha256(String(req.body.refreshToken)) }, { revokedAt: new Date(), revokeReason: 'logout' });
   }
   if (req.body.deviceToken) await M.DeviceToken.deleteOne({ token: req.body.deviceToken });
   res.json({ ok: true });

@@ -102,7 +102,7 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
     try {
       final res = Session.I.pendingMethod == 'firebase'
           ? await FirebasePhone.I.verify(_code.text)
-          : ((await Api.I.post('/api/auth/otp/verify', {'phone': phone, 'code': _code.text}) as Map).cast<String, dynamic>());
+          : ((await Api.I.post('/api/auth/otp/verify', {'phone': phone, 'code': _code.text, ...Session.deviceInfo}) as Map).cast<String, dynamic>());
       await Session.I.signIn(res);
       if (mounted) Nav.reset(context, Session.I.landing);
     } on ApiException catch (e) {

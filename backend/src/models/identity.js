@@ -49,6 +49,13 @@ const authSessionSchema = new Schema(
     ip: String,
     expiresAt: { type: Date, required: true },
     revokedAt: Date,
+    revokeReason: String,
+    // Refresh-token rotation: the token before the current one, and when it was replaced.
+    // A late duplicate of that token (two app requests racing) is told to retry;
+    // a reuse long after rotation means the token leaked, so the session is revoked.
+    prevTokenHash: { type: String, index: true },
+    rotatedAt: Date,
+    lastUsedAt: Date,
   },
   baseOptions,
 );

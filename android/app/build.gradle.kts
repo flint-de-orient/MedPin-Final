@@ -46,3 +46,8 @@ android {
 flutter {
     source = "../.."
 }
+
+// App lock (local_auth): the biometric prompt needs an AppCompat theme on Android 8 and below.
+dependencies {
+    implementation("androidx.appcompat:appcompat:1.7.0")
+}

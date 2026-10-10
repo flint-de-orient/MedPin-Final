@@ -103,7 +103,7 @@ class _AuthLoginScreenState extends State<AuthLoginScreen> {
                       const Gap(48),
                       Text('Sign in', style: tx(32, w: w700, h: 1.2, em: -0.02)),
                       const Gap(8),
-                      Text('For doctors and clinic staff.', style: tx(16, c: MP.ink2, h: 1.5)),
+                      Text('For doctors, clinic staff and patients.', style: tx(16, c: MP.ink2, h: 1.5)),
                       const Gap(32),
                       Text('Mobile number', style: tx(14, w: w600, h: 1.4)),
                       const Gap(8),
@@ -118,15 +118,7 @@ class _AuthLoginScreenState extends State<AuthLoginScreen> {
                         textAlign: TextAlign.center,
                         style: tx(14, c: MP.ink2, h: 1.4),
                       ),
-                      const Gap(16),
-                      Center(
-                        child: _TextLink(
-                          'Sign in with password',
-                          color: MP.ink2,
-                          padding: 12,
-                          onTap: () => toast(context, 'Password sign-in is not in the design yet'),
-                        ),
-                      ),
+
                     ],
                   ),
                 ),
@@ -206,10 +198,9 @@ class _PhoneField extends StatelessWidget {
 class _TextLink extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
-  final Color color;
   final double size;
   final double padding;
-  const _TextLink(this.label, {required this.onTap, this.color = MP.primary, this.size = 14, this.padding = 0});
+  const _TextLink(this.label, {required this.onTap, this.size = 14, this.padding = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -222,7 +213,7 @@ class _TextLink extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: padding),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            children: [Text(label, style: tx(size, w: w600, c: color))],
+            children: [Text(label, style: tx(size, w: w600, c: MP.primary))],
           ),
         ),
       ),
