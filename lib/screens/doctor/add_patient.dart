@@ -30,15 +30,25 @@ const _existingAccounts = {'9876543210'};
 
 /// Live: small sheet for the code sent to the patient's phone (the design
 /// has no screen for it; POST /api/patients checks the code).
-class _OtpSheet extends StatefulWidget {
-  final String masked;
-  const _OtpSheet({required this.masked});
-
-  @override
-  State<_OtpSheet> createState() => _OtpSheetState();
+/// Sends a code to a new patient's phone and asks for it (the patient reads it
+/// out). Returns the code, or null when cancelled. Used by Add-Patient and
+/// Consult-QuickAdd: a clinic can only register a number the patient confirms.
+Future<String?> verifyPatientPhone(BuildContext context, String digits) async {
+  final otp = await runAction(context, () => Api.I.post('/api/patients/phone-otp', {'phone': digits}));
+  if (otp is! Map || !context.mounted) return null;
+  D5Live.devCode(context, otp);
+  return openSheet<String>(context, (_) => PatientOtpSheet(masked: '${otp['maskedPhone'] ?? D5Live.phone(digits)}'));
 }
 
-class _OtpSheetState extends State<_OtpSheet> {
+class PatientOtpSheet extends StatefulWidget {
+  final String masked;
+  const PatientOtpSheet({super.key, required this.masked});
+
+  @override
+  State<PatientOtpSheet> createState() => PatientOtpSheetState();
+}
+
+class PatientOtpSheetState extends State<PatientOtpSheet> {
   final _c = TextEditingController();
 
   @override
@@ -131,13 +141,7 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
         return;
       }
       // New number: send a code to the patient's phone.
-      final otp = await runAction(context, () => Api.I.post('/api/patients/phone-otp', {'phone': digits}));
-      if (otp is! Map || !mounted) return;
-      D5Live.devCode(context, otp);
-      final code = await openSheet<String>(
-        context,
-        (_) => _OtpSheet(masked: '${otp['maskedPhone'] ?? D5Live.phone(digits)}'),
-      );
+      final code = await verifyPatientPhone(context, digits);
       if (code == null || !mounted) return;
       setState(() {
         _otpCode = code;

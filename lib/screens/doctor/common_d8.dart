@@ -46,7 +46,7 @@ class _D8TabHeaderState extends State<D8TabHeader> with LiveData {
               MpIconButton(
                 I.bell,
                 label: unread > 0 ? 'Notifications, $unread new' : 'Notifications',
-                onTap: () => Nav.go(context, 'Alerts'),
+                onTap: () => Nav.go(context, 'Notifications'),
               ),
               if (unread > 0) Positioned(
                 top: 10,

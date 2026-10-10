@@ -54,6 +54,13 @@ const staff = ({ roles, perm } = {}) =>
     return next();
   };
 
+/** After staff(): requires one of the role permissions (models/practice.js ROLE_PERMISSIONS). */
+const need = (...perms) => (req, _res, next) => {
+  if (req.member?.isOwner && !perms.includes('prescribe')) return next(); // owners run their practice
+  if (perms.some((p) => req.perms?.[p])) return next();
+  return next(forbidden("Your role doesn't allow this", 'PERMISSION_REQUIRED'));
+};
+
 /** Practice owner (or practice manager) only. */
 const ownerOnly = (req, _res, next) => {
   if (req.member?.isOwner || req.member?.role === 'practice_manager') return next();
@@ -83,4 +90,5 @@ const ownPractice = (req, doc, what = 'Item') => {
   return doc;
 };
 
-module.exports = { requireAuth, staff, ownerOnly, patientOnly, patientInPractice, ownPractice };
+module.exports = {
+  need, requireAuth, staff, ownerOnly, patientOnly, patientInPractice, ownPractice };

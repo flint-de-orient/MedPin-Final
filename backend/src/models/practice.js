@@ -133,14 +133,44 @@ const dashboardPanelSchema = new Schema(
 );
 
 // Fixed permissions per role (common_d9: "There's no separate permission step").
+// What each role may do in its practice (owners also pass ownerOnly checks).
+//   clinical      doctor-side screens: dashboard, consultations (read), clinician tabs
+//   prescribe     write consultations, issue / send prescriptions
+//   editRecords   conditions, allergies, treatment plan, patient details
+//   labs          enter lab results;  labReview  mark results reviewed
+//   alerts        see clinical alerts; manageAlerts  acknowledge / resolve them
+//   ai            MedPin AI assistant, chat reviews and summaries
+//   reports       MIS reports;  fees  payments & fee collection
+//   billing       plan & invoices;  exports  downloads with patient phone numbers
 const ROLE_PERMISSIONS = {
-  doctor: { viewPatients: true, editRecords: true, chats: true, prescribe: true },
-  front_desk: { viewPatients: true, editRecords: false, chats: true, prescribe: false },
-  doctor_assistant: { viewPatients: true, editRecords: true, chats: true, prescribe: false },
-  dietician: { viewPatients: true, editRecords: true, chats: true, prescribe: false },
-  lab_manager: { viewPatients: true, editRecords: true, chats: false, prescribe: false },
-  lab_technician: { viewPatients: true, editRecords: false, chats: false, prescribe: false },
-  practice_manager: { viewPatients: true, editRecords: true, chats: true, prescribe: false },
+  doctor: {
+    viewPatients: true, clinical: true, prescribe: true, editRecords: true, labs: true, labReview: true, chats: true,
+    alerts: true, manageAlerts: true, ai: true, reports: true, fees: true, billing: false, exports: true,
+  },
+  front_desk: {
+    viewPatients: true, clinical: false, prescribe: false, editRecords: false, labs: false, labReview: false, chats: true,
+    alerts: false, manageAlerts: false, ai: false, reports: false, fees: true, billing: false, exports: false,
+  },
+  doctor_assistant: {
+    viewPatients: true, clinical: true, prescribe: false, editRecords: true, labs: true, labReview: false, chats: true,
+    alerts: true, manageAlerts: false, ai: true, reports: false, fees: false, billing: false, exports: false,
+  },
+  dietician: {
+    viewPatients: true, clinical: true, prescribe: false, editRecords: true, labs: false, labReview: false, chats: true,
+    alerts: false, manageAlerts: false, ai: true, reports: false, fees: false, billing: false, exports: false,
+  },
+  lab_manager: {
+    viewPatients: true, clinical: false, prescribe: false, editRecords: false, labs: true, labReview: true, chats: false,
+    alerts: false, manageAlerts: false, ai: false, reports: false, fees: false, billing: false, exports: false,
+  },
+  lab_technician: {
+    viewPatients: true, clinical: false, prescribe: false, editRecords: false, labs: true, labReview: false, chats: false,
+    alerts: false, manageAlerts: false, ai: false, reports: false, fees: false, billing: false, exports: false,
+  },
+  practice_manager: {
+    viewPatients: true, clinical: false, prescribe: false, editRecords: false, labs: false, labReview: false, chats: true,
+    alerts: false, manageAlerts: false, ai: false, reports: true, fees: true, billing: true, exports: true,
+  },
 };
 
 module.exports = {

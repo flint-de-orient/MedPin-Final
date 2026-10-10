@@ -3,7 +3,6 @@
 // Patient-Medicines, Patient-Adherence, Patient-Log, Patient-Track, Patient-Records,
 // Records-Add, Records-Review, Med-AddToCart, Med-Cart, Med-Pharmacy.
 const { Router } = require('express');
-const multer = require('multer');
 const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
@@ -17,7 +16,9 @@ const assistant = require('../services/assistant');
 const { notify, practiceStaff } = require('../services/notify');
 const { patientSummary, doseText, dosesPerDay } = require('../services/clinical');
 
-const upload = multer({ limits: { fileSize: 20 * 1024 * 1024, files: 10 } });
+const { uploader } = require('../lib/uploads');
+const upload = uploader({ kinds: ['image', 'pdf'], maxMb: 10, maxFiles: 10 });
+const photoUpload = uploader({ kinds: ['image'], maxMb: 10, maxFiles: 1 });
 const r = Router();
 r.use(requireAuth);
 
@@ -623,7 +624,7 @@ r.get('/logs/options', async (req, res) => {
   res.json({ shareWith, steps: { today: steps[0]?.n || 0, goal: p.targets?.stepsPerDay || 8000 }, activityPlans: plans });
 });
 
-r.post('/logs', upload.single('photo'), async (req, res) => {
+r.post('/logs', photoUpload.single('photo'), async (req, res) => {
   const b = req.body;
   if (!E.LOG_TYPES.includes(b.type)) throw badRequest('Choose meal, exercise or steps');
   if (b.type === 'steps' && !(Number(b.steps) >= 0)) throw badRequest('Enter the steps');

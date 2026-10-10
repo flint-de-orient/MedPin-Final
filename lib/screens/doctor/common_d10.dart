@@ -215,7 +215,7 @@ class D10StaffHeader extends StatelessWidget {
           Stack(
             clipBehavior: Clip.none,
             children: [
-              MpIconButton(I.bell, label: bellLabel, onTap: () => Nav.go(context, 'Alerts')),
+              MpIconButton(I.bell, label: bellLabel, onTap: () => Nav.go(context, 'Notifications')),
               Positioned(
                 top: 10,
                 right: 11,

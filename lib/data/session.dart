@@ -78,6 +78,15 @@ class Session extends ChangeNotifier {
 
   String? get practiceId => activeMembership?['practiceId'] as String?;
   String? get role => activeMembership?['role'] as String?;
+  bool get isOwner => activeMembership?['isOwner'] == true;
+
+  /// Whether the active role may do [perm] (backend ROLE_PERMISSIONS, e.g.
+  /// 'prescribe', 'alerts', 'ai', 'reports'). Owners run their practice.
+  bool can(String perm) {
+    final perms = (activeMembership?['permissions'] as Map?) ?? const {};
+    if (perms.isEmpty) return role == 'doctor'; // older sessions: doctors could do everything
+    return perms[perm] == true || (isOwner && perm != 'prescribe');
+  }
   String? get patientId => account?['patientId'] as String?;
 
   /// The first screen for this account: Doctor-Dashboard, Staff-Today, Main or Auth-Welcome.

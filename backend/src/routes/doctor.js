@@ -1,6 +1,5 @@
 // Doctor-MyProfile, Profile-Professional, Profile-Location, Profile-Schedule, Queue-Select default.
 const { Router } = require('express');
-const multer = require('multer');
 const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
@@ -9,7 +8,9 @@ const { pick, badRequest, notFound, conflict } = require('../lib/http');
 const storage = require('../services/storage');
 const { slotsFor, nextFreeSlot } = require('../services/scheduling');
 
-const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } });
+const { uploader } = require('../lib/uploads');
+const photoUpload = uploader({ kinds: ['image'], maxMb: 5, maxFiles: 1 });
+const proofUpload = uploader({ kinds: ['image', 'pdf'], maxMb: 10, maxFiles: 1 });
 const r = Router();
 r.use(requireAuth, staff());
 
@@ -92,7 +93,7 @@ r.patch('/doctor/profile', async (req, res) => {
   res.json(profileView(p));
 });
 
-r.post('/doctor/profile/photo', upload.single('file'), async (req, res) => {
+r.post('/doctor/profile/photo', photoUpload.single('file'), async (req, res) => {
   if (!req.file) throw badRequest('Choose a photo');
   const p = await profileOf(req.user._id);
   p.photo = await storage.save(req.file.buffer, { folder: 'photos', name: req.file.originalname, mimeType: req.file.mimetype });
@@ -101,7 +102,7 @@ r.post('/doctor/profile/photo', upload.single('file'), async (req, res) => {
 });
 
 // "Printed on every prescription"
-r.post('/doctor/profile/signature', upload.single('file'), async (req, res) => {
+r.post('/doctor/profile/signature', photoUpload.single('file'), async (req, res) => {
   if (!req.file) throw badRequest('Choose a signature image');
   const p = await profileOf(req.user._id);
   p.signature = await storage.save(req.file.buffer, { folder: 'signatures', name: req.file.originalname, mimeType: req.file.mimetype });
@@ -125,7 +126,7 @@ r.delete('/doctor/qualifications/:qid', async (req, res) => {
 });
 
 // "Upload proof" → In review
-r.post('/doctor/qualifications/:qid/proof', upload.single('file'), async (req, res) => {
+r.post('/doctor/qualifications/:qid/proof', proofUpload.single('file'), async (req, res) => {
   const p = await profileOf(req.user._id);
   const q = p.qualifications.id(req.params.qid);
   if (!q) throw notFound('Qualification');

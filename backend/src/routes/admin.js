@@ -7,7 +7,7 @@ const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
 const env = require('../config/env');
-const { requireAuth, staff, ownerOnly } = require('../middleware/auth');
+const { requireAuth, staff, ownerOnly, need } = require('../middleware/auth');
 const { badRequest, conflict, notFound, list } = require('../lib/http');
 const { safeEqual } = require('../lib/security');
 const storage = require('../services/storage');
@@ -52,6 +52,8 @@ r.post('/billing/webhook', async (req, res) => {
 });
 
 r.use(requireAuth, staff());
+r.use('/billing', need('billing'));
+r.use('/exports', need('exports'));
 
 // ── Billing ──
 r.get('/billing', async (req, res) => {
@@ -90,6 +92,10 @@ r.post('/billing/switch', ownerOnly, async (req, res) => {
   const seats = await M.Member.countDocuments({ practiceId: req.practiceId, status: 'active' });
   if (seats > plan.seats) {
     throw conflict(`Your team has ${seats} people, so ${seats - plan.seats} would need to be removed first`, 'TOO_MANY_SEATS', { seats, limit: plan.seats });
+  }
+  const upgrade = (plan.priceMonthly || 0) > (sub.price || 0);
+  if (upgrade && sub.status !== 'trialing' && !env.razorpay.keyId && env.isProd) {
+    throw Object.assign(conflict('Online payment is not set up yet, so the plan cannot be upgraded. Contact MedPin support.', 'PAYMENTS_OFF'), { status: 503 });
   }
   sub.pendingPlanKey = plan.key;
   sub.pendingFrom = sub.currentPeriodEnd || new Date();

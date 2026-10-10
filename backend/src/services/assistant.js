@@ -197,7 +197,12 @@ async function doctorAnswer(session, question, practiceId) {
   let context = '';
   if (session.patientId) {
     const patient = await M.Patient.findById(session.patientId);
-    if (patient) context = `\n\nPatient being discussed (JSON): ${patientContext(await patientSummary(patient, practiceId))}`;
+    if (patient) {
+      // Only what this doctor may see of the patient goes to the AI.
+      const { accessFor } = require('./access');
+      const acc = await accessFor({ userId: session.userId, practiceId }, patient);
+      context = `\n\nPatient being discussed (JSON): ${patientContext(await patientSummary(patient, practiceId, acc))}`;
+    }
   }
   const today = await M.Appointment.find({ practiceId, doctorId: session.userId, date: T.dayStart() }).populate('patientId', 'name');
   const history = await M.AiMessage.find({ sessionId: session._id }).sort({ createdAt: 1 }).limit(30);

@@ -5,13 +5,14 @@ const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
 const env = require('../config/env');
-const { requireAuth, staff, patientInPractice, ownPractice } = require('../middleware/auth');
+const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
 const { badRequest, notFound, conflict, list, paging } = require('../lib/http');
 const S = require('../services/scheduling');
 const { notify } = require('../services/notify');
 
 const r = Router();
 r.use(requireAuth, staff());
+r.use('/payments', need('fees'));
 
 const view = (a) => {
   const p = a.patientId && a.patientId.name ? a.patientId : null;
@@ -241,7 +242,7 @@ r.get('/staff/today', async (req, res) => {
     date: today,
     summary: { booked: appts.length, checkedIn: count('waiting', 'in_consultation', 'completed'), done: count('completed'), missed: count('missed'), doctors },
     unreadChats: unreadConvos,
-    unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, readAt: null }),
+    unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, practiceId: req.practiceId, readAt: null }),
     userName: req.user.name,
     requests,
     items: appts.map(view),

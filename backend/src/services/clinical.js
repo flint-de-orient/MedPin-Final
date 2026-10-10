@@ -56,19 +56,25 @@ async function checkItems(patient, items) {
   });
 }
 
-/** Everything a doctor sees at the top of a patient's profile / consultation. */
-async function patientSummary(patient, practiceId) {
+/**
+ * Everything a doctor sees at the top of a patient's profile / consultation.
+ * With [acc] (services/access.js) only what that viewer may see is included;
+ * without it (the patient's own app) everything is.
+ */
+async function patientSummary(patient, practiceId, acc) {
   const inPractice = practiceId ? { practiceId } : {};
   const since = T.addDays(new Date(), -180);
-  const [vitals, courses, labs, nextVisit, lastVisit, openAlerts, ai] = await Promise.all([
-    M.Vitals.findOne({ patientId: patient._id }).sort({ recordedAt: -1 }),
+  const [vitalsQ, labQ] = acc ? [acc.vitalsFilter(), await acc.labFilter()] : [{}, {}];
+  const [vitals, allCourses, labs, nextVisit, lastVisit, openAlerts, ai] = await Promise.all([
+    M.Vitals.findOne({ patientId: patient._id, ...vitalsQ }).sort({ recordedAt: -1 }),
     M.MedicationCourse.find({ patientId: patient._id, status: 'active' }).sort({ startDate: -1 }),
-    M.LabResult.find({ patientId: patient._id, collectedAt: { $gte: since }, abnormalCount: { $gt: 0 } }).sort({ collectedAt: -1 }).limit(10),
+    M.LabResult.find({ patientId: patient._id, ...labQ, collectedAt: { $gte: since }, abnormalCount: { $gt: 0 } }).sort({ collectedAt: -1 }).limit(10),
     M.Appointment.findOne({ patientId: patient._id, ...inPractice, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }).sort({ startAt: 1 }),
     M.Appointment.findOne({ patientId: patient._id, ...inPractice, status: 'completed' }).sort({ completedAt: -1 }),
     M.Alert.countDocuments({ patientId: patient._id, ...inPractice, status: { $ne: 'resolved' } }),
-    M.AiSummary.findOne({ patientId: patient._id, audience: 'doctor' }).sort({ generatedAt: -1 }),
+    M.AiSummary.findOne({ patientId: patient._id, audience: 'doctor', ...inPractice }).sort({ generatedAt: -1 }),
   ]);
+  const courses = acc ? allCourses.filter((c) => acc.courseVisible(c)) : allCourses;
   const bmi = patient.heightCm && patient.weightKg ? +(patient.weightKg / (patient.heightCm / 100) ** 2).toFixed(1) : null;
   return {
     patient: {

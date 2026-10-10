@@ -62,7 +62,7 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
   Future<Object?> fetch() async {
     final r = await Future.wait([
       Api.I.get('/api/inbox', query: {'type': 'all'}),
-      Api.I.get('/api/notifications', query: {'limit': '1'}),
+      Api.I.get('/api/notifications', query: {'limit': '1', if (Session.I.practiceId != null) 'practiceId': Session.I.practiceId}),
     ]);
     return {...(r[0] as Map).cast<String, dynamic>(), 'unreadNotifications': (r[1] as Map)['unread'] ?? 0};
   }

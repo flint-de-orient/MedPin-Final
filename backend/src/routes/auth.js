@@ -67,12 +67,17 @@ async function accountSummary(user) {
   const first = active[0];
   // New number: choose "start my clinic", "I'm a patient" or "I have an invite code".
   let landing = 'Auth-Welcome';
-  if (first) landing = first.role === 'front_desk' ? 'Staff-Today' : 'Doctor-Dashboard';
+  const LANDING = {
+    doctor: 'Doctor-Dashboard', doctor_assistant: 'Doctor-Home', dietician: 'Doctor-Home',
+    front_desk: 'Staff-Today', practice_manager: 'Staff-Today', lab_manager: 'Staff-Today', lab_technician: 'Staff-Today',
+  };
+  if (first) landing = LANDING[first.role] || 'Staff-Today';
   else if (patient) landing = 'Main'; // patient home's screen name in the app
   return {
     user: { id: user._id, name: user.name, phone: user.phone, email: user.email, language: user.language, appLock: user.appLock },
     memberships: members.map((m) => ({
       id: m._id, practiceId: m.practiceId?._id, practiceName: m.practiceId?.name, role: m.role, isOwner: m.isOwner, status: m.status,
+      permissions: M.ROLE_PERMISSIONS[m.role] || {},
     })),
     patientId: patient?._id || null,
     landing,
@@ -170,41 +175,15 @@ r.post('/logout', async (req, res) => {
 r.get('/session', requireAuth, async (req, res) => res.json(await accountSummary(req.user)));
 
 // Register step 2: preview the invite before entering details.
-r.get('/invites/:code', requireAuth, async (req, res) => {
-  const invite = await M.Invite.findOne({ code: String(req.params.code).toUpperCase(), usedAt: null, revokedAt: null })
-    .populate('practiceId', 'name').populate('locationIds', 'name shortName');
-  if (!invite || (invite.expiresAt && invite.expiresAt < new Date())) throw notFound('Invite');
-  if (invite.phone && invite.phone !== req.user.phone) throw forbidden('This invite is for a different mobile number', 'INVITE_PHONE_MISMATCH');
-  res.json({
-    code: invite.code, practiceName: invite.practiceId?.name, role: invite.role,
-    locations: invite.locationIds.map((l) => l.shortName || l.name),
-    fields: invite.role === 'doctor' ? ['name', 'email', 'language', 'qualifications', 'registrationNo'] : ['name', 'email', 'language'],
-  });
+// Invite codes are switched off (staff are added in People with their phone number).
+const invitesOff = () => Object.assign(new Error('Invite codes are off. Ask the clinic owner to add your mobile number in People, then sign in.'), { status: 410, code: 'INVITES_OFF' });
+r.get('/invites/:code', requireAuth, async () => {
+  throw invitesOff();
 });
 
 // Register step 3: join the practice with the invite.
-r.post('/register', requireAuth, async (req, res) => {
-  const { inviteCode, name, email, language, termsAccepted, qualifications, registrationNo } = req.body;
-  if (!termsAccepted) throw badRequest('Please agree to the Terms of Use and Privacy Policy', 'TERMS_REQUIRED');
-  if (!name || !String(name).trim()) throw badRequest('Enter your full name', 'NAME_REQUIRED');
-  const invite = await M.Invite.findOne({ code: String(inviteCode || '').toUpperCase(), usedAt: null, revokedAt: null });
-  if (!invite || (invite.expiresAt && invite.expiresAt < new Date())) throw badRequest("That invite code isn't valid", 'INVITE_INVALID');
-  if (invite.phone && invite.phone !== req.user.phone) throw forbidden('This invite is for a different mobile number', 'INVITE_PHONE_MISMATCH');
-  if (await M.Member.exists({ practiceId: invite.practiceId, userId: req.user._id })) throw conflict('You are already in this practice', 'ALREADY_MEMBER');
-
-  Object.assign(req.user, { name: String(name).trim(), email: email || undefined, language: language || req.user.language, termsAcceptedAt: new Date(), activePracticeId: invite.practiceId });
-  await req.user.save();
-  await M.Member.create({
-    practiceId: invite.practiceId, userId: req.user._id, role: invite.role, departmentId: invite.departmentId,
-    locationIds: invite.locationIds, phone: req.user.phone, invitedBy: invite.createdBy, qualifications, registrationNo,
-  });
-  if (invite.role === 'doctor' && !(await M.DoctorProfile.exists({ userId: req.user._id }))) {
-    await M.DoctorProfile.create({ userId: req.user._id, displayName: req.user.name, degreesSummary: qualifications, registration: registrationNo ? { number: registrationNo } : undefined });
-  }
-  invite.usedBy = req.user._id;
-  invite.usedAt = new Date();
-  await invite.save();
-  res.status(201).json(await accountSummary(req.user));
+r.post('/register', requireAuth, async () => {
+  throw invitesOff();
 });
 
 module.exports = { router: r, issueOtp, checkOtp, accountSummary };

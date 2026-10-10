@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
 
@@ -451,15 +452,21 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen> with LiveData {
   // ── Quick actions ─────────────────────────────────────────────────────────
 
   Widget _quickActions(BuildContext context) {
+    // Consultations and prescriptions are for roles that prescribe (doctors);
+    // assistants and dieticians keep "Record vitals".
+    final quick = [
+      for (final q in _quick)
+        if (!isLive || q.$3 == 'Consult-Vitals' || Session.I.can('prescribe')) q,
+    ];
     return Semantics(
       container: true,
       label: 'Quick actions',
       child: Row(
         children: [
-          for (var i = 0; i < _quick.length; i++) ...[
+          for (var i = 0; i < quick.length; i++) ...[
             if (i > 0) const Gap(8),
             Expanded(
-              child: _QuickTile(icon: _quick[i].$1, label: _quick[i].$2, onTap: () => Nav.go(context, _quick[i].$3)),
+              child: _QuickTile(icon: quick[i].$1, label: quick[i].$2, onTap: () => Nav.go(context, quick[i].$3)),
             ),
           ],
         ],

@@ -88,6 +88,7 @@ import '../screens/doctor/profile_payouts.dart';
 import '../screens/doctor/profile_privacy.dart';
 import '../screens/doctor/profile_help.dart';
 import '../screens/doctor/lab_report.dart';
+import '../screens/doctor/notifications.dart';
 import '../screens/doctor/knowledge_options.dart';
 import '../screens/staff/staff_today.dart';
 import '../screens/staff/staff_patients.dart';
@@ -203,6 +204,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Profile-Privacy': ScreenSpec(stem: 'Profile-Privacy', title: 'Profile · privacy and data', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfilePrivacyScreen()),
   'Profile-Help': ScreenSpec(stem: 'Profile-Help', title: 'Profile · help and support', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileHelpScreen()),
   'Doctor-AI-History': ScreenSpec(stem: 'Doctor-AI-History', title: 'Doctor · AI Assistant · history', group: 'Doctor dashboard & AI Assistant', panel: 'doctor', builder: (_) => const DoctorAiHistoryScreen()),
+  'Notifications': ScreenSpec(stem: 'Notifications', title: 'Notifications (staff)', group: 'Doctor dashboard & AI Assistant', panel: 'doctor', builder: (_) => const NotificationsScreen()),
   'Lab-Report': ScreenSpec(stem: 'Lab-Report', title: 'Patient profile · lab report', group: 'Patient profile · tabs (doctor view)', panel: 'doctor', builder: (_) => const LabReportScreen()),
   'Knowledge-Options': ScreenSpec(stem: 'Knowledge-Options', title: 'Knowledge · entry options', group: 'AI assistant & feedback', panel: 'doctor', builder: (_) => const KnowledgeOptionsSheet(), sheet: true, parent: 'Knowledge-Editor'),
   'Staff-Today': ScreenSpec(stem: 'Staff-Today', title: 'Today', group: 'Front desk', panel: 'staff', builder: (_) => const StaffTodayScreen()),

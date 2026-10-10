@@ -3,7 +3,7 @@ const { Router } = require('express');
 const M = require('../models');
 const E = require('../models/enums');
 const { requireAuth } = require('../middleware/auth');
-const { pick, badRequest, notFound, escapeRegex, paging, forbidden } = require('../lib/http');
+const { pick, badRequest, notFound, escapeRegex, paging, forbidden, isId } = require('../lib/http');
 const storage = require('../services/storage');
 const env = require('../config/env');
 const { sendEmail } = require('../services/email');
@@ -178,15 +178,18 @@ const notifications = Router();
 notifications.use(requireAuth);
 notifications.get('/', async (req, res) => {
   const { limit, skip } = paging(req.query);
-  const q = { userId: req.user._id, ...(req.query.unread === 'true' ? { readAt: null } : {}) };
+  // ?practiceId= : a staff member's bell shows only that clinic's notifications.
+  const scope = { userId: req.user._id, ...(isId(String(req.query.practiceId || '')) ? { practiceId: String(req.query.practiceId) } : {}) };
+  const q = { ...scope, ...(req.query.unread === 'true' ? { readAt: null } : {}) };
   const [items, unread] = await Promise.all([
     M.Notification.find(q).sort({ createdAt: -1 }).skip(skip).limit(limit),
-    M.Notification.countDocuments({ userId: req.user._id, readAt: null }),
+    M.Notification.countDocuments({ ...scope, readAt: null }),
   ]);
   res.json({ items, unread });
 });
 notifications.post('/read-all', async (req, res) => {
-  await M.Notification.updateMany({ userId: req.user._id, readAt: null }, { readAt: new Date() });
+  const scope = { userId: req.user._id, ...(isId(String(req.body.practiceId || '')) ? { practiceId: String(req.body.practiceId) } : {}) };
+  await M.Notification.updateMany({ ...scope, readAt: null }, { readAt: new Date() });
   res.json({ ok: true });
 });
 notifications.post('/:id/read', async (req, res) => {

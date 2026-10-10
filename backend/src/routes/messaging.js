@@ -1,16 +1,17 @@
 // Care, Nutrition, Patient-Thread, Doctor-Messages, Doctor-Messages-New,
 // Chat-Review, Chat-Review-Detail, Chat-Summaries, Doctor-AI, Doctor-AI-Chat.
 const { Router } = require('express');
-const multer = require('multer');
 const M = require('../models');
 const T = require('../lib/time');
-const { requireAuth, staff, patientInPractice, ownPractice } = require('../middleware/auth');
+const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
 const { badRequest, notFound, forbidden, conflict, escapeRegex, paging, isId } = require('../lib/http');
 const storage = require('../services/storage');
 const { careConversation, ensureParticipant, postMessage, markRead } = require('../services/care');
 const assistant = require('../services/assistant');
 
-const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
+const { uploader } = require('../lib/uploads');
+// Chat attachments: photos, PDFs and voice notes.
+const upload = uploader({ kinds: ['image', 'pdf', 'audio'], maxMb: 20, maxFiles: 1 });
 
 /** Thread access for both apps: a participant, or a practice member allowed to chat. */
 async function openConversation(req, id) {
@@ -223,7 +224,7 @@ inbox.get('/contacts', async (req, res) => {
 });
 
 // ── Chat review (flagged AI answers) ──
-inbox.get('/reviews', async (req, res) => {
+inbox.get('/reviews', need('ai'), async (req, res) => {
   const status = req.query.status || 'needs_review';
   const q = { practiceId: req.practiceId, ...(status === 'all' ? {} : { status }) };
   let items = await M.ChatReview.find(q).sort({ createdAt: -1 }).limit(200).populate('patientId', 'name').populate('reviewed.by', 'name');
@@ -237,7 +238,7 @@ inbox.get('/reviews', async (req, res) => {
   res.json({ flagged, items });
 });
 
-inbox.post('/reviews/:id/reviewed', async (req, res) => {
+inbox.post('/reviews/:id/reviewed', need('ai'), async (req, res) => {
   const review = ownPractice(req, await M.ChatReview.findById(req.params.id), 'Review');
   review.status = 'reviewed';
   review.reviewed = { by: req.user._id, at: new Date() };
@@ -246,7 +247,7 @@ inbox.post('/reviews/:id/reviewed', async (req, res) => {
 });
 
 // ── Chat summaries ──
-inbox.get('/summaries', async (req, res) => {
+inbox.get('/summaries', need('ai'), async (req, res) => {
   const day = req.query.date === 'yesterday' ? T.addDays(T.dayStart(), -1) : T.parseDay(req.query.date === 'today' ? undefined : req.query.date);
   if (req.query.refresh === 'true' || !(await M.ChatSummary.exists({ practiceId: req.practiceId, date: day }))) {
     await assistant.summarizeDay(req.practiceId, day);
@@ -259,7 +260,7 @@ inbox.get('/summaries', async (req, res) => {
 
 // ── Doctor AI assistant ──
 const ai = Router();
-ai.use(requireAuth, staff());
+ai.use(requireAuth, staff(), need('ai'));
 
 ai.get('/sessions', async (req, res) => {
   res.json(await M.AiSession.find({ userId: req.user._id, ownerType: 'doctor' }).sort({ lastAt: -1 }).limit(50).populate('patientId', 'name'));
@@ -332,7 +333,8 @@ ai.post('/patients/:patientId/brief', async (req, res) => {
   const aiSvc = require('../services/ai');
   if (!aiSvc.enabled()) throw conflict('Add GEMINI_API_KEY (or ANTHROPIC_API_KEY) to turn on AI briefs', 'AI_DISABLED');
   await assistant.useAiChat(req.practiceId);
-  const summary = await patientSummary(patient, req.practiceId);
+  const { accessFor } = require('../services/access');
+  const summary = await patientSummary(patient, req.practiceId, await accessFor({ userId: req.user._id, practiceId: req.practiceId }, patient));
   const recent = await M.Message.find({ conversationId: { $in: await M.Conversation.find({ patientId: patient._id, practiceId: req.practiceId }).distinct('_id') }, senderType: 'patient', createdAt: { $gte: T.addDays(new Date(), -7) } }).limit(30);
   const out = await aiSvc.completeJson({
     system: 'Write a pre-visit brief for the doctor: a 2-3 sentence summary of the patient\'s current state from the record, and one line on what the patient asked about this week (empty if nothing). Be factual; quote values with dates.',

@@ -8,8 +8,9 @@ const v = (key, fallback = '') => {
   return value === undefined || value === '' ? fallback : value;
 };
 
-const nodeEnv = v('NODE_ENV', 'development');
-const isProd = nodeEnv === 'production';
+// Fail closed: anything other than an explicit development/test setting is production.
+const nodeEnv = v('NODE_ENV', 'production');
+const isProd = !['development', 'test'].includes(nodeEnv);
 
 // Secrets: required in production, a fixed dev value otherwise.
 const secret = (key) => {

@@ -119,6 +119,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const s = await login('+91 98300 41275');
     assert.equal(s.landing, 'Auth-Welcome', 'a new number chooses doctor / patient / invite');
     ctx.doc = api(s.accessToken);
+    ctx.docToken = s.accessToken;
     ctx.docRefresh = s.refreshToken;
     const out = ok(await ctx.doc('POST', '/api/me/practices', { name: 'City Care Clinic', doctorName: 'Dr. Arjun Sen', locationName: 'City Care Clinic — Salt Lake', area: 'Salt Lake', city: 'Kolkata' }), 201);
     ctx.practiceId = out.practice.id;
@@ -167,16 +168,14 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ctx.doctorUserId = me.user.id;
   });
 
-  await step('invite front desk; they register with the code', async () => {
-    const invite = ok(await ctx.doc('POST', '/api/invites', { role: 'front_desk', locationIds: [ctx.locationId] }), 201);
-    assert.match(invite.code, /^[A-Z]{3}-\d{4}$/);
+  await step('owner adds front desk in People (phone + code); they sign in', async () => {
+    assert.equal((await ctx.doc('POST', '/api/invites', { role: 'front_desk' })).status, 410, 'invite codes are off');
+    assert.equal((await ctx.doc('POST', '/api/members', { role: 'front_desk', name: 'Tania Ghosh', phone: '9749681391' })).status, 400, 'phone must be verified');
+    const sent = ok(await ctx.doc('POST', '/api/members/phone-otp', { phone: '9749681391' }));
+    ok(await ctx.doc('POST', '/api/members', { role: 'front_desk', name: 'Tania Ghosh', phone: '9749681391', locationIds: [ctx.locationId], otpCode: sent.devCode }), 201);
     const s = await login('9749681391');
+    assert.equal(s.landing, 'Staff-Today');
     const desk = api(s.accessToken);
-    const preview = ok(await desk('GET', `/api/auth/invites/${invite.code}`));
-    assert.equal(preview.role, 'front_desk');
-    assert.equal((await desk('POST', '/api/auth/register', { inviteCode: invite.code, name: 'Tania Ghosh' })).status, 400, 'terms required');
-    const reg = ok(await desk('POST', '/api/auth/register', { inviteCode: invite.code, name: 'Tania Ghosh', termsAccepted: true, language: 'bn' }), 201);
-    assert.equal(reg.landing, 'Staff-Today');
     ctx.desk = desk;
     const team = ok(await ctx.doc('GET', '/api/members'));
     assert.equal(team.seats.used, 2);
@@ -389,6 +388,60 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: code.display }));
     ok(await doc2('GET', `/api/patients/${ctx.patientId}`));
     assert.equal((await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: code.code })).status, 400, 'codes are single-use');
+    ctx.doc2 = doc2;
+    ctx.doc2Id = s.user.id;
+  });
+
+  await step('privacy: the patient decides what another clinic sees', async () => {
+    const count = async (path) => {
+      const b = ok(await ctx.doc2('GET', path));
+      return Array.isArray(b) ? b.length : (b.items || []).length;
+    };
+    const paths = [`/api/patients/${ctx.patientId}/prescriptions`, `/api/patients/${ctx.patientId}/records`, `/api/patients/${ctx.patientId}/lab-results`, `/api/patients/${ctx.patientId}/vitals`];
+    const shared = [];
+    for (const path of paths) shared.push(await count(path));
+    assert.ok(shared[0] > 0, 'with the consent code the new clinic sees the first clinic\'s prescriptions');
+    // The patient sets the new clinic's doctor to "Not shared".
+    ok(await ctx.pat('PATCH', `/api/patient/care-team/${ctx.doc2Id}`, { accessLevel: 'not_shared' }));
+    for (const path of paths) assert.equal(await count(path), 0, `not shared: ${path} hides the other clinic's data`);
+    const prof = ok(await ctx.doc2('GET', `/api/patients/${ctx.patientId}`));
+    assert.equal(prof.accessLevel, 'not_shared');
+    assert.equal(prof.currentMedicines.length, 0, 'medicines from the other clinic are hidden');
+    assert.equal(prof.latestVitals, null, 'vitals from the other clinic are hidden');
+    assert.ok(prof.allergies.length > 0, 'allergies stay visible for safety');
+    // The first clinic keeps seeing its own records.
+    assert.ok((ok(await ctx.doc('GET', `/api/patients/${ctx.patientId}/prescriptions`)).items || []).length > 0, 'a clinic always sees its own prescriptions');
+    // Prescriptions and tests only.
+    ok(await ctx.pat('PATCH', `/api/patient/care-team/${ctx.doc2Id}`, { accessLevel: 'prescriptions_and_tests' }));
+    assert.ok(await count(paths[0]) > 0, 'prescriptions visible again');
+    assert.equal(await count(paths[3]), 0, 'clinic vitals still hidden at prescriptions-and-tests');
+    ok(await ctx.pat('PATCH', `/api/patient/care-team/${ctx.doc2Id}`, { accessLevel: 'full_record' }));
+  });
+
+  await step('roles: each staff role can only do its job', async () => {
+    // Front desk: no clinical alerts, consult drafts, lab review, AI, reports or exports.
+    for (const [method, path] of [['GET', '/api/alerts'], ['GET', '/api/consultations/pick'], ['GET', '/api/ai/sessions'], ['GET', '/api/reports/summary'], ['GET', '/api/inbox/reviews'], ['GET', '/api/dashboard']]) {
+      assert.equal((await ctx.desk(method, path)).status, 403, `front desk blocked: ${path}`);
+    }
+    ok(await ctx.desk('GET', '/api/payments'));
+    ok(await ctx.desk('GET', '/api/inbox?type=all'));
+    // Add a lab technician (phone + code): can enter results, nothing else clinical.
+    const sent = ok(await ctx.doc('POST', '/api/members/phone-otp', { phone: '9811100077' }));
+    ok(await ctx.doc('POST', '/api/members', { role: 'lab_technician', name: 'Lab Tech', phone: '9811100077', allLocations: true, otpCode: sent.devCode }), 201);
+    const s = await login('9811100077');
+    assert.equal(s.landing, 'Staff-Today', 'lab roles use the desk panel, not the doctor dashboard');
+    const lab = api(s.accessToken);
+    ok(await lab('POST', `/api/patients/${ctx.patientId}/lab-results`, { testName: 'Fasting sugar', collectedAt: '2026-10-01', values: [{ analyte: 'Glucose', value: 98, unit: 'mg/dL', flag: 'normal' }] }), 201);
+    for (const path of ['/api/reports/summary', '/api/billing', '/api/ai/sessions', '/api/alerts', '/api/inbox?type=all', '/api/payments']) {
+      assert.equal((await lab('GET', path)).status, 403, `lab technician blocked: ${path}`);
+    }
+    assert.equal((await lab('POST', '/api/exports', { kind: 'appointment_history', format: 'csv', includeMobiles: true })).status, 403);
+    // Uploads are checked by content: a program renamed .png is refused.
+    const fd = new FormData();
+    fd.append('file', new Blob([Buffer.from('MZ fake program, not an image')], { type: 'image/png' }), 'photo.png');
+    const up = await fetch(`${base}/api/doctor/profile/photo`, { method: 'POST', headers: { authorization: `Bearer ${ctx.docToken}` }, body: fd });
+    assert.equal(up.status, 400, 'fake image rejected');
+    assert.equal((await up.json()).error.code, 'BAD_FILE_TYPE');
   });
 
   await step('knowledge base workflow and feedback', async () => {
@@ -430,7 +483,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
 
   await step('billing limits and exports', async () => {
     const b = ok(await ctx.doc('GET', '/api/billing'));
-    assert.equal(b.usage.seats.used, 2);
+    assert.equal(b.usage.seats.used, 3, 'doctor, front desk, lab technician');
     ok(await ctx.doc('POST', '/api/billing/switch', { planKey: 'clinic' }));
     assert.equal((await ctx.desk('POST', '/api/billing/switch', { planKey: 'starter' })).status, 403, 'owner only');
     for (const format of ['csv', 'xlsx', 'pdf', 'json']) {
@@ -438,7 +491,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       assert.equal(job.status, 'done');
       assert.equal((await fetch(job.url)).status, 200);
     }
-    assert.equal((await ctx.desk('POST', '/api/exports', { kind: 'data_export', format: 'csv', datasets: ['patients'] })).status, 409, 'patient data export is owner only');
+    assert.equal((await ctx.desk('POST', '/api/exports', { kind: 'data_export', format: 'csv', datasets: ['patients'] })).status, 403, 'front desk cannot export patient data');
     const data = ok(await ctx.doc('POST', '/api/exports', { kind: 'data_export', format: 'csv', datasets: ['patients', 'clinical_summary', 'alerts'] }), 201);
     assert.ok(data.rowCount >= 1);
     assert.ok(await M.AuditLog.exists({ action: 'export.create' }), 'exports are audited');

@@ -97,7 +97,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                       radius: 999,
                       background: MP.white,
                       borderColor: MP.line,
-                      onTap: () => Nav.go(context, 'Alerts'),
+                      onTap: () => Nav.go(context, 'Notifications'),
                     ),
                     if (_unread > 0) Positioned(
                       top: 10,

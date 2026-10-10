@@ -164,12 +164,14 @@ const effectiveStatus = (d, now = new Date()) =>
   d.status === 'due' && d.scheduledAt < T.addMinutes(now, -MISSED_AFTER_MIN) ? 'missed' : d.status;
 
 /** Adherence over the last `days` days: overall, per doctor, per medicine, and the slot with most misses. */
-async function adherence(patient, days = 30) {
+/** Adherence over [days]. With [acc] (a clinic viewer) only medicines it may see count. */
+async function adherence(patient, days = 30, acc) {
   const now = new Date();
   const from = T.addDays(T.dayStart(now), -(days - 1));
   await ensureDoses(patient, from, now);
-  const doses = await M.DoseLog.find({ patientId: patient._id, scheduledAt: { $gte: from, $lte: now } });
-  const courses = await M.MedicationCourse.find({ patientId: patient._id });
+  const allCourses = await M.MedicationCourse.find({ patientId: patient._id });
+  const courses = acc ? allCourses.filter((c) => acc.courseVisible(c)) : allCourses;
+  const doses = await M.DoseLog.find({ patientId: patient._id, courseId: { $in: courses.map((c) => c._id) }, scheduledAt: { $gte: from, $lte: now } });
   const courseById = new Map(courses.map((c) => [String(c._id), c]));
   const pct = (taken, total) => (total ? Math.round((taken / total) * 100) : null);
   const tally = () => ({ taken: 0, total: 0 });

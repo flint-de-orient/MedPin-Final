@@ -358,8 +358,10 @@ void main() {
     await _tearDown(t);
   });
 
-  testWidgets('Consult-QuickAdd: registers the patient and starts the consultation', (t) async {
+  testWidgets('Consult-QuickAdd: verifies the number, registers the patient and starts the consultation', (t) async {
     _serve((r) {
+      if (r.url.path == '/api/patients/lookup') return _data('lookup_new');
+      if (r.url.path == '/api/patients/phone-otp') return {'sent': true, 'maskedPhone': '+91 90000 •••02', 'resendInSec': 30, 'devCode': '654321'};
       if (r.method == 'POST' && r.url.path == '/api/patients') {
         return {'id': (_data('start_blank') as Map)['patientId'], 'name': 'Test Blank', 'gender': 'male', 'age': 33};
       }
@@ -373,9 +375,15 @@ void main() {
     await t.enterText(find.byType(TextField).at(2), '33');
     await t.pump();
     await _tapText(t, 'Add and start consultation');
+    await t.pump(const Duration(milliseconds: 400));
+    // The patient reads out the code sent to their phone.
+    expect(_calls('POST', '/api/patients'), isEmpty, reason: 'nothing is registered before the number is verified');
+    expect((_calls('POST', '/api/patients/phone-otp').single.$4 as Map)['phone'], '9000055502');
+    await t.enterText(find.byType(TextField).last, '654321');
+    await t.tap(find.text('Verify').last);
     await _settle(t);
     final body = _calls('POST', '/api/patients').single.$4 as Map;
-    expect(body, {'name': 'Test Blank', 'phone': '9000055502', 'gender': 'male', 'ageYears': 33});
+    expect(body, {'name': 'Test Blank', 'phone': '9000055502', 'gender': 'male', 'ageYears': 33, 'otpCode': '654321'});
     expect(_calls('POST', '/api/consultations'), hasLength(1));
     expect(find.text('Male · New patient · added just now'), findsOneWidget);
     expect(t.takeException(), isNull);

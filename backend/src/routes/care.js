@@ -3,7 +3,7 @@ const { Router } = require('express');
 const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
-const { requireAuth, staff, patientInPractice, ownPractice } = require('../middleware/auth');
+const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
 const { badRequest, notFound, conflict, list, escapeRegex, pick } = require('../lib/http');
 const { notify } = require('../services/notify');
 const { sendWhatsApp } = require('../services/push');
@@ -119,7 +119,7 @@ r.post('/referrals/:id/seen', async (req, res) => {
 
 // ── Alerts ──
 const SEVERITY_ORDER = { emergency: 0, urgent: 1, watch: 2 };
-r.get('/alerts', async (req, res) => {
+r.get('/alerts', need('alerts'), async (req, res) => {
   const q = { practiceId: req.practiceId };
   const status = req.query.status || 'open';
   if (status !== 'all') q.status = status;
@@ -147,7 +147,7 @@ const applyNote = (alert, req) => {
   if (req.body.note) Object.assign(alert, { note: req.body.note, noteBy: req.user._id, noteAt: new Date() });
 };
 
-r.post('/alerts/:id/acknowledge', async (req, res) => {
+r.post('/alerts/:id/acknowledge', need('manageAlerts'), async (req, res) => {
   const a = await getAlert(req);
   if (a.status !== 'open') throw conflict('Only open alerts can be acknowledged');
   a.status = 'acknowledged';
@@ -157,7 +157,7 @@ r.post('/alerts/:id/acknowledge', async (req, res) => {
   res.json(a);
 });
 
-r.post('/alerts/:id/resolve', async (req, res) => {
+r.post('/alerts/:id/resolve', need('manageAlerts'), async (req, res) => {
   const a = await getAlert(req);
   if (a.status === 'resolved') throw conflict('This alert is already resolved');
   a.status = 'resolved';
@@ -169,7 +169,7 @@ r.post('/alerts/:id/resolve', async (req, res) => {
   res.json(a);
 });
 
-r.post('/alerts/:id/note', async (req, res) => {
+r.post('/alerts/:id/note', need('manageAlerts'), async (req, res) => {
   const a = await getAlert(req);
   if (!req.body.note) throw badRequest('Write a note');
   applyNote(a, req);
@@ -177,7 +177,7 @@ r.post('/alerts/:id/note', async (req, res) => {
   res.json(a);
 });
 
-r.post('/alerts', async (req, res) => {
+r.post('/alerts', need('manageAlerts'), async (req, res) => {
   await patientInPractice(req, req.body.patientId);
   if (!E.ALERT_SEVERITIES.includes(req.body.severity) || !E.ALERT_KINDS.includes(req.body.kind)) throw badRequest('Choose a severity and kind');
   if (!req.body.detail) throw badRequest('Describe the alert');

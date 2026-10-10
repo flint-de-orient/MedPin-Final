@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'add_patient.dart';
 import 'common_d5.dart';
 
 /// Design: Consult-QuickAdd.dc.html — "Consultation · add new patient".
@@ -82,11 +83,24 @@ class _ConsultQuickaddSheetState extends State<ConsultQuickaddSheet> {
     if (age == null) return toast(context, 'Enter the age');
     setState(() => _busy = true);
     try {
+      // Already on MedPin? Link with the patient's consent code instead.
+      final look = await Api.I.get('/api/patients/lookup', query: {'phone': phone});
+      if (look is Map && look['exists'] == true && look['linked'] != true) {
+        throw const ApiException(409, 'PATIENT_EXISTS', 'This number already has a MedPin record.');
+      }
+      if (!mounted) return;
+      // New number: the patient confirms it with the code sent to their phone.
+      final code = await verifyPatientPhone(context, phone);
+      if (code == null || !mounted) {
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
       final p = await Api.I.post('/api/patients', {
         'name': name,
         'phone': phone,
         'gender': const ['female', 'male', 'other'][_gender],
         'ageYears': age,
+        'otpCode': code,
       });
       final c = await Api.I.post('/api/consultations', {'patientId': (p as Map)['id']});
       if (!mounted) return;

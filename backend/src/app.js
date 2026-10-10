@@ -41,6 +41,7 @@ function createApp() {
 
   app.get('/health', async (_req, res) => {
     const db = mongoose.connection.readyState === 1;
+    if (env.isProd) return res.status(db ? 200 : 503).json({ ok: db });
     res.status(db ? 200 : 503).json({
       ok: db,
       db: db ? 'connected' : 'disconnected',

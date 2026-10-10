@@ -42,7 +42,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
     final r = await Future.wait([
       Api.I.get('/api/me'),
       Api.I.get('/api/locations'),
-      Api.I.get('/api/notifications', query: {'limit': '1'}),
+      Api.I.get('/api/notifications', query: {'limit': '1', if (Session.I.practiceId != null) 'practiceId': Session.I.practiceId}),
     ]);
     final me = (r[0] as Map).cast<String, dynamic>();
     final user = me.obj('user');

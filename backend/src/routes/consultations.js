@@ -3,7 +3,7 @@
 const { Router } = require('express');
 const M = require('../models');
 const T = require('../lib/time');
-const { requireAuth, staff, patientInPractice, ownPractice } = require('../middleware/auth');
+const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
 const { pick, badRequest, notFound, conflict, escapeRegex } = require('../lib/http');
 const storage = require('../services/storage');
 const { checkItems, patientSummary, issueConsultation } = require('../services/clinical');
@@ -11,6 +11,7 @@ const { careConversation, postMessage } = require('../services/care');
 const { transition } = require('../services/scheduling');
 const { notify } = require('../services/notify');
 
+const { accessFor } = require('../services/access');
 const r = Router();
 r.use(requireAuth, staff());
 
@@ -20,7 +21,7 @@ const getConsult = async (req) => {
 };
 
 // Consult-Pick: waiting now + recent patients + search.
-r.get('/consultations/pick', async (req, res) => {
+r.get('/consultations/pick', need('prescribe'), async (req, res) => {
   const today = T.dayStart();
   const text = String(req.query.q || '').trim();
   const ids = await M.PatientEnrolment.find({ practiceId: req.practiceId, status: 'linked' }).distinct('patientId');
@@ -71,19 +72,20 @@ r.post('/consultations', staff({ perm: 'prescribe' }), async (req, res) => {
   return res.status(201).json(consult);
 });
 
-r.get('/consultations/:id', async (req, res) => {
+r.get('/consultations/:id', need('clinical'), async (req, res) => {
   const c = await getConsult(req);
   const patient = await M.Patient.findById(c.patientId);
   const [summary, vitals, previous] = await Promise.all([
-    patientSummary(patient, req.practiceId),
+    accessFor({ userId: req.user._id, practiceId: req.practiceId }, patient).then((acc) => patientSummary(patient, req.practiceId, acc)),
     c.vitalsId ? M.Vitals.findById(c.vitalsId) : null,
-    M.Consultation.findOne({ patientId: c.patientId, status: { $ne: 'draft' }, _id: { $ne: c._id } }).sort({ startedAt: -1 }),
+    accessFor({ userId: req.user._id, practiceId: req.practiceId }, patient).then((acc) =>
+      M.Consultation.findOne({ patientId: c.patientId, ...acc.consultationFilter(), status: { $ne: 'draft' }, _id: { $ne: c._id } }).sort({ startedAt: -1 })),
   ]);
   res.json({ consultation: c, vitals, summary, previousDiagnoses: previous?.diagnoses || [], previousVisitAt: previous?.startedAt || null });
 });
 
 const RX_ITEM_FIELDS = ['medicineId', 'name', 'strength', 'form', 'dose', 'frequency', 'weekday', 'foodRelation', 'instructions', 'duration', 'quantity', 'change', 'caution', 'entrySource'];
-r.patch('/consultations/:id', async (req, res) => {
+r.patch('/consultations/:id', need('prescribe'), async (req, res) => {
   const c = await getConsult(req);
   if (c.status !== 'draft') throw conflict('This prescription was already generated', 'ALREADY_ISSUED');
   const body = pick(req.body, ['chiefComplaint', 'complaintLanguage', 'printVitalsOnRx', 'diagnoses', 'labOrders', 'advice', 'validity', 'followUp', 'locationId']);
@@ -116,14 +118,14 @@ r.patch('/consultations/:id', async (req, res) => {
 });
 
 // Allergy clashes and catalog strength warnings for the draft medicines.
-r.get('/consultations/:id/checks', async (req, res) => {
+r.get('/consultations/:id/checks', need('prescribe'), async (req, res) => {
   const c = await getConsult(req);
   const patient = await M.Patient.findById(c.patientId);
   res.json(await checkItems(patient, c.medications));
 });
 
 // "From your past prescriptions" and "Suggested for this diagnosis".
-r.get('/consultations/:id/suggestions', async (req, res) => {
+r.get('/consultations/:id/suggestions', need('prescribe'), async (req, res) => {
   const c = await getConsult(req);
   const past = await M.Prescription.find({ patientId: c.patientId, doctorId: req.user._id }).sort({ issuedAt: -1 }).limit(3);
   const pastItems = [...new Map(past.flatMap((p) => p.items).map((i) => [`${i.name} ${i.strength}`, i])).values()];

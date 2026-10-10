@@ -1,11 +1,10 @@
 // Doctor-Patients, Doctor-Patients-Search, Add-Patient, Add-Patient-Existing,
 // Consult-QuickAdd, Patient-Profile, PP-Summary, PP-Tests, PP-Prescriptions, PP-Treatment.
 const { Router } = require('express');
-const multer = require('multer');
 const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
-const { requireAuth, staff, patientInPractice } = require('../middleware/auth');
+const { requireAuth, staff, need, patientInPractice } = require('../middleware/auth');
 const { pick, badRequest, conflict, notFound, normalizePhone, escapeRegex, paging, forbidden } = require('../lib/http');
 const { hmac, safeEqual } = require('../lib/security');
 const storage = require('../services/storage');
@@ -15,7 +14,9 @@ const { notify } = require('../services/notify');
 const { extractLabReport } = require('../services/assistant');
 const { issueOtp, checkOtp } = require('./auth');
 
-const upload = multer({ limits: { fileSize: 20 * 1024 * 1024, files: 10 } });
+const { uploader } = require('../lib/uploads');
+const upload = uploader({ kinds: ['image', 'pdf'], maxMb: 10, maxFiles: 10 });
+const { accessFor } = require('../services/access');
 const r = Router();
 r.use(requireAuth, staff({ perm: 'viewPatients' }));
 const canEdit = (req) => {
@@ -86,11 +87,14 @@ r.post('/patients', async (req, res) => {
   if (await M.Patient.exists({ phone })) {
     throw conflict("This number already has a MedPin record. Ask the patient for their consent code.", 'PATIENT_EXISTS');
   }
-  if (otpCode) await checkOtp(phone, 'verify_patient_phone', otpCode);
+  // Consent: the patient confirms the number with the code sent to it. Without
+  // this a clinic could create a record that is auto-linked at the patient's first sign-in.
+  if (!otpCode) throw badRequest("Verify the patient's mobile number with the code sent to it", 'OTP_REQUIRED');
+  await checkOtp(phone, 'verify_patient_phone', otpCode);
   const user = await M.User.findOne({ phone });
   const patient = await M.Patient.create({
     name: String(name).trim(), phone, gender, ageYears, ageRecordedAt: ageYears != null ? new Date() : undefined,
-    dateOfBirth, userId: user?._id, phoneVerifiedAt: otpCode ? new Date() : undefined,
+    dateOfBirth, userId: user?._id, phoneVerifiedAt: new Date(),
     addresses: address ? [{ line: address, isDefault: true }] : [], createdByPracticeId: req.practiceId, createdBy: req.user._id,
   });
   await M.PatientEnrolment.create({ patientId: patient._id, practiceId: req.practiceId, status: 'linked', linkedBy: req.user._id, linkedAt: new Date() });
@@ -134,17 +138,22 @@ r.post('/patients/link', async (req, res) => {
   res.json(listRow(patient));
 });
 
+/** What this staff member may see of [patient] (services/access.js). */
+const viewer = (req, patient) => accessFor({ userId: req.user._id, practiceId: req.practiceId }, patient);
+
 r.get('/patients/:id', async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
+  const acc = await viewer(req, patient);
   const [summary, adh, careTeam, plan, enrolment] = await Promise.all([
-    patientSummary(patient, req.practiceId),
-    adherence(patient, 30),
+    patientSummary(patient, req.practiceId, acc),
+    adherence(patient, 30, acc),
     M.CareTeamAccess.find({ patientId: patient._id, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name'),
     M.TreatmentPlan.findOne({ patientId: patient._id, practiceId: req.practiceId }).sort({ updatedAt: -1 }),
     M.PatientEnrolment.findOne({ patientId: patient._id, practiceId: req.practiceId }),
   ]);
   res.json({
     ...summary,
+    accessLevel: acc.level,
     adherence: adh,
     careTeam: careTeam.map((c) => ({ userId: c.userId?._id, name: c.userId?.name, role: c.role, accessLevel: c.accessLevel, since: c.since })),
     treatmentPlan: plan,
@@ -211,7 +220,8 @@ r.delete('/patients/:id/allergies/:aid', async (req, res) => {
 r.get('/patients/:id/vitals', async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
   const since = T.addDays(new Date(), -(Number(req.query.days) || 90));
-  res.json(await M.Vitals.find({ patientId: patient._id, recordedAt: { $gte: since } }).sort({ recordedAt: -1 }).limit(200));
+  const acc = await viewer(req, patient);
+  res.json(await M.Vitals.find({ patientId: patient._id, ...acc.vitalsFilter(), recordedAt: { $gte: since } }).sort({ recordedAt: -1 }).limit(200));
 });
 
 const VITAL_FIELDS = ['bpSystolic', 'bpDiastolic', 'pulse', 'spo2', 'temperatureF', 'weightKg', 'heightCm', 'bloodSugar', 'sugarType', 'note', 'appointmentId', 'consultationId'];
@@ -243,9 +253,10 @@ r.post('/patients/:id/vitals', async (req, res) => {
 // ── Records & tests ──
 r.get('/patients/:id/records', async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
-  const q = { patientId: patient._id, deletedAt: null };
-  if (req.query.kind) q.kind = req.query.kind;
-  if (req.query.origin) q.origin = req.query.origin;
+  const acc = await viewer(req, patient);
+  const q = { patientId: patient._id, deletedAt: null, ...(await acc.recordFilter()) };
+  if (req.query.kind) q.kind = String(req.query.kind);
+  if (req.query.origin) q.origin = String(req.query.origin);
   const records = await M.MedicalRecord.find(q).sort({ recordDate: -1 }).limit(200);
   res.json(records.map((x) => ({ ...x.toJSON(), files: x.files.map(storage.withUrl) })));
 });
@@ -273,7 +284,8 @@ r.post('/patients/:id/records', upload.array('files', 10), async (req, res) => {
 
 r.get('/patients/:id/lab-results', async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
-  const q = { patientId: patient._id };
+  const acc = await viewer(req, patient);
+  const q = { patientId: patient._id, ...(await acc.labFilter()) };
   if (req.query.filter === 'abnormal') q.abnormalCount = { $gt: 0 };
   if (req.query.filter === 'normal') q.abnormalCount = 0;
   const results = await M.LabResult.find(q).sort({ collectedAt: -1 }).limit(200);
@@ -287,8 +299,9 @@ r.get('/patients/:id/lab-results', async (req, res) => {
 r.get('/patients/:id/trends/:analyte', async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
   const name = new RegExp(`^${escapeRegex(req.params.analyte)}$`, 'i');
+  const acc = await viewer(req, patient);
   const rows = await M.LabResult.aggregate([
-    { $match: { patientId: patient._id } },
+    { $match: { patientId: patient._id, ...(await acc.labFilter()) } },
     { $unwind: '$values' },
     { $match: { 'values.analyte': name } },
     { $sort: { collectedAt: 1 } },
@@ -298,8 +311,7 @@ r.get('/patients/:id/trends/:analyte', async (req, res) => {
 });
 
 const ANALYTE_FIELDS = ['analyte', 'value', 'valueText', 'unit', 'refLow', 'refHigh', 'refText', 'flag'];
-r.post('/patients/:id/lab-results', async (req, res) => {
-  canEdit(req);
+r.post('/patients/:id/lab-results', need('labs'), async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
   const values = (req.body.values || []).map((v) => pick(v, ANALYTE_FIELDS));
   const result = await M.LabResult.create({
@@ -320,8 +332,11 @@ r.get('/lab-results/:id', async (req, res) => {
   const result = await M.LabResult.findById(req.params.id).populate('reviewed.by', 'name');
   if (!result) throw notFound('Result');
   const patient = await patientInPractice(req, result.patientId);
-  const record = result.recordId ? await M.MedicalRecord.findById(result.recordId) : null;
-  const earlier = await M.LabResult.find({ patientId: patient._id, _id: { $ne: result._id }, collectedAt: { $lt: result.collectedAt } }).sort({ collectedAt: -1 }).limit(20);
+  const acc = await viewer(req, patient);
+  const labQ = await acc.labFilter();
+  if (!(await M.LabResult.exists({ _id: result._id, ...labQ }))) throw notFound('Result');
+  const record = result.recordId ? await M.MedicalRecord.findOne({ _id: result.recordId, ...(await acc.recordFilter()) }) : null;
+  const earlier = await M.LabResult.find({ patientId: patient._id, ...labQ, _id: { $ne: result._id }, collectedAt: { $lt: result.collectedAt } }).sort({ collectedAt: -1 }).limit(20);
   const previous = (analyte) => {
     for (const e of earlier) {
       const v = e.values.find((x) => x.analyte.toLowerCase() === analyte.toLowerCase());
@@ -337,7 +352,7 @@ r.get('/lab-results/:id', async (req, res) => {
   });
 });
 
-r.post('/lab-results/:id/reviewed', async (req, res) => {
+r.post('/lab-results/:id/reviewed', need('labReview'), async (req, res) => {
   const result = await M.LabResult.findById(req.params.id);
   if (!result) throw notFound('Result');
   await patientInPractice(req, result.patientId);
@@ -348,7 +363,8 @@ r.post('/lab-results/:id/reviewed', async (req, res) => {
 
 r.get('/patients/:id/prescriptions', async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
-  const all = await M.Prescription.find({ patientId: patient._id }).sort({ issuedAt: -1 });
+  const acc = await viewer(req, patient);
+  const all = await M.Prescription.find({ patientId: patient._id, ...acc.rxFilter() }).sort({ issuedAt: -1 });
   const filter = req.query.filter || 'all';
   const items = all.filter((x) => filter === 'all' || (filter === 'this_clinic' ? String(x.practiceId) === String(req.practiceId) : String(x.practiceId) !== String(req.practiceId) || x.source !== 'this_clinic'));
   res.json({
@@ -360,10 +376,12 @@ r.get('/patients/:id/prescriptions', async (req, res) => {
 r.get('/patients/:id/adherence', async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
   const days = Math.min(Number(req.query.days) || 30, 180);
-  const now = adherence(patient, days);
-  const prev = await M.DoseLog.find({ patientId: patient._id, scheduledAt: { $gte: T.addDays(new Date(), -2 * days), $lt: T.addDays(new Date(), -days) } });
+  const acc = await viewer(req, patient);
+  const visible = (await M.MedicationCourse.find({ patientId: patient._id }, 'doctorId')).filter((c) => acc.courseVisible(c)).map((c) => c._id);
+  const now = adherence(patient, days, acc);
+  const prev = await M.DoseLog.find({ patientId: patient._id, courseId: { $in: visible }, scheduledAt: { $gte: T.addDays(new Date(), -2 * days), $lt: T.addDays(new Date(), -days) } });
   const prevPct = prev.length ? Math.round((prev.filter((d) => d.status === 'taken').length / prev.length) * 100) : null;
-  const week = await M.DoseLog.find({ patientId: patient._id, scheduledAt: { $gte: T.addDays(T.dayStart(), -6) } }).sort({ scheduledAt: 1 });
+  const week = await M.DoseLog.find({ patientId: patient._id, courseId: { $in: visible }, scheduledAt: { $gte: T.addDays(T.dayStart(), -6) } }).sort({ scheduledAt: 1 });
   const { effectiveStatus } = require('../services/care');
   res.json({ ...(await now), previousPct: prevPct, week: week.map((d) => ({ at: d.scheduledAt, slot: d.slot, courseId: d.courseId, status: effectiveStatus(d) })) });
 });

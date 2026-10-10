@@ -1,16 +1,15 @@
 // Practice, Clinics, Clinic-Editor, Departments, People, People-Add, People-Member.
 const { Router } = require('express');
-const multer = require('multer');
 const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
 const { requireAuth, staff, ownerOnly, ownPractice } = require('../middleware/auth');
 const { pick, badRequest, notFound, conflict, normalizePhone } = require('../lib/http');
-const { randomDigits } = require('../lib/security');
 const storage = require('../services/storage');
 const { issueOtp, checkOtp } = require('./auth');
 
-const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } });
+const { uploader } = require('../lib/uploads');
+const upload = uploader({ kinds: ['image'], maxMb: 5, maxFiles: 1 });
 const r = Router();
 r.use(requireAuth, staff());
 
@@ -256,11 +255,13 @@ r.post('/members', ownerOnly, async (req, res) => {
   if (!E.MEMBER_ROLES.includes(role)) throw badRequest('Choose a role');
   if (!name) throw badRequest('Enter the full name');
   const phone = normalizePhone(req.body.phone);
-  if (otpCode) await checkOtp(phone, 'verify_member_phone', otpCode);
+  // The new team member confirms their number with the code sent to it.
+  if (!otpCode) throw badRequest('Verify their mobile number with the code sent to it', 'OTP_REQUIRED');
+  await checkOtp(phone, 'verify_member_phone', otpCode);
   const s = await seats(req.practiceId);
   if (s.limit != null && s.used >= s.limit) throw conflict(`All ${s.limit} seats on the ${s.plan} plan are used`, 'NO_SEATS', s);
   let user = await M.User.findOne({ phone });
-  if (!user) user = await M.User.create({ phone, name, phoneVerifiedAt: otpCode ? new Date() : undefined });
+  if (!user) user = await M.User.create({ phone, name, phoneVerifiedAt: new Date() });
   if (await M.Member.exists({ practiceId: req.practiceId, userId: user._id })) throw conflict('This person is already on the team');
   const member = await M.Member.create({
     practiceId: req.practiceId, userId: user._id, role, departmentId, locationIds, allLocations: Boolean(allLocations),
@@ -296,24 +297,11 @@ r.patch('/members/:id', ownerOnly, async (req, res) => {
 });
 
 // ── Invites (Register step 2) ──
-r.post('/invites', ownerOnly, async (req, res) => {
-  const { role, locationIds = [], departmentId, name } = req.body;
-  if (!E.MEMBER_ROLES.includes(role)) throw badRequest('Choose a role');
-  const practice = await M.Practice.findById(req.practiceId);
-  const prefix = (practice.name.replace(/[^A-Za-z]/g, '').toUpperCase() + 'XXX').slice(0, 3);
-  let invite;
-  for (let i = 0; i < 5 && !invite; i += 1) {
-    try {
-      invite = await M.Invite.create({
-        code: `${prefix}-${randomDigits(4)}`, practiceId: req.practiceId, role, locationIds, departmentId, name,
-        phone: req.body.phone ? normalizePhone(req.body.phone) : undefined, createdBy: req.user._id,
-        expiresAt: T.addDays(new Date(), 14),
-      });
-    } catch (err) {
-      if (err.code !== 11000) throw err;
-    }
-  }
-  res.status(201).json(invite);
+// Invite codes are switched off: staff are added in People with their phone
+// number (and its code), then simply sign in.
+const INVITES_OFF = () => Object.assign(new Error('Invite codes are off. Add the person in People with their mobile number.'), { status: 410, code: 'INVITES_OFF' });
+r.post('/invites', ownerOnly, async () => {
+  throw INVITES_OFF();
 });
 
 r.get('/invites', ownerOnly, async (req, res) => {
