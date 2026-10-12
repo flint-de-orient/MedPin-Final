@@ -133,6 +133,18 @@ function createApp() {
       if (req.accepts(['html', 'json']) === 'json') return res.json({ ok: true, subscription: sub });
       res.send(page('Paid', '<h2>Paid ✓</h2><p>You can go back to the MedPin app.</p>'));
     });
+    app.get('/dev/pay/order/:orderId', async (req, res) => {
+      const o = /^[a-f\d]{24}$/i.test(req.params.orderId) ? await M.Order.findById(req.params.orderId).populate('pharmacyId', 'name') : null;
+      if (!o) return res.status(404).send(page('Not found', '<h2>Order not found</h2>'));
+      if (o.pay?.status === 'paid') return res.send(page('Paid', '<h2>Already paid ✓</h2>'));
+      res.send(page('Pay for medicines', `<h2>Medicines</h2><p>${o.pharmacyId?.name || ''}</p>${button(o.total)}`));
+    });
+    app.post('/dev/pay/order/:orderId', async (req, res) => {
+      const o = /^[a-f\d]{24}$/i.test(req.params.orderId) && (await pay.orderPaid(req.params.orderId));
+      if (!o) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Order not found or already paid' } });
+      if (req.accepts(['html', 'json']) === 'json') return res.json({ ok: true, order: o });
+      res.send(page('Paid', '<h2>Paid ✓</h2><p>You can go back to the MedPin app.</p>'));
+    });
     app.get('/dev/pay/:paymentId', async (req, res) => {
       const p = /^[a-f\d]{24}$/i.test(req.params.paymentId) ? await M.Payment.findById(req.params.paymentId).populate('locationId', 'name') : null;
       if (!p) return res.status(404).send(page('Not found', '<h2>Payment not found</h2>'));

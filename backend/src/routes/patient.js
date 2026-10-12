@@ -1049,9 +1049,28 @@ r.post('/orders', async (req, res) => {
   });
   cart.items = [];
   await cart.save();
+  // "Pay online now": a payment link the app opens; otherwise cash on delivery / at the counter.
+  let payUrl = null;
+  if (req.body.payOnline === true || req.body.payOnline === 'true') {
+    payUrl = await require('../services/payments').orderLink(order, req.patient, pharmacy.name).catch((err) => {
+      console.warn('[order pay]', err.message);
+      return null;
+    });
+  }
   await require('../services/orders').notifyPharmacy(order, pharmacy, req.patient, pharmacyToken).catch((err) => console.warn('[order]', err.message));
-  // No online payment yet: paid in cash on delivery or at the pharmacy counter.
-  res.status(201).json({ ...order.toJSON(), payment: mode === 'delivery' ? 'cash_on_delivery' : 'pay_at_pharmacy', pharmacyName: pharmacy.name });
+  res.status(201).json({
+    ...order.toJSON(), pharmacyName: pharmacy.name, payUrl,
+    payment: payUrl ? 'online' : mode === 'delivery' ? 'cash_on_delivery' : 'pay_at_pharmacy',
+  });
+});
+
+// Pay an order online later (or again, if the first link wasn't used).
+r.post('/orders/:id/pay', async (req, res) => {
+  const order = await M.Order.findOne({ _id: req.params.id, patientId: req.patient._id }).populate('pharmacyId', 'name');
+  if (!order) throw notFound('Order');
+  if (['delivered', 'picked_up'].includes(order.status) && order.pay?.method !== 'online') throw conflict('This order was already paid at the pharmacy', 'ALREADY_PAID');
+  const url = await require('../services/payments').orderLink(order, req.patient, order.pharmacyId?.name);
+  res.json({ url, amount: order.total });
 });
 
 r.post('/orders/:id/cancel', async (req, res) => {

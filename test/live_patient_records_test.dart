@@ -273,6 +273,10 @@ void main() {
     await _tap(t, find.text('QuickMeds'));
     expect(find.text('₹243'), findsWidgets);
     await _tap(t, find.text('Place order'));
+    // How to pay: online now, or on delivery.
+    expect(find.text('How would you like to pay?'), findsOneWidget);
+    expect(find.text('Pay ₹243 online now'), findsOneWidget);
+    await _tap(t, find.text('Pay on delivery'));
     expect(_body('POST', '/api/patient/orders'), {
       'pharmacyId': '6ac8d12dbfcb2f5a9d64d6ba',
       'mode': 'delivery',

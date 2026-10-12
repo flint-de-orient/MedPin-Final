@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../core/tokens.dart';
@@ -10,6 +10,7 @@ import '../data/config.dart';
 import '../data/session.dart';
 import 'launcher.dart';
 import '../data/push.dart';
+import '../widgets/i18n.dart';
 
 /// Hero tag shared by the splash lockup and the launcher's header logo.
 const kLogoHeroTag = 'medpin-logo';

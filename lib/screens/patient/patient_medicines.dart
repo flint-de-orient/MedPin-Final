@@ -1334,6 +1334,15 @@ class _OrdersSheet extends StatelessWidget {
               final at = F.date(o['createdAt']);
               final items = o.list('items');
               final cancellable = const {'placed', 'confirmed'}.contains(o.str('status'));
+              final pay = o.obj('pay');
+              final payNote = switch (pay.str('status')) {
+                'paid' => 'paid online',
+                'refunded' => 'refunded',
+                'refund_pending' => 'refund on its way',
+                _ => pay.str('method') == 'online' ? 'not paid yet' : null,
+              };
+              // Unpaid and not yet handed over: can still be paid online.
+              final payable = isLive && pay.str('status') != 'paid' && !const {'cancelled', 'delivered', 'picked_up'}.contains(o.str('status'));
               final row = P3Row(
                 o.obj('pharmacyId').str('name', 'Pharmacy'),
                 [
@@ -1341,21 +1350,47 @@ class _OrdersSheet extends StatelessWidget {
                   '${items.length} ${items.length == 1 ? 'medicine' : 'medicines'}',
                   p3Rupees(o.numOr('total')),
                   o.str('mode') == 'pickup' ? 'pick up' : 'delivery',
+                  if (payNote != null) payNote,
                   if (cancellable && o.str('etaText').isNotEmpty) o.str('etaText'),
-                  if (cancellable) 'tap to cancel',
+                  if (cancellable || payable) 'tap for options',
                 ].join(' · '),
                 first: i == 0,
                 trailing: P2Pill(p3Cap(o.str('status').replaceAll('_', ' ')), bg: o.str('status') == 'cancelled' ? MP.fill : MP.primarySoft, fg: o.str('status') == 'cancelled' ? MP.ink3 : MP.primary),
               );
-              if (!cancellable || !isLive) return row;
+              if ((!cancellable && !payable) || !isLive) return row;
+              final paid = pay.str('status') == 'paid';
               return Tap(
                 onTap: () async {
                   final nav = Navigator.of(context);
-                  final yes = await d4Confirm(context, title: 'Cancel this order?', body: 'The pharmacy is told straight away.', confirm: 'Cancel order');
+                  final choice = await openSheet<String>(
+                    context,
+                    (ctx) => MpSheet(
+                      title: o.obj('pharmacyId').str('name', 'Your order'),
+                      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        if (payable) ...[MpButton('Pay ${p3Rupees(o.numOr('total'))} online', onTap: () => Navigator.pop(ctx, 'pay')), const Gap(10)],
+                        if (cancellable)
+                          MpButton(paid ? 'Cancel order · get a refund' : 'Cancel order', kind: MpBtn.secondary, onTap: () => Navigator.pop(ctx, 'cancel')),
+                      ]),
+                    ),
+                  );
+                  if (!context.mounted || choice == null) return;
+                  if (choice == 'pay') {
+                    final r = await runAction(context, () => Api.I.post('/api/patient/orders/${o['id']}/pay'));
+                    if (r is! Map || !context.mounted) return;
+                    await p2Open(context, r['url'] as String?, failed: "Couldn't open the payment page");
+                    nav.pop(true);
+                    return;
+                  }
+                  final yes = await d4Confirm(
+                    context,
+                    title: 'Cancel this order?',
+                    body: paid ? 'The pharmacy is told straight away and your money is refunded.' : 'The pharmacy is told straight away.',
+                    confirm: 'Cancel order',
+                  );
                   if (!yes || !context.mounted) return;
                   final r = await runAction(context, () => Api.I.post('/api/patient/orders/${o['id']}/cancel'));
                   if (r == null || !context.mounted) return;
-                  toast(context, 'Order cancelled');
+                  toast(context, paid ? 'Order cancelled · refund started' : 'Order cancelled');
                   nav.pop(true);
                 },
                 radius: 12,

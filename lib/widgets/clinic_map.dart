@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/api.dart';
@@ -15,14 +15,14 @@ import 'mp.dart';
 /// A pin set on the clinic map, with the address found there (if any).
 typedef MapPin = ({double lat, double lng, Map<String, dynamic>? place});
 
-/// The clinic's place on a real street map.
+/// The clinic's place on a real street map, picked like a ride app:
 ///
-/// - Street map (OpenStreetMap data, CARTO "Voyager" style) with a 3D tilt.
-/// - Drag the map to put the pin on the entrance; zoom, recenter.
-/// - "Use my location" and address search jump the map there.
-/// - Shows the address found under the pin ("Use this address").
-/// - Opens Google Maps / directions to the pin.
-/// [onChanged] fires when the pin moves (after the map settles).
+/// - Move the map freely: drag any way, pinch to zoom, turn with two fingers
+///   (all the way round). The pin stays in the middle.
+/// - When the map stops, that spot is the pin and the address below updates.
+/// - 3D tilt or flat 2D; a compass appears once the map is turned (tap = north up).
+/// - Without a saved pin it opens where the phone is; address search jumps there.
+/// [onChanged] fires when the pin settles on a new spot.
 class ClinicMap extends StatefulWidget {
   final double? lat;
   final double? lng;
@@ -32,7 +32,10 @@ class ClinicMap extends StatefulWidget {
 
   /// Fills the address fields from what was found under the pin.
   final ValueChanged<Map<String, dynamic>>? onUseAddress;
-  const ClinicMap({super.key, this.lat, this.lng, this.label, this.editable = true, this.onChanged, this.onUseAddress});
+
+  /// Fill the address by itself when the pin settles (e.g. the field is empty).
+  final bool autoFillAddress;
+  const ClinicMap({super.key, this.lat, this.lng, this.label, this.editable = true, this.onChanged, this.onUseAddress, this.autoFillAddress = false});
 
   /// Widget tests have no network: the map draws a plain backdrop instead of tiles.
   static bool offline = Platform.environment.containsKey('FLUTTER_TEST');
@@ -48,7 +51,9 @@ class _ClinicMapState extends State<ClinicMap> {
   late LatLng _pin = widget.lat != null && widget.lng != null ? LatLng(widget.lat!, widget.lng!) : _kolkata;
   late bool _hasPin = widget.lat != null && widget.lng != null;
   bool _tilt = true;
-  bool _moving = false;
+  bool _moving = false; // the map is being moved right now (pin lifted)
+  bool _touched = false; // moved at least once (the hint then goes away)
+  double _rotation = 0;
   bool _searching = false;
   Map<String, dynamic>? _place;
   List<Map<String, dynamic>> _results = const [];
@@ -57,7 +62,18 @@ class _ClinicMapState extends State<ClinicMap> {
   @override
   void initState() {
     super.initState();
-    if (_hasPin) _lookup(_pin);
+    if (_hasPin) {
+      _lookup(_pin);
+    } else if (widget.editable && isLive) {
+      _startHere();
+    }
+  }
+
+  /// No pin yet: open where the phone is (asks for location once).
+  Future<void> _startHere() async {
+    final p = await Where.here();
+    if (p == null || !mounted || _hasPin) return;
+    _goTo(LatLng(p.lat, p.lng));
   }
 
   @override
@@ -92,15 +108,11 @@ class _ClinicMapState extends State<ClinicMap> {
     if (!isLive) return;
     try {
       final r = await Api.I.get('/api/geo/reverse', query: {'lat': '${p.latitude}', 'lng': '${p.longitude}'}) as Map;
-      if (mounted && _pin == p) setState(() => _place = (r['place'] as Map?)?.cast<String, dynamic>());
+      if (!mounted || _pin != p) return;
+      final place = (r['place'] as Map?)?.cast<String, dynamic>();
+      setState(() => _place = place);
+      if (place != null && widget.autoFillAddress && widget.editable) widget.onUseAddress?.call(place);
     } catch (_) {}
-  }
-
-  Future<void> _useMyLocation() async {
-    final p = await Where.pick(context);
-    if (p == null || !mounted) return;
-    _goTo(LatLng(p.lat, p.lng));
-    toast(context, 'Pin set to where you are');
   }
 
   Future<void> _find() async {
@@ -122,15 +134,28 @@ class _ClinicMapState extends State<ClinicMap> {
   }
 
   void _onMapEvent(MapEvent e) {
-    if (!_moving || !widget.editable) return;
-    // While "Move pin" is on, the pin stays in the middle and the map moves under it.
-    if (e is MapEventMove || e is MapEventMoveEnd || e is MapEventFlingAnimationEnd) {
-      final c = e.camera.center;
-      setState(() => _pin = c);
+    final rot = e.camera.rotation;
+    if (rot != _rotation) setState(() => _rotation = rot);
+    if (!widget.editable) return;
+    final user = e.source != MapEventSource.mapController && e.source != MapEventSource.nonRotatedSizeChange;
+    if (e is MapEventMove && user) {
+      // The pin stays in the middle while the map moves under it.
+      if (!_moving) setState(() => _moving = _touched = true);
+      _pin = e.camera.center;
       _settle?.cancel();
-      _settle = Timer(const Duration(milliseconds: 500), () {
+    }
+    final ended = e is MapEventMoveEnd || e is MapEventFlingAnimationEnd || e is MapEventRotateEnd || e is MapEventDoubleTapZoomEnd || e is MapEventScrollWheelZoom;
+    if (ended && user) {
+      _settle?.cancel();
+      _settle = Timer(const Duration(milliseconds: 450), () {
         if (!mounted) return;
-        _hasPin = true;
+        final c = _map.camera.center;
+        setState(() {
+          _moving = false;
+          _pin = c;
+          _hasPin = true;
+          _place = null;
+        });
         _lookup(c);
         widget.onChanged?.call((lat: c.latitude, lng: c.longitude, place: null));
       });
@@ -143,18 +168,6 @@ class _ClinicMapState extends State<ClinicMap> {
     final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication).catchError((_) => false);
     if (!ok && mounted) toast(context, "Couldn't open Google Maps");
   }
-
-  Widget _round(String icon, String label, VoidCallback onTap, {bool on = false}) => Semantics(
-        button: true,
-        label: label,
-        child: Tap(
-          onTap: onTap,
-          radius: 12,
-          color: on ? MP.primary : MP.white,
-          shadow: const [BoxShadow(color: Color(0x26111827), offset: Offset(0, 2), blurRadius: 6)],
-          child: SizedBox(width: 40, height: 40, child: Center(child: Ico(icon, size: 18, color: on ? MP.white : MP.ink, stroke: 2))),
-        ),
-      );
 
   Widget _chip(String text, VoidCallback onTap, {bool on = false, String? icon}) => Tap(
         onTap: onTap,
@@ -183,19 +196,15 @@ class _ClinicMapState extends State<ClinicMap> {
         minZoom: 4,
         maxZoom: 19,
         backgroundColor: const Color(0xFFEAF0F6),
-        interactionOptions: InteractionOptions(
-          // The map stays centred on the pin. With "Move pin" the map moves under
-          // it; otherwise the page scrolls past and the buttons zoom.
-          flags: _moving ? InteractiveFlag.drag | InteractiveFlag.pinchZoom | InteractiveFlag.flingAnimation : InteractiveFlag.none,
-        ),
+        // Drag any way, pinch to zoom, two-finger turn (all the way round).
+        interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
         onMapEvent: _onMapEvent,
-        onTap: widget.editable && _moving ? (_, p) => _goTo(p, zoom: _map.camera.zoom) : null,
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-          subdomains: const ['a', 'b', 'c', 'd'],
-          retinaMode: RetinaMode.isHighDensity(context),
+          // OpenStreetMap's own tiles (fine for testing and a small clinic app; use a
+          // tile service with a key for heavy production traffic).
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.fdo.medpin',
           maxZoom: 19,
         ),
@@ -263,8 +272,8 @@ class _ClinicMapState extends State<ClinicMap> {
                     transform: _tilt
                         ? (Matrix4.identity()
                           ..setEntry(3, 2, 0.0011)
-                          ..rotateX(-0.62)
-                          ..scaleByDouble(1.35, 1.35, 1, 1))
+                          ..rotateX(-0.55)
+                          ..scaleByDouble(1.45, 1.45, 1, 1))
                         : Matrix4.identity(),
                     child: _tiles(),
                   ),
@@ -301,38 +310,49 @@ class _ClinicMapState extends State<ClinicMap> {
                       child: Text('Pin not set yet', style: tx(12, w: w600, c: MP.amber)),
                     ),
                   ),
-                Positioned(
-                  right: 10,
-                  top: 10,
-                  child: Column(children: [
-                    _round(I.plus, 'Zoom in', () => ClinicMap.offline ? null : _map.move(_map.camera.center, (_map.camera.zoom + 1).clamp(4, 19))),
-                    const Gap(8),
-                    _round(I.minus, 'Zoom out', () => ClinicMap.offline ? null : _map.move(_map.camera.center, (_map.camera.zoom - 1).clamp(4, 19))),
-                    const Gap(8),
-                    _round(I.pin, 'Back to the pin', () => ClinicMap.offline ? null : _map.move(_pin, 17)),
-                  ]),
-                ),
-                Positioned(
-                  left: 10,
-                  bottom: 10,
-                  right: 10,
-                  child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                    if (widget.editable) ...[
-                      Flexible(child: _chip('Use my location', _useMyLocation, icon: I.pin)),
-                      const Gap(8),
-                      Flexible(
-                        child: _chip(_moving ? 'Done' : 'Move pin', () {
-                          setState(() => _moving = !_moving);
-                          if (_moving) toast(context, 'Drag the map to put the pin on the entrance');
-                        }, on: _moving),
+                if (_rotation.abs() > 0.5)
+                  Positioned(
+                    right: 10,
+                    top: 10,
+                    child: Semantics(
+                      button: true,
+                      label: 'Turn north up',
+                      child: Tap(
+                        onTap: () => ClinicMap.offline ? null : _map.rotate(0),
+                        radius: 999,
+                        color: MP.white,
+                        shadow: const [BoxShadow(color: Color(0x26111827), offset: Offset(0, 2), blurRadius: 6)],
+                        child: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Center(child: Transform.rotate(angle: -_rotation * 3.14159265 / 180, child: const _Compass())),
+                        ),
                       ),
-                    ],
-                  ]),
-                ),
+                    ),
+                  ),
+                if (widget.editable)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 10,
+                    child: IgnorePointer(
+                      child: Center(
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: _moving || _touched ? 0 : 1,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(color: const Color(0xCC111827), borderRadius: BorderRadius.circular(999)),
+                            child: Text('Move the map to place the pin', style: tx(12, w: w600, c: MP.white)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
-                  right: 56,
+                  right: _rotation.abs() > 0.5 ? 56 : 12,
                   top: 12,
-                  child: IgnorePointer(child: Text('© OpenStreetMap · © CARTO', style: tx(9, c: MP.ink3))),
+                  child: IgnorePointer(child: Text('© OpenStreetMap contributors', style: tx(9, c: MP.ink3))),
                 ),
               ],
             ),
@@ -360,7 +380,6 @@ class _ClinicMapState extends State<ClinicMap> {
                 const Gap(8),
                 Wrap(spacing: 8, runSpacing: 8, children: [
                   if (widget.onUseAddress != null && place != null) _chip('Use this address', () => widget.onUseAddress!(place)),
-                  _chip('Open in Google Maps', () => _openInMaps()),
                   _chip('Directions', () => _openInMaps(directions: true)),
                 ]),
               ],
@@ -411,4 +430,34 @@ class _Pin extends StatelessWidget {
           ),
         ]),
       );
+}
+
+/// Compass needle: red north, grey south.
+class _Compass extends StatelessWidget {
+  const _Compass();
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(size: const Size(18, 22), painter: _CompassPainter());
+}
+
+class _CompassPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final north = Path()
+      ..moveTo(c.dx, 0)
+      ..lineTo(c.dx + 5, c.dy)
+      ..lineTo(c.dx - 5, c.dy)
+      ..close();
+    final south = Path()
+      ..moveTo(c.dx, size.height)
+      ..lineTo(c.dx + 5, c.dy)
+      ..lineTo(c.dx - 5, c.dy)
+      ..close();
+    canvas.drawPath(north, Paint()..color = MP.red);
+    canvas.drawPath(south, Paint()..color = MP.ink3);
+  }
+
+  @override
+  bool shouldRepaint(_CompassPainter old) => false;
 }

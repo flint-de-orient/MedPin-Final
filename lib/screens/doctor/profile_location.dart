@@ -269,6 +269,7 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
                 lng: _savedPin?.$2 ?? (data == null ? 88.4171 : null),
                 label: _name,
                 onChanged: (p) => setState(() => _here = (lat: p.lat, lng: p.lng)),
+                autoFillAddress: data != null && _field('', 'address').isEmpty && _addressFromMap == null,
                 onUseAddress: (place) => setState(() {
                   _addressFromMap = place['label'] as String?;
                   _changes['address'] = _addressFromMap;

@@ -569,6 +569,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
               // A link made from the old pin follows the new one (the server makes it on save).
               if (_isPinLink(_mapUrl.text)) _mapUrl.clear();
             }),
+            autoFillAddress: _address.text.trim().isEmpty,
             onUseAddress: (place) => setState(() => _address.text = '${place['label'] ?? _address.text}'),
           ),
           D7Labeled(

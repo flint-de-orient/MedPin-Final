@@ -28,12 +28,14 @@ r.post('/billing/webhook', async (req, res) => {
     const notes = link.notes || {};
     const paymentId = payload.payment?.entity?.id;
     if (notes.kind === 'plan') await pay.planPaid(notes.subscriptionId, notes.planKey, paymentId);
+    else if (notes.kind === 'order') await pay.orderPaid(notes.orderId, paymentId);
     else {
       // Fee links: notes.paymentId (older links: reference_id was the payment id).
       const ref = notes.paymentId || String(link.reference_id || '').split('.')[0];
       if (/^[a-f\d]{24}$/i.test(ref)) await pay.feePaid(ref, paymentId);
     }
   }
+  if (String(event).startsWith('payout.')) await require('../services/payouts').onWebhook(event, payload.payout?.entity);
   if (event === 'invoice.paid') {
     await M.Invoice.updateOne({ razorpayInvoiceId: payload.invoice?.entity?.id }, { status: 'paid', paidAt: new Date(), razorpayPaymentId: payload.payment?.entity?.id });
   }

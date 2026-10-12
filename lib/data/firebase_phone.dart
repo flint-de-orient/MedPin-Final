@@ -32,6 +32,9 @@ class FirebasePhone {
     }
   }
 
+  /// The code Android read from Firebase's SMS (the OTP screen fills it in).
+  static final autoCode = ValueNotifier<String?>(null);
+
   /// Asks Firebase to text a code to [phone] (10 digits, India).
   /// [onAutoVerified] runs if Android reads the SMS by itself and signs in.
   Future<void> sendCode(String phone, {bool resend = false, void Function(Map<String, dynamic> session)? onAutoVerified}) async {
@@ -48,7 +51,8 @@ class FirebasePhone {
       },
       codeAutoRetrievalTimeout: (verificationId) => _verificationId = verificationId,
       verificationCompleted: (credential) async {
-        // Android verified the SMS automatically.
+        // Android verified the SMS automatically: show the code in the boxes too.
+        if (credential.smsCode != null) autoCode.value = credential.smsCode;
         try {
           final session = await _exchange(credential);
           onAutoVerified?.call(session);

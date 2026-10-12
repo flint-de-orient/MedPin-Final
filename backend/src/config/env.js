@@ -97,6 +97,8 @@ const env = {
     keyId: v('RAZORPAY_KEY_ID'),
     keySecret: v('RAZORPAY_KEY_SECRET'),
     webhookSecret: v('RAZORPAY_WEBHOOK_SECRET'),
+    // RazorpayX current account that pays doctors their online fees (optional).
+    payoutAccountNumber: v('RAZORPAYX_ACCOUNT_NUMBER'),
   },
   googleMapsKey: v('GOOGLE_MAPS_API_KEY'),
   support: {

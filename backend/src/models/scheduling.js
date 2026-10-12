@@ -99,10 +99,31 @@ const paymentSchema = new Schema(
     razorpayOrderId: String,
     razorpayPaymentId: { type: String, sparse: true, unique: true },
     note: String,
+    payoutId: ref('Payout'), // set once this online fee is paid out to the doctor
   },
   baseOptions,
 );
 paymentSchema.index({ practiceId: 1, status: 1, createdAt: -1 });
+
+// Online fees paid out to a doctor (weekly, through RazorpayX when set up).
+const payoutSchema = new Schema(
+  {
+    practiceId: ref('Practice', true),
+    doctorId: ref('User', true), // who is paid
+    amount: { ...rupees, required: true },
+    count: Number, // online fees included
+    periodFrom: Date,
+    periodTo: Date,
+    status: enumOf(['pending', 'on_hold', 'processing', 'paid', 'failed'], { default: 'pending' }),
+    note: String, // why it is waiting / failed, in plain words
+    method: enumOf(['upi', 'bank']),
+    destination: String, // "arjun@okhdfc" / "HDFC ····6789"
+    razorpayPayoutId: String,
+    paidAt: Date,
+  },
+  baseOptions,
+);
+payoutSchema.index({ doctorId: 1, createdAt: -1 });
 
 // Advised follow-ups ("Come back in 2 weeks with fasting sugar.").
 const followUpSchema = new Schema(
@@ -149,6 +170,7 @@ module.exports = {
   AppointmentRequest: model('AppointmentRequest', appointmentRequestSchema),
   Appointment: model('Appointment', appointmentSchema),
   Payment: model('Payment', paymentSchema),
+  Payout: model('Payout', payoutSchema),
   FollowUp: model('FollowUp', followUpSchema),
   Referral: model('Referral', referralSchema),
 };

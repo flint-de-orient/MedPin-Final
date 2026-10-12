@@ -91,6 +91,12 @@ r.patch('/doctor/profile', async (req, res) => {
     if (body[k]) body[k] = { ...(p[k]?.toObject?.() || {}), ...body[k] };
   }
   Object.assign(p, body);
+  // New payout details: set up where RazorpayX sends the money (needs the full account number now).
+  if (body.payout) {
+    await require('../services/payouts').linkPayoutAccount(p, String(req.body.payout.accountNumber || '').replace(/\s/g, '') || undefined).catch((err) => {
+      console.warn('[payout account]', err.message);
+    });
+  }
   await p.save();
   if (body.displayName) await M.User.updateOne({ _id: req.user._id }, { name: body.displayName });
   res.json(profileView(p));
@@ -150,6 +156,9 @@ r.post('/doctor/profile/signature/recheck', async (req, res) => {
   await p.save();
   res.json(profileView(p));
 });
+
+// Online fees: what is waiting, the next payout day, past payouts.
+r.get('/doctor/payouts', async (req, res) => res.json(await require('../services/payouts').summary(req.user._id)));
 
 r.post('/doctor/qualifications', async (req, res) => {
   const p = await profileOf(req.user._id);

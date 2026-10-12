@@ -81,6 +81,9 @@ const doctorProfileSchema = new Schema(
       preferred: enumOf(['upi', 'bank']),
       updatedAt: Date,
       razorpayAccountId: String,
+      razorpayContactId: String, // RazorpayX contact for this doctor
+      razorpayFundAccountId: String, // where payouts go (the UPI ID or bank account above)
+      fundAccountFor: String, // 'upi:<id>' or 'bank:<last4>' the fund account was made for
     },
     // Chat and urgent messages
     chatSettings: {

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import 'common_d11.dart';
+import '../../widgets/i18n.dart';
 
 /// Doctor · Payouts and bank account — where online consultation fees are paid.
 /// Live data: GET/PATCH /api/doctor/profile (payout). Only the last 4 digits of
@@ -30,7 +31,66 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
   bool _busy = false;
 
   @override
-  Future<Object?> fetch() => Api.I.get('/api/doctor/profile');
+  Future<Object?> fetch() async {
+    final r = await Future.wait([Api.I.get('/api/doctor/profile'), Api.I.get('/api/doctor/payouts').catchError((_) => null)]);
+    _payouts = (r[1] as Map?)?.cast<String, dynamic>();
+    return r[0];
+  }
+
+  /// GET /api/doctor/payouts: online fees waiting, next payout day, past payouts.
+  Map<String, dynamic>? _payouts;
+
+  static const _statusLabel = {
+    'pending': ('Waiting', MP.amber),
+    'on_hold': ('On hold', MP.amber),
+    'processing': ('On its way', MP.primary),
+    'paid': ('Paid', MP.green),
+    'failed': ('Not sent', MP.red),
+  };
+
+  Widget _onlineFees() {
+    final p = _payouts;
+    final waiting = data == null ? 2400 : (p?.obj('waiting').numOr('amount') ?? 0);
+    final count = data == null ? 4 : (p?.obj('waiting').numOr('count') ?? 0).toInt();
+    final next = data == null ? null : F.date(p?['nextPayoutOn']);
+    final items = data == null ? const <Map<String, dynamic>>[] : (p?.list('items') ?? const <Map<String, dynamic>>[]);
+    return D4Card(
+      children: [
+        const D4CardTitle('Online fees'),
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text('₹${F.count(waiting)}', style: tx(28, w: w800, tab: true)),
+          const Gap(8),
+          Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(count == 1 ? 'from 1 visit' : 'from $count visits', style: tx(14, c: MP.ink2))),
+        ]),
+        D4Note([
+          'Paid to you every Monday',
+          if (next != null) 'next on ${F.dayMonth(next)}',
+          'fees wait ${p?.numOr('holdDays', 2).toInt() ?? 2} days in case of a refund',
+        ].join(' · ')),
+        if (data != null && p?['live'] == false)
+          const D4Note('Automatic payouts are being set up by MedPin. Your balance is kept safely until then.'),
+        for (final it in items.take(6))
+          Builder(builder: (_) {
+            final (label, color) = _statusLabel[it.str('status')] ?? ('Waiting', MP.amber);
+            final at = F.date(it['paidAt'] ?? it['createdAt']);
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('₹${F.count(it.numOr('amount'))} · ${it.numOr('count').toInt()} fees', style: tx(15, w: w600, tab: true)),
+                    Text([if (at != null) F.dayMonth(at), if (it.str('destination').isNotEmpty) it.str('destination')].join(' · '), style: tx(13, c: MP.ink2)),
+                    if (it.str('note').isNotEmpty) Text(it.str('note'), style: tx(13, c: color, h: 1.4)),
+                  ]),
+                ),
+                const Gap(8),
+                Text(label, style: tx(13, w: w600, c: color)),
+              ]),
+            );
+          }),
+      ],
+    );
+  }
 
   @override
   void dispose() {
@@ -113,6 +173,7 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
             gap: 16,
             children: [
+              _onlineFees(),
               D4Card(
                 children: [
                   const D4CardTitle('Pay me by'),

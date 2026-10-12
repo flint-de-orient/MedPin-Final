@@ -176,6 +176,13 @@ async function dailyDigest(now) {
   }
 }
 
+/** Doctors' online fees, paid out every Monday from 10:00 IST. */
+async function payouts(now) {
+  const ist = new Date(now.getTime() + T.IST_MS);
+  if (ist.getUTCDay() !== 1 || T.minuteOfDay(now) < 10 * 60) return;
+  await once(`payouts:${T.dayKey(now)}`, () => require('./payouts').run(now));
+}
+
 /** Health scores once a night (03:00 IST) for patients with recent data. */
 async function healthScores(now) {
   if (T.minuteOfDay(now) < 3 * 60) return;
@@ -208,6 +215,7 @@ async function tick() {
     ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)],
     ['followUps', () => followUpReminders(now)], ['lowStock', () => lowStock(now)], ['dailyLog', () => dailyLogReminders(now)], ['digest', () => dailyDigest(now)],
     ['scores', () => healthScores(now)],
+    ['payouts', () => payouts(now)],
   ]) {
     try {
       await job();

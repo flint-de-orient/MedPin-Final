@@ -136,6 +136,15 @@ const orderSchema = new Schema(
     cancelledAt: Date,
     cancelledBy: enumOf(['patient', 'pharmacy']),
     paymentId: ref('Payment'),
+    // How the patient pays: cash / at the counter, or online through MedPin (Razorpay).
+    pay: {
+      method: enumOf(['cash', 'online'], { default: 'cash' }),
+      status: enumOf(['due', 'paid', 'refund_pending', 'refunded'], { default: 'due' }),
+      linkUrl: String,
+      paidAt: Date,
+      razorpayPaymentId: String,
+      refundedAt: Date,
+    },
     // The pharmacy confirms / packs / delivers through a private link (no account needed).
     pharmacyTokenHash: { type: String, select: false },
     pharmacyNotifiedAt: Date,

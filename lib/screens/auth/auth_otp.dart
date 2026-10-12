@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Text;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:smart_auth/smart_auth.dart';
 
 import '../../data/api.dart';
 import '../../data/config.dart';
@@ -41,6 +43,35 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
     _code.addListener(_autoVerify);
     _focus.addListener(_changed);
     _startTimer();
+    FirebasePhone.autoCode.addListener(_firebaseCode);
+    _listenForSms();
+  }
+
+  /// Fills the six boxes with a code read from the SMS (then it verifies by itself).
+  void _fill(String? code) {
+    final c = RegExp(r'\d{6}').firstMatch(code ?? '')?.group(0);
+    if (c == null || !mounted || _busy || _code.text == c) return;
+    _code.text = c;
+  }
+
+  void _firebaseCode() => _fill(FirebasePhone.autoCode.value);
+
+  /// Codes arrive three ways:
+  /// - Firebase SMS: Android reads it itself ([FirebasePhone.autoCode]);
+  /// - MedPin's own SMS: Android asks "Allow MedPin to read this message?" (SMS
+  ///   User Consent, no special SMS format needed);
+  /// - test mode (no SMS sent): debug builds fill in the test code.
+  Future<void> _listenForSms() async {
+    if (AppMode.preview) return;
+    final dev = Session.I.pendingDevCode;
+    if (kDebugMode && dev != null) {
+      Future.delayed(const Duration(milliseconds: 900), () => _fill(dev));
+      return;
+    }
+    if (Session.I.pendingMethod == 'firebase' || kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    final res = await SmartAuth.instance.getSmsWithUserConsentApi();
+    if (!mounted) return;
+    if (res.hasData) _fill(res.data?.code ?? res.data?.sms);
   }
 
   void _changed() {
@@ -77,6 +108,8 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
     if (!mounted) return;
     setState(() => _left = 30);
     _startTimer();
+    SmartAuth.instance.removeUserConsentApiListener();
+    _listenForSms();
     final dev = AppMode.preview ? null : Session.I.pendingDevCode;
     toast(context, dev == null ? 'New code sent' : 'Test code: $dev');
   }
@@ -127,6 +160,8 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
 
   @override
   void dispose() {
+    FirebasePhone.autoCode.removeListener(_firebaseCode);
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android && !AppMode.preview) SmartAuth.instance.removeUserConsentApiListener();
     _timer?.cancel();
     _blink.dispose();
     _code.dispose();

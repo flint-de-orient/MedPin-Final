@@ -67,6 +67,8 @@ async function setStatus(order, status, { by } = {}) {
     }
   }
   await order.save();
+  // A paid order that is cancelled is refunded.
+  if (status === 'cancelled' && order.pay?.status === 'paid') await require('./payments').refundOrder(order);
   if (by !== 'patient') {
     const patient = await M.Patient.findById(order.patientId, 'userId');
     if (patient?.userId) {
@@ -99,7 +101,7 @@ async function pharmacyPage(order, token) {
 button{font:inherit;font-weight:600;background:#003399;color:#fff;border:0;border-radius:10px;padding:12px 16px;margin:4px 4px 0 0}button.ghost{background:#fff;color:#C62828;border:1px solid #F2C4C4}
 .muted{color:#5A6474;font-size:14px}</style></head><body><main>
 <p class="muted">${esc(pharmacy?.name || 'Pharmacy')} · MedPin</p><h1>Order for ${esc(patient?.name || 'patient')}</h1>
-<p><span class="pill">${esc(LABEL[order.status])}</span> · ${order.mode === 'delivery' ? 'Home delivery' : 'Pick-up'} · Pay ${order.mode === 'delivery' ? 'on delivery' : 'at the counter'}: <b>₹${order.total}</b></p>
+<p><span class="pill">${esc(LABEL[order.status])}</span> · ${order.mode === 'delivery' ? 'Home delivery' : 'Pick-up'} · ${order.pay?.status === 'paid' ? `<b style="color:#076B3C">Paid online ✓ ₹${order.total}</b> · don't collect money` : `Collect ${order.mode === 'delivery' ? 'on delivery' : 'at the counter'}: <b>₹${order.total}</b>`}</p>
 <div class="card"><table>${rows}</table>${order.deliveryFee ? `<p class="muted">Delivery ₹${order.deliveryFee}</p>` : ''}</div>
 <div class="card"><b>Prescriptions</b><ul>${rx}</ul></div>
 <div class="card"><b>Patient</b><p>${esc(patient?.name || '')} · +91 ${esc(patient?.phone || '')}${addr ? `<br>${esc(addr)}` : ''}</p></div>

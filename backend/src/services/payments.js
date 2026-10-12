@@ -54,6 +54,53 @@ async function feePaid(paymentId, razorpayPaymentId) {
   return p;
 }
 
+/** Link for a pharmacy order paid online (saved on the order). */
+async function orderLink(order, patient, pharmacyName) {
+  if (order.pay?.status === 'paid') throw conflict('This order is already paid', 'ALREADY_PAID');
+  if (order.status === 'cancelled') throw conflict('This order was cancelled', 'CANCELLED');
+  const url = await createLink({
+    amount: order.total, description: `Medicines from ${pharmacyName || 'the pharmacy'}`,
+    customer: patient ? { name: patient.name, contact: patient.phone ? `+91${patient.phone}` : undefined } : undefined,
+    notes: { kind: 'order', orderId: String(order._id), paymentId: String(order._id) }, devPath: `order/${order._id}`,
+  });
+  order.pay = { ...(order.pay?.toObject?.() || {}), method: 'online', status: 'due', linkUrl: url };
+  await order.save();
+  return url;
+}
+
+/** A pharmacy order paid online (webhook or dev page); once only. Tells patient and pharmacy. */
+async function orderPaid(orderId, razorpayPaymentId) {
+  const order = await M.Order.findOneAndUpdate(
+    { _id: orderId, 'pay.status': { $ne: 'paid' }, status: { $ne: 'cancelled' } },
+    { 'pay.method': 'online', 'pay.status': 'paid', 'pay.paidAt': new Date(), ...(razorpayPaymentId ? { 'pay.razorpayPaymentId': razorpayPaymentId } : {}) },
+    { new: true },
+  );
+  if (!order) return null;
+  const patient = await M.Patient.findById(order.patientId, 'userId');
+  if (patient?.userId) {
+    await require('./notify').notify([patient.userId], { type: 'order_update', title: `Paid ₹${order.total} for your medicines`, body: 'The pharmacy can see it is paid.', screen: 'Patient-Medicines' }).catch(() => {});
+  }
+  return order;
+}
+
+/** Money back for a paid order that is cancelled (Razorpay refund when set up). */
+async function refundOrder(order) {
+  if (order.pay?.status !== 'paid') return order;
+  if (configured() && order.pay.razorpayPaymentId) {
+    const resp = await fetch(`https://api.razorpay.com/v1/payments/${order.pay.razorpayPaymentId}/refund`, {
+      method: 'POST',
+      headers: { authorization: `Basic ${Buffer.from(`${env.razorpay.keyId}:${env.razorpay.keySecret}`).toString('base64')}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ amount: Math.round(order.total * 100), notes: { orderId: String(order._id) } }),
+    }).catch(() => null);
+    order.pay.status = resp?.ok ? 'refunded' : 'refund_pending';
+  } else {
+    order.pay.status = env.isProd ? 'refund_pending' : 'refunded'; // dev: nothing was charged
+  }
+  if (order.pay.status === 'refunded') order.pay.refundedAt = new Date();
+  await order.save();
+  return order;
+}
+
 /** Link to pay for a plan upgrade now (the plan changes when it's paid). */
 async function planLink(sub, plan, user) {
   return createLink({
@@ -75,4 +122,4 @@ async function planPaid(subscriptionId, planKey, razorpayPaymentId) {
   return sub;
 }
 
-module.exports = { configured, createLink, feeLink, feePaid, planLink, planPaid };
+module.exports = { configured, createLink, feeLink, feePaid, planLink, planPaid, orderLink, orderPaid, refundOrder };

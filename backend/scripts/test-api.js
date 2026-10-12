@@ -450,6 +450,21 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const second = ok(await ctx.pat('POST', '/api/patient/orders', { pharmacyId: quotes.items[0].pharmacy.id, mode: 'pickup' }), 201);
     assert.equal(ok(await ctx.pat('POST', `/api/patient/orders/${second.id}/cancel`)).status, 'cancelled');
 
+    // Pay online: the order gets a payment link; once paid, the pharmacy sees "Paid online"; cancelling refunds it.
+    ok(await ctx.pat('POST', '/api/patient/cart/items', { courseId: course._id, packOption: '1_month' }), 201);
+    const third = ok(await ctx.pat('POST', '/api/patient/orders', { pharmacyId: quotes.items[0].pharmacy.id, mode: 'pickup', payOnline: true }), 201);
+    assert.equal(third.payment, 'online');
+    assert.match(third.payUrl, /\/dev\/pay\/order\//);
+    assert.equal((await fetch(third.payUrl)).status, 200, 'the payment page opens');
+    assert.equal((await fetch(third.payUrl, { method: 'POST', headers: { accept: 'application/json' } })).status, 200);
+    const paidOrder = await M.Order.findById(third.id);
+    assert.equal(paidOrder.pay.status, 'paid');
+    await M.Order.updateOne({ _id: third.id }, { pharmacyTokenHash: sha256('pharmacy-test-token-2') });
+    assert.match(await (await fetch(`${base}/pharmacy/orders/${third.id}?t=pharmacy-test-token-2`)).text(), /Paid online/);
+    assert.equal((await ctx.pat('POST', `/api/patient/orders/${third.id}/pay`)).status, 409, 'already paid');
+    ok(await ctx.pat('POST', `/api/patient/orders/${third.id}/cancel`));
+    assert.equal((await M.Order.findById(third.id)).pay.status, 'refunded', 'a paid order that is cancelled is refunded');
+
     // An uploaded prescription's medicines (read by AI) are added when the patient says so.
     const rec = await M.MedicalRecord.create({
       patientId: ctx.patientId, kind: 'prescription', title: 'Paper prescription', origin: 'uploaded_by_patient', recordDate: new Date(),
@@ -719,7 +734,8 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
 
     // Pay online: the patient's link opens a page (dev stand-in) and paying marks the visit paid.
     const fee = await M.Payment.findOne({ appointmentId: walk.id, status: 'pending' });
-    if (fee) {
+    assert.ok(fee, 'the walk-in has a fee to pay');
+    {
       const link = ok(await ctx.pat('POST', `/api/patient/appointments/${walk.id}/pay`));
       const page = await fetch(link.url);
       assert.equal(page.status, 200, 'the payment link opens (was a 404)');
@@ -727,6 +743,19 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       assert.equal((await fetch(link.url, { method: 'POST', headers: { accept: 'application/json' } })).status, 200);
       assert.equal((await M.Appointment.findById(walk.id)).feeStatus, 'paid');
       assert.equal((await ctx.pat('POST', `/api/patient/appointments/${walk.id}/pay`)).status, 409, 'nothing left to pay');
+      // Payouts: after the 2-day hold the weekly run bundles the doctor's online fees.
+      await M.Payment.updateOne({ _id: fee._id }, { paidAt: new Date(Date.now() - 3 * 864e5) });
+      const before = ok(await ctx.doc('GET', '/api/doctor/payouts'));
+      assert.ok(before.waiting.amount >= fee.amount, 'the fee waits for the next payout');
+      const made = await require('../src/services/payouts').run(new Date());
+      const mineOut = made.find((x) => String(x.doctorId) === String(ctx.doctorUserId));
+      assert.ok(mineOut, 'a payout for the doctor');
+      assert.equal(mineOut.status, 'pending', 'waits until RazorpayX is set up');
+      assert.equal(mineOut.destination, 'arjun@okhdfc');
+      const after = ok(await ctx.doc('GET', '/api/doctor/payouts'));
+      assert.equal(after.items[0].status, 'pending');
+      assert.ok(after.waiting.amount < before.waiting.amount, 'no longer waiting');
+      assert.equal((await require('../src/services/payouts').run(new Date())).length, 0, 'never paid twice');
     }
 
     // Setup checklist for a doctor; Home health score and summary; device readings once only.

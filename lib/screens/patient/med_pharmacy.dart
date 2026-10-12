@@ -50,8 +50,8 @@ const _nearby = [
 ];
 
 /// Live data: GET /api/patient/cart and /api/patient/pharmacies/quotes for
-/// delivery and pick up. Place order posts /api/patient/orders; there is no
-/// online payment, so it is paid on delivery or at the pharmacy.
+/// delivery and pick up. Place order asks how to pay (online now through
+/// Razorpay, or cash on delivery / at the pharmacy) and posts /api/patient/orders.
 /// Args (optional): {'addressId'} from Med-Cart.
 class _MedPharmacyScreenState extends State<MedPharmacyScreen> with LiveData {
   int _tab = 0;
@@ -131,20 +131,44 @@ class _MedPharmacyScreenState extends State<MedPharmacyScreen> with LiveData {
     final q = quotes[_selected[_tab].clamp(0, quotes.length - 1)];
     final args = (Nav.args<Map>(context) ?? const {}).cast<String, dynamic>();
     final mode = _tab == 0 ? 'delivery' : 'pickup';
+    final name = q.obj('pharmacy').str('name');
+    final cashLabel = mode == 'delivery' ? 'Pay on delivery' : 'Pay at the pharmacy';
+    // How to pay: online now (UPI, card, net banking) or cash at delivery / the counter.
+    final how = await openSheet<String>(
+      context,
+      (ctx) => MpSheet(
+        title: 'How would you like to pay?',
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          MpButton('Pay ₹${q.numOr('total').round()} online now', onTap: () => Navigator.pop(ctx, 'online')),
+          const Gap(10),
+          MpButton(cashLabel, kind: MpBtn.secondary, onTap: () => Navigator.pop(ctx, 'cash')),
+          const Gap(8),
+          Text('UPI, card or net banking through Razorpay. A paid order that is cancelled is refunded.', textAlign: TextAlign.center, style: tx(13, c: MP.ink3, h: 1.4)),
+        ]),
+      ),
+    );
+    if (how == null || !mounted) return;
     final res = await runAction(
       context,
       () => Api.I.post('/api/patient/orders', {
         'pharmacyId': q.obj('pharmacy').str('id'),
         'mode': mode,
         if (args['addressId'] != null) 'addressId': args['addressId'],
+        if (how == 'online') 'payOnline': true,
       }),
       busy: _busy,
     );
-    if (res == null || !mounted) return;
+    if (res is! Map || !mounted) return;
     p3CartChanged.value++;
-    final name = q.obj('pharmacy').str('name');
-    toast(context, mode == 'delivery' ? 'Order placed with $name · pay on delivery' : 'Order placed with $name · pay at the pharmacy');
-    _backToStart();
+    if (res['payUrl'] is String) {
+      toast(context, 'Order placed with $name · finish paying');
+      await p2Open(context, res['payUrl'] as String, failed: "Couldn't open the payment page. Pay from Orders in Medicines.");
+    } else if (how == 'online') {
+      toast(context, 'Order placed with $name · online payment is not available now, ${cashLabel.toLowerCase()}');
+    } else {
+      toast(context, 'Order placed with $name · ${cashLabel.toLowerCase()}');
+    }
+    if (mounted) _backToStart();
   }
 
   /// Back past the cart to wherever the order started (Medicines).
