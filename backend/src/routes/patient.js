@@ -307,8 +307,13 @@ r.get('/doctors/search', async (req, res) => {
   // "near Salt Lake": the area the phone is in now, else the saved address.
   let area = req.patient.area || req.patient.addresses.find((a) => a.isDefault)?.area || null;
   if (live) {
-    const here = await require('../services/places').reverse(+live[1].toFixed(3), +live[0].toFixed(3)).catch(() => null);
-    area = here?.area || here?.city || area;
+    // The name people use: a clinic's area within 3 km ("Salt Lake"), else the map's name for the spot.
+    const near = cards.filter((c) => c.km != null && c.km <= 3 && c.location.area).sort((a, b) => a.km - b.km)[0];
+    if (near) area = near.location.area;
+    else {
+      const here = await require('../services/places').reverse(+live[1].toFixed(3), +live[0].toFixed(3)).catch(() => null);
+      area = here?.area || here?.city || area;
+    }
   }
   res.json({
     total: cards.length, emergency: req.query.q ? assistant.isEmergencyText(req.query.q) : false,
