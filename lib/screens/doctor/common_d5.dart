@@ -935,7 +935,7 @@ class _D5TextAreaState extends State<D5TextArea> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: on ? MP.primary : MP.lineStrong, width: on ? 2 : 1),
               ),
-              child: MpFieldArea(child: TextField(
+              child: MpFieldArea(top: true, child: TextField(
                 controller: _c,
                 focusNode: _f,
                 clipBehavior: Clip.none,

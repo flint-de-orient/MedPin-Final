@@ -420,7 +420,7 @@ class _TextAreaState extends State<_TextArea> {
           border: Border.all(color: focused ? MP.primary : MP.lineStrong),
           boxShadow: focused ? MPShadow.focusRing : null,
         ),
-        child: MpFieldArea(child: TextField(
+        child: MpFieldArea(top: true, child: TextField(
           controller: widget.controller,
           focusNode: _focus,
           expands: true,

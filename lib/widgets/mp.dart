@@ -531,16 +531,22 @@ class _RenderHitSlop extends RenderProxyBox {
   }
 }
 
-/// Lets a text field fill the fixed-height box it sits in, so the whole box
-/// (not just the line of text) is the tap target and the screen-reader
-/// focus area. Outside a fixed-height box it changes nothing.
+/// Makes the whole fixed-height box a text field sits in its tap target and
+/// screen-reader focus area, while the field itself keeps its size and stays
+/// centred (see [MpHitSlop]). [top]: a multi-line field that should fill the
+/// box from the top instead. Outside a fixed-height box it changes nothing.
 class MpFieldArea extends StatelessWidget {
   final Widget child;
-  const MpFieldArea({super.key, required this.child});
+  final bool top;
+  const MpFieldArea({super.key, required this.child, this.top = false});
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, c) => c.hasBoundedHeight && c.maxHeight <= 160 ? SizedBox(height: c.maxHeight, child: child) : child,
+        builder: (context, c) {
+          if (!c.hasBoundedHeight || c.maxHeight > 160) return child;
+          if (top) return SizedBox(height: c.maxHeight, child: child);
+          return MpHitSlop(min: c.maxHeight, child: child);
+        },
       );
 }
 

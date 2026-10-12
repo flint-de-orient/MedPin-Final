@@ -208,7 +208,7 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
               ),
               child: Semantics(
                 label: 'Describe your symptoms or ask a question',
-                child: MpFieldArea(child: TextField(
+                child: MpFieldArea(top: true, child: TextField(
                   controller: _ask,
                   focusNode: _focus,
                   expands: true,

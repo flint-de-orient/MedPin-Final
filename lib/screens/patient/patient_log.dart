@@ -263,7 +263,7 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: MP.lineStrong),
               ),
-              child: MpFieldArea(child: TextField(
+              child: MpFieldArea(top: true, child: TextField(
                 controller: controller,
                 expands: true,
                 maxLines: null,
