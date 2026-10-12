@@ -170,7 +170,12 @@ r.post('/doctor/profile/signature/recheck', async (req, res) => {
 
 // Payout form: IFSC → bank and branch; UPI ID → app and bank (services/banks.js).
 r.get('/banks/ifsc/:code', async (req, res) => res.json(await require('../services/banks').ifscInfo(req.params.code)));
-r.get('/banks/upi', async (req, res) => res.json(require('../services/banks').upiInfo(req.query.vpa)));
+r.get('/banks/upi', async (req, res) => {
+  const banks = require('../services/banks');
+  const info = banks.upiInfo(req.query.vpa);
+  // With Razorpay set up: is the UPI ID real, and whose name is on it.
+  res.json(info.valid ? { ...info, ...(await banks.verifyVpa(info.vpa)) } : info);
+});
 
 // Online fees: what is waiting, the next payout day, past payouts.
 r.get('/doctor/payouts', async (req, res) => res.json(await require('../services/payouts').summary(req.user._id)));

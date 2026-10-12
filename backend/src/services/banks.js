@@ -24,25 +24,32 @@ const BANK_CODES = {
   SVCB: 'SVC Co-operative Bank', COSB: 'Cosmos Co-operative Bank', SRCB: 'Saraswat Co-operative Bank', WBSC: 'West Bengal State Co-operative Bank',
 };
 
-// UPI handles (the part after @): the app that issues them and the bank behind it.
-const UPI_HANDLES = {
-  okhdfcbank: ['Google Pay', 'HDFC Bank'], oksbi: ['Google Pay', 'State Bank of India'], okicici: ['Google Pay', 'ICICI Bank'],
-  okaxis: ['Google Pay', 'Axis Bank'], ybl: ['PhonePe', 'Yes Bank'], ibl: ['PhonePe', 'ICICI Bank'], axl: ['PhonePe', 'Axis Bank'],
-  paytm: ['Paytm', 'Paytm Payments Bank'], ptyes: ['Paytm', 'Yes Bank'], ptaxis: ['Paytm', 'Axis Bank'], pthdfc: ['Paytm', 'HDFC Bank'],
-  ptsbi: ['Paytm', 'State Bank of India'], upi: ['BHIM', 'NPCI'], apl: ['Amazon Pay', 'Axis Bank'], yapl: ['Amazon Pay', 'Yes Bank'],
-  rapl: ['Amazon Pay', 'RBL Bank'], waicici: ['WhatsApp Pay', 'ICICI Bank'], wahdfcbank: ['WhatsApp Pay', 'HDFC Bank'],
-  waaxis: ['WhatsApp Pay', 'Axis Bank'], wasbi: ['WhatsApp Pay', 'State Bank of India'], jupiteraxis: ['Jupiter', 'Axis Bank'],
-  fam: ['FamPay', 'IDFC FIRST Bank'], slc: ['slice', 'slice small finance bank'], naviaxis: ['Navi', 'Axis Bank'], freecharge: ['Freecharge', 'Axis Bank'],
-  sbi: ['SBI YONO', 'State Bank of India'], hdfcbank: ['HDFC Bank', 'HDFC Bank'], icici: ['iMobile', 'ICICI Bank'], axisbank: ['Axis Bank', 'Axis Bank'],
-  kotak: ['Kotak', 'Kotak Mahindra Bank'], kmbl: ['Kotak', 'Kotak Mahindra Bank'], barodampay: ['bob World', 'Bank of Baroda'],
-  pnb: ['PNB ONE', 'Punjab National Bank'], cnrb: ['Canara ai1', 'Canara Bank'], unionbank: ['Vyom', 'Union Bank of India'],
-  boi: ['BOI Mobile', 'Bank of India'], indianbank: ['IndOASIS', 'Indian Bank'], iob: ['IOB Mobile', 'Indian Overseas Bank'],
-  yesbank: ['Yes Bank', 'Yes Bank'], idfcbank: ['IDFC FIRST', 'IDFC FIRST Bank'], indus: ['IndusInd', 'IndusInd Bank'],
-  federal: ['FedMobile', 'Federal Bank'], aubank: ['AU 0101', 'AU Small Finance Bank'], rbl: ['RBL MoBank', 'RBL Bank'],
-  airtel: ['Airtel Thanks', 'Airtel Payments Bank'], postbank: ['IPPB', 'India Post Payments Bank'], dbs: ['digibank', 'DBS Bank India'],
-  citi: ['Citi', 'Citibank'], hsbc: ['HSBC', 'HSBC'], sc: ['SC Mobile', 'Standard Chartered Bank'], equitas: ['Equitas', 'Equitas Small Finance Bank'],
+// UPI handles (the part after @). A payment app's handle (Google Pay's
+// @oksbi, PhonePe's @ybl…) only names the bank that app works through, not
+// where the money is kept: the person can link any bank. So for those we
+// name the app only. A bank's own app (@sbi, @hdfcbank…) does tell the bank.
+const APP_HANDLES = {
+  okhdfcbank: 'Google Pay', oksbi: 'Google Pay', okicici: 'Google Pay', okaxis: 'Google Pay',
+  ybl: 'PhonePe', ibl: 'PhonePe', axl: 'PhonePe',
+  paytm: 'Paytm', ptyes: 'Paytm', ptaxis: 'Paytm', pthdfc: 'Paytm', ptsbi: 'Paytm',
+  upi: 'BHIM', apl: 'Amazon Pay', yapl: 'Amazon Pay', rapl: 'Amazon Pay',
+  waicici: 'WhatsApp Pay', wahdfcbank: 'WhatsApp Pay', waaxis: 'WhatsApp Pay', wasbi: 'WhatsApp Pay',
+  jupiteraxis: 'Jupiter', fam: 'FamPay', slc: 'slice', naviaxis: 'Navi', freecharge: 'Freecharge',
+  superyes: 'super.money', kiwi: 'Kiwi', pop: 'POP', cred: 'CRED', axisb: 'CRED', yescred: 'CRED',
+};
+const BANK_HANDLES = {
+  sbi: ['SBI YONO', 'State Bank of India'], hdfcbank: ['HDFC Bank', 'HDFC Bank'], icici: ['iMobile', 'ICICI Bank'],
+  axisbank: ['Axis Mobile', 'Axis Bank'], kotak: ['Kotak', 'Kotak Mahindra Bank'], kmbl: ['Kotak', 'Kotak Mahindra Bank'],
+  barodampay: ['bob World', 'Bank of Baroda'], pnb: ['PNB ONE', 'Punjab National Bank'], cnrb: ['Canara ai1', 'Canara Bank'],
+  unionbank: ['Vyom', 'Union Bank of India'], uboi: ['Vyom', 'Union Bank of India'], boi: ['BOI Mobile', 'Bank of India'],
+  indianbank: ['IndOASIS', 'Indian Bank'], iob: ['IOB Mobile', 'Indian Overseas Bank'], yesbank: ['Yes Bank', 'Yes Bank'],
+  idfcbank: ['IDFC FIRST', 'IDFC FIRST Bank'], indus: ['IndusInd', 'IndusInd Bank'], federal: ['FedMobile', 'Federal Bank'],
+  aubank: ['AU 0101', 'AU Small Finance Bank'], rbl: ['RBL MoBank', 'RBL Bank'], airtel: ['Airtel Thanks', 'Airtel Payments Bank'],
+  postbank: ['IPPB', 'India Post Payments Bank'], dbs: ['digibank', 'DBS Bank India'], citi: ['Citi', 'Citibank'],
+  hsbc: ['HSBC', 'HSBC'], sc: ['SC Mobile', 'Standard Chartered Bank'], equitas: ['Equitas', 'Equitas Small Finance Bank'],
   ujjivan: ['Ujjivan', 'Ujjivan Small Finance Bank'], bandhan: ['Bandhan', 'Bandhan Bank'], kvb: ['KVB', 'Karur Vysya Bank'],
   cub: ['CUB', 'City Union Bank'], dlb: ['Dhanlaxmi', 'Dhanlaxmi Bank'], jkb: ['J&K Bank', 'Jammu & Kashmir Bank'],
+  centralbank: ['Cent Mobile', 'Central Bank of India'], ucobank: ['UCO mBanking', 'UCO Bank'], mahb: ['Mahamobile', 'Bank of Maharashtra'],
 };
 
 /** Replaced in tests so they never call the internet. */
@@ -87,17 +94,53 @@ async function ifscInfo(raw) {
   }
 }
 
-/** { valid, handle, app, bank, known } for a UPI ID such as name@oksbi. */
+/**
+ * { valid, vpa, handle, app, bank, known } for a UPI ID such as name@oksbi.
+ * bank is set only for a bank's own handle (see APP_HANDLES).
+ */
 function upiInfo(raw) {
   const vpa = String(raw || '').trim().toLowerCase();
   const m = /^([a-z0-9._-]{2,256})@([a-z][a-z0-9]{1,63})$/.exec(vpa);
   if (!m) return { valid: false, vpa };
-  const known = UPI_HANDLES[m[2]];
-  return { valid: true, vpa, handle: m[2], app: known?.[0] || null, bank: known?.[1] || null, known: Boolean(known) };
+  const app = APP_HANDLES[m[2]];
+  const own = BANK_HANDLES[m[2]];
+  return { valid: true, vpa, handle: m[2], app: app || own?.[0] || null, bank: own?.[1] || null, known: Boolean(app || own) };
+}
+
+/**
+ * Checks the UPI ID is real and gets the name on it (Razorpay
+ * POST /v1/payments/validate/vpa). Needs the Razorpay keys; without them
+ * { checked: false }. Returns { checked, exists, name }.
+ */
+async function verifyVpa(vpa) {
+  const env = require('../config/env');
+  if (!env.razorpay.keyId || !env.razorpay.keySecret) return { checked: false };
+  const ck = `vpa:${vpa}`;
+  const hit = cache.get(ck);
+  if (hit && Date.now() - hit.at < 24 * 3600e3) return hit.info;
+  try {
+    const res = await fetchImpl('https://api.razorpay.com/v1/payments/validate/vpa', {
+      method: 'POST',
+      headers: {
+        authorization: `Basic ${Buffer.from(`${env.razorpay.keyId}:${env.razorpay.keySecret}`).toString('base64')}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ vpa }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok && res.status !== 400) throw new Error(`validate vpa ${res.status}`);
+    const info = { checked: true, exists: d.success === true, name: d.success ? (d.customer_name || null) : null };
+    cache.set(ck, { at: Date.now(), info });
+    return info;
+  } catch (err) {
+    console.warn('[vpa]', err.message);
+    return { checked: false };
+  }
 }
 
 module.exports = {
-  ifscInfo, upiInfo, IFSC_RE, BANK_CODES, UPI_HANDLES,
+  ifscInfo, upiInfo, verifyVpa, IFSC_RE, BANK_CODES, APP_HANDLES, BANK_HANDLES,
   set fetchImpl(f) { fetchImpl = f; cache.clear(); },
   get fetchImpl() { return fetchImpl; },
 };

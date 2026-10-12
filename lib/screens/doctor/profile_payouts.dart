@@ -40,7 +40,7 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
   Map<String, dynamic>? _ifscInfo =
       AppMode.preview ? {'valid': true, 'found': true, 'bank': 'HDFC Bank', 'branch': 'Salt Lake', 'city': 'Kolkata'} : null;
   bool _ifscChecking = false;
-  Map<String, dynamic>? _upiInfo = AppMode.preview ? {'valid': true, 'known': true, 'app': 'Google Pay', 'bank': 'HDFC Bank'} : null;
+  Map<String, dynamic>? _upiInfo = AppMode.preview ? {'valid': true, 'known': true, 'app': 'Google Pay'} : null;
   Timer? _ifscTimer;
   Timer? _upiTimer;
   String _ifscAsked = AppMode.preview ? 'HDFC0001234' : '';
@@ -99,7 +99,13 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
     _upiTimer = Timer(const Duration(milliseconds: 350), () async {
       try {
         final r = (await Api.I.get('/api/banks/upi', query: {'vpa': vpa}) as Map).cast<String, dynamic>();
-        if (mounted && _upi.text.trim() == vpa) setState(() => _upiInfo = r);
+        if (!mounted || _upi.text.trim() != vpa) return;
+        setState(() {
+          _upiInfo = r;
+          // The name on the UPI ID (Razorpay check) fills an empty account holder.
+          final name = r['name'];
+          if (name is String && name.isNotEmpty && _holder.text.trim().isEmpty) _holder.text = _titleCase(name);
+        });
       } catch (_) {}
     });
   }
@@ -216,6 +222,7 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
     if (acc.isNotEmpty && !RegExp(r'^\d{9,18}$').hasMatch(acc)) return 'Enter the bank account number (9–18 digits)';
     if (acc.isNotEmpty && _account2.text.replaceAll(' ', '') != acc) return 'The two account numbers don’t match';
     if (ifsc.isNotEmpty && _ifscInfo?['found'] == false) return 'This IFSC doesn’t exist. Check it on your cheque book or bank app.';
+    if (upi.isNotEmpty && _upiInfo?['checked'] == true && _upiInfo?['exists'] == false) return 'This UPI ID doesn’t exist. Check it in your UPI app.';
     if (_ifscChecking) return 'Checking the IFSC…';
     if ((_preferred == 'bank' || ifsc.isNotEmpty) && !RegExp(r'^[A-Z]{4}0[A-Z0-9]{6}$').hasMatch(ifsc)) {
       return 'Enter an 11-character IFSC like HDFC0001234';
@@ -285,12 +292,14 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
                 children: [
                   const D4CardTitle('UPI'),
                   D11Field('UPI ID', _upi, hint: 'name@bank', keyboard: TextInputType.emailAddress),
-                  if (_upiNote() case final n?) n,
+                  ..._upiNotes(),
                 ],
               ),
               D4Card(
                 children: [
-                  const D4CardTitle('Bank account'),
+                  D4CardTitle(_preferred == 'upi' ? 'Bank account · optional' : 'Bank account'),
+                  if (_preferred == 'upi')
+                    const D4Note('Only needed if you’d like payouts to a bank account instead of UPI. Your UPI ID doesn’t share your account number or IFSC, so type them here.'),
                   D11Field('Account holder', _holder, caps: TextCapitalization.words),
                   D11Field(
                     'Account number',
@@ -306,8 +315,8 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
                   D11Field('IFSC', _ifsc, hint: 'HDFC0001234', caps: TextCapitalization.characters),
                   if (_ifscNote() case final n?) n,
                   // The bank comes from the IFSC; typed only when it couldn't be looked up.
-                  if (_ifscInfo?['found'] != true)
-                    D11Field('Bank', _bank, hint: 'Filled in from the IFSC', caps: TextCapitalization.words),
+                  if (_ifscInfo != null && _ifscInfo!['found'] == null)
+                    D11Field('Bank', _bank, hint: 'e.g. HDFC Bank', caps: TextCapitalization.words),
                 ],
               ),
               D4Note(
@@ -326,7 +335,9 @@ extension on _ProfilePayoutsScreenState {
   Widget? _ifscNote() {
     if (_ifscChecking) return const _Note('Checking the IFSC…', tone: _Tone.wait);
     final i = _ifscInfo;
-    if (i == null) return null;
+    if (i == null) {
+      return _ifsc.text.trim().isEmpty ? const _Note('The bank and branch fill in from the IFSC (on your cheque book or bank app)', tone: _Tone.wait) : null;
+    }
     if (i['valid'] == false) return const _Note('An IFSC has 11 characters: 4 letters, 0, then 6 letters or digits', tone: _Tone.bad);
     if (i['found'] == false) return const _Note('This IFSC doesn’t exist. Check it on your cheque book or bank app.', tone: _Tone.bad);
     if (i['found'] == null) {
@@ -340,16 +351,47 @@ extension on _ProfilePayoutsScreenState {
     return _Note([i['bank'], if (place.isNotEmpty) place].join(' · '), tone: _Tone.ok);
   }
 
-  /// Under the UPI ID: the app and bank behind its handle.
-  Widget? _upiNote() {
+  /// Under the UPI ID: which app it is from, and (with Razorpay set up)
+  /// whether it exists and whose name is on it.
+  List<Widget> _upiNotes() {
     final u = _upiInfo;
-    if (u == null) return null;
-    if (u['valid'] != true) return const _Note('Enter a UPI ID like name@bank', tone: _Tone.bad);
-    if (u['known'] != true) return _Note('@${u['handle']} isn’t a UPI app we know. Check it in your UPI app.', tone: _Tone.wait);
+    if (u == null) return const [];
+    if (u['valid'] != true) return const [_Note('Enter a UPI ID like name@bank', tone: _Tone.bad)];
+    if (u['checked'] == true && u['exists'] == false) {
+      return const [_Note('This UPI ID doesn’t exist. Check it in your UPI app.', tone: _Tone.bad)];
+    }
     final app = u['app'] as String?;
     final bank = u['bank'] as String?;
-    return _Note([if (app != null) app, if (bank != null && bank != app) bank].join(' · '), tone: _Tone.ok);
+    final out = <Widget>[
+      if (u['known'] != true)
+        _Note('@${u['handle']} isn’t a UPI app we know. Check it in your UPI app.', tone: _Tone.wait)
+      else if (bank != null)
+        _Note('$app · $bank', tone: _Tone.ok)
+      else
+        // A payment app's handle doesn't say which bank the money is in.
+        _Note('$app UPI ID · paid into the bank you linked in $app', tone: _Tone.ok),
+    ];
+    final name = u['name'];
+    if (name is String && name.isNotEmpty) {
+      final holder = _holder.text.trim().toLowerCase();
+      final same = holder.isEmpty || _sameName(holder, name.toLowerCase());
+      out.add(_Note('Name on this UPI ID: ${_titleCase(name)}', tone: same ? _Tone.ok : _Tone.wait));
+      if (!same) out.add(const _Note('This isn’t the account holder’s name below. Payouts go to the name on the UPI ID.', tone: _Tone.wait));
+    }
+    return out;
   }
+}
+
+/// "TANMOY DAS" → "Tanmoy Das".
+String _titleCase(String s) => s.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).map((w) => w[0].toUpperCase() + w.substring(1)).join(' ');
+
+/// Same person: every word of the shorter name appears in the longer one.
+bool _sameName(String a, String b) {
+  final wa = a.split(RegExp(r'[^a-z]+')).where((w) => w.length > 1).toSet();
+  final wb = b.split(RegExp(r'[^a-z]+')).where((w) => w.length > 1).toSet();
+  if (wa.isEmpty || wb.isEmpty) return true;
+  final (small, big) = wa.length <= wb.length ? (wa, wb) : (wb, wa);
+  return small.every(big.contains);
 }
 
 enum _Tone { ok, bad, wait }

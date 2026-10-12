@@ -42,7 +42,7 @@ void main() {
       final p = req.url.path;
       Object? out;
       if (p == '/api/doctor/profile' && req.method == 'GET') {
-        out = {'displayName': 'Dr. Arjun Sen', 'payout': {}};
+        out = {'displayName': 'Dr. Arjun Sen', 'payout': {'accountHolder': ''}};
       } else if (p == '/api/doctor/payouts') {
         out = {'waiting': {'amount': 0, 'count': 0}, 'items': []};
       } else if (p == '/api/banks/ifsc/SBIN0000001') {
@@ -51,9 +51,12 @@ void main() {
         out = {'valid': true, 'found': false, 'ifsc': p.split('/').last};
       } else if (p == '/api/banks/upi') {
         final vpa = req.url.queryParameters['vpa'] ?? '';
-        out = vpa.endsWith('@oksbi')
-            ? {'valid': true, 'known': true, 'handle': 'oksbi', 'app': 'Google Pay', 'bank': 'State Bank of India'}
-            : {'valid': true, 'known': false, 'handle': vpa.split('@').last};
+        out = vpa.endsWith('@oksbi') && !vpa.startsWith('ghost')
+            // A payment app's handle: the app only; Razorpay gives the name on it.
+            ? {'valid': true, 'known': true, 'handle': 'oksbi', 'app': 'Google Pay', 'bank': null, 'checked': true, 'exists': true, 'name': 'TANMOY DAS'}
+            : vpa.startsWith('ghost')
+                ? {'valid': true, 'known': true, 'handle': 'oksbi', 'app': 'Google Pay', 'checked': true, 'exists': false}
+                : {'valid': true, 'known': false, 'handle': vpa.split('@').last};
       } else if (p == '/api/doctor/profile' && req.method == 'PATCH') {
         out = {'ok': true};
       }
@@ -81,10 +84,18 @@ void main() {
     await t.pumpWidget(MaterialApp(theme: medpinTheme(), navigatorKey: Nav.key, home: const ProfilePayoutsScreen()));
     await settle(t);
 
-    // UPI: the handle names the app and bank.
+    // UPI: a payment app's handle names the app, not a bank; the name on it
+    // fills the empty account holder.
+    await t.enterText(field('Account holder'), '');
     await t.enterText(field('UPI ID'), 'tanmoydas5242@oksbi');
     await settle(t);
-    expect(find.text('Google Pay · State Bank of India'), findsOneWidget);
+    expect(find.text('Google Pay UPI ID · paid into the bank you linked in Google Pay'), findsOneWidget);
+    expect(find.textContaining('State Bank'), findsNothing, reason: '@oksbi says nothing about where the money is');
+    expect(find.text('Name on this UPI ID: Tanmoy Das'), findsOneWidget);
+    expect(find.text('Tanmoy Das'), findsOneWidget, reason: 'account holder filled in');
+    await t.enterText(field('UPI ID'), 'ghost@oksbi');
+    await settle(t);
+    expect(find.textContaining('This UPI ID doesn’t exist'), findsOneWidget);
     await t.enterText(field('UPI ID'), 'me@newbankx');
     await settle(t);
     expect(find.textContaining('isn’t a UPI app we know'), findsOneWidget);
@@ -94,8 +105,8 @@ void main() {
     // IFSC: a wrong one is flagged and can't be saved.
     await t.enterText(field('IFSC'), 'SBIN0999999');
     await settle(t);
-    expect(find.textContaining('doesn’t exist'), findsOneWidget);
-    expect(find.text('Bank'), findsOneWidget, reason: 'bank typed by hand while the IFSC is unknown');
+    expect(find.textContaining('This IFSC doesn’t exist'), findsOneWidget);
+    expect(find.text('Bank'), findsNothing, reason: 'the bank only comes from a real IFSC');
 
     // A real one fills in the bank and branch; the Bank box goes away.
     await t.enterText(field('IFSC'), 'sbin0000001');
@@ -104,7 +115,6 @@ void main() {
     expect(find.text('Bank'), findsNothing);
 
     // Account number twice.
-    await t.enterText(field('Account holder'), 'Tanmoy Das');
     await t.enterText(field('Account number'), '30123456789');
     await settle(t, 3);
     await t.enterText(field('Re-enter account number'), '30123456788');

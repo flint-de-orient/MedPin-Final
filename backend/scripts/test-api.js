@@ -16,6 +16,7 @@ env.ai.provider = 'off';
 require('../src/services/banks').fetchImpl = async (url) => {
   const code = url.split('/').pop();
   const known = { HDFC0001234: { BANK: 'HDFC Bank', BRANCH: 'SALT LAKE', CITY: 'KOLKATA', STATE: 'WEST BENGAL', IFSC: code } };
+  if (url.endsWith('/validate/vpa')) return { ok: false, status: 500, json: async () => ({}) }; // not reached: no keys in tests
   return known[code] ? { ok: true, status: 200, json: async () => known[code] } : { ok: false, status: 404, json: async () => ({}) };
 };
 env.smsProvider = 'msg91'; // server-issued codes (Firebase sign-in is checked separately below)
@@ -712,7 +713,31 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const missing = await ctx.doc('PATCH', '/api/doctor/profile', { payout: { ifsc: 'SBIN0999999' } });
     assert.deepEqual([missing.status, missing.body.error.code], [400, 'IFSC_NOT_FOUND']);
     const upi = ok(await ctx.doc('GET', '/api/banks/upi?vpa=tanmoy.d@oksbi'));
-    assert.deepEqual([upi.valid, upi.app, upi.bank], [true, 'Google Pay', 'State Bank of India']);
+    assert.deepEqual([upi.valid, upi.app, upi.bank], [true, 'Google Pay', null], "a payment app's handle doesn't name the person's bank");
+    assert.equal(upi.checked, false, 'no Razorpay keys: the name check is off');
+    const own = ok(await ctx.doc('GET', '/api/banks/upi?vpa=tanmoy.d@sbi'));
+    assert.deepEqual([own.app, own.bank], ['SBI YONO', 'State Bank of India'], "a bank's own handle does");
+    // With Razorpay keys: the UPI ID is checked and the name on it returned.
+    const banks = require('../src/services/banks');
+    const saved = { ...env.razorpay };
+    const realFetch = banks.fetchImpl;
+    Object.assign(env.razorpay, { keyId: 'rzp_test_x', keySecret: 'y' });
+    banks.fetchImpl = async (url, opts) => {
+      assert.match(url, /validate\/vpa$/);
+      const { vpa } = JSON.parse(opts.body);
+      return vpa.startsWith('ghost')
+        ? { ok: false, status: 400, json: async () => ({ success: false }) }
+        : { ok: true, status: 200, json: async () => ({ vpa, success: true, customer_name: 'TANMOY DAS' }) };
+    };
+    try {
+      const named = ok(await ctx.doc('GET', '/api/banks/upi?vpa=tanmoydas5242@oksbi'));
+      assert.deepEqual([named.checked, named.exists, named.name], [true, true, 'TANMOY DAS']);
+      const ghost = ok(await ctx.doc('GET', '/api/banks/upi?vpa=ghost@oksbi'));
+      assert.deepEqual([ghost.checked, ghost.exists], [true, false]);
+    } finally {
+      Object.assign(env.razorpay, saved);
+      banks.fetchImpl = realFetch;
+    }
     assert.equal(ok(await ctx.doc('GET', '/api/banks/upi?vpa=nope')).valid, false);
     assert.equal(ok(await ctx.doc('GET', '/api/banks/upi?vpa=me@newbankx')).known, false, 'unknown handles are allowed but flagged');
     assert.equal(JSON.stringify(pay).includes('50100123456789'), false, 'full account number is never stored');
