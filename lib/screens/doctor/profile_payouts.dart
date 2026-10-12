@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
+import '../../data/config.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
@@ -11,6 +14,11 @@ import '../../widgets/i18n.dart';
 /// Doctor · Payouts and bank account — where online consultation fees are paid.
 /// Live data: GET/PATCH /api/doctor/profile (payout). Only the last 4 digits of
 /// the account number are kept on MedPin.
+///
+/// Details are checked as they are typed: the IFSC is looked up
+/// (GET /api/banks/ifsc/:code, RBI directory) and fills in the bank and
+/// branch; the UPI ID's handle names its app and bank (GET /api/banks/upi);
+/// a new account number is typed twice.
 class ProfilePayoutsScreen extends StatefulWidget {
   const ProfilePayoutsScreen({super.key});
 
@@ -25,7 +33,76 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
   final _bank = TextEditingController(text: 'HDFC Bank');
   final _account = TextEditingController();
   final _ifsc = TextEditingController(text: 'HDFC0001234');
+  final _account2 = TextEditingController();
   String? _last4 = '6789';
+
+  // What the IFSC and UPI ID were found to be (null: not checked yet).
+  Map<String, dynamic>? _ifscInfo =
+      AppMode.preview ? {'valid': true, 'found': true, 'bank': 'HDFC Bank', 'branch': 'Salt Lake', 'city': 'Kolkata'} : null;
+  bool _ifscChecking = false;
+  Map<String, dynamic>? _upiInfo = AppMode.preview ? {'valid': true, 'known': true, 'app': 'Google Pay', 'bank': 'HDFC Bank'} : null;
+  Timer? _ifscTimer;
+  Timer? _upiTimer;
+  String _ifscAsked = AppMode.preview ? 'HDFC0001234' : '';
+
+  @override
+  void initState() {
+    super.initState();
+    _ifsc.addListener(_onIfsc);
+    _upi.addListener(_onUpi);
+    _account.addListener(_onAccount);
+    _account2.addListener(_onAccount);
+  }
+
+  void _onAccount() => setState(() {});
+
+  /// Looks the IFSC up once all 11 characters are typed.
+  void _onIfsc() {
+    final code = _ifsc.text.trim().toUpperCase();
+    if (code == _ifscAsked) return;
+    _ifscAsked = code;
+    _ifscTimer?.cancel();
+    if (!RegExp(r'^[A-Z]{4}0[A-Z0-9]{6}$').hasMatch(code)) {
+      setState(() {
+        _ifscInfo = code.length >= 11 ? const {'valid': false} : null;
+        _ifscChecking = false;
+      });
+      return;
+    }
+    if (!isLive) return;
+    setState(() => _ifscChecking = true);
+    _ifscTimer = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final r = (await Api.I.get('/api/banks/ifsc/$code') as Map).cast<String, dynamic>();
+        if (!mounted || _ifsc.text.trim().toUpperCase() != code) return;
+        setState(() {
+          _ifscInfo = r;
+          // The IFSC decides the bank.
+          if (r['bank'] is String) _bank.text = r['bank'] as String;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _ifscInfo = const {'valid': true, 'found': null});
+      } finally {
+        if (mounted) setState(() => _ifscChecking = false);
+      }
+    });
+  }
+
+  void _onUpi() {
+    final vpa = _upi.text.trim();
+    _upiTimer?.cancel();
+    if (!vpa.contains('@') || vpa.endsWith('@')) {
+      if (_upiInfo != null) setState(() => _upiInfo = null);
+      return;
+    }
+    if (!isLive) return;
+    _upiTimer = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final r = (await Api.I.get('/api/banks/upi', query: {'vpa': vpa}) as Map).cast<String, dynamic>();
+        if (mounted && _upi.text.trim() == vpa) setState(() => _upiInfo = r);
+      } catch (_) {}
+    });
+  }
   DateTime? _updated;
   bool _filled = false;
   bool _busy = false;
@@ -94,7 +171,9 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
 
   @override
   void dispose() {
-    for (final c in [_upi, _holder, _bank, _account, _ifsc]) {
+    _ifscTimer?.cancel();
+    _upiTimer?.cancel();
+    for (final c in [_upi, _holder, _bank, _account, _account2, _ifsc]) {
       c.dispose();
     }
     super.dispose();
@@ -106,7 +185,20 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
     _upi.text = p.str('upiId');
     _holder.text = p.str('accountHolder', data!.str('displayName').replaceFirst(RegExp(r'^Dr\.?\s*'), ''));
     _bank.text = p.str('bankName');
+    // What was saved was checked then; show it without asking again.
+    _ifscAsked = p.str('ifsc');
     _ifsc.text = p.str('ifsc');
+    if (p.str('ifsc').isNotEmpty && p.str('bankName').isNotEmpty) {
+      final branch = p.str('bankBranch').split(', ');
+      _ifscInfo = {
+        'valid': true,
+        'found': true,
+        'bank': p.str('bankName'),
+        'branch': branch.first,
+        if (branch.length > 1) 'city': branch.sublist(1).join(', '),
+      };
+    }
+    if (_upi.text.isNotEmpty) _onUpi();
     _last4 = p['bankAccountLast4'] as String?;
     _updated = F.date(p['updatedAt']);
   }
@@ -122,6 +214,9 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
       if (acc.isEmpty && _last4 == null) return 'Enter the account number';
     }
     if (acc.isNotEmpty && !RegExp(r'^\d{9,18}$').hasMatch(acc)) return 'Enter the bank account number (9–18 digits)';
+    if (acc.isNotEmpty && _account2.text.replaceAll(' ', '') != acc) return 'The two account numbers don’t match';
+    if (ifsc.isNotEmpty && _ifscInfo?['found'] == false) return 'This IFSC doesn’t exist. Check it on your cheque book or bank app.';
+    if (_ifscChecking) return 'Checking the IFSC…';
     if ((_preferred == 'bank' || ifsc.isNotEmpty) && !RegExp(r'^[A-Z]{4}0[A-Z0-9]{6}$').hasMatch(ifsc)) {
       return 'Enter an 11-character IFSC like HDFC0001234';
     }
@@ -190,20 +285,29 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
                 children: [
                   const D4CardTitle('UPI'),
                   D11Field('UPI ID', _upi, hint: 'name@bank', keyboard: TextInputType.emailAddress),
+                  if (_upiNote() case final n?) n,
                 ],
               ),
               D4Card(
                 children: [
                   const D4CardTitle('Bank account'),
                   D11Field('Account holder', _holder, caps: TextCapitalization.words),
-                  D11Field('Bank', _bank, hint: 'e.g. HDFC Bank', caps: TextCapitalization.words),
                   D11Field(
                     'Account number',
                     _account,
                     hint: _last4 == null ? '9–18 digits' : 'Saved ••••$_last4 · type to replace',
                     keyboard: TextInputType.number,
                   ),
+                  if (_account.text.trim().isNotEmpty) ...[
+                    D11Field('Re-enter account number', _account2, hint: 'Type it again to be sure', keyboard: TextInputType.number),
+                    if (_account2.text.isNotEmpty && _account2.text.replaceAll(' ', '') != _account.text.replaceAll(' ', ''))
+                      const _Note('The two numbers don’t match', tone: _Tone.bad),
+                  ],
                   D11Field('IFSC', _ifsc, hint: 'HDFC0001234', caps: TextCapitalization.characters),
+                  if (_ifscNote() case final n?) n,
+                  // The bank comes from the IFSC; typed only when it couldn't be looked up.
+                  if (_ifscInfo?['found'] != true)
+                    D11Field('Bank', _bank, hint: 'Filled in from the IFSC', caps: TextCapitalization.words),
                 ],
               ),
               D4Note(
@@ -213,6 +317,65 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
               ),
             ],
           ),
+    );
+  }
+}
+
+extension on _ProfilePayoutsScreenState {
+  /// Under the IFSC: the bank and branch it belongs to, or what's wrong.
+  Widget? _ifscNote() {
+    if (_ifscChecking) return const _Note('Checking the IFSC…', tone: _Tone.wait);
+    final i = _ifscInfo;
+    if (i == null) return null;
+    if (i['valid'] == false) return const _Note('An IFSC has 11 characters: 4 letters, 0, then 6 letters or digits', tone: _Tone.bad);
+    if (i['found'] == false) return const _Note('This IFSC doesn’t exist. Check it on your cheque book or bank app.', tone: _Tone.bad);
+    if (i['found'] == null) {
+      final bank = i['bank'];
+      return _Note(
+        bank is String ? '$bank · couldn’t check the branch right now' : 'Couldn’t check the IFSC right now. Type the bank name below.',
+        tone: _Tone.wait,
+      );
+    }
+    final place = [i['branch'], i['city']].whereType<String>().where((s) => s.isNotEmpty).join(', ');
+    return _Note([i['bank'], if (place.isNotEmpty) place].join(' · '), tone: _Tone.ok);
+  }
+
+  /// Under the UPI ID: the app and bank behind its handle.
+  Widget? _upiNote() {
+    final u = _upiInfo;
+    if (u == null) return null;
+    if (u['valid'] != true) return const _Note('Enter a UPI ID like name@bank', tone: _Tone.bad);
+    if (u['known'] != true) return _Note('@${u['handle']} isn’t a UPI app we know. Check it in your UPI app.', tone: _Tone.wait);
+    final app = u['app'] as String?;
+    final bank = u['bank'] as String?;
+    return _Note([if (app != null) app, if (bank != null && bank != app) bank].join(' · '), tone: _Tone.ok);
+  }
+}
+
+enum _Tone { ok, bad, wait }
+
+/// One line under a field: a green tick when found, red when wrong, grey otherwise.
+class _Note extends StatelessWidget {
+  final String text;
+  final _Tone tone;
+  const _Note(this.text, {required this.tone});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (tone) { _Tone.ok => MP.green, _Tone.bad => MP.red, _Tone.wait => MP.ink2 };
+    return Transform.translate(
+      offset: const Offset(0, -6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Ico(tone == _Tone.ok ? I.check : (tone == _Tone.bad ? I.alert : I.clock), size: 15, color: color, stroke: 2.2),
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: Text(text, style: tx(13, w: tone == _Tone.ok ? w600 : w500, c: color, h: 1.4))),
+        ],
+      ),
     );
   }
 }

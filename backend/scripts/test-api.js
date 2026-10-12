@@ -12,6 +12,12 @@ env.msg91.authKey = '';
 env.exposeDevOtp = true;
 // …and never call a real AI provider (see scripts/test-ai.js for that).
 env.ai.provider = 'off';
+// IFSC lookups answer from a fixed table, never the internet.
+require('../src/services/banks').fetchImpl = async (url) => {
+  const code = url.split('/').pop();
+  const known = { HDFC0001234: { BANK: 'HDFC Bank', BRANCH: 'SALT LAKE', CITY: 'KOLKATA', STATE: 'WEST BENGAL', IFSC: code } };
+  return known[code] ? { ok: true, status: 200, json: async () => known[code] } : { ok: false, status: 404, json: async () => ({}) };
+};
 env.smsProvider = 'msg91'; // server-issued codes (Firebase sign-in is checked separately below)
 env.firebase.projectId = 'medpin-test';
 const { connect, disconnect, mongoose } = require('../src/db');
@@ -696,6 +702,19 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const pay = ok(await ctx.doc('PATCH', '/api/doctor/profile', { payout: { upiId: 'arjun@okhdfc', accountHolder: 'Arjun Sen', ifsc: 'hdfc0001234', accountNumber: '50100123456789' } }));
     assert.equal(pay.payout.bankAccountLast4, '6789');
     assert.equal(pay.payout.ifsc, 'HDFC0001234');
+    assert.equal(pay.payout.bankName, 'HDFC Bank', 'bank name comes from the IFSC');
+    assert.equal(pay.payout.bankBranch, 'Salt Lake, Kolkata');
+    // Lookups for the form, and a code that doesn't exist.
+    const ifsc = ok(await ctx.doc('GET', '/api/banks/ifsc/hdfc0001234'));
+    assert.deepEqual([ifsc.found, ifsc.bank, ifsc.branch, ifsc.city], [true, 'HDFC Bank', 'Salt Lake', 'Kolkata']);
+    assert.equal(ok(await ctx.doc('GET', '/api/banks/ifsc/SBIN0999999')).found, false);
+    assert.equal(ok(await ctx.doc('GET', '/api/banks/ifsc/XYZ')).valid, false);
+    const missing = await ctx.doc('PATCH', '/api/doctor/profile', { payout: { ifsc: 'SBIN0999999' } });
+    assert.deepEqual([missing.status, missing.body.error.code], [400, 'IFSC_NOT_FOUND']);
+    const upi = ok(await ctx.doc('GET', '/api/banks/upi?vpa=tanmoy.d@oksbi'));
+    assert.deepEqual([upi.valid, upi.app, upi.bank], [true, 'Google Pay', 'State Bank of India']);
+    assert.equal(ok(await ctx.doc('GET', '/api/banks/upi?vpa=nope')).valid, false);
+    assert.equal(ok(await ctx.doc('GET', '/api/banks/upi?vpa=me@newbankx')).known, false, 'unknown handles are allowed but flagged');
     assert.equal(JSON.stringify(pay).includes('50100123456789'), false, 'full account number is never stored');
     // Chat settings are enforced: "nobody" blocks a patient starting a chat.
     ok(await ctx.doc('PATCH', '/api/doctor/profile', { chatSettings: { whoCanMessage: 'nobody' }, notificationPrefs: { quietHours: { enabled: true } } }));

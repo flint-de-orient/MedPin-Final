@@ -76,6 +76,7 @@ const doctorProfileSchema = new Schema(
       upiId: { type: String, trim: true, match: [/^[\w.-]{2,}@[a-zA-Z]{2,}$/, 'Enter a UPI ID like name@bank'] },
       accountHolder: { type: String, trim: true },
       bankName: { type: String, trim: true },
+      bankBranch: { type: String, trim: true }, // from the IFSC: "Salt Lake, Kolkata"
       bankAccountLast4: { type: String, match: /^\d{4}$/ }, // only the last 4 digits are stored
       ifsc: { type: String, uppercase: true, trim: true, match: [/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Enter an 11-character IFSC like HDFC0001234'] },
       preferred: enumOf(['upi', 'bank']),

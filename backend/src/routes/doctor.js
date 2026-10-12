@@ -80,9 +80,20 @@ r.patch('/doctor/profile', async (req, res) => {
   if (body.payout) {
     const acc = String(req.body.payout.accountNumber || '').replace(/\s/g, '');
     if (acc && !/^\d{9,18}$/.test(acc)) throw badRequest('Enter the bank account number (9–18 digits)', 'BAD_ACCOUNT');
+    const banks = require('../services/banks');
+    if (req.body.payout.upiId && !banks.upiInfo(req.body.payout.upiId).valid) throw badRequest('Enter a UPI ID like name@bank', 'BAD_UPI');
+    // The IFSC decides the bank and branch (RBI directory), not what was typed.
+    let fromIfsc = {};
+    if (req.body.payout.ifsc) {
+      const info = await banks.ifscInfo(req.body.payout.ifsc);
+      if (!info.valid) throw badRequest('Enter an 11-character IFSC like HDFC0001234', 'BAD_IFSC');
+      if (info.found === false) throw badRequest(`IFSC ${info.ifsc} doesn't exist. Check it on your cheque book or bank app.`, 'IFSC_NOT_FOUND');
+      if (info.bank) fromIfsc = { bankName: info.bank, bankBranch: [info.branch, info.city].filter(Boolean).join(', ') || undefined };
+    }
     body.payout = {
       ...(p.payout?.toObject?.() || {}),
       ...pick(req.body.payout, ['upiId', 'accountHolder', 'bankName', 'ifsc', 'preferred']),
+      ...fromIfsc,
       ...(acc ? { bankAccountLast4: acc.slice(-4) } : {}),
       updatedAt: new Date(),
     };
@@ -156,6 +167,10 @@ r.post('/doctor/profile/signature/recheck', async (req, res) => {
   await p.save();
   res.json(profileView(p));
 });
+
+// Payout form: IFSC → bank and branch; UPI ID → app and bank (services/banks.js).
+r.get('/banks/ifsc/:code', async (req, res) => res.json(await require('../services/banks').ifscInfo(req.params.code)));
+r.get('/banks/upi', async (req, res) => res.json(require('../services/banks').upiInfo(req.query.vpa)));
 
 // Online fees: what is waiting, the next payout day, past payouts.
 r.get('/doctor/payouts', async (req, res) => res.json(await require('../services/payouts').summary(req.user._id)));
