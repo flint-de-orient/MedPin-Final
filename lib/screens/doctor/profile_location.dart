@@ -572,6 +572,8 @@ class _FeeBoxState extends State<_FeeBox> {
   Widget build(BuildContext context) {
     final focused = _f.hasFocus;
     return GestureDetector(
+      // The field inside is what screen readers focus.
+      excludeFromSemantics: true,
       onTap: _f.requestFocus,
       child: Container(
         width: 96,

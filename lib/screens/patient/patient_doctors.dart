@@ -487,7 +487,7 @@ class _FindDoctorBanner extends StatelessWidget {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text('Search doctors', style: tx(15, w: w700, c: MP.primary)),
+                                  Flexible(child: Text('Search doctors', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(15, w: w700, c: MP.primary))),
                                   const Gap(8),
                                   const Ico(I.arrowRight, size: 18, color: MP.primary, stroke: 2),
                                 ],

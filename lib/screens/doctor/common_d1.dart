@@ -292,6 +292,8 @@ class _D1ComposerState extends State<D1Composer> {
             children: [
               Expanded(
                 child: GestureDetector(
+                  // The field inside is what screen readers focus.
+                  excludeFromSemantics: true,
                   onTap: widget.focusNode.requestFocus,
                   child: Container(
                     height: 56,

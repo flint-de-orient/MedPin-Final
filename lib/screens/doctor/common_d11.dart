@@ -144,6 +144,8 @@ class _D11FieldState extends State<D11Field> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           GestureDetector(
+            // The field inside is what screen readers focus.
+            excludeFromSemantics: true,
             behavior: HitTestBehavior.opaque,
             onTap: _f.requestFocus,
             child: D4FieldBox(

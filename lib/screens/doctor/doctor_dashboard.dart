@@ -255,13 +255,17 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                             children: [
                               const Ico(I.clock, size: 14, color: MP.red, stroke: 2),
                               const Gap(4),
-                              Text('${emergency['ago']}', style: tx(14, w: w600, c: MP.red)),
+                              Flexible(child: Text('${emergency['ago']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, w: w600, c: MP.red))),
                               const Gap(10),
                               Text('·', style: tx(14, w: w600, c: MP.redMuted)),
                               const Gap(10),
-                              Text(
-                                'Review now',
-                                style: tx(14, w: w800, c: MP.red, deco: TextDecoration.underline),
+                              Flexible(
+                                child: Text(
+                                  'Review now',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: tx(14, w: w800, c: MP.red, deco: TextDecoration.underline),
+                                ),
                               ),
                             ],
                           ),
@@ -336,7 +340,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                         children: [
                           Row(
                             children: [
-                              Text('AI Assistant', style: tx(17, w: w700, c: MP.white)),
+                              Flexible(child: Text('AI Assistant', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(17, w: w700, c: MP.white))),
                               const Gap(8),
                               Container(
                                 height: 20,

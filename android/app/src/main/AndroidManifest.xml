@@ -22,6 +22,7 @@
     <uses-permission android:name="android.permission.health.READ_BLOOD_GLUCOSE"/>
     <uses-permission android:name="android.permission.health.READ_WEIGHT"/>
     <application
+        android:networkSecurityConfig="@xml/network_security_config"
         android:label="MedPin"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

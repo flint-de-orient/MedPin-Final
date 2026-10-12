@@ -1227,7 +1227,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
     final on = _specKey == s.key;
     return SizedBox(
       width: 84,
-      height: 100,
+      height: MediaQuery.textScalerOf(context).scale(100).clamp(100, 140).toDouble(),
       child: Tap(
         onTap: () => setState(() => _specKey = on ? null : s.key),
         radius: 16,

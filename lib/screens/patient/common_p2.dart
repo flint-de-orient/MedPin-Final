@@ -597,6 +597,8 @@ class _P2FieldState extends State<P2Field> {
   Widget build(BuildContext context) {
     final focused = _f.hasFocus;
     return GestureDetector(
+      // The field inside is what screen readers focus.
+      excludeFromSemantics: true,
       onTap: _f.requestFocus,
       child: Container(
         height: widget.height,

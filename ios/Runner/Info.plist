@@ -45,6 +45,37 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Why MedPin asks (iOS stops the app without these). -->
+	<key>NSCameraUsageDescription</key>
+	<string>MedPin uses the camera to photograph prescriptions, reports, meals and your profile photo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>MedPin lets you choose prescriptions, reports and photos from your library to add to your records.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>MedPin saves prescriptions and reports you download to your photos when you ask it to.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MedPin uses the microphone when you speak instead of typing and to record voice messages for your doctor.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>MedPin turns what you say into text for notes, questions and searches.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>MedPin uses your location to show doctors and pharmacies near you and to pin your clinic on the map.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>MedPin uses Face ID to lock the app so only you can see your health information.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>MedPin reads steps, heart rate, blood pressure, sugar, oxygen and weight from Apple Health so your doctor can see them.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>MedPin does not write to Apple Health; this is required by iOS for Health access.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>https</string>
+		<string>mailto</string>
+		<string>whatsapp</string>
+		<string>comgooglemaps</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

@@ -255,6 +255,8 @@ class _D4FieldState extends State<D4Field> {
     return D4Labeled(
       label: widget.label,
       child: GestureDetector(
+        // The field inside is what screen readers focus.
+        excludeFromSemantics: true,
         behavior: HitTestBehavior.opaque,
         onTap: _f.requestFocus,
         child: D4FieldBox(

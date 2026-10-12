@@ -159,6 +159,8 @@ class _D7FieldState extends State<D7Field> {
     return Stack(
       children: [
         GestureDetector(
+          // The field inside is what screen readers focus.
+          excludeFromSemantics: true,
           behavior: HitTestBehavior.opaque,
           onTap: _f.requestFocus,
           child: Container(

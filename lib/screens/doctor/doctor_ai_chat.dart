@@ -599,16 +599,22 @@ class _DoctorAiChatScreenState extends State<DoctorAiChatScreen> with LiveData {
                 const Gap(12),
                 Row(
                   children: [
-                    _SmallButton(
-                      'Open profile',
-                      bg: MP.primarySoft,
-                      fg: MP.primary,
-                      onTap: () => Nav.go(context, 'PP-Summary'),
+                    // Buttons wrap onto a second line on small phones / large text.
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _SmallButton(
+                            'Open profile',
+                            bg: MP.primarySoft,
+                            fg: MP.primary,
+                            onTap: () => Nav.go(context, 'PP-Summary'),
+                          ),
+                          _SmallButton('Copy', border: MP.lineStrong, onTap: _copy),
+                        ],
+                      ),
                     ),
-                    const Gap(8),
-                    _SmallButton('Copy', border: MP.lineStrong, onTap: _copy),
-                    const Gap(8),
-                    const Spacer(),
                     const Gap(8),
                     MpIconButton(
                       I.thumbUp,
@@ -953,7 +959,9 @@ class _DoctorAiChatScreenState extends State<DoctorAiChatScreen> with LiveData {
           const Gap(12),
           Text('She also sent an urgent chat at 9:58 AM about chest tightness. It is still unreviewed.', style: body),
           const Gap(12),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               _SmallButton(
                 'Review urgent chat',
@@ -961,7 +969,6 @@ class _DoctorAiChatScreenState extends State<DoctorAiChatScreen> with LiveData {
                 fg: MP.red,
                 onTap: () => Nav.go(context, 'Patient-Thread'),
               ),
-              const Gap(8),
               _SmallButton('Reschedule', border: MP.lineStrong, onTap: () => Nav.go(context, 'Appointments-Manage')),
             ],
           ),

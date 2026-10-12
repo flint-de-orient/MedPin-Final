@@ -245,7 +245,12 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
             const Gap(24),
             Semantics(
               checked: _agree,
+              // The links inside are their own nodes, so the box needs its own name.
+              label: 'I agree to the Terms of Use and Privacy Policy',
+              container: true,
+              onTap: () => setState(() => _agree = !_agree),
               child: GestureDetector(
+                excludeFromSemantics: true,
                 behavior: HitTestBehavior.opaque,
                 onTap: () => setState(() => _agree = !_agree),
                 child: Row(

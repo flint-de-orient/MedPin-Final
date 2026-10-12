@@ -122,6 +122,8 @@ class _D8SearchFieldState extends State<D8SearchField> {
   Widget build(BuildContext context) {
     final focused = _f.hasFocus;
     return GestureDetector(
+      // The field inside is what screen readers focus.
+      excludeFromSemantics: true,
       behavior: HitTestBehavior.opaque,
       onTap: _f.requestFocus,
       child: Container(

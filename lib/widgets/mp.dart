@@ -172,19 +172,29 @@ class MpIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Outer size stays `size` with or without a border (border-box button).
+    final button = SizedBox(
+      width: size,
+      height: size,
+      child: Tap(
+        onTap: onTap ?? () {},
+        radius: radius,
+        color: background,
+        border: borderColor,
+        child: Center(child: Ico(icon, size: iconSize, color: color, stroke: stroke, filled: filled)),
+      ),
+    );
+    // The standard 44px button keeps its look but gets a 48×48 touch area
+    // (Android minimum). Deliberately small ones (36, 40) sit in tight rows
+    // and keep their size.
+    if (size >= 48 || size < 44) return Semantics(button: true, label: label, child: button);
     return Semantics(
       button: true,
       label: label,
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Tap(
-          onTap: onTap ?? () {},
-          radius: radius,
-          color: background,
-          border: borderColor,
-          child: Center(child: Ico(icon, size: iconSize, color: color, stroke: stroke, filled: filled)),
-        ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: onTap,
+        child: SizedBox(width: 48, height: 48, child: Center(child: button)),
       ),
     );
   }
@@ -829,14 +839,21 @@ class MpSwitch extends StatelessWidget {
   final bool value;
   final ValueChanged<bool>? onChanged;
   final bool small;
-  const MpSwitch({super.key, required this.value, this.onChanged, this.small = false});
+
+  /// Screen-reader name. Without one the switch joins its row (the row's text
+  /// and tap), which is how most settings rows are built.
+  final String? label;
+  const MpSwitch({super.key, required this.value, this.onChanged, this.small = false, this.label});
 
   @override
   Widget build(BuildContext context) {
     final w = small ? 46.0 : 52.0, h = small ? 26.0 : 32.0, k = small ? 22.0 : 28.0;
     return Semantics(
       toggled: value,
+      label: label,
+      onTap: label == null || onChanged == null ? null : () => onChanged!(!value),
       child: GestureDetector(
+        excludeFromSemantics: true,
         onTap: () => onChanged?.call(!value),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
@@ -865,12 +882,18 @@ class MpCheck extends StatelessWidget {
   final bool value;
   final ValueChanged<bool>? onChanged;
   final double size;
-  const MpCheck({super.key, required this.value, this.onChanged, this.size = 22});
+
+  /// Screen-reader name; without one the box joins its row (see [MpSwitch]).
+  final String? label;
+  const MpCheck({super.key, required this.value, this.onChanged, this.size = 22, this.label});
   @override
   Widget build(BuildContext context) {
     return Semantics(
       checked: value,
+      label: label,
+      onTap: label == null || onChanged == null ? null : () => onChanged!(!value),
       child: GestureDetector(
+        excludeFromSemantics: true,
         onTap: () => onChanged?.call(!value),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),

@@ -408,6 +408,8 @@ class _TextAreaState extends State<_TextArea> {
   Widget build(BuildContext context) {
     final focused = _focus.hasFocus;
     return GestureDetector(
+      // The field inside is what screen readers focus.
+      excludeFromSemantics: true,
       onTap: _focus.requestFocus,
       child: Container(
         height: widget.height,

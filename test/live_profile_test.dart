@@ -35,6 +35,17 @@ Future<void> _loadFigtree() async {
 
 dynamic _fx(String name) => jsonDecode(File('test/fixtures/live/profile/$name.json').readAsStringSync());
 
+/// The recorded alerts are from 9 Oct; Doctor-Home lists those since
+/// yesterday, so they are moved to an hour ago (keeping their order).
+dynamic _recent(dynamic alerts) {
+  final at = DateTime.now().toUtc().subtract(const Duration(hours: 1));
+  var i = 0;
+  for (final a in (alerts as Map)['items'] as List) {
+    (a as Map)['createdAt'] = at.subtract(Duration(seconds: i++)).toIso8601String();
+  }
+  return alerts;
+}
+
 /// GET responses by path (and the query that picks them).
 dynamic _getResponse(Uri u) {
   final p = u.path;
@@ -49,7 +60,7 @@ dynamic _getResponse(Uri u) {
   if (p.startsWith('/api/locations/')) return _fx('location');
   if (p == '/api/dashboard') return _fx('dashboard');
   if (p == '/api/queue') return _fx('queue');
-  if (p == '/api/alerts') return _fx('alerts');
+  if (p == '/api/alerts') return _recent(_fx('alerts'));
   if (p == '/api/inbox/reviews') return _fx('reviews');
   if (p == '/api/patients' && q['filter'] == 'abnormal') return _fx('patients_abnormal');
   if (p == '/api/notifications') return _fx('notifications');

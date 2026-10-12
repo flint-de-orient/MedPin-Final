@@ -150,6 +150,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _fallback?.cancel();
     final stem = await _next;
     if (!mounted) return;
+    if (AppConfig.missingReleaseServer) {
+      // A release build made without --dart-define=API_BASE_URL can't reach MedPin.
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const _NoServerScreen()));
+      return;
+    }
     final spec = stem == null ? null : Nav.spec(stem);
     Navigator.of(context).pushReplacement(PageRouteBuilder(
       settings: RouteSettings(name: spec?.stem),
@@ -386,4 +391,26 @@ class _MarkPainter extends CustomPainter {
   @override
   bool shouldRepaint(_MarkPainter old) =>
       old.reveal != reveal || old.heartScale != heartScale || old.ripple != ripple || old.dark != dark;
+}
+
+/// Shown by a release build that was made without a server address.
+class _NoServerScreen extends StatelessWidget {
+  const _NoServerScreen();
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: MP.bg,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: Text(
+                'This copy of MedPin was built without a server address, so it cannot connect. Please install the latest version.',
+                textAlign: TextAlign.center,
+                style: tx(16, c: MP.ink2, h: 1.5),
+              ),
+            ),
+          ),
+        ),
+      );
 }

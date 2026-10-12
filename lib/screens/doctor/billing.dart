@@ -383,7 +383,7 @@ class _PlanRow extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text(name, style: tx(16, w: w600, h: 1.5)),
+            Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(16, w: w600, h: 1.5))),
             if (current) ...[const Gap(8), const MpBadge.blue('Current', weight: w600)],
             const Gap(8),
             const Spacer(),

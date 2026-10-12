@@ -74,6 +74,8 @@ class _D10SearchFieldState extends State<D10SearchField> {
   Widget build(BuildContext context) {
     final focused = _focus.hasFocus;
     return GestureDetector(
+      // The field inside is what screen readers focus.
+      excludeFromSemantics: true,
       onTap: _focus.requestFocus,
       child: Container(
         height: 56,

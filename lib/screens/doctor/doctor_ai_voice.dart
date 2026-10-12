@@ -185,7 +185,7 @@ class _TextButton extends StatelessWidget {
         height: 44,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [Text(label, style: tx(15, w: w600, c: color))]),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(15, w: w600, c: color)))]),
         ),
       ),
     );

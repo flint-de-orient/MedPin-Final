@@ -362,13 +362,15 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                         const Gap(4),
                         Row(
                           children: [
-                            Container(
-                              height: 22,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [Text(status, style: tx(12, w: w600, c: fg, h: 1))],
+                            Flexible(
+                              child: Container(
+                                height: 22,
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [Flexible(child: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(12, w: w600, c: fg, h: 1)))],
+                                ),
                               ),
                             ),
                             const Gap(8),

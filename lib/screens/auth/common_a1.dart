@@ -102,7 +102,12 @@ class _A1TermsState extends State<A1Terms> {
     final link = tx(14, w: w600, c: MP.primary, h: 1.4);
     return Semantics(
       checked: widget.value,
+      // The links inside are their own nodes, so the box needs its own name.
+      label: 'I agree to the Terms of Use and Privacy Policy',
+      container: true,
+      onTap: () => widget.onChanged(!widget.value),
       child: GestureDetector(
+        excludeFromSemantics: true,
         behavior: HitTestBehavior.opaque,
         onTap: () => widget.onChanged(!widget.value),
         child: Row(
