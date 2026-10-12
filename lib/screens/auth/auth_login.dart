@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart' hide Text;
-import 'package:flutter/services.dart';
 
 import '../../app/splash.dart' show kLogoHeroTag;
 import '../../data/config.dart';
@@ -149,10 +148,7 @@ class _PhoneField extends StatelessWidget {
                   controller: controller,
                   keyboardType: TextInputType.phone,
                   autofillHints: const [AutofillHints.telephoneNumberNational],
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]')),
-                    LengthLimitingTextInputFormatter(11),
-                  ],
+                  inputFormatters: const [MpPhoneFormatter()],
                   style: tx(16, em: 0.02, tab: true),
                   cursorColor: MP.primary,
                   decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),

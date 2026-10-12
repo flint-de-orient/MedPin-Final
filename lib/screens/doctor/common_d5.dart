@@ -723,7 +723,8 @@ class _D5FieldState extends State<D5Field> {
                   readOnly: widget.readOnly,
                   keyboardType: widget.keyboard,
                   textInputAction: widget.action,
-                  inputFormatters: widget.formatters,
+                  // A phone keyboard here is a 10-digit mobile number.
+                  inputFormatters: widget.formatters ?? (widget.keyboard == TextInputType.phone ? const [MpPhoneFormatter()] : null),
                   onChanged: widget.onChanged,
                   onSubmitted: widget.onSubmitted,
                   style: style,

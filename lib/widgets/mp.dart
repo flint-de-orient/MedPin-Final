@@ -467,6 +467,24 @@ class MpLabel extends StatelessWidget {
       );
 }
 
+/// Indian mobile number as it's typed: digits only, at most 10, shown as
+/// "98765 43210". A pasted "+91 98765 43210" or "098765 43210" keeps the
+/// 10-digit number.
+class MpPhoneFormatter extends TextInputFormatter {
+  const MpPhoneFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    var d = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final pasted = newValue.text.length - oldValue.text.length > 1;
+    if (pasted && d.length > 10 && d.startsWith('91')) d = d.substring(2);
+    if (pasted && d.length > 10 && d.startsWith('0')) d = d.substring(1);
+    if (d.length > 10) d = d.substring(0, 10);
+    final text = d.length > 5 ? '${d.substring(0, 5)} ${d.substring(5)}' : d;
+    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+  }
+}
+
 /// Grows a small control's touch area and screen-reader focus area to at
 /// least [min]×[min] (Android's 48dp guideline) without changing its size on
 /// screen: a 40px chip still looks 40px, but taps up to 4px around it count.
@@ -650,7 +668,8 @@ class _MpInputState extends State<MpInput> {
       maxLines: widget.obscure ? 1 : widget.maxLines,
       minLines: multi ? widget.maxLines : 1,
       onChanged: widget.onChanged,
-      inputFormatters: widget.inputFormatters,
+      inputFormatters: widget.inputFormatters ??
+          (widget.prefixText == '+91' && widget.keyboard == TextInputType.phone ? const [MpPhoneFormatter()] : null),
       autofillHints: widget.autofillHints,
       textAlign: widget.align,
       style: tx(widget.fontSize, h: multi ? 1.5 : null, tab: widget.tab),

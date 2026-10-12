@@ -467,6 +467,8 @@ class _D9InputState extends State<D9Input> {
               controller: _c,
               focusNode: _f,
               keyboardType: widget.keyboard,
+                  // A phone keyboard here is a 10-digit mobile number.
+                  inputFormatters: widget.keyboard == TextInputType.phone ? const [MpPhoneFormatter()] : null,
               style: tx(16, tab: widget.tab),
               cursorColor: MP.primary,
               decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),

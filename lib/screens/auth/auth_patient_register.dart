@@ -134,7 +134,7 @@ class _AuthPatientRegisterScreenState extends State<AuthPatientRegisterScreen> {
                 keyboard: TextInputType.phone,
                 tab: true,
                 autofillHints: const [AutofillHints.telephoneNumberNational],
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]')), LengthLimitingTextInputFormatter(11)],
+                inputFormatters: const [MpPhoneFormatter()],
               ),
             ),
             const Gap(8),
