@@ -101,6 +101,18 @@ const patientContext = (s) =>
 const pickVitals = (v) => ({ bp: v.bpSystolic && `${v.bpSystolic}/${v.bpDiastolic}`, pulse: v.pulse, spo2: v.spo2, weightKg: v.weightKg, sugar: v.bloodSugar, sugarType: v.sugarType, at: v.recordedAt });
 
 /** Called after a patient posts in a care thread. Returns the AI message or null. */
+/** Will MedPin AI answer in this thread now? (Quick: no AI call.) */
+async function willReplyInCareThread(convo) {
+  const paused = convo.aiPausedAt && convo.aiPausedAt > T.addMinutes(new Date(), -AI_PAUSE_MIN);
+  if (!ai.enabled() || !convo.aiEnabled || paused || convo.type !== 'care') return false;
+  const primary = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true });
+  if (primary) {
+    const prof = await M.DoctorProfile.findOne({ userId: primary.userId }, 'chatSettings');
+    if (prof?.chatSettings?.aiReplies === false) return false;
+  }
+  return true;
+}
+
 async function replyInCareThread(convo, patientMessage) {
   const urgentByWords = isEmergencyText(patientMessage.text);
   if (urgentByWords) {
@@ -143,7 +155,8 @@ async function replyInCareThread(convo, patientMessage) {
   while (messages.length && messages[0].role !== 'user') messages.shift();
   if (!messages.length) return null;
 
-  const out = await ai.completeJson({ system, messages, schema: REPLY_SCHEMA, effort: 'medium' });
+  // Chat replies are short: low effort keeps them quick.
+  const out = await ai.completeJson({ system, messages, schema: REPLY_SCHEMA, effort: 'low' });
   if (!out || out.refused || !out.data) return null;
   const d = out.data;
   const flagged = d.needs_doctor || d.reason !== 'none' || ['medium', 'high'].includes(d.urgency) || urgentByWords;
@@ -420,4 +433,4 @@ async function extractPrescription(buffer, mimeType) {
   return out?.data || null;
 }
 
-module.exports = { replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };
+module.exports = { willReplyInCareThread, replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };

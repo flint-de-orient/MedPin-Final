@@ -76,7 +76,7 @@ async function geminiCall(model, body) {
   return { ok: res.ok, status: res.status, json };
 }
 
-async function geminiComplete({ system, messages, format, maxTokens, vision }) {
+async function geminiComplete({ system, messages, format, maxTokens, vision, effort }) {
   const model = vision ? env.ai.gemini.visionModel : env.ai.gemini.chatModel;
   const started = Date.now();
   const body = {
@@ -85,9 +85,14 @@ async function geminiComplete({ system, messages, format, maxTokens, vision }) {
     generationConfig: {
       maxOutputTokens: maxTokens,
       ...(format ? { responseMimeType: 'application/json', responseJsonSchema: format.schema } : {}),
+      ...(effort === 'low' ? { thinkingConfig: { thinkingLevel: 'low' } } : {}),
     },
   };
   let r = await geminiCall(model, body);
+  if (!r.ok && r.status === 400 && body.generationConfig.thinkingConfig && /thinking/i.test(JSON.stringify(r.json))) {
+    delete body.generationConfig.thinkingConfig; // a model without thinking levels
+    r = await geminiCall(model, body);
+  }
   if (!r.ok && format && r.status === 400 && /responseJsonSchema|response_json_schema/i.test(JSON.stringify(r.json))) {
     // Older model: fall back to the OpenAPI-style schema field.
     body.generationConfig = { maxOutputTokens: maxTokens, responseMimeType: 'application/json', responseSchema: stripForGemini(format.schema) };
@@ -116,7 +121,7 @@ async function geminiComplete({ system, messages, format, maxTokens, vision }) {
  */
 async function complete({ system, messages, effort = 'medium', format, maxTokens = 8192, vision = false }) {
   if (!enabled()) return null;
-  if (provider() === 'gemini') return geminiComplete({ system, messages, format, maxTokens, vision });
+  if (provider() === 'gemini') return geminiComplete({ system, messages, format, maxTokens, vision, effort });
   return claudeComplete({ system, messages, effort, format, maxTokens });
 }
 

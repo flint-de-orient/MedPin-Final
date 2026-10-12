@@ -68,6 +68,13 @@ void _serve() {
     final path = req.url.path;
     if (req.method == 'GET') {
       if (path.startsWith('/api/doctors/') && path.endsWith('/slots')) return _json(_data('slots'));
+      if (path == '/api/geo/search') {
+        return _json({
+          'items': [
+            {'lat': 22.5801, 'lng': 88.4142, 'label': 'Sector 2, Salt Lake, Kolkata 700091', 'area': 'Salt Lake', 'city': 'Kolkata'},
+          ],
+        });
+      }
       for (final f in _gets) {
         if (f['path'] != path) continue;
         final q = (f['query'] as Map).cast<String, dynamic>();
@@ -224,11 +231,21 @@ void main() {
     expect(find.textContaining('upcoming booking'), findsOneWidget);
     expect(t.takeException(), isNull);
 
+    // A typed address moves the pin (map search), shown under the field.
+    final addr = find.byWidgetPredicate((w) => w is EditableText && w.controller.text == l['address']);
+    await t.ensureVisible(addr);
+    await t.enterText(addr, 'BD-12, Sector 2, Salt Lake, Kolkata');
+    await t.pump(const Duration(milliseconds: 950));
+    await _settle(t);
+    expect(find.text('Pin moved to Salt Lake, Kolkata'), findsOneWidget);
+
     await _tap(t, find.text('Save changes'));
     expect(_sent.single.$1, 'PATCH');
     expect(_sent.single.$2, '/api/locations/${l['id']}');
     final body = _sent.single.$3;
     expect(body['name'], l['name']);
+    expect(body['address'], 'BD-12, Sector 2, Salt Lake, Kolkata');
+    expect([body['lat'], body['lng']], [22.5801, 88.4142], reason: 'the pin follows the typed address');
     expect((body['weeklyHours'] as List).length, 7);
     expect((body['letterhead'] as Map)['registrationNo'], 'WBMC 64213');
     expect(t.takeException(), isNull);

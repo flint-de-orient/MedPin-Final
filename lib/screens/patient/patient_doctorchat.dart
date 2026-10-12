@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' hide Text;
@@ -44,6 +46,14 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
   bool _showReplies = true;
   String? _convId;
 
+  // Sent instantly: the message shows at once ("Sending…"), the server
+  // confirms it, and MedPin AI's reply arrives a moment later while
+  // "MedPin AI is typing…" shows.
+  final _outbox = <({String text, bool failed})>[];
+  bool _aiTyping = false;
+  Timer? _aiWait;
+  int _aiChecks = 0;
+
   /// The doctor this chat is with (a row of my-doctors).
   Map<String, dynamic> _doctor = const {};
 
@@ -52,6 +62,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
 
   @override
   void dispose() {
+    _aiWait?.cancel();
     _scroll.dispose();
     _text.dispose();
     _busy.dispose();
@@ -105,14 +116,53 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
     });
   }
 
-  Future<void> _sendLive(String text) async {
-    final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/messages', {'text': text}), busy: _busy);
-    if (ok == null || !mounted) return;
+  Future<void> _sendLive(String text, {bool retry = false}) async {
     setState(() {
+      if (retry) _outbox.removeWhere((m) => m.text == text);
+      _outbox.add((text: text, failed: false));
       _showReplies = false;
       _text.clear();
     });
-    await reload(quiet: true);
+    if (_scroll.hasClients) _scroll.jumpTo(0); // the list is reversed: 0 is the newest
+    try {
+      final res = await Api.I.post('/api/conversations/$_convId/messages', {'text': text});
+      if (!mounted) return;
+      await reload(quiet: true);
+      if (!mounted) return;
+      setState(() {
+        _outbox.removeWhere((m) => m.text == text);
+        if (res is Map && res['aiPending'] == true) _waitForAi();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        final i = _outbox.indexWhere((m) => m.text == text && !m.failed);
+        if (i >= 0) _outbox[i] = (text: text, failed: true);
+      });
+    }
+  }
+
+  /// Answered: the newest message is a reply (AI, doctor or clinic), not ours.
+  bool get _answered {
+    final items = data?.list('items') ?? const [];
+    return items.isNotEmpty && items.last.str('senderType') != 'patient';
+  }
+
+  /// Shows "MedPin AI is typing…" and checks for the reply every 1.5 s (up to ~30 s).
+  void _waitForAi() {
+    _aiWait?.cancel();
+    if (_answered) return; // it was quicker than us
+    _aiTyping = true;
+    _aiChecks = 0;
+    _aiWait = Timer.periodic(const Duration(milliseconds: 1500), (t) async {
+      _aiChecks++;
+      await reload(quiet: true);
+      if (!mounted) return t.cancel();
+      if (_answered || _aiChecks >= 20) {
+        t.cancel();
+        setState(() => _aiTyping = false);
+      }
+    });
   }
 
   Future<void> _voiceNote() async {
@@ -221,6 +271,29 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       out.add(mine
           ? _meta('$time · ${m.str('deliveryStatus') == 'seen' ? 'Seen' : 'Sent'}', right: true)
           : _meta('${_sender(m)} · $time'));
+    }
+    // Not yet confirmed by the server: shown at once.
+    for (final m in _outbox) {
+      out.add(Align(alignment: Alignment.centerRight, child: Opacity(opacity: m.failed ? 0.7 : 1, child: _Bubble(m.text, mine: true))));
+      out.add(m.failed
+          ? Align(
+              alignment: Alignment.centerRight,
+              child: MpHitSlop(
+                child: Tap(
+                  onTap: () => _sendLive(m.text, retry: true),
+                  radius: 8,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Text('Not sent · Tap to retry', style: tx(13, w: w600, c: MP.red)),
+                  ),
+                ),
+              ),
+            )
+          : _meta('Sending…', right: true));
+    }
+    if (_aiTyping) {
+      out.add(const Align(alignment: Alignment.centerLeft, child: _Typing()));
+      out.add(_meta('MedPin AI is typing…'));
     }
     if (_showReplies) {
       out.add(Padding(
@@ -557,4 +630,49 @@ class _Bubble extends StatelessWidget {
       child: child ?? Text(text, style: tx(15, h: 1.45, c: mine ? MP.white : MP.ink)),
     ),
   );
+}
+
+/// Three dots that pulse in a reply bubble while MedPin AI writes.
+class _Typing extends StatefulWidget {
+  const _Typing();
+
+  @override
+  State<_Typing> createState() => _TypingState();
+}
+
+class _TypingState extends State<_Typing> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'MedPin AI is typing',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        decoration: BoxDecoration(color: MP.white, borderRadius: _theirs, border: Border.all(color: MP.line)),
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (context, _) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < 3; i++) ...[
+                if (i > 0) const SizedBox(width: 5),
+                Opacity(
+                  // Each dot lights up in turn.
+                  opacity: 0.3 + 0.7 * (((_c.value * 3 - i) % 3) < 1 ? 1 - ((_c.value * 3 - i) % 3) : 0),
+                  child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: MP.ink3, shape: BoxShape.circle)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

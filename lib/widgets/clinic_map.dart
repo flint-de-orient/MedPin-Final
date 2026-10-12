@@ -35,7 +35,22 @@ class ClinicMap extends StatefulWidget {
 
   /// Fill the address by itself when the pin settles (e.g. the field is empty).
   final bool autoFillAddress;
-  const ClinicMap({super.key, this.lat, this.lng, this.label, this.editable = true, this.onChanged, this.onUseAddress, this.autoFillAddress = false});
+
+  /// Each time the user moves the map, [onUseAddress] gets the new place
+  /// (the address follows the pin). Moves made from outside (lat/lng
+  /// changed because the address was typed) don't call it.
+  final bool addressFollowsPin;
+  const ClinicMap({
+    super.key,
+    this.lat,
+    this.lng,
+    this.label,
+    this.editable = true,
+    this.onChanged,
+    this.onUseAddress,
+    this.autoFillAddress = false,
+    this.addressFollowsPin = false,
+  });
 
   /// Widget tests have no network: the map draws a plain backdrop instead of tiles.
   static bool offline = Platform.environment.containsKey('FLUTTER_TEST');
@@ -104,14 +119,14 @@ class _ClinicMapState extends State<ClinicMap> {
   }
 
   /// The address under the pin (backend → OpenStreetMap), quietly.
-  Future<void> _lookup(LatLng p) async {
+  Future<void> _lookup(LatLng p, {bool byUser = false}) async {
     if (!isLive) return;
     try {
       final r = await Api.I.get('/api/geo/reverse', query: {'lat': '${p.latitude}', 'lng': '${p.longitude}'}) as Map;
       if (!mounted || _pin != p) return;
       final place = (r['place'] as Map?)?.cast<String, dynamic>();
       setState(() => _place = place);
-      if (place != null && widget.autoFillAddress && widget.editable) widget.onUseAddress?.call(place);
+      if (place != null && widget.editable && (widget.autoFillAddress || (byUser && widget.addressFollowsPin))) widget.onUseAddress?.call(place);
     } catch (_) {}
   }
 
@@ -156,7 +171,7 @@ class _ClinicMapState extends State<ClinicMap> {
           _hasPin = true;
           _place = null;
         });
-        _lookup(c);
+        _lookup(c, byUser: true);
         widget.onChanged?.call((lat: c.latitude, lng: c.longitude, place: null));
       });
     }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
@@ -33,6 +35,11 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
   final _regNo = TextEditingController(text: 'WBMC 64213');
   final _mapUrl = TextEditingController(text: 'https://maps.app.goo.gl/Qx7bR2mLk9');
   ({double lat, double lng})? _pinAt;
+
+  // Address ↔ map: a typed address moves the pin; moving the map rewrites the address.
+  Timer? _addrTimer;
+  String? _addrNote; // "Pin moved to …" / "Couldn't find …"
+  bool _addrNoteBad = false;
 
   /// Live: the location being edited (null = adding a new one).
   String? _locationId;
@@ -430,11 +437,14 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
           D7Labeled('Location name', child: D7Field(controller: _name)),
           D7Labeled(
             'Address',
+            help: _addrNote,
+            helpColor: _addrNoteBad ? MP.amber : MP.green,
             child: D7Field(
               controller: _address,
               lines: 2,
               height: 80,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              onChanged: _canEdit ? (_) => _onAddressTyped() : null,
             ),
           ),
           D7Labeled('Clinic phone', child: D7Field(controller: _phone, tab: true, keyboard: TextInputType.phone)),
@@ -553,6 +563,52 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     );
   }
 
+  /// Typed address → pin, a moment after typing stops.
+  void _onAddressTyped() {
+    _addrTimer?.cancel();
+    final q = _address.text.trim();
+    if (q.length < 6) {
+      if (_addrNote != null) setState(() => _addrNote = null);
+      return;
+    }
+    _addrTimer = Timer(const Duration(milliseconds: 900), () => _findAddress(q));
+  }
+
+  Future<void> _findAddress(String q) async {
+    if (!isLive) return;
+    try {
+      final near = _pinAt ?? (_savedPin == null ? null : (lat: _savedPin!.$1, lng: _savedPin!.$2));
+      final r = await Api.I.get('/api/geo/search', query: {'q': q, if (near != null) 'lat': '${near.lat}', if (near != null) 'lng': '${near.lng}'}) as Map;
+      if (!mounted || _address.text.trim() != q) return;
+      final items = [for (final x in (r['items'] as List? ?? const [])) (x as Map).cast<String, dynamic>()];
+      final hit = items.where((x) => x['lat'] is num && x['lng'] is num).firstOrNull;
+      setState(() {
+        if (hit == null) {
+          _addrNote = 'Couldn’t find this address on the map. Move the map to place the pin.';
+          _addrNoteBad = true;
+          return;
+        }
+        _pinAt = (lat: (hit['lat'] as num).toDouble(), lng: (hit['lng'] as num).toDouble());
+        if (_isPinLink(_mapUrl.text)) _mapUrl.clear();
+        final where = [hit['area'], hit['city']].whereType<String>().where((s) => s.isNotEmpty).join(', ');
+        _addrNote = where.isEmpty ? 'Pin moved to this address' : 'Pin moved to $where';
+        _addrNoteBad = false;
+      });
+    } catch (_) {
+      // Offline or the map search is busy: the pin stays where it is.
+    }
+  }
+
+  /// The map's address for the pin, keeping the house / building number the
+  /// doctor typed ("DD-24, …"), which the map doesn't know.
+  String _addressFromPlace(Map<String, dynamic> place) {
+    final label = '${place['label'] ?? ''}'.trim();
+    if (label.isEmpty) return _address.text;
+    final first = _address.text.split(',').first.trim();
+    final house = RegExp(r'\d').hasMatch(first) && first.length <= 24 && !label.toLowerCase().contains(first.toLowerCase());
+    return house ? '$first, $label' : label;
+  }
+
   Widget _mapLink() {
     return MpCard(
       child: VGap(
@@ -570,7 +626,12 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
               if (_isPinLink(_mapUrl.text)) _mapUrl.clear();
             }),
             autoFillAddress: _address.text.trim().isEmpty,
-            onUseAddress: (place) => setState(() => _address.text = '${place['label'] ?? _address.text}'),
+            addressFollowsPin: true,
+            onUseAddress: (place) => setState(() {
+              _address.text = _addressFromPlace(place);
+              _addrNote = 'Address updated from the map pin';
+              _addrNoteBad = false;
+            }),
           ),
           D7Labeled(
             'Google Maps link',

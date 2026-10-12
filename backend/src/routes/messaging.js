@@ -127,9 +127,17 @@ threads.post('/:id/messages', upload.single('file'), async (req, res) => {
     if (convo.triage === 'needs_attention') convo.triage = undefined;
     await convo.save();
   }
-  let aiReply = null;
-  if (senderType === 'patient' && text) aiReply = await assistant.replyInCareThread(convo, msg).catch((err) => { console.warn('[ai reply]', err.message); return null; });
-  res.status(201).json({ message: messageView(msg, req.user._id), aiReply: aiReply && messageView(aiReply, req.user._id) });
+  // The message is saved: answer now. MedPin AI's reply (and the emergency
+  // check) runs in the background and arrives in the thread a moment later;
+  // aiPending tells the app to show "MedPin AI is typing…".
+  let aiPending = false;
+  if (senderType === 'patient' && text) {
+    aiPending = await assistant.willReplyInCareThread(convo).catch(() => false);
+    setImmediate(() => {
+      assistant.replyInCareThread(convo, msg).catch((err) => console.warn('[ai reply]', err.message));
+    });
+  }
+  res.status(201).json({ message: messageView(msg, req.user._id), aiReply: null, aiPending });
 });
 
 threads.post('/:id/read', async (req, res) => {

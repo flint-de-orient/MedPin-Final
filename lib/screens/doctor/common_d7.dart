@@ -35,7 +35,8 @@ class D7Labeled extends StatelessWidget {
   final String label;
   final Widget child;
   final String? help;
-  const D7Labeled(this.label, {super.key, required this.child, this.help});
+  final Color? helpColor;
+  const D7Labeled(this.label, {super.key, required this.child, this.help, this.helpColor});
 
   @override
   Widget build(BuildContext context) => Column(
@@ -45,7 +46,7 @@ class D7Labeled extends StatelessWidget {
       Text(label, style: tx(14, w: w600), maxLines: 1, overflow: TextOverflow.ellipsis),
       const SizedBox(height: 8),
       child,
-      if (help != null) ...[const SizedBox(height: 8), Text(help!, style: tx(13, c: MP.ink3))],
+      if (help != null) ...[const SizedBox(height: 8), Text(help!, style: tx(13, c: helpColor ?? MP.ink3))],
     ],
   );
 }
