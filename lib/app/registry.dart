@@ -92,6 +92,7 @@ import '../screens/doctor/profile_help.dart';
 import '../screens/doctor/lab_report.dart';
 import '../screens/doctor/notifications.dart';
 import '../screens/doctor/knowledge_options.dart';
+import '../screens/staff/staff_book.dart';
 import '../screens/staff/staff_today.dart';
 import '../screens/staff/staff_patients.dart';
 import '../screens/staff/staff_profile.dart';
@@ -211,6 +212,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Notifications': ScreenSpec(stem: 'Notifications', title: 'Notifications (staff)', group: 'Doctor dashboard & AI Assistant', panel: 'doctor', builder: (_) => const NotificationsScreen()),
   'Lab-Report': ScreenSpec(stem: 'Lab-Report', title: 'Patient profile · lab report', group: 'Patient profile · tabs (doctor view)', panel: 'doctor', builder: (_) => const LabReportScreen()),
   'Knowledge-Options': ScreenSpec(stem: 'Knowledge-Options', title: 'Knowledge · entry options', group: 'AI assistant & feedback', panel: 'doctor', builder: (_) => const KnowledgeOptionsSheet(), sheet: true, parent: 'Knowledge-Editor'),
+  'Staff-Book': ScreenSpec(stem: 'Staff-Book', title: 'Book appointment', group: 'Front desk', panel: 'staff', builder: (_) => const StaffBookScreen()),
   'Staff-Today': ScreenSpec(stem: 'Staff-Today', title: 'Today', group: 'Front desk', panel: 'staff', builder: (_) => const StaffTodayScreen()),
   'Staff-Patients': ScreenSpec(stem: 'Staff-Patients', title: 'Patients', group: 'Front desk', panel: 'staff', builder: (_) => const StaffPatientsScreen()),
   'Staff-Profile': ScreenSpec(stem: 'Staff-Profile', title: 'Profile', group: 'Front desk', panel: 'staff', builder: (_) => const StaffProfileScreen()),

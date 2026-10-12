@@ -100,6 +100,7 @@ async function book(input) {
   const {
     practiceId, locationId, doctorId, patientId, visitType = 'follow_up', mode = 'in_clinic', reason,
     channel = 'desk', bookedBy, requestId, walkIn = false,
+    confirmed = false, // the front desk agreed the time with the patient
   } = input;
   const startAt = walkIn ? new Date(input.startAt || Date.now()) : new Date(input.startAt);
   if (Number.isNaN(startAt.getTime())) throw badRequest('Choose a time first', 'TIME_REQUIRED');
@@ -122,7 +123,7 @@ async function book(input) {
     date: day, startAt, endAt: T.addMinutes(startAt, dl.schedule.slotLengthMin),
     tokenNo: await nextToken(locationId, day),
     isWalkIn: walkIn, visitType, mode, reason, serviceName, channel, bookedBy,
-    status: walkIn ? 'waiting' : 'booked', arrivedAt: walkIn ? new Date() : undefined,
+    status: walkIn ? 'waiting' : confirmed ? 'confirmed' : 'booked', arrivedAt: walkIn ? new Date() : undefined,
     fee, feeStatus: fee > 0 ? 'pending' : 'free',
   });
   if (fee > 0) {
@@ -139,7 +140,7 @@ async function book(input) {
   if (patient?.userId && !walkIn) {
     await notify([patient.userId], {
       type: 'appointment_booked', practiceId,
-      title: 'Visit booked',
+      title: confirmed ? 'Visit confirmed' : 'Visit booked',
       body: `${T.fmtTime(T.minuteOfDay(startAt))}, ${T.dayKey(startAt)} · Token ${String(appt.tokenNo).padStart(2, '0')}`,
       screen: 'Patient-DoctorDetail', params: { appointmentId: appt._id }, whatsapp: true,
     });

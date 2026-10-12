@@ -10,6 +10,8 @@ import 'package:medpin_app/data/api.dart';
 import 'package:medpin_app/data/config.dart';
 import 'package:medpin_app/data/nav_counts.dart';
 import 'package:medpin_app/data/session.dart';
+import 'package:medpin_app/core/tokens.dart';
+import 'package:medpin_app/screens/doctor/common_d10.dart';
 import 'package:medpin_app/widgets/navs.dart';
 
 /// The Messages badge counts unread patient chats plus unread colleague
@@ -18,6 +20,8 @@ void main() {
   var careUnread = 3;
   var directUnread = 1;
   var reads = 0;
+  var notes = 0;
+  var urgent = 0;
 
   setUpAll(() {
     Nav.registry = screenRegistry;
@@ -29,6 +33,8 @@ void main() {
     careUnread = 3;
     directUnread = 1;
     reads = 0;
+    notes = 0;
+    urgent = 0;
     NavCounts.clear();
     Session.I
       ..accessToken = 'test-access'
@@ -55,6 +61,7 @@ void main() {
         return http.Response(jsonEncode({'unread': n, 'urgent': 0, 'items': []}), 200, headers: json);
       }
       if (p == '/api/alerts') return http.Response(jsonEncode({'counts': {'open': 2}, 'items': []}), 200, headers: json);
+      if (p == '/api/notifications') return http.Response(jsonEncode({'items': [], 'unread': notes, 'urgent': urgent}), 200, headers: json);
       return http.Response('{"error":{"code":"NOT_MOCKED","message":"not mocked"}}', 404, headers: json);
     });
     Api.I.onCountsChanged = () => NavCounts.refresh(force: true);
@@ -94,6 +101,34 @@ void main() {
     await t.pumpWidget(const MaterialApp(home: Scaffold(bottomNavigationBar: DoctorNav(current: 0))));
     await t.pumpAndSettle();
     expect(find.text('99+'), findsOneWidget);
+    NavCounts.clear();
+  });
+
+  testWidgets('Front-desk bell: red dot only for an emergency, blue otherwise, none when read', (t) async {
+    Color? dot() {
+      final boxes = t.widgetList<Container>(find.descendant(of: find.byType(D10StaffHeader), matching: find.byType(Container)));
+      for (final b in boxes) {
+        final d = b.decoration;
+        if (d is BoxDecoration && d.shape == BoxShape.circle && b.constraints?.maxWidth == 12) return d.color;
+      }
+      return null;
+    }
+
+    await t.pumpWidget(const MaterialApp(home: Scaffold(body: D10StaffHeader(bellLabel: 'Notifications'))));
+    await t.pumpAndSettle();
+    expect(dot(), isNull, reason: 'nothing unread: no dot');
+
+    notes = 2;
+    await NavCounts.refresh(force: true);
+    await t.pumpAndSettle();
+    expect(dot(), MP.primary);
+    expect(find.bySemanticsLabel('Notifications, 2 new'), findsOneWidget);
+
+    urgent = 1;
+    await NavCounts.refresh(force: true);
+    await t.pumpAndSettle();
+    expect(dot(), MP.red);
+    expect(find.bySemanticsLabel('Notifications, 2 new, 1 urgent'), findsOneWidget);
     NavCounts.clear();
   });
 }

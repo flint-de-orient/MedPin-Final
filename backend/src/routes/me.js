@@ -205,11 +205,13 @@ notifications.get('/', async (req, res) => {
   // ?practiceId= : a staff member's bell shows only that clinic's notifications.
   const scope = { userId: req.user._id, ...(isId(String(req.query.practiceId || '')) ? { practiceId: String(req.query.practiceId) } : {}) };
   const q = { ...scope, ...(req.query.unread === 'true' ? { readAt: null } : {}) };
-  const [items, unread] = await Promise.all([
+  // urgent: unread emergencies (emergency alerts, urgent chats) turn the bell's dot red.
+  const [items, unread, urgent] = await Promise.all([
     M.Notification.find(q).sort({ createdAt: -1 }).skip(skip).limit(limit),
     M.Notification.countDocuments({ ...scope, readAt: null }),
+    M.Notification.countDocuments({ ...scope, readAt: null, type: /emergency|urgent/ }),
   ]);
-  res.json({ items, unread });
+  res.json({ items, unread, urgent });
 });
 notifications.post('/read-all', async (req, res) => {
   const scope = { userId: req.user._id, ...(isId(String(req.body.practiceId || '')) ? { practiceId: String(req.body.practiceId) } : {}) };

@@ -20,6 +20,10 @@ import 'session.dart';
 class NavCounts {
   NavCounts._();
   static final counts = ValueNotifier<({int messages, int care})>((messages: 0, care: 0));
+
+  /// The bell: unread notifications, and how many are emergencies (emergency
+  /// alerts, urgent chats). Red dot for an emergency, blue for anything else.
+  static final bell = ValueNotifier<({int unread, int urgent})>((unread: 0, urgent: 0));
   static DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
   static bool _busy = false;
   static bool _again = false;
@@ -43,6 +47,7 @@ class NavCounts {
         chats ? _get('/api/inbox', {'type': 'all', 'tab': 'unread'}) : Future.value(null),
         chats ? _get('/api/inbox', {'type': 'direct', 'tab': 'unread'}) : Future.value(null),
         Session.I.can('alerts') ? _get('/api/alerts', {'status': 'open', 'limit': '1'}) : Future.value(null),
+        _get('/api/notifications', {'limit': '1', if (Session.I.practiceId != null) 'practiceId': Session.I.practiceId!}),
       ]);
       if (!Session.I.signedIn) return;
       final alerts = r[2] ?? const {};
@@ -52,6 +57,9 @@ class NavCounts {
         messages: r[0] == null && r[1] == null && chats ? counts.value.messages : _unread(r[0]) + _unread(r[1]),
         care: r[2] == null ? counts.value.care : (open as num).toInt(),
       );
+      if (r[3] != null) {
+        bell.value = (unread: (r[3]!['unread'] as num?)?.toInt() ?? 0, urgent: (r[3]!['urgent'] as num?)?.toInt() ?? 0);
+      }
     } finally {
       _busy = false;
       if (_again) {
@@ -59,6 +67,12 @@ class NavCounts {
         refresh(force: true);
       }
     }
+  }
+
+  /// [bell], refreshed (at most every 20 seconds) when a header shows it.
+  static ValueNotifier<({int unread, int urgent})> watchBell() {
+    refresh();
+    return bell;
   }
 
   /// The Messages screen just loaded both inboxes; use its number at once.
@@ -73,6 +87,7 @@ class NavCounts {
     _timer = null;
     _last = DateTime.fromMillisecondsSinceEpoch(0);
     counts.value = (messages: 0, care: 0);
+    bell.value = (unread: 0, urgent: 0);
   }
 
   static int _unread(Map? inbox) => (inbox?['unread'] as num?)?.toInt() ?? 0;

@@ -30,11 +30,14 @@ class D8TabHeader extends StatefulWidget {
 class _D8TabHeaderState extends State<D8TabHeader> with LiveData {
   @override
   Future<Object?> fetch() =>
-      widget.unread != null ? Future.value(const <String, dynamic>{}) : Api.I.get('/api/notifications', query: {'unread': true, 'limit': 1, if (Session.I.practiceId != null) 'practiceId': Session.I.practiceId});
+      // Always fetched: the urgent count decides the dot's colour.
+      Api.I.get('/api/notifications', query: {'unread': true, 'limit': 1, if (Session.I.practiceId != null) 'practiceId': Session.I.practiceId});
 
   @override
   Widget build(BuildContext context) {
     final unread = !isLive ? 2 : (widget.unread ?? data?.numOr('unread').toInt() ?? 0);
+    // Red only for an unread emergency (emergency alert, urgent chat); blue otherwise.
+    final urgent = !isLive ? 1 : (data?.numOr('urgent').toInt() ?? 0);
     final initials = !isLive || Session.I.name.isEmpty ? 'AS' : F.initials(Session.I.name);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
@@ -48,7 +51,10 @@ class _D8TabHeaderState extends State<D8TabHeader> with LiveData {
               MpIconButton(
                 I.bell,
                 label: unread > 0 ? 'Notifications, $unread new' : 'Notifications',
-                onTap: () => Nav.go(context, 'Notifications'),
+                onTap: () async {
+                  await Nav.go(context, 'Notifications');
+                  if (mounted && isLive) reload(quiet: true);
+                },
               ),
               if (unread > 0) Positioned(
                 top: 10,
@@ -59,7 +65,7 @@ class _D8TabHeaderState extends State<D8TabHeader> with LiveData {
                     width: 12,
                     height: 12,
                     decoration: BoxDecoration(
-                      color: MP.red,
+                      color: urgent > 0 ? MP.red : MP.primary,
                       shape: BoxShape.circle,
                       border: Border.all(color: MP.bg, width: 2),
                     ),

@@ -135,7 +135,7 @@ class Api {
 
     if (res.statusCode < 300 && method != 'GET' && _alarmPaths.hasMatch(path)) onMedicinesChanged?.call();
     // Reading a chat or handling an alert changes the tab-bar badges.
-    if (res.statusCode < 300 && method != 'GET' && (path.endsWith('/read') || path.startsWith('/api/alerts/'))) onCountsChanged?.call();
+    if (res.statusCode < 300 && method != 'GET' && (path.endsWith('/read') || path.endsWith('/read-all') || path.startsWith('/api/alerts/'))) onCountsChanged?.call();
     // Account language / app lock also change from the patient's own settings.
     if (res.statusCode < 300 && method == 'PATCH' && (path == '/api/me' || path == '/api/patient/me') && body is Map) {
       await session.patchUser(body.cast<String, dynamic>());

@@ -75,12 +75,13 @@ r.get('/appointments/:id', async (req, res) => {
 });
 
 r.post('/appointments', async (req, res) => {
-  const { patientId, doctorId, locationId, startAt, visitType, mode, reason, walkIn, requestId } = req.body;
+  const { patientId, doctorId, locationId, startAt, visitType, mode, reason, walkIn, requestId, confirmed } = req.body;
   await patientInPractice(req, patientId);
   if (visitType && !E.VISIT_TYPES.includes(visitType)) throw badRequest('Unknown visit type');
   const appt = await S.book({
     practiceId: req.practiceId, locationId, doctorId: doctorId === 'me' || !doctorId ? req.user._id : doctorId, patientId,
     startAt, visitType, mode, reason, walkIn: Boolean(walkIn), channel: 'desk', bookedBy: req.user._id, requestId,
+    confirmed: confirmed === true,
   });
   res.status(201).json(view(await populate(M.Appointment.findById(appt._id))));
 });

@@ -825,6 +825,40 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(me.user.photoUrl, 'header photo');
   });
 
+  await step('front desk books a confirmed visit; the bell shows emergencies', async () => {
+    // The earlier "sign out other devices" step ended this session; sign in again.
+    await M.OtpRequest.deleteMany({ phone: '9749681391' }); // test only: skip the resend wait
+    ctx.desk = api((await login('9749681391')).accessToken);
+    // Pick a free time a few days ahead, as the Book appointment screen does.
+    let free = null;
+    for (let day = 2; day < 14 && !free; day += 1) {
+      const d = new Date(Date.now() + day * 864e5).toISOString().slice(0, 10);
+      free = ok(await ctx.desk('GET', `/api/doctors/${ctx.doctorUserId}/slots?locationId=${ctx.locationId}&date=${d}`)).slots.find((s) => s.available && !s.walkIn);
+    }
+    assert.ok(free, 'a free slot exists');
+    const appt = ok(await ctx.desk('POST', '/api/appointments', {
+      patientId: ctx.patientId, doctorId: ctx.doctorUserId, locationId: ctx.locationId, startAt: free.startAt, visitType: 'follow_up', reason: 'Sugar review', confirmed: true,
+    }), 201);
+    assert.equal(appt.status, 'confirmed', 'a desk booking is confirmed straight away');
+    const patient = await M.Patient.findById(ctx.patientId, 'userId');
+    if (patient.userId) assert.ok(await M.Notification.exists({ userId: patient.userId, type: 'appointment_booked', title: 'Visit confirmed' }), 'the patient is told');
+    ok(await ctx.desk('POST', `/api/appointments/${appt.id}/cancel`, {}));
+
+    // Bell: urgent counts only unread emergencies.
+    const deskUser = ok(await ctx.desk('GET', '/api/me')).user.id;
+    await M.Notification.updateMany({ userId: deskUser }, { readAt: new Date() });
+    await M.Notification.create({ userId: deskUser, practiceId: ctx.practiceId, type: 'appointment_booked', title: 'Visit booked' });
+    let bell = ok(await ctx.desk('GET', '/api/notifications?limit=1'));
+    assert.equal(bell.unread, 1);
+    assert.equal(bell.urgent, 0, 'an ordinary notification keeps the dot blue');
+    await M.Notification.create({ userId: deskUser, practiceId: ctx.practiceId, type: 'alert_emergency', title: 'Emergency: Priya Sharma' });
+    bell = ok(await ctx.desk('GET', '/api/notifications?limit=1'));
+    assert.deepEqual([bell.unread, bell.urgent], [2, 1], 'an emergency turns it red');
+    ok(await ctx.desk('POST', '/api/notifications/read-all', {}));
+    bell = ok(await ctx.desk('GET', '/api/notifications?limit=1'));
+    assert.deepEqual([bell.unread, bell.urgent], [0, 0], 'no dot once read');
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

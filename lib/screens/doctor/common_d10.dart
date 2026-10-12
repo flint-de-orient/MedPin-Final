@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart' hide Text;
 
+import '../../data/config.dart';
+import '../../data/nav_counts.dart';
 import '../../widgets/mp.dart';
 import '../../widgets/i18n.dart';
 
@@ -202,6 +204,10 @@ class D10Select extends StatelessWidget {
 
 /// Front-desk top bar (scrolls with the page): logo, 44px bell with a dot
 /// (8px colour + 2px #F7F9FC ring) and an optional 40px "TG" profile avatar.
+///
+/// Live, the bell follows [NavCounts.bell]: a red dot when an unread
+/// notification is an emergency, blue for other unread ones, none when all
+/// are read. [bellLabel] and [dot] are the design's sample (preview).
 class D10StaffHeader extends StatelessWidget {
   final String bellLabel;
   final Color dot;
@@ -216,27 +222,21 @@ class D10StaffHeader extends StatelessWidget {
         children: [
           const MpLogo(),
           const Spacer(),
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              MpIconButton(I.bell, label: bellLabel, onTap: () => Nav.go(context, 'Notifications')),
-              Positioned(
-                top: 10,
-                right: 11,
-                child: IgnorePointer(
-                  child: Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: dot,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: MP.bg, width: 2),
-                    ),
-                  ),
-                ),
+          if (AppMode.preview)
+            _bell(context, bellLabel, dot)
+          else
+            ValueListenableBuilder(
+              valueListenable: NavCounts.watchBell(),
+              builder: (context, b, _) => _bell(
+                context,
+                b.unread == 0
+                    ? 'Notifications'
+                    : b.urgent > 0
+                        ? 'Notifications, ${b.unread} new, ${b.urgent} urgent'
+                        : 'Notifications, ${b.unread} new',
+                b.unread == 0 ? null : (b.urgent > 0 ? MP.red : MP.primary),
               ),
-            ],
-          ),
+            ),
           if (showAvatar) ...[
             const Gap(4),
             MpHitSlop(child: Semantics(
@@ -253,6 +253,32 @@ class D10StaffHeader extends StatelessWidget {
       ),
     );
   }
+
+  static Widget _bell(BuildContext context, String label, Color? dot) => Stack(
+    clipBehavior: Clip.none,
+    children: [
+      MpIconButton(
+        I.bell,
+        label: label,
+        onTap: () async {
+          await Nav.go(context, 'Notifications');
+          NavCounts.refresh(force: true); // back from the list: read ones are gone
+        },
+      ),
+      if (dot != null)
+        Positioned(
+          top: 10,
+          right: 11,
+          child: IgnorePointer(
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(color: dot, shape: BoxShape.circle, border: Border.all(color: MP.bg, width: 2)),
+            ),
+          ),
+        ),
+    ],
+  );
 }
 
 /// White list card (radius 24, 1px #E5E9F0 border, card shadow, 4px top and

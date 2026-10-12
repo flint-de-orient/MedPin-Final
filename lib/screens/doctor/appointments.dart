@@ -324,7 +324,21 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
             ];
 
     return MpPage(
-      header: const MpHeader('Appointments'),
+      header: MpHeader(
+        'Appointments',
+        actions: [
+          // Pick a patient, then a free time: a confirmed visit (Staff-Book).
+          MpIconButton(
+            I.plus,
+            label: 'Book appointment',
+            color: MP.primary,
+            onTap: () async {
+              await Nav.go(context, 'Staff-Book');
+              if (mounted && isLive) reload(quiet: true);
+            },
+          ),
+        ],
+      ),
       body: placeholder ?? VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         gap: 16,

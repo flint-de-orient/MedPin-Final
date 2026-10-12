@@ -62,7 +62,7 @@ const _appts = [
 const _actions = [
   (I.userPlus, 'Register walk-in', 'Add-Patient'),
   (I.activity, 'Record vitals', 'Consult-Vitals'),
-  (I.calendar, 'Book appointment', 'Appointments'),
+  (I.calendar, 'Book appointment', 'Staff-Book'),
 ];
 
 /// Live data: GET /api/staff/today, refreshed every 30 s.
