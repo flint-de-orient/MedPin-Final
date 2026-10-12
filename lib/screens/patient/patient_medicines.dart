@@ -256,8 +256,9 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
         final saved = await openSheet<bool>(context, (_) => _ReminderSheet(times: _medsData.obj('reminderTimes'), slots: _usedSlots));
         if (saved == true && mounted) reload(quiet: true);
       case 1:
-        final changed = await openSheet<bool>(context, (_) => _OrdersSheet(orders: d.list('orders')));
-        if (changed == true && mounted) reload(quiet: true);
+        await openSheet<void>(context, (_) => _OrdersSheet(orders: d.list('orders')));
+        // Payments or cancels may have happened in the sheet.
+        if (mounted && isLive) reload(quiet: true);
       case 2:
         await openSheet<void>(context, (_) => const _PastSheet());
       default:
@@ -1314,13 +1315,113 @@ class _ReminderSheetState extends State<_ReminderSheet> {
   }
 }
 
-/// Order history (GET /api/patient/orders, loaded with the screen).
-class _OrdersSheet extends StatelessWidget {
+/// Order history. Loads fresh from GET /api/patient/orders each time it
+/// opens and after a payment or cancel, so each order's payment shows as it
+/// really is: "Paid ✓", "Not paid" (online, unfinished) or "Pay at delivery".
+class _OrdersSheet extends StatefulWidget {
   final List<Map<String, dynamic>> orders;
   const _OrdersSheet({required this.orders});
 
   @override
+  State<_OrdersSheet> createState() => _OrdersSheetState();
+}
+
+class _OrdersSheetState extends State<_OrdersSheet> {
+  late List<Map<String, dynamic>> _orders = widget.orders;
+  bool _loading = isLive;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    if (!isLive) return;
+    try {
+      final r = await Api.I.get('/api/patient/orders');
+      if (!mounted || r is! List) return;
+      setState(() => _orders = [for (final x in r) (x as Map).cast<String, dynamic>()]);
+    } catch (_) {
+      // Offline: keep what the Medicines screen had.
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// (label, text colour, background) of an order's payment.
+  static (String, Color, Color)? _payTag(Map<String, dynamic> o) {
+    final pay = o.obj('pay');
+    final status = o.str('status');
+    return switch (pay.str('status')) {
+      'paid' => ('Paid ✓', MP.green, MP.greenSoft),
+      'refunded' => ('Refunded', MP.ink2, MP.fill),
+      'refund_pending' => ('Refund on its way', MP.amber, MP.amberSoft),
+      _ when status == 'cancelled' => null,
+      _ when const {'delivered', 'picked_up'}.contains(status) => ('Paid at pharmacy', MP.ink2, MP.fill),
+      _ when pay.str('method') == 'online' => ('Not paid', MP.amber, MP.amberSoft),
+      _ => (o.str('mode') == 'pickup' ? 'Pay at the counter' : 'Pay at delivery', MP.ink2, MP.fill),
+    };
+  }
+
+  Future<void> _options(Map<String, dynamic> o) async {
+    final pay = o.obj('pay');
+    final paid = pay.str('status') == 'paid';
+    final status = o.str('status');
+    final cancellable = const {'placed', 'confirmed'}.contains(status);
+    // Unpaid and not yet handed over: can still be paid online.
+    final payable = !paid && !const {'cancelled', 'delivered', 'picked_up'}.contains(status) && !pay.str('status').startsWith('refund');
+    final at = F.date(o['createdAt']);
+    final tag = _payTag(o);
+    final choice = await openSheet<String>(
+      context,
+      (ctx) => MpSheet(
+        title: o.obj('pharmacyId').str('name', 'Your order'),
+        subtitle: [
+          p3Rupees(o.numOr('total')),
+          if (at != null) '${F.dayMonth(at)}, ${F.time(at)}',
+          if (tag != null) tag.$1,
+        ].join(' · '),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (paid) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(color: MP.greenSoft, borderRadius: BorderRadius.circular(12)),
+              child: Text(
+                'Paid online${F.date(pay['paidAt']) != null ? ' on ${F.dayMonth(F.date(pay['paidAt'])!)}' : ''}. The pharmacy knows not to collect money.',
+                style: tx(14, c: MP.green, h: 1.4),
+              ),
+            ),
+            const Gap(12),
+          ],
+          if (payable) ...[MpButton('Pay ${p3Rupees(o.numOr('total'))} online', onTap: () => Navigator.pop(ctx, 'pay')), const Gap(10)],
+          if (cancellable)
+            MpButton(paid ? 'Cancel order · get a refund' : 'Cancel order', kind: MpBtn.secondary, onTap: () => Navigator.pop(ctx, 'cancel')),
+        ]),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'pay') {
+      await Checkout.pay(context, kind: 'order', id: '${o['id']}');
+      if (mounted) await _refresh();
+      return;
+    }
+    final yes = await d4Confirm(
+      context,
+      title: 'Cancel this order?',
+      body: paid ? 'The pharmacy is told straight away and your money is refunded.' : 'The pharmacy is told straight away.',
+      confirm: 'Cancel order',
+    );
+    if (!yes || !mounted) return;
+    final r = await runAction(context, () => Api.I.post('/api/patient/orders/${o['id']}/cancel'));
+    if (r == null || !mounted) return;
+    toast(context, paid ? 'Order cancelled · refund started' : 'Order cancelled');
+    await _refresh();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final orders = _orders;
     return MpSheet(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1328,73 +1429,37 @@ class _OrdersSheet extends StatelessWidget {
           const Gap(20),
           const P2SheetHeader(title: 'Orders', subtitle: 'Medicines you ordered from a pharmacy'),
           const Gap(12),
-          if (orders.isEmpty) const P3Empty('No orders yet'),
+          if (orders.isEmpty) _loading ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(strokeWidth: 2.5))) : const P3Empty('No orders yet'),
           for (var i = 0; i < orders.length; i++)
             Builder(builder: (_) {
               final o = orders[i];
               final at = F.date(o['createdAt']);
               final items = o.list('items');
-              final cancellable = const {'placed', 'confirmed'}.contains(o.str('status'));
-              final pay = o.obj('pay');
-              final payNote = switch (pay.str('status')) {
-                'paid' => 'paid online',
-                'refunded' => 'refunded',
-                'refund_pending' => 'refund on its way',
-                _ => pay.str('method') == 'online' ? 'not paid yet' : null,
-              };
-              // Unpaid and not yet handed over: can still be paid online.
-              final payable = isLive && pay.str('status') != 'paid' && !const {'cancelled', 'delivered', 'picked_up'}.contains(o.str('status'));
+              final status = o.str('status');
+              final tag = _payTag(o);
+              final actionable = isLive && (const {'placed', 'confirmed'}.contains(status) || (tag?.$1 == 'Not paid'));
               final row = P3Row(
                 o.obj('pharmacyId').str('name', 'Pharmacy'),
                 [
-                  if (at != null) F.dayMonth(at),
+                  // The time tells apart two orders on the same day.
+                  if (at != null) '${F.dayMonth(at)}, ${F.time(at)}',
                   '${items.length} ${items.length == 1 ? 'medicine' : 'medicines'}',
                   p3Rupees(o.numOr('total')),
                   o.str('mode') == 'pickup' ? 'pick up' : 'delivery',
-                  if (payNote != null) payNote,
-                  if (cancellable && o.str('etaText').isNotEmpty) o.str('etaText'),
-                  if (cancellable || payable) 'tap for options',
+                  if (const {'placed', 'confirmed'}.contains(status) && o.str('etaText').isNotEmpty) o.str('etaText'),
                 ].join(' · '),
                 first: i == 0,
-                trailing: P2Pill(p3Cap(o.str('status').replaceAll('_', ' ')), bg: o.str('status') == 'cancelled' ? MP.fill : MP.primarySoft, fg: o.str('status') == 'cancelled' ? MP.ink3 : MP.primary),
+                trailing: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    P2Pill(p3Cap(status.replaceAll('_', ' ')), bg: status == 'cancelled' ? MP.fill : MP.primarySoft, fg: status == 'cancelled' ? MP.ink3 : MP.primary),
+                    if (tag != null) ...[const Gap(6), P2Pill(tag.$1, fg: tag.$2, bg: tag.$3)],
+                  ],
+                ),
               );
-              if ((!cancellable && !payable) || !isLive) return row;
-              final paid = pay.str('status') == 'paid';
-              return Tap(
-                onTap: () async {
-                  final nav = Navigator.of(context);
-                  final choice = await openSheet<String>(
-                    context,
-                    (ctx) => MpSheet(
-                      title: o.obj('pharmacyId').str('name', 'Your order'),
-                      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        if (payable) ...[MpButton('Pay ${p3Rupees(o.numOr('total'))} online', onTap: () => Navigator.pop(ctx, 'pay')), const Gap(10)],
-                        if (cancellable)
-                          MpButton(paid ? 'Cancel order · get a refund' : 'Cancel order', kind: MpBtn.secondary, onTap: () => Navigator.pop(ctx, 'cancel')),
-                      ]),
-                    ),
-                  );
-                  if (!context.mounted || choice == null) return;
-                  if (choice == 'pay') {
-                    final paid = await Checkout.pay(context, kind: 'order', id: '${o['id']}');
-                    if (context.mounted) nav.pop(paid);
-                    return;
-                  }
-                  final yes = await d4Confirm(
-                    context,
-                    title: 'Cancel this order?',
-                    body: paid ? 'The pharmacy is told straight away and your money is refunded.' : 'The pharmacy is told straight away.',
-                    confirm: 'Cancel order',
-                  );
-                  if (!yes || !context.mounted) return;
-                  final r = await runAction(context, () => Api.I.post('/api/patient/orders/${o['id']}/cancel'));
-                  if (r == null || !context.mounted) return;
-                  toast(context, paid ? 'Order cancelled · refund started' : 'Order cancelled');
-                  nav.pop(true);
-                },
-                radius: 12,
-                child: row,
-              );
+              if (!actionable) return row;
+              return Tap(onTap: () => _options(o), radius: 12, child: row);
             }),
         ],
       ),
