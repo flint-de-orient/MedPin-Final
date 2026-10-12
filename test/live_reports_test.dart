@@ -39,6 +39,9 @@ Map<String, dynamic> _json(String name) => jsonDecode(File('$_dir/$name.json').r
 /// Recorded response body of a fixture.
 dynamic _data(String name) => _json(name)['data'];
 
+/// GET /api/reports/summary?range=today on a day with no consultations (recorded).
+final _today = jsonDecode(r'''{"range": {"from": "2026-10-11T18:30:00.000Z", "to": "2026-10-12T18:30:00.000Z", "previousFrom": "2026-10-10T18:30:00.000Z", "previousTo": "2026-10-11T18:30:00.000Z"}, "kpis": {"consultations": {"value": 0, "previous": 0, "changePct": null}, "newPatients": {"value": 0, "previous": 0, "change": 0}, "avgConsultMin": {"value": null, "previous": null}, "missed": {"value": 0, "pct": 0}, "prescriptions": {"value": 0, "pctOfConsultations": 0}, "feesCollected": {"value": 0, "previous": 0, "changePct": null}}, "byLocation": [], "byVisitType": [], "byMode": [], "byAgeGroup": [], "topDiagnoses": [], "perDay": [{"date": "2026-10-12", "count": 0}], "followUpCompliancePct": null}''');
+
 /// Requests the screens sent, in order.
 final _sent = <http.Request>[];
 
@@ -65,6 +68,9 @@ void _serve({Map<String, Object?> actions = const {}}) {
     Object? body;
     if (req.method == 'GET' && path == '/api/referrals') {
       body = _data('referrals_${req.url.queryParameters['direction']}');
+    } else if (req.method == 'GET' && path == '/api/reports/summary' && req.url.queryParameters['range'] == 'today') {
+      // "Today" as the server sends it on a quiet day: one day, nothing yet.
+      body = _today;
     } else if (req.method == 'GET' && gets[path] != null) {
       body = _data(gets[path]!);
     } else if (actions.containsKey(path)) {
@@ -120,6 +126,18 @@ void main() {
   });
 
   setUp(launched.clear);
+
+  testWidgets('Doctor-Reports: switching from a long period to Today keeps the chart working', (t) async {
+    _serve();
+    await _pumpLive(t, 'Doctor-Reports', const DoctorReportsScreen());
+    await t.tap(find.text('30 days'));
+    await _settle(t);
+    await t.tap(find.text('Today'));
+    await _settle(t);
+    expect(_requests('GET', '/api/reports/summary').last.url.queryParameters['range'], 'today');
+    expect(t.takeException(), isNull, reason: 'the highlighted day stays inside a 1-day chart');
+    await _tearDown(t);
+  });
 
   testWidgets('Doctor-Reports: live KPIs, splits, range tabs and the filter sheet', (t) async {
     _serve();

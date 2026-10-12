@@ -1378,127 +1378,106 @@ class MpGrid extends StatelessWidget {
 
 /// Centred label for narrow tiles (stat cards): wraps between words, and if
 /// one word is still wider than the tile (large phone text, long words) the
-/// text shrinks a little instead of breaking the word in the middle.
-class MpTileLabel extends LeafRenderObjectWidget {
+/// whole label is drawn a little smaller instead of breaking that word.
+class MpTileLabel extends StatelessWidget {
   final String text;
   final TextStyle style;
   const MpTileLabel(this.text, {super.key, required this.style});
 
   @override
-  RenderObject createRenderObject(BuildContext context) =>
-      _RenderTileLabel(tr(context, text), style, MediaQuery.textScalerOf(context), Directionality.of(context));
-
-  @override
-  void updateRenderObject(BuildContext context, covariant RenderObject renderObject) => (renderObject as _RenderTileLabel)
-    ..text = tr(context, text)
-    ..style = style
-    ..scaler = MediaQuery.textScalerOf(context)
-    ..direction = Directionality.of(context);
+  Widget build(BuildContext context) => _WordFit(
+        words: tr(context, text).split(RegExp(r'\s+')),
+        style: style,
+        scaler: MediaQuery.textScalerOf(context),
+        child: Text(text, textAlign: TextAlign.center, style: style),
+      );
 }
 
-class _RenderTileLabel extends RenderBox {
-  _RenderTileLabel(this._text, this._style, this._scaler, this._direction);
-  String _text;
-  TextStyle _style;
-  TextScaler _scaler;
-  TextDirection _direction;
-  final _painter = TextPainter(textAlign: TextAlign.center);
+class _WordFit extends SingleChildRenderObjectWidget {
+  final List<String> words;
+  final TextStyle style;
+  final TextScaler scaler;
+  const _WordFit({required this.words, required this.style, required this.scaler, required super.child});
 
-  set text(String v) {
-    if (v == _text) return;
-    _text = v;
-    markNeedsLayout();
-    markNeedsSemanticsUpdate();
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderWordFit(words, style, scaler);
+
+  @override
+  void updateRenderObject(BuildContext context, covariant RenderObject renderObject) {
+    final r = renderObject as _RenderWordFit;
+    r.words = words;
+    r.style = style;
+    r.scaler = scaler;
+    r.markNeedsLayout();
   }
+}
 
-  set style(TextStyle v) {
-    if (v == _style) return;
-    _style = v;
-    markNeedsLayout();
-  }
+class _RenderWordFit extends RenderProxyBox {
+  _RenderWordFit(this.words, this.style, this.scaler);
+  List<String> words;
+  TextStyle style;
+  TextScaler scaler;
+  double _scale = 1;
 
-  set scaler(TextScaler v) {
-    if (v == _scaler) return;
-    _scaler = v;
-    markNeedsLayout();
-  }
-
-  set direction(TextDirection v) {
-    if (v == _direction) return;
-    _direction = v;
-    markNeedsLayout();
-  }
-
-  double _widestWord(double size) {
+  double get _widest {
     var w = 0.0;
-    for (final word in _text.split(RegExp(r'\s+'))) {
-      final tp = TextPainter(text: TextSpan(text: word, style: _style.copyWith(fontSize: size)), textDirection: _direction, textScaler: _scaler, maxLines: 1)..layout();
+    for (final word in words) {
+      final tp = TextPainter(text: TextSpan(text: word, style: style), textDirection: TextDirection.ltr, textScaler: scaler, maxLines: 1)..layout();
       if (tp.width > w) w = tp.width;
       tp.dispose();
     }
     return w;
   }
 
-  /// Lays the text out for [width] at the largest size whose longest word fits.
-  void _layoutFor(double width) {
-    var size = _style.fontSize ?? 14;
-    if (width.isFinite) {
-      while (size > 9 && _widestWord(size) > width) {
-        size -= 0.5;
-      }
-    }
-    _painter
-      ..text = TextSpan(text: _text, style: _style.copyWith(fontSize: size))
-      ..textDirection = _direction
-      ..textScaler = _scaler
-      ..layout(maxWidth: width.isFinite ? width : double.infinity);
-  }
-
-  @override
-  double computeMinIntrinsicWidth(double height) => _widestWord(9);
-  @override
-  double computeMaxIntrinsicWidth(double height) {
-    _layoutFor(double.infinity);
-    return _painter.width;
+  /// How much to shrink so the longest word fits [width] (never below 70%).
+  double _scaleFor(double width) {
+    if (!width.isFinite || width <= 0) return 1;
+    final w = _widest;
+    return w <= width ? 1 : (width / w).clamp(0.7, 1.0);
   }
 
   @override
   double computeMinIntrinsicHeight(double width) {
-    _layoutFor(width);
-    return _painter.height;
+    final k = _scaleFor(width);
+    return (child?.getMinIntrinsicHeight(width / k) ?? 0) * k;
   }
 
   @override
-  double computeMaxIntrinsicHeight(double width) => computeMinIntrinsicHeight(width);
+  double computeMaxIntrinsicHeight(double width) {
+    final k = _scaleFor(width);
+    return (child?.getMaxIntrinsicHeight(width / k) ?? 0) * k;
+  }
 
   @override
   Size computeDryLayout(BoxConstraints constraints) {
-    _layoutFor(constraints.maxWidth);
-    return constraints.constrain(Size(constraints.maxWidth.isFinite ? constraints.maxWidth : _painter.width, _painter.height));
+    final k = _scaleFor(constraints.maxWidth);
+    final c = child?.getDryLayout(BoxConstraints(maxWidth: constraints.maxWidth / k)) ?? Size.zero;
+    return constraints.constrain(Size(constraints.maxWidth.isFinite ? constraints.maxWidth : c.width * k, c.height * k));
   }
 
   @override
   void performLayout() {
-    _layoutFor(constraints.maxWidth);
-    size = constraints.constrain(Size(constraints.maxWidth.isFinite ? constraints.maxWidth : _painter.width, _painter.height));
+    final width = constraints.maxWidth;
+    _scale = _scaleFor(width);
+    final c = child!;
+    c.layout(BoxConstraints(minWidth: width.isFinite ? width / _scale : 0, maxWidth: width.isFinite ? width / _scale : double.infinity), parentUsesSize: true);
+    size = constraints.constrain(Size(width.isFinite ? width : c.size.width * _scale, c.size.height * _scale));
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    _painter.paint(context.canvas, offset + Offset((size.width - _painter.width) / 2, 0));
+    if (child == null) return;
+    if (_scale == 1) return context.paintChild(child!, offset);
+    context.pushTransform(needsCompositing, offset, Matrix4.diagonal3Values(_scale, _scale, 1), (ctx, o) => ctx.paintChild(child!, o));
   }
 
   @override
-  void describeSemanticsConfiguration(SemanticsConfiguration config) {
-    super.describeSemanticsConfiguration(config);
-    config
-      ..label = _text
-      ..textDirection = _direction;
-  }
+  void applyPaintTransform(RenderBox child, Matrix4 transform) => transform.scaleByDouble(_scale, _scale, 1, 1);
 
   @override
-  void dispose() {
-    _painter.dispose();
-    super.dispose();
-  }
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) => result.addWithPaintTransform(
+        transform: Matrix4.diagonal3Values(_scale, _scale, 1),
+        position: position,
+        hitTest: (r, p) => child?.hitTest(r, position: p) ?? false,
+      );
 }

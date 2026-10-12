@@ -42,6 +42,9 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
+  // Coming back to the app re-reads the account (photo, name, roles, language),
+  // so changes made elsewhere show without signing in again.
+  WidgetsBinding.instance.addObserver(_AccountRefresher());
   runApp(const MedPinApp());
 }
 
@@ -78,5 +81,17 @@ class MedPinApp extends StatelessWidget {
             },
           ),
     );
+  }
+}
+
+class _AccountRefresher with WidgetsBindingObserver {
+  DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !Session.I.signedIn) return;
+    if (DateTime.now().difference(_last) < const Duration(minutes: 1)) return;
+    _last = DateTime.now();
+    Session.I.reloadAccount().catchError((_) {}); // offline: keep the saved account
   }
 }

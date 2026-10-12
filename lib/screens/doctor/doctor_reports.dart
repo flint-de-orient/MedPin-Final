@@ -433,12 +433,26 @@ class _DailyCardState extends State<_DailyCard> {
   @override
   void initState() {
     super.initState();
+    _selectBusiest();
+  }
+
+  /// New data (another period or a refresh): start on the busiest day again.
+  @override
+  void didUpdateWidget(_DailyCard old) {
+    super.didUpdateWidget(old);
+    if (old.days?.length != widget.days?.length || old.days?.firstOrNull?.$1 != widget.days?.firstOrNull?.$1) _selectBusiest();
+  }
+
+  void _selectBusiest() {
     final v = _vals;
     if (widget.days != null && v.isNotEmpty) {
       final m = v.fold<int>(0, math.max);
       _sel = v.lastIndexOf(m);
     }
   }
+
+  /// The highlighted day, always inside the data (a 1-day period has one bar).
+  int get _at => _vals.isEmpty ? 0 : _sel.clamp(0, _vals.length - 1);
 
   bool _isClosed(int i) => widget.days != null && widget.closed.contains(widget.days![i].$1.weekday);
 
@@ -599,7 +613,7 @@ class _DailyCardState extends State<_DailyCard> {
     final top = _top;
     final bw = (w - _gap * (n - 1)) / n;
     // Tooltip box spans from the axis-label column (-24) to 6px past the plot.
-    final anchor = 24 + _sel * (bw + _gap) + bw / 2;
+    final anchor = 24 + _at * (bw + _gap) + bw / 2;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (d) => _pick(d.localPosition.dx, w),
@@ -619,7 +633,7 @@ class _DailyCardState extends State<_DailyCard> {
                       duration: const Duration(milliseconds: 160),
                       height: _vals[i] == 0 ? 2 : (_vals[i] / top * _plotH).roundToDouble(),
                       decoration: BoxDecoration(
-                        color: _vals[i] == 0 ? MP.lineStrong : (i == _sel ? MP.primary : MP.primaryMid),
+                        color: _vals[i] == 0 ? MP.lineStrong : (i == _at ? MP.primary : MP.primaryMid),
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
                       ),
                     ),
@@ -645,7 +659,7 @@ class _DailyCardState extends State<_DailyCard> {
   }
 
   Widget _tip() {
-    final v = _vals[_sel];
+    final v = _vals[_at];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(color: MP.ink, borderRadius: BorderRadius.circular(12), boxShadow: MPShadow.float),
@@ -653,12 +667,12 @@ class _DailyCardState extends State<_DailyCard> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(_dayLabel(_sel), style: tx(11, c: MP.white.withValues(alpha: 0.72))),
+          Text(_dayLabel(_at), style: tx(11, c: MP.white.withValues(alpha: 0.72))),
           const SizedBox(height: 1),
           Text(
             widget.days == null
                 ? (v == 0 ? 'Closed' : '$v consultations')
-                : (v == 0 ? (_isClosed(_sel) ? 'Closed' : 'No consultations') : d3Plural(v, 'consultation')),
+                : (v == 0 ? (_isClosed(_at) ? 'Closed' : 'No consultations') : d3Plural(v, 'consultation')),
             style: tx(13, w: w700, c: MP.white),
           ),
         ],

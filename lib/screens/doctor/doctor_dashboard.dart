@@ -256,7 +256,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                                 children: [
                                   MpIconTile(a.$1),
                                   const Gap(10),
-                                  Text(a.$2, textAlign: TextAlign.center, style: tx(14, w: w600, h: 1.25)),
+                                  MpTileLabel(a.$2, style: tx(14, w: w600, h: 1.25)),
                                 ],
                               ),
                             ),
