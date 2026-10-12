@@ -96,7 +96,9 @@ class _PatientDoctorsScreenState extends State<PatientDoctorsScreen> with LiveDa
   _Doc _docFrom(Map<String, dynamic> d, Set<String> threads) {
     final name = d.str('name', 'Doctor');
     final what = d.str('specialty', d.str('headline'));
-    final where = [d.str('clinic'), d.str('area')].where((x) => x.isNotEmpty).join(', ');
+    // "City Care, Salt Lake" as in the design: the clinic without "Clinic" / "Hospital".
+    final clinic = d.str('clinic').replaceFirst(RegExp(r'\s+(Clinic|Clinics|Hospital|Medical Centre|Medical Center)$', caseSensitive: false), '');
+    final where = [clinic, d.str('area')].where((x) => x.isNotEmpty).join(', ');
     final next = d.obj('nextVisit');
     final at = F.date(next['startAt']);
     final due = F.date(d['followUpDue']);
@@ -271,7 +273,7 @@ class _DoctorCard extends StatelessWidget {
                       children: [
                         Text(d.name, style: tx(18, w: w700)),
                         const Gap(2),
-                        Text(d.dept, style: tx(14, c: MP.ink2)),
+                        Text(d.dept, maxLines: 2, overflow: TextOverflow.ellipsis, style: tx(14, c: MP.ink2)),
                       ],
                     ),
                   ),
@@ -294,7 +296,14 @@ class _DoctorCard extends StatelessWidget {
                   children: [
                     const Ico(I.calendar, size: 16, color: MP.ink2),
                     const Gap(10),
-                    Expanded(child: Text(d.visit, style: tx(14, w: d.visitBold ? w700 : w400))),
+                    // One line, as in the design (shrinks a little when long).
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(d.visit, maxLines: 1, softWrap: false, style: tx(14, w: d.visitBold ? w700 : w400)),
+                      ),
+                    ),
                   ],
                 ),
                 const Gap(10),
