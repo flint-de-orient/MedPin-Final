@@ -327,7 +327,8 @@ class _D1ComposerState extends State<D1Composer> {
                                 ),
                               Semantics(
                                 label: widget.label,
-                                child: TextField(
+                                child: MpFieldArea(child: TextField(
+                                  textAlignVertical: TextAlignVertical.center,
                                   controller: widget.controller,
                                   focusNode: widget.focusNode,
                                   style: tx(15),
@@ -335,13 +336,13 @@ class _D1ComposerState extends State<D1Composer> {
                                   textInputAction: TextInputAction.send,
                                   onSubmitted: (_) => _send(),
                                   decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
-                                ),
+                                )),
                               ),
                             ],
                           ),
                         ),
                         const Gap(8),
-                        Semantics(
+                        MpHitSlop(child: Semantics(
                           button: true,
                           enabled: canSend,
                           label: 'Send',
@@ -356,7 +357,7 @@ class _D1ComposerState extends State<D1Composer> {
                               child: Ico(I.arrowUp, size: 18, color: canSend ? MP.white : MP.ink3, stroke: 2),
                             ),
                           ),
-                        ),
+                        )),
                       ],
                     ),
                   ),

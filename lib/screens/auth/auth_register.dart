@@ -253,7 +253,10 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
                 excludeFromSemantics: true,
                 behavior: HitTestBehavior.opaque,
                 onTap: () => setState(() => _agree = !_agree),
-                child: Row(
+                // 4px above and below make the row a 48px touch target.
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Transform.translate(
@@ -276,6 +279,7 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
                       ),
                     ),
                   ],
+                ),
                 ),
               ),
             ),
@@ -326,7 +330,8 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
           Expanded(
             child: Semantics(
               label: 'Invite code',
-              child: TextField(
+              child: MpFieldArea(child: TextField(
+                textAlignVertical: TextAlignVertical.center,
                 controller: _invite,
                 focusNode: _inviteFocus,
                 autocorrect: false,
@@ -336,7 +341,7 @@ class _AuthRegisterScreenState extends State<AuthRegisterScreen> {
                 style: tx(16, w: w600, em: 0.06, tab: true),
                 cursorColor: MP.primary,
                 decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
-              ),
+              )),
             ),
           ),
           if (_inviteOk)

@@ -877,7 +877,7 @@ class _ConsentCardState extends State<_ConsentCard> {
               const Gap(12),
               SizedBox(
                 height: 40,
-                child: Tap(
+                child: MpHitSlop(child: Tap(
                   onTap: () {
                     if (widget.live && _liveCode == null) return;
                     Clipboard.setData(ClipboardData(text: code));
@@ -895,7 +895,7 @@ class _ConsentCardState extends State<_ConsentCard> {
                       Text('Copy', style: tx(14, w: w600, c: MP.white)),
                     ],
                   ),
-                ),
+                )),
               ),
             ],
           ),
@@ -915,12 +915,12 @@ class _ConsentCardState extends State<_ConsentCard> {
                   style: tx(13, c: white82, tab: true),
                 ),
               ),
-              Tap(
+              MpHitSlop(child: Tap(
                 onTap: () => widget.live ? _fetch() : setState(_next),
                 radius: 8,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 child: Text('New code', style: tx(14, w: w600, c: MP.white)),
-              ),
+              )),
             ],
           ),
         ],

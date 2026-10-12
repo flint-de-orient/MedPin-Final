@@ -263,7 +263,7 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: MP.lineStrong),
               ),
-              child: TextField(
+              child: MpFieldArea(child: TextField(
                 controller: controller,
                 expands: true,
                 maxLines: null,
@@ -272,13 +272,13 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
                 style: tx(15, h: 1.45),
                 cursorColor: MP.primary,
                 decoration: InputDecoration.collapsed(hintText: tr(context, hint), hintStyle: tx(15, h: 1.45, c: P1.placeholder)),
-              ),
+              )),
             ),
           ),
           Positioned(
             right: 6,
             bottom: 6,
-            child: Semantics(
+            child: MpHitSlop(child: Semantics(
               button: true,
               toggled: _listening,
               label: 'Speak instead',
@@ -292,7 +292,7 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
                   child: Center(child: Ico(I.mic, size: 18, color: _listening ? MP.white : MP.primary)),
                 ),
               ),
-            ),
+            )),
           ),
         ],
       ),
@@ -392,7 +392,7 @@ class _ChoiceChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Border-box button: 40px tall including the 1px border.
-    return Semantics(
+    return MpHitSlop(child: Semantics(
       selected: on,
       button: true,
       child: SizedBox(
@@ -411,7 +411,7 @@ class _ChoiceChip extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 

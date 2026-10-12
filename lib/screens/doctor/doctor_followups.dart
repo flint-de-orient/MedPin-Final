@@ -635,11 +635,11 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> with Live
                 const Gap(8),
                 for (var i = 0; i < r.actions.length; i++) ...[
                   if (i > 0) const Gap(16),
-                  Tap(
+                  MpHitSlop(child: Tap(
                     onTap: () => _act(r.actions[i], r),
                     radius: 6,
                     child: Text(r.actions[i], style: tx(14, w: w600, c: MP.primary)),
-                  ),
+                  )),
                 ],
               ],
             ),
@@ -667,7 +667,7 @@ class _Tabs extends StatelessWidget {
         children: [
           for (var i = 0; i < labels.length; i++)
             Expanded(
-              child: Semantics(
+              child: MpHitSlop(child: Semantics(
                 selected: i == index,
                 button: true,
                 child: GestureDetector(
@@ -690,7 +690,7 @@ class _Tabs extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
+              )),
             ),
         ],
       ),
@@ -750,7 +750,7 @@ class _SectionHead extends StatelessWidget {
             const Gap(8),
             SizedBox(
               height: 32,
-              child: Tap(
+              child: MpHitSlop(child: Tap(
                 onTap: onAction,
                 radius: 999,
                 color: MP.primarySoft,
@@ -761,7 +761,7 @@ class _SectionHead extends StatelessWidget {
                     children: [Text(action!, style: tx(13, w: w600, c: MP.primary))],
                   ),
                 ),
-              ),
+              )),
             ),
           ],
         ],

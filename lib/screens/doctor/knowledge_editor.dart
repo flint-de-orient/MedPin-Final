@@ -420,7 +420,7 @@ class _TextAreaState extends State<_TextArea> {
           border: Border.all(color: focused ? MP.primary : MP.lineStrong),
           boxShadow: focused ? MPShadow.focusRing : null,
         ),
-        child: TextField(
+        child: MpFieldArea(child: TextField(
           controller: widget.controller,
           focusNode: _focus,
           expands: true,
@@ -432,7 +432,7 @@ class _TextAreaState extends State<_TextArea> {
           style: tx(16, h: 1.5),
           cursorColor: MP.primary,
           decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
-        ),
+        )),
       ),
     );
   }

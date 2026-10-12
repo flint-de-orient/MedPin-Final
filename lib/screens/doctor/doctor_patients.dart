@@ -193,7 +193,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> with LiveDa
             child: Row(
               children: [
                 Expanded(child: D2Caps(_sort)),
-                Tap(
+                MpHitSlop(child: Tap(
                   onTap: _pickSort,
                   radius: 8,
                   child: SizedBox(
@@ -210,7 +210,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> with LiveDa
                       ),
                     ),
                   ),
-                ),
+                )),
               ],
             ),
           ),

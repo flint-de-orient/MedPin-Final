@@ -326,7 +326,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> with LiveData
             children: [
               SizedBox(
                 height: 36,
-                child: Tap(
+                child: MpHitSlop(child: Tap(
                   onTap: _filters,
                   radius: 999,
                   color: MP.primarySoft,
@@ -340,11 +340,11 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> with LiveData
                       Text('Filters', style: tx(14, w: w600, c: MP.primary)),
                     ],
                   ),
-                ),
+                )),
               ),
               const SizedBox(width: 8),
               // A <span> with height 36 + 1px border (content-box) → 38px tall.
-              GestureDetector(
+              MpHitSlop(child: GestureDetector(
                 onTap: _filters,
                 child: Container(
                   height: 38,
@@ -357,7 +357,7 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> with LiveData
                   ),
                   child: Text(_f.locationLabel, maxLines: 1, softWrap: false, style: tx(14, w: w500)),
                 ),
-              ),
+              )),
             ],
           ),
         ],

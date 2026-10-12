@@ -414,7 +414,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
                     Positioned(
                       right: -2,
                       bottom: -2,
-                      child: Semantics(
+                      child: MpHitSlop(child: Semantics(
                         button: true,
                         label: 'Change photo',
                         // <button> is border-box: 28×28 including the 2px border.
@@ -430,7 +430,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
                             child: const Center(child: Ico(I.cameraAlt, size: 14, color: MP.white, stroke: 2)),
                           ),
                         ),
-                      ),
+                      )),
                     ),
                   ],
                 ),

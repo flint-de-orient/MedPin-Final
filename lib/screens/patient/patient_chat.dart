@@ -298,7 +298,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
           MpIconButton(I.back, label: 'Back', onTap: () => Nav.back(context)),
           const Gap(8),
           Expanded(
-            child: GestureDetector(
+            child: MpHitSlop(child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _openDoctor,
               child: Row(
@@ -318,7 +318,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
                   ),
                 ],
               ),
-            ),
+            )),
           ),
         ],
       ),
@@ -520,7 +520,8 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
                   ),
                   child: Semantics(
                     label: 'Message',
-                    child: TextField(
+                    child: MpFieldArea(child: TextField(
+                      textAlignVertical: TextAlignVertical.center,
                       controller: _input,
                       style: tx(16),
                       cursorColor: MP.primary,
@@ -534,7 +535,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
                         hintText: tr(context, 'Type a message'),
                         hintStyle: tx(16, c: P1.placeholder),
                       ),
-                    ),
+                    )),
                   ),
                 ),
               ),

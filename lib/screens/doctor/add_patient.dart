@@ -551,14 +551,15 @@ class _VitalFieldState extends State<_VitalField> {
           child: Row(
             children: [
               Expanded(
-                child: TextField(
+                child: MpFieldArea(child: TextField(
+                  textAlignVertical: TextAlignVertical.center,
                   controller: _c,
                   focusNode: _f,
                   keyboardType: keyboard,
                   style: tx(16, tab: true),
                   cursorColor: MP.primary,
                   decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
-                ),
+                )),
               ),
               const Gap(6),
               Text(unit, style: tx(13, c: MP.ink3)),

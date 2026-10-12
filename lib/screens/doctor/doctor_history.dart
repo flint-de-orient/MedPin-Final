@@ -404,11 +404,11 @@ class _ApptRow extends StatelessWidget {
               children: [
                 Expanded(child: Text(a.where, style: tx(13, c: MP.ink3))),
                 const Gap(8),
-                Tap(
+                MpHitSlop(child: Tap(
                   onTap: () => Nav.go(context, _target(a.action), args: a.args),
                   radius: 6,
                   child: Text(a.action, style: tx(14, w: w600, c: MP.primary)),
-                ),
+                )),
               ],
             ),
           ],

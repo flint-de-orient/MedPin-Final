@@ -122,7 +122,7 @@ class D9Link extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Padding(
+  Widget build(BuildContext context) => MpHitSlop(child: Padding(
     padding: EdgeInsets.only(top: top),
     child: Tap(
       onTap: onTap ?? () {},
@@ -132,7 +132,7 @@ class D9Link extends StatelessWidget {
         style: tx(size, w: weight, c: MP.primary, h: h, deco: underline ? TextDecoration.underline : null),
       ),
     ),
-  );
+  ));
 }
 
 /// List row inside a card: 1px #E5E9F0 top border + vertical padding.
@@ -167,7 +167,7 @@ class D9More extends StatelessWidget {
   const D9More(this.text, {super.key, this.onTap});
 
   @override
-  Widget build(BuildContext context) => Tap(
+  Widget build(BuildContext context) => MpHitSlop(child: Tap(
     onTap: onTap ?? () {},
     radius: 0,
     child: Container(
@@ -176,7 +176,7 @@ class D9More extends StatelessWidget {
       decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
       child: Text(text, style: tx(14, w: w600, c: MP.primary, h: 20 / 14)),
     ),
-  );
+  ));
 }
 
 /// Row chevron: 18px, #69738A, stroke 1.75.
@@ -462,14 +462,15 @@ class _D9InputState extends State<D9Input> {
         children: [
           Padding(
             padding: EdgeInsets.fromLTRB(16, 0, widget.padRight, 0),
-            child: TextField(
+            child: MpFieldArea(child: TextField(
+              textAlignVertical: TextAlignVertical.center,
               controller: _c,
               focusNode: _f,
               keyboardType: widget.keyboard,
               style: tx(16, tab: widget.tab),
               cursorColor: MP.primary,
               decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
-            ),
+            )),
           ),
           if (widget.trailing != null)
             Positioned(

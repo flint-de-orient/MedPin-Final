@@ -144,11 +144,11 @@ class D4TextLink extends StatelessWidget {
   const D4TextLink(this.label, {super.key, this.onTap, this.color = MP.primary});
 
   @override
-  Widget build(BuildContext context) => Tap(
+  Widget build(BuildContext context) => MpHitSlop(child: Tap(
     onTap: onTap ?? () {},
     radius: 6,
     child: Text(label, maxLines: 1, softWrap: false, style: tx(14, w: w600, c: color)),
-  );
+  ));
 }
 
 /// 22px status pill: padding 0 8, radius 999, 12/700.
@@ -190,6 +190,9 @@ class D4Labeled extends StatelessWidget {
 
 /// The field box: min-height 48 (border-box), padding 12/14, 1px #D5DBE5
 /// border, radius 16. Focus: #003399 border + 3px #EBF1FB ring.
+/// Vertical padding of a text field inside [D4FieldBox].
+const d4FieldPad = EdgeInsets.symmetric(vertical: 12);
+
 class D4FieldBox extends StatelessWidget {
   final Widget child;
   final Widget? trailing;
@@ -199,7 +202,9 @@ class D4FieldBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minHeight: 48),
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    // The field inside carries the 12px vertical padding ([d4FieldPad]), so
+    // the whole box is its tap target.
+    padding: const EdgeInsets.symmetric(horizontal: 14),
     decoration: BoxDecoration(
       color: MP.white,
       borderRadius: BorderRadius.circular(16),
@@ -271,7 +276,7 @@ class _D4FieldState extends State<D4Field> {
             maxLines: null,
             style: tx(15, h: 1.4),
             cursorColor: MP.primary,
-            decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
+            decoration: const InputDecoration(isCollapsed: true, contentPadding: d4FieldPad, border: InputBorder.none),
           ),
         ),
       ),
@@ -559,7 +564,7 @@ class D4SwitchRow extends StatelessWidget {
   const D4SwitchRow({super.key, required this.title, required this.sub, required this.value, required this.onChanged});
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
+  Widget build(BuildContext context) => MpHitSlop(child: GestureDetector(
     behavior: HitTestBehavior.opaque,
     onTap: () => onChanged(!value),
     child: Row(
@@ -569,7 +574,7 @@ class D4SwitchRow extends StatelessWidget {
         MpSwitch(value: value, small: true, onChanged: onChanged),
       ],
     ),
-  );
+  ));
 }
 
 /// − value + stepper: 1px #D5DBE5 border, radius 12; 36×40 white buttons with
@@ -581,14 +586,16 @@ class D4Stepper extends StatelessWidget {
   final VoidCallback? onPlus;
   const D4Stepper({super.key, required this.value, required this.label, this.onMinus, this.onPlus});
 
-  Widget _button(String glyph, String name, VoidCallback? onTap) => Semantics(
-    button: true,
-    label: name,
-    child: Tap(
-      onTap: onTap ?? () {},
-      radius: 0,
-      color: MP.white,
-      child: SizedBox(width: 36, height: 40, child: Center(child: Text(glyph, style: tx(18, w: w700, c: MP.primary)))),
+  Widget _button(String glyph, String name, VoidCallback? onTap, BorderRadius corners) => MpHitSlop(
+    child: Semantics(
+      button: true,
+      label: name,
+      child: Tap(
+        onTap: onTap ?? () {},
+        borderRadius: corners,
+        color: MP.white,
+        child: SizedBox(width: 36, height: 40, child: Center(child: Text(glyph, style: tx(18, w: w700, c: MP.primary)))),
+      ),
     ),
   );
 
@@ -599,21 +606,20 @@ class D4Stepper extends StatelessWidget {
     child: DecoratedBox(
       position: DecorationPosition.foreground,
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: MP.lineStrong)),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(1),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _button('−', 'Less', onMinus),
-              ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 56),
-                child: Text(value, textAlign: TextAlign.center, style: tx(14, w: w700, tab: true)),
-              ),
-              _button('+', 'More', onPlus),
-            ],
-          ),
+      // Rounded outer corners on the buttons instead of a clip, so the
+      // buttons' 48px touch areas (MpHitSlop) aren't cut off.
+      child: Padding(
+        padding: const EdgeInsets.all(1),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _button('−', 'Less', onMinus, const BorderRadius.horizontal(left: Radius.circular(11))),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 56),
+              child: Text(value, textAlign: TextAlign.center, style: tx(14, w: w700, tab: true)),
+            ),
+            _button('+', 'More', onPlus, const BorderRadius.horizontal(right: Radius.circular(11))),
+          ],
         ),
       ),
     ),

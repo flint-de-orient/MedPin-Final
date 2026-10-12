@@ -320,14 +320,14 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                     ],
                   ),
                 ),
-                Tap(
+                MpHitSlop(child: Tap(
                   onTap: () => _go('Appointments', const {}),
                   radius: 6,
                   child: Padding(
                     padding: const EdgeInsets.only(top: 3),
                     child: Text('View all', style: tx(14, w: w600, c: MP.primary, h: _lh)),
                   ),
-                ),
+                )),
               ],
             ),
           ),

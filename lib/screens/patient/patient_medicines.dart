@@ -527,7 +527,7 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
         child: const P2Pill('Skipped', height: 28, padX: 10, fontSize: 13),
       );
     } else {
-      trailing = Semantics(
+      trailing = MpHitSlop(child: Semantics(
         button: true,
         label: 'Taken at $status, tap to undo',
         child: GestureDetector(
@@ -546,7 +546,7 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
             ),
           ),
         ),
-      );
+      ));
     }
 
     return Row(
@@ -920,7 +920,7 @@ class _MedCard extends StatelessWidget {
             ],
           ),
           const Gap(14),
-          GestureDetector(
+          MpHitSlop(child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Nav.go(context, 'Patient-Records'),
             child: Row(
@@ -932,7 +932,7 @@ class _MedCard extends StatelessWidget {
                 Text('Prescription', style: tx(14, w: w700, c: MP.primary)),
               ],
             ),
-          ),
+          )),
           const Gap(14),
           Row(
             children: [

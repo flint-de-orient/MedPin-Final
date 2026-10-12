@@ -113,7 +113,8 @@ class _AddPatientExistingSheetState extends State<AddPatientExistingSheet> {
               Positioned.fill(
                 child: Opacity(
                   opacity: 0,
-                  child: TextField(
+                  child: MpFieldArea(child: TextField(
+                    textAlignVertical: TextAlignVertical.center,
                     controller: _code,
                     focusNode: _focus,
                     keyboardType: TextInputType.number,
@@ -124,7 +125,7 @@ class _AddPatientExistingSheetState extends State<AddPatientExistingSheet> {
                       LengthLimitingTextInputFormatter(_length),
                     ],
                     decoration: const InputDecoration.collapsed(hintText: null),
-                  ),
+                  )),
                 ),
               ),
               GestureDetector(

@@ -81,7 +81,7 @@ class D2Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fg = selected ? MP.white : MP.ink;
-    return Semantics(
+    return MpHitSlop(child: Semantics(
       button: true,
       selected: selected,
       // <button>: border-box, 36px including the 1px border.
@@ -105,7 +105,7 @@ class D2Chip extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -139,7 +139,7 @@ class D2PillButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fg = outlined ? MP.ink : MP.primary;
-    return SizedBox(
+    return MpHitSlop(child: SizedBox(
       height: height,
       child: Tap(
         onTap: onTap ?? () {},
@@ -158,7 +158,7 @@ class D2PillButton extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -225,7 +225,8 @@ class _D2SearchFieldState extends State<D2SearchField> {
             child:
                 widget.onTap != null
                     ? Text(widget.hint, style: hintStyle, maxLines: 1, overflow: TextOverflow.ellipsis)
-                    : TextField(
+                    : MpFieldArea(child: TextField(
+                      textAlignVertical: TextAlignVertical.center,
                       focusNode: _focus,
                       onChanged: widget.onChanged,
                       style: tx(15),
@@ -237,7 +238,7 @@ class _D2SearchFieldState extends State<D2SearchField> {
                         hintText: widget.hint,
                         hintStyle: hintStyle,
                       ),
-                    ),
+                    )),
           ),
         ],
       ),

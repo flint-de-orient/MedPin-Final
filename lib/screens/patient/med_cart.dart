@@ -259,11 +259,11 @@ class _MedCartScreenState extends State<MedCartScreen> with LiveData {
                     ],
                   ),
                   const Gap(14),
-                  GestureDetector(
+                  MpHitSlop(child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => Nav.go(context, 'Records-Add'),
                     child: Text('Attach prescriptions yourself for now', style: tx(14, w: w600, c: MP.primary)),
-                  ),
+                  )),
                 ],
               ),
             ),
@@ -297,11 +297,11 @@ class _MedCartScreenState extends State<MedCartScreen> with LiveData {
                     ),
                   ),
                   const Gap(12),
-                  GestureDetector(
+                  MpHitSlop(child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: _changeAddress,
                     child: Text(live && address == null ? 'Add' : 'Change', style: tx(14, w: w600, c: MP.primary)),
-                  ),
+                  )),
                 ],
               ),
             ),

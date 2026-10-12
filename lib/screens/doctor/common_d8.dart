@@ -69,7 +69,7 @@ class _D8TabHeaderState extends State<D8TabHeader> with LiveData {
             ],
           ),
           const Gap(4),
-          Semantics(
+          MpHitSlop(child: Semantics(
             button: true,
             label: 'Profile',
             excludeSemantics: true,
@@ -82,7 +82,7 @@ class _D8TabHeaderState extends State<D8TabHeader> with LiveData {
                 builder: (_, _) => MpAvatar(initials, size: 40, fontSize: 15, photo: isLive ? myPhotoUrl : null),
               ),
             ),
-          ),
+          )),
         ],
       ),
     );
@@ -142,7 +142,8 @@ class _D8SearchFieldState extends State<D8SearchField> {
             const Ico(I.search, size: 20, color: MP.ink3),
             const SizedBox(width: 13),
             Expanded(
-              child: TextField(
+              child: MpFieldArea(child: TextField(
+                textAlignVertical: TextAlignVertical.center,
                 controller: _c,
                 focusNode: _f,
                 onChanged: widget.onChanged,
@@ -155,7 +156,7 @@ class _D8SearchFieldState extends State<D8SearchField> {
                   hintText: widget.hint,
                   hintStyle: tx(16, c: MP.ink3),
                 ),
-              ),
+              )),
             ),
             const SizedBox(width: 16), // `padding-right: 16px`
           ],

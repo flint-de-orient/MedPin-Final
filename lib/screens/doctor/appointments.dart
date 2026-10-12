@@ -453,14 +453,14 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
                   ),
                 ),
                 if (_requests.length > 2)
-                  Tap(
+                  MpHitSlop(child: Tap(
                     onTap: () => setState(() => _allRequests = !_allRequests),
                     radius: 6,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 3),
                       child: Text(_allRequests ? 'Show less' : 'View all', style: tx(14, w: w600, c: MP.primary)),
                     ),
-                  ),
+                  )),
               ],
             ),
           ),
@@ -481,7 +481,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
       child: VGap(
         gap: 12,
         children: [
-          Tap(
+          MpHitSlop(child: Tap(
             onTap: () => Nav.go(context, 'PP-Summary', args: q.patientId == null ? null : {'patientId': q.patientId}),
             radius: 12,
             child: Row(
@@ -499,7 +499,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
                 ),
               ],
             ),
-          ),
+          )),
           Text(q.reason, style: tx(15, h: 1.45)),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

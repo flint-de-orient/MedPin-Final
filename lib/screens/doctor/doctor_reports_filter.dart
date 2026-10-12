@@ -311,7 +311,7 @@ class _DoctorReportsFilterSheetState extends State<DoctorReportsFilterSheet> wit
           ],
         ),
         const SizedBox(height: 10),
-        Semantics(
+        MpHitSlop(child: Semantics(
           checked: _compare,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -324,14 +324,14 @@ class _DoctorReportsFilterSheetState extends State<DoctorReportsFilterSheet> wit
               ],
             ),
           ),
-        ),
+        )),
       ],
     );
   }
 
   Widget _dateChip(int i) {
     final sel = i == _date;
-    return Semantics(
+    return MpHitSlop(child: Semantics(
       selected: sel,
       child: SizedBox(
         height: 36,
@@ -353,7 +353,7 @@ class _DoctorReportsFilterSheetState extends State<DoctorReportsFilterSheet> wit
           child: Center(widthFactor: 1, child: Text(_dates[i], style: tx(14, w: w600, c: sel ? MP.white : MP.ink))),
         ),
       ),
-    );
+    ));
   }
 
   Widget _dateField(String label, DateTime d, bool from) {

@@ -144,7 +144,8 @@ class _PhoneField extends StatelessWidget {
               child: Semantics(
                 label: 'Mobile number',
                 hint: '10-digit Indian mobile number',
-                child: TextField(
+                child: MpFieldArea(child: TextField(
+                  textAlignVertical: TextAlignVertical.center,
                   controller: controller,
                   keyboardType: TextInputType.phone,
                   autofillHints: const [AutofillHints.telephoneNumberNational],
@@ -155,7 +156,7 @@ class _PhoneField extends StatelessWidget {
                   style: tx(16, em: 0.02, tab: true),
                   cursorColor: MP.primary,
                   decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
-                ),
+                )),
               ),
             ),
           ),

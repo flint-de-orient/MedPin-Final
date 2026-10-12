@@ -187,7 +187,7 @@ class MpIconButton extends StatelessWidget {
     // The standard 44px button keeps its look but gets a 48×48 touch area
     // (Android minimum). Deliberately small ones (36, 40) sit in tight rows
     // and keep their size.
-    if (size >= 48 || size < 44) return Semantics(button: true, label: label, child: button);
+    if (size >= 48 || size < 44) return MpHitSlop(child: Semantics(button: true, label: label, child: button));
     return Semantics(
       button: true,
       label: label,
@@ -390,7 +390,7 @@ class MpButton extends StatelessWidget {
         if (ic != null && iconAfter) ...[const Gap(8), ic],
       ],
     );
-    return SizedBox(
+    return MpHitSlop(child: SizedBox(
       height: height,
       width: expand ? double.infinity : null,
       child: Tap(
@@ -401,7 +401,7 @@ class MpButton extends StatelessWidget {
         shadow: shadow,
         child: Padding(padding: padding, child: row),
       ),
-    );
+    ));
   }
 }
 
@@ -464,6 +464,83 @@ class MpLabel extends StatelessWidget {
           Expanded(child: Text(text, style: tx(14, w: w600, h: h))),
           if (trailing != null) Text(trailing!, style: tx(13, c: MP.ink3, h: h)),
         ],
+      );
+}
+
+/// Grows a small control's touch area and screen-reader focus area to at
+/// least [min]×[min] (Android's 48dp guideline) without changing its size on
+/// screen: a 40px chip still looks 40px, but taps up to 4px around it count.
+///
+/// Wrap the whole control, including its own Semantics: the control becomes
+/// one screen-reader node (label, state and tap together). Use it for single
+/// controls only (chips, text links, icon buttons), never for a card that
+/// holds several buttons. Taps beyond the edge of the parent can't reach it,
+/// so at the edge of a group the extra area is smaller.
+class MpHitSlop extends SingleChildRenderObjectWidget {
+  final double min;
+  const MpHitSlop({super.key, required Widget super.child, this.min = 48});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderHitSlop(min);
+
+  @override
+  void updateRenderObject(BuildContext context, covariant RenderObject renderObject) {
+    (renderObject as _RenderHitSlop).min = min;
+  }
+}
+
+class _RenderHitSlop extends RenderProxyBox {
+  _RenderHitSlop(this._min);
+  double _min;
+  set min(double v) {
+    if (v == _min) return;
+    _min = v;
+    markNeedsSemanticsUpdate();
+  }
+
+  Rect get _area {
+    final dx = size.width < _min ? (_min - size.width) / 2 : 0.0;
+    final dy = size.height < _min ? (_min - size.height) / 2 : 0.0;
+    return Rect.fromLTRB(-dx, -dy, size.width + dx, size.height + dy);
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (!_area.contains(position)) return false;
+    // A tap in the extra area goes to the control's nearest edge.
+    final inside = Offset(
+      position.dx.clamp(0.5, size.width - 0.5).toDouble(),
+      position.dy.clamp(0.5, size.height - 0.5).toDouble(),
+    );
+    if (child != null && child!.hitTest(result, position: inside)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
+
+  @override
+  Rect get semanticBounds => _area;
+
+  @override
+  void describeSemanticsConfiguration(SemanticsConfiguration config) {
+    super.describeSemanticsConfiguration(config);
+    config
+      ..isSemanticBoundary = true
+      ..isMergingSemanticsOfDescendants = true;
+  }
+}
+
+/// Lets a text field fill the fixed-height box it sits in, so the whole box
+/// (not just the line of text) is the tap target and the screen-reader
+/// focus area. Outside a fixed-height box it changes nothing.
+class MpFieldArea extends StatelessWidget {
+  final Widget child;
+  const MpFieldArea({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, c) => c.hasBoundedHeight && c.maxHeight <= 160 ? SizedBox(height: c.maxHeight, child: child) : child,
       );
 }
 
@@ -574,6 +651,9 @@ class _MpInputState extends State<MpInput> {
       cursorColor: MP.primary,
       decoration: InputDecoration(
         isCollapsed: true,
+        // Single-line fields fill the box's height, so the whole 56px box is
+        // the tap target (not just the 19px line of text).
+        contentPadding: multi ? EdgeInsets.zero : EdgeInsets.symmetric(vertical: ((widget.height - 2 - widget.fontSize * 1.25) / 2).clamp(0, 40).floorToDouble()),
         border: InputBorder.none,
         hintText: widget.hint == null ? null : tr(context, widget.hint!),
         hintStyle: tx(widget.fontSize, c: MP.ink3, h: multi ? 1.5 : null),
@@ -797,7 +877,7 @@ class MpChip extends StatelessWidget {
     final bg = selected ? (tonal ? MP.primarySoft : MP.primary) : MP.white;
     final fg = selected ? (tonal ? MP.primary : MP.white) : MP.ink2;
     final border = selected ? (tonal ? MP.primary : null) : MP.lineStrong;
-    return SizedBox(
+    return MpHitSlop(child: SizedBox(
       height: height,
       child: Tap(
         onTap: onTap ?? () {},
@@ -819,7 +899,7 @@ class MpChip extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -855,7 +935,7 @@ class MpSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final w = small ? 46.0 : 52.0, h = small ? 26.0 : 32.0, k = small ? 22.0 : 28.0;
-    return Semantics(
+    return MpHitSlop(child: Semantics(
       toggled: value,
       label: label,
       onTap: label == null || onChanged == null ? null : () => onChanged!(!value),
@@ -880,7 +960,7 @@ class MpSwitch extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 

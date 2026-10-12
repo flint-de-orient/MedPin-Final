@@ -9,7 +9,7 @@ import 'package:medpin_app/core/nav.dart';
 import 'package:medpin_app/core/tokens.dart';
 import 'package:medpin_app/data/session.dart';
 
-/// Small phones and large text (and Bengali, the longest translation):
+/// Small phones and large text, and the Bengali and Hindi translations:
 /// every screen must lay out without overflow. Set STRESS_REPORT=1 to list
 /// problems instead of failing on the first.
 Future<void> _loadFonts() async {
@@ -25,6 +25,7 @@ const _cases = [
   ('320px', Size(320, 640), 1.0, 'en'),
   ('360px text 130%', Size(360, 760), 1.3, 'en'),
   ('360px Bengali', Size(360, 760), 1.0, 'bn'),
+  ('360px Hindi', Size(360, 760), 1.0, 'hi'),
 ];
 
 void main() {

@@ -187,7 +187,8 @@ class P2Box extends StatelessWidget {
     );
     if (dash) box = CustomPaint(foregroundPainter: _DashPainter(br, borderWidth, border!), child: box);
     if (label != null || onTap != null) box = Semantics(button: onTap != null, label: label, child: box);
-    return box;
+    // A small tappable box gets a 48×48 touch area (see MpHitSlop).
+    return onTap == null ? box : MpHitSlop(child: box);
   }
 }
 
@@ -279,7 +280,7 @@ class P2Pill extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => MpHitSlop(child: Container(
     height: height,
     constraints: BoxConstraints(minWidth: minWidth),
     padding: EdgeInsets.symmetric(horizontal: padX),
@@ -289,7 +290,7 @@ class P2Pill extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [Text(text, maxLines: 1, style: tx(fontSize, w: weight, c: fg, tab: tab))],
     ),
-  );
+  ));
 }
 
 /// 22px radio ring: 2px #003399 with a 10px dot when on, 2px #D5DBE5 when off.
@@ -495,17 +496,21 @@ class P2Stepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget btn(String icon, String l, VoidCallback? onTap) => Semantics(
-      button: true,
-      label: l,
-      child: Material(
-        color: MP.white,
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox(
-            width: button,
-            height: button,
-            child: Center(child: Ico(icon, size: iconSize, color: MP.primary, stroke: 2)),
+    Widget btn(String icon, String l, VoidCallback? onTap, BorderRadius r) => MpHitSlop(
+      child: Semantics(
+        button: true,
+        label: l,
+        child: Material(
+          color: MP.white,
+          borderRadius: r,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              width: button,
+              height: button,
+              child: Center(child: Ico(icon, size: iconSize, color: MP.primary, stroke: 2)),
+            ),
           ),
         ),
       ),
@@ -518,16 +523,15 @@ class P2Stepper extends StatelessWidget {
           border: Border.all(color: MP.lineStrong),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(11),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              btn(I.minus, minusLabel, onMinus),
-              SizedBox(width: valueWidth, child: Text(value, textAlign: TextAlign.center, maxLines: 1, style: style)),
-              btn(I.plus, plusLabel, onPlus),
-            ],
-          ),
+        // Rounded outer corners on the buttons instead of a clip, so their
+        // 48px touch areas (MpHitSlop) aren't cut off.
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            btn(I.minus, minusLabel, onMinus, const BorderRadius.horizontal(left: Radius.circular(11))),
+            SizedBox(width: valueWidth, child: Text(value, textAlign: TextAlign.center, maxLines: 1, style: style)),
+            btn(I.plus, plusLabel, onPlus, const BorderRadius.horizontal(right: Radius.circular(11))),
+          ],
         ),
       ),
     );
@@ -615,7 +619,7 @@ class _P2FieldState extends State<P2Field> {
               children: [
                 SizedBox(width: widget.padLeft),
                 Expanded(
-                  child: TextField(
+                  child: MpFieldArea(child: TextField(
                     controller: _c,
                     focusNode: _f,
                     onChanged: widget.onChanged,
@@ -630,7 +634,7 @@ class _P2FieldState extends State<P2Field> {
                       hintText: widget.hint == null ? null : tr(context, widget.hint!),
                       hintStyle: tx(16, c: MP.ink3),
                     ),
-                  ),
+                  )),
                 ),
                 SizedBox(width: widget.padRight),
               ],

@@ -453,7 +453,8 @@ class _FeeBoxState extends State<_FeeBox> {
           border: Border.all(color: focused ? MP.primary : MP.lineStrong),
           boxShadow: focused ? MPShadow.focusRing : null,
         ),
-        child: TextField(
+        child: MpFieldArea(child: TextField(
+          textAlignVertical: TextAlignVertical.center,
           controller: _c,
           focusNode: _f,
           textAlign: TextAlign.right,
@@ -462,7 +463,7 @@ class _FeeBoxState extends State<_FeeBox> {
           style: tx(15, w: w700, tab: true),
           cursorColor: MP.primary,
           decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
-        ),
+        )),
       ),
     );
   }

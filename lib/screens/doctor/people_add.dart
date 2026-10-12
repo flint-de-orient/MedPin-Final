@@ -156,11 +156,11 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
                 runSpacing: 8,
                 children: [
                   for (final r in D9Roles.all)
-                    Semantics(
+                    MpHitSlop(child: Semantics(
                       inMutuallyExclusiveGroup: true,
                       checked: r == _role,
                       child: _RoleChip(r, selected: r == _role, onTap: () => setState(() => _role = r)),
-                    ),
+                    )),
                 ],
               ),
             ],

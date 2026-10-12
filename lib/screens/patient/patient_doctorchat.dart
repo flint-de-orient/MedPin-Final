@@ -396,7 +396,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
                 MpAvatar(F.initials(_name), size: 40, fontSize: 14),
                 const Gap(8),
                 Expanded(
-                  child: GestureDetector(
+                  child: MpHitSlop(child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: _detail,
                     child: Column(
@@ -407,7 +407,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
                         Text(status, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(13, w: w600, c: statusColor)),
                       ],
                     ),
-                  ),
+                  )),
                 ),
                 const Gap(8),
                 MpIconButton(I.search, label: 'Search this chat', onTap: _search),

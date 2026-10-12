@@ -110,7 +110,10 @@ class _A1TermsState extends State<A1Terms> {
         excludeFromSemantics: true,
         behavior: HitTestBehavior.opaque,
         onTap: () => widget.onChanged(!widget.value),
-        child: Row(
+        // 4px above and below make the row a 48px touch target.
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Transform.translate(offset: const Offset(0, -1), child: MpCheck(value: widget.value, onChanged: widget.onChanged)),
@@ -130,6 +133,7 @@ class _A1TermsState extends State<A1Terms> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

@@ -542,14 +542,14 @@ class _FileCard extends StatelessWidget {
                 Text(lab, style: tx(17, w: w700)),
                 const Gap(4),
                 if (collected.isNotEmpty) ...[Text(collected, style: tx(14, c: MP.ink2)), const Gap(4)],
-                GestureDetector(
+                MpHitSlop(child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: onRetake,
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text('Retake or replace', style: tx(14, w: w600, c: MP.primary)),
                   ),
-                ),
+                )),
               ],
             ),
           ),
@@ -575,7 +575,7 @@ class _TestCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          GestureDetector(
+          MpHitSlop(child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onSelect,
             child: Row(
@@ -600,7 +600,7 @@ class _TestCard extends StatelessWidget {
                 P2Pill(t.flag, bg: t.tone.$1, fg: t.tone.$2, height: 24, padX: 10),
               ],
             ),
-          ),
+          )),
           const Gap(12),
           Padding(padding: const EdgeInsets.only(left: 34), child: Text(t.summary, style: tx(14, h: 1.5))),
           if (open) ...[

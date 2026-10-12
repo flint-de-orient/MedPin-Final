@@ -897,7 +897,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
                       ),
                     ),
                   ),
-                  Tap(
+                  MpHitSlop(child: Tap(
                     onTap: () => setState(() => _soonest = !_soonest),
                     radius: 8,
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -909,7 +909,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
                         Text(_soonest ? 'Soonest first' : 'Nearest first', style: tx(14, w: w600, c: MP.primary)),
                       ],
                     ),
-                  ),
+                  )),
                 ],
               ),
             ),

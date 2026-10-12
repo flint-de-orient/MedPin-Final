@@ -169,7 +169,7 @@ class _ClinicMapState extends State<ClinicMap> {
     if (!ok && mounted) toast(context, "Couldn't open Google Maps");
   }
 
-  Widget _chip(String text, VoidCallback onTap, {bool on = false, String? icon}) => Tap(
+  Widget _chip(String text, VoidCallback onTap, {bool on = false, String? icon}) => MpHitSlop(child: Tap(
         onTap: onTap,
         radius: 999,
         color: on ? MP.primary : MP.white,
@@ -182,7 +182,7 @@ class _ClinicMapState extends State<ClinicMap> {
             Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(13, w: w600, c: on ? MP.white : MP.primary))),
           ]),
         ),
-      );
+      ));
 
   Widget _tiles() {
     if (ClinicMap.offline) {

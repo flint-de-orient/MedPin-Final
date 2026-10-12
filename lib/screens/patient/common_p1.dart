@@ -293,7 +293,7 @@ class P1HeroSlide extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 44),
         child: _fade(
-          Tap(
+          MpHitSlop(child: Tap(
             onTap: onTap,
             radius: 999,
             color: MP.white,
@@ -311,7 +311,7 @@ class P1HeroSlide extends StatelessWidget {
                 ),
               ),
             ),
-          ),
+          )),
         ),
       ),
     );
@@ -453,7 +453,7 @@ class P1Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Border-box button: 40px tall including the 1px border.
-    return SizedBox(
+    return MpHitSlop(child: SizedBox(
       height: 40,
       child: Tap(
         onTap: onTap ?? () {},
@@ -465,7 +465,7 @@ class P1Pill extends StatelessWidget {
           child: Center(widthFactor: 1, child: Text(label, style: tx(14, w: w600))),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -492,7 +492,7 @@ class P1SoftButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tap(
+    return MpHitSlop(child: Tap(
       onTap: onTap ?? () {},
       radius: 12,
       color: background,
@@ -509,6 +509,6 @@ class P1SoftButton extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }

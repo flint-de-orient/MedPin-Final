@@ -93,7 +93,8 @@ class _D10SearchFieldState extends State<D10SearchField> {
             // Text starts at 1px border + padLeft from the outer edge.
             SizedBox(width: widget.padLeft - 35),
             Expanded(
-              child: TextField(
+              child: MpFieldArea(child: TextField(
+                textAlignVertical: TextAlignVertical.center,
                 controller: _c,
                 focusNode: _focus,
                 onChanged: widget.onChanged,
@@ -106,7 +107,7 @@ class _D10SearchFieldState extends State<D10SearchField> {
                   hintText: widget.hint,
                   hintStyle: tx(16, c: MP.ink3),
                 ),
-              ),
+              )),
             ),
             const SizedBox(width: 16),
           ],
@@ -238,7 +239,7 @@ class D10StaffHeader extends StatelessWidget {
           ),
           if (showAvatar) ...[
             const Gap(4),
-            Semantics(
+            MpHitSlop(child: Semantics(
               button: true,
               label: 'Profile',
               child: Tap(
@@ -246,7 +247,7 @@ class D10StaffHeader extends StatelessWidget {
                 radius: 999,
                 child: const MpAvatar('TG', size: 40, fontSize: 15),
               ),
-            ),
+            )),
           ],
         ],
       ),

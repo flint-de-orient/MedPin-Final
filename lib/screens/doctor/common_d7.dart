@@ -122,6 +122,7 @@ class _D7FieldState extends State<D7Field> {
     Widget field = TextField(
       controller: _c,
       focusNode: _f,
+      textAlignVertical: multi ? null : TextAlignVertical.center,
       maxLines: widget.lines,
       minLines: widget.lines,
       keyboardType: widget.keyboard ?? (multi ? TextInputType.multiline : TextInputType.text),
@@ -136,6 +137,8 @@ class _D7FieldState extends State<D7Field> {
         hintStyle: style.copyWith(color: MP.ink3),
       ),
     );
+    // One-line fields fill the box, so the whole box is the tap target.
+    if (!multi) field = MpFieldArea(child: field);
     if (cover) {
       field = Stack(
         children: [
@@ -222,7 +225,7 @@ class D7Btn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return MpHitSlop(child: SizedBox(
       height: height,
       width: expand ? double.infinity : null,
       child: Tap(
@@ -248,7 +251,7 @@ class D7Btn extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -285,7 +288,7 @@ class D7Pill extends StatelessWidget {
     final fg = on ? (tonal ? MP.primary : MP.white) : MP.ink2;
     final Color? line = !on ? MP.lineStrong : (borderOn || tonal ? MP.primary : null);
     final text = Text(label, maxLines: 1, softWrap: false, style: tx(14, w: w600, c: fg));
-    return Semantics(
+    return MpHitSlop(child: Semantics(
       button: true,
       selected: on,
       child: Tap(
@@ -308,12 +311,13 @@ class D7Pill extends StatelessWidget {
                 const SizedBox(width: 8),
               ],
               if (check && on) ...[Ico(I.check, size: 16, color: fg, stroke: 2.25), const SizedBox(width: 6)],
-              if (fill) Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: text)) else text,
+              // Longer labels (Bengali, Hindi, large text) shrink to fit instead of overflowing.
+              Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: text)),
             ],
           ),
         ),
       ),
-    );
+    ));
   }
 }
 

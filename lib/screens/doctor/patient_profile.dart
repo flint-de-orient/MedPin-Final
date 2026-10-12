@@ -1021,7 +1021,8 @@ class _DateFieldState extends State<_DateField> {
             const Ico(I.calendar, size: 20, color: MP.ink2),
             const Gap(13),
             Expanded(
-              child: TextField(
+              child: MpFieldArea(child: TextField(
+                textAlignVertical: TextAlignVertical.center,
                 controller: widget.controller,
                 focusNode: _focus,
                 onChanged: widget.onChanged,
@@ -1029,7 +1030,7 @@ class _DateFieldState extends State<_DateField> {
                 style: tx(16, tab: true),
                 cursorColor: MP.primary,
                 decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
-              ),
+              )),
             ),
             const Gap(16),
           ],

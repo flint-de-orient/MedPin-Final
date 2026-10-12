@@ -209,7 +209,7 @@ class _EnrolmentBanner extends StatelessWidget {
             ),
           ),
           const Gap(12),
-          Tap(
+          MpHitSlop(child: Tap(
             onTap: onView,
             radius: 8,
             child: Container(
@@ -218,7 +218,7 @@ class _EnrolmentBanner extends StatelessWidget {
               alignment: Alignment.center,
               child: Text('View', style: tx(14, w: w600, c: MP.primary)),
             ),
-          ),
+          )),
         ],
       ),
     );

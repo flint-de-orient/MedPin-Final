@@ -242,7 +242,7 @@ class D5Link extends StatelessWidget {
   const D5Link(this.label, {super.key, this.onTap, this.icon});
 
   @override
-  Widget build(BuildContext context) => Tap(
+  Widget build(BuildContext context) => MpHitSlop(child: Tap(
     onTap: onTap ?? () {},
     radius: 6,
     child: Row(
@@ -252,7 +252,7 @@ class D5Link extends StatelessWidget {
         Text(label, style: tx(14, w: w600, c: MP.primary)),
       ],
     ),
-  );
+  ));
 }
 
 /// Sheet title row: 20/700 title, 14px subtitle and a 44px close button that
@@ -483,7 +483,7 @@ class D5Chip extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = on ? (tonal ? MP.primarySoft : MP.primary) : MP.white;
     final fg = on ? (tonal ? MP.primary : MP.white) : MP.ink2;
-    return Semantics(
+    return MpHitSlop(child: Semantics(
       button: true,
       selected: on,
       child: SizedBox(
@@ -503,7 +503,7 @@ class D5Chip extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -715,7 +715,8 @@ class _D5FieldState extends State<D5Field> {
               ),
               child: IgnorePointer(
                 ignoring: widget.readOnly,
-                child: TextField(
+                child: MpFieldArea(child: TextField(
+                  textAlignVertical: TextAlignVertical.center,
                   controller: _c,
                   focusNode: _f,
                   autofocus: widget.autofocus,
@@ -734,7 +735,7 @@ class _D5FieldState extends State<D5Field> {
                     hintText: widget.hint,
                     hintStyle: style.copyWith(color: MP.ink3.withValues(alpha: 0)),
                   ),
-                ),
+                )),
               ),
             ),
           ),
@@ -934,7 +935,7 @@ class _D5TextAreaState extends State<D5TextArea> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: on ? MP.primary : MP.lineStrong, width: on ? 2 : 1),
               ),
-              child: TextField(
+              child: MpFieldArea(child: TextField(
                 controller: _c,
                 focusNode: _f,
                 clipBehavior: Clip.none,
@@ -951,7 +952,7 @@ class _D5TextAreaState extends State<D5TextArea> {
                   hintText: widget.hint,
                   hintStyle: tx(16, c: MP.ink3, h: 1.5),
                 ),
-              ),
+              )),
             ),
           ),
           Positioned(right: 8, bottom: 8, child: _SpeakButton(label: widget.speakLabel, onTap: widget.onSpeak)),
@@ -967,7 +968,7 @@ class _SpeakButton extends StatelessWidget {
   const _SpeakButton({required this.label, this.onTap});
 
   @override
-  Widget build(BuildContext context) => Semantics(
+  Widget build(BuildContext context) => MpHitSlop(child: Semantics(
     button: true,
     label: label,
     excludeSemantics: true,
@@ -988,7 +989,7 @@ class _SpeakButton extends StatelessWidget {
         ),
       ),
     ),
-  );
+  ));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

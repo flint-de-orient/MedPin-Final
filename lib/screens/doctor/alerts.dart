@@ -310,7 +310,7 @@ class _AlertsScreenState extends State<AlertsScreen> with LiveData {
               Text(a.time, style: tx(13, c: MP.ink3, tab: true)),
             ],
           ),
-          Tap(
+          MpHitSlop(child: Tap(
             onTap: () => Nav.go(context, 'PP-Summary', args: a.patientId == null ? null : {'patientId': a.patientId}),
             radius: 12,
             child: Row(
@@ -330,7 +330,7 @@ class _AlertsScreenState extends State<AlertsScreen> with LiveData {
                 const Ico(I.chevronRight, size: 18, color: MP.ink3),
               ],
             ),
-          ),
+          )),
           Text(a.detail, style: tx(16, h: 1.5)),
           if (a.note != null)
             Container(

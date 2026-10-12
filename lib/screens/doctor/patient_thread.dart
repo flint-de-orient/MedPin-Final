@@ -347,7 +347,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
         children: [
           Row(
             children: [
-              Semantics(
+              MpHitSlop(child: Semantics(
                 container: true,
                 button: true,
                 label: 'Play voice note${duration.isEmpty ? '' : ', $duration'}',
@@ -360,7 +360,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                     child: SizedBox(width: 40, height: 40, child: Center(child: Ico(now == url ? I.pause : _playIcon, size: 18, color: MP.primary, filled: true))),
                   ),
                 ),
-              ),
+              )),
               const Gap(12),
               Expanded(
                 child: SizedBox(
@@ -671,7 +671,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
           MpIconButton(I.back, label: 'Back', onTap: () => Nav.back(context)),
           const Gap(4),
           Expanded(
-            child: Tap(
+            child: MpHitSlop(child: Tap(
               onTap: () {
                 if (!isLive) {
                   Nav.go(context, 'PP-Summary');
@@ -701,7 +701,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                   ),
                 ],
               ),
-            ),
+            )),
           ),
           const Gap(4),
           if (live) MpIconButton(I.search, label: 'Search this chat', color: MP.ink2, onTap: _searchLive),
@@ -787,7 +787,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
               children: [
                 Row(
                   children: [
-                    Semantics(
+                    MpHitSlop(child: Semantics(
                       container: true,
                       button: true,
                       label: 'Play voice note, 18 seconds',
@@ -808,7 +808,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                           ),
                         ),
                       ),
-                    ),
+                    )),
                     const Gap(12),
                     Expanded(
                       child: AnimatedBuilder(
@@ -1088,7 +1088,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: MP.lineStrong),
                   ),
-                  child: TextField(
+                  child: MpFieldArea(child: TextField(
+                    textAlignVertical: TextAlignVertical.center,
                     controller: _reply,
                     focusNode: _replyFocus,
                     style: tx(16),
@@ -1101,7 +1102,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                       hintText: _replyTo == null ? 'Write a reply' : 'Reply to ${_senderName(_replyTo!)}',
                       hintStyle: tx(16, c: MP.ink3),
                     ),
-                  ),
+                  )),
                 ),
               ),
               const Gap(8),

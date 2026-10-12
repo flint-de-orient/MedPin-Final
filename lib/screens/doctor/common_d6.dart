@@ -161,7 +161,7 @@ class D6Link extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
+    return MpHitSlop(child: Semantics(
       link: true,
       child: Tap(
         onTap: onTap ?? () {},
@@ -178,7 +178,7 @@ class D6Link extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -910,7 +910,7 @@ class D6FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
+    return MpHitSlop(child: Semantics(
       button: true,
       selected: selected,
       child: SizedBox(
@@ -927,7 +927,7 @@ class D6FilterChip extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 

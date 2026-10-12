@@ -57,7 +57,7 @@ class D3Tabs extends StatelessWidget {
         children: [
           for (var i = 0; i < options.length; i++)
             Expanded(
-              child: Semantics(
+              child: MpHitSlop(child: Semantics(
                 button: true,
                 selected: i == index,
                 child: GestureDetector(
@@ -80,7 +80,7 @@ class D3Tabs extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
+              )),
             ),
         ],
       ),
@@ -96,7 +96,7 @@ class _Pill extends StatelessWidget {
   const _Pill({required this.child, required this.onTap});
 
   @override
-  Widget build(BuildContext context) => SizedBox(
+  Widget build(BuildContext context) => MpHitSlop(child: SizedBox(
     height: 36,
     child: Tap(
       onTap: onTap,
@@ -106,7 +106,7 @@ class _Pill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Center(widthFactor: 1, child: child),
     ),
-  );
+  ));
 }
 
 /// Report register top bar: white, 1px bottom border; 64px back + title +
@@ -221,7 +221,8 @@ class D3ReportHeader extends StatelessWidget {
                     const Ico(I.search, size: 18, color: MP.ink3),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: TextField(
+                      child: MpFieldArea(child: TextField(
+                        textAlignVertical: TextAlignVertical.center,
                         onChanged: onSearch,
                         style: tx(15),
                         cursorColor: MP.primary,
@@ -232,7 +233,7 @@ class D3ReportHeader extends StatelessWidget {
                           hintText: searchHint,
                           hintStyle: tx(15, c: MP.ink3),
                         ),
-                      ),
+                      )),
                     ),
                   ],
                 ),
@@ -447,14 +448,14 @@ class D3TextLink extends StatelessWidget {
   const D3TextLink(this.label, {super.key, this.onTap, this.size = 14});
 
   @override
-  Widget build(BuildContext context) => Semantics(
+  Widget build(BuildContext context) => MpHitSlop(child: Semantics(
     button: true,
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Text(label, style: tx(size, w: w600, c: MP.primary)),
     ),
-  );
+  ));
 }
 
 /// Row of inline links with a 16px gap ("Send reminder   Call").

@@ -18,6 +18,14 @@ void main() {
     expect(I18n.tr('Something new', 'bn'), 'Something new', reason: 'missing entries stay English');
   });
 
+  test('doctor and staff screens are translated too', () {
+    expect(I18n.tr('Payouts and bank account', 'bn'), 'পেমেন্ট ও ব্যাংক অ্যাকাউন্ট');
+    expect(I18n.tr('Signature checked · looks good', 'hi'), 'हस्ताक्षर जांचा गया · ठीक है');
+    expect(I18n.tr('Show 3 more patients', 'bn'), 'আরও 3 জন রোগী দেখান');
+    expect(I18n.tr('Waiting 12 min', 'hi'), '12 मिनट इंतज़ार');
+    expect(I18n.tr('Video consultation', 'hi'), 'वीडियो परामर्श');
+  });
+
   testWidgets('Text follows the app language', (t) async {
     await t.pumpWidget(_app('bn', const Column(children: [Text('Save'), Text.rich(TextSpan(text: 'Medicines'))])));
     expect(find.text('সেভ করুন'), findsOneWidget);

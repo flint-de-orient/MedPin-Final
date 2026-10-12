@@ -218,7 +218,8 @@ class _DoctorPatientsSearchScreenState extends State<DoctorPatientsSearchScreen>
               child: Row(
                 children: [
                   Expanded(
-                    child: TextField(
+                    child: MpFieldArea(child: TextField(
+                      textAlignVertical: TextAlignVertical.center,
                       controller: _q,
                       focusNode: _focus,
                       style: tx(16, w: w500, tab: true),
@@ -231,7 +232,7 @@ class _DoctorPatientsSearchScreenState extends State<DoctorPatientsSearchScreen>
                         hintText: 'Search by name or mobile number',
                         hintStyle: tx(16, c: MP.ink3),
                       ),
-                    ),
+                    )),
                   ),
                   if (_q.text.isNotEmpty) ...[
                     const Gap(10),

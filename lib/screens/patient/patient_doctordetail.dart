@@ -534,7 +534,7 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
     });
   }
 
-  Widget _todo(String text, bool done, VoidCallback onTap) => Semantics(
+  Widget _todo(String text, bool done, VoidCallback onTap) => MpHitSlop(child: Semantics(
     checked: done,
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -549,7 +549,7 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
         ],
       ),
     ),
-  );
+  ));
 
   Widget _latestMessage() {
     final m = _convo.obj('latestFromDoctor');

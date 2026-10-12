@@ -192,11 +192,11 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text('Sent to ${AppMode.preview ? '+91 98765 •••10' : Session.I.pendingMaskedPhone ?? ''}', style: tx(16, c: MP.ink2, h: 1.5, tab: true)),
-                Tap(
+                MpHitSlop(child: Tap(
                   onTap: () => Nav.back(context),
                   radius: 6,
                   child: Text('Change', style: tx(16, w: w600, c: MP.primary, h: 1.5)),
-                ),
+                )),
               ],
             ),
             const Gap(32),

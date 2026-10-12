@@ -208,7 +208,7 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
               ),
               child: Semantics(
                 label: 'Describe your symptoms or ask a question',
-                child: TextField(
+                child: MpFieldArea(child: TextField(
                   controller: _ask,
                   focusNode: _focus,
                   expands: true,
@@ -221,7 +221,7 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
                     hintText: tr(context, "E.g. I've had a headache and fever for 2 days"),
                     hintStyle: tx(16, h: 1.5, c: P1.placeholder),
                   ),
-                ),
+                )),
               ),
             ),
           ),
@@ -244,7 +244,7 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
                   ),
                 ),
                 const Gap(8),
-                Semantics(
+                MpHitSlop(child: Semantics(
                   button: true,
                   label: 'Send',
                   child: Tap(
@@ -257,7 +257,7 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
                       child: Center(child: Ico(I.send, size: 18, color: MP.white)),
                     ),
                   ),
-                ),
+                )),
               ],
             ),
           ),

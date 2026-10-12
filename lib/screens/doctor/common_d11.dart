@@ -162,6 +162,7 @@ class _D11FieldState extends State<D11Field> {
                 cursorColor: MP.primary,
                 decoration: InputDecoration(
                   isCollapsed: true,
+                  contentPadding: d4FieldPad,
                   border: InputBorder.none,
                   hintText: widget.hint,
                   hintStyle: tx(15, h: 1.4, c: MP.ink3),

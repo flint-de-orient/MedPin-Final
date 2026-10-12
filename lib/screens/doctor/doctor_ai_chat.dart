@@ -1045,7 +1045,7 @@ class _AnswerHead extends StatelessWidget {
           // 36px border-box pill: the height wraps the Tap.
           child: SizedBox(
             height: 36,
-            child: Tap(
+            child: MpHitSlop(child: Tap(
               onTap: onTap,
               radius: 999,
               color: playing ? MP.primarySoft : MP.white,
@@ -1088,7 +1088,7 @@ class _AnswerHead extends StatelessWidget {
                           ],
                 ),
               ),
-            ),
+            )),
           ),
         ),
       ],
@@ -1107,7 +1107,7 @@ class _SmallButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return MpHitSlop(child: SizedBox(
       height: 40,
       child: Tap(
         onTap: onTap,
@@ -1119,6 +1119,6 @@ class _SmallButton extends StatelessWidget {
           child: Row(mainAxisSize: MainAxisSize.min, children: [Text(label, style: tx(14, w: w600, c: fg))]),
         ),
       ),
-    );
+    ));
   }
 }

@@ -340,7 +340,7 @@ class _Switch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
+    return MpHitSlop(child: Semantics(
       toggled: value,
       label: label,
       child: GestureDetector(
@@ -370,6 +370,6 @@ class _Switch extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }
