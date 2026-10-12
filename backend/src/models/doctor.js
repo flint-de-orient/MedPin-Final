@@ -53,7 +53,17 @@ const doctorProfileSchema = new Schema(
     isVerified: { type: Boolean, default: false },
     photo: fileSchema,
     bio: { type: String, maxlength: 2000 },
-    signature: fileSchema, // required before prescriptions can be sent
+    signature: fileSchema, // required before prescriptions can be sent (the cleaned, transparent PNG)
+    signatureOriginal: fileSchema, // the photo as uploaded, kept for re-checks
+    // Signature checker result (services/signature.js).
+    signatureCheck: {
+      status: { type: String, enum: ['ok', 'warn'] },
+      issues: [{ _id: false, code: String, severity: String, message: String }],
+      readsAs: String,
+      by: String, // 'image' or 'image+ai'
+      acceptedWarnings: Boolean, // the doctor chose to use it anyway
+      checkedAt: Date,
+    },
     offersVideo: { type: Boolean, default: false },
     acceptingBookings: { type: Boolean, default: true },
     presence: enumOf(E.DOCTOR_PRESENCE, { default: 'away' }),

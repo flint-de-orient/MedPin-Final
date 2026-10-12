@@ -14,6 +14,7 @@ const unauthorized = (message = 'Sign in again', code = 'UNAUTHORIZED') => new H
 const forbidden = (message = "You don't have access to this", code = 'FORBIDDEN') => new HttpError(403, message, code);
 const notFound = (what = 'Item') => new HttpError(404, `${what} not found`, 'NOT_FOUND');
 const conflict = (message, code = 'CONFLICT', details) => new HttpError(409, message, code, details);
+const unprocessable = (message, code = 'UNPROCESSABLE', details) => new HttpError(422, message, code, details);
 
 /** Copies only the listed keys that are present (not undefined). */
 const pick = (obj, keys) => {
@@ -53,6 +54,7 @@ const normalizePhone = (raw) => {
 const maskPhone = (p) => `+91 ${p.slice(0, 5)} •••${p.slice(-2)}`;
 
 module.exports = {
+  unprocessable,
   HttpError,
   badRequest,
   unauthorized,

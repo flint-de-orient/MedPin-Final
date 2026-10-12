@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
-import '../../data/files.dart';
+import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/i18n.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
+import 'signature_gate.dart';
 
 /// Doctor · Prescription letterhead and signature (from My profile).
 /// Live data: GET /api/doctor/profile (signature), GET /api/doctor/locations
@@ -46,6 +47,80 @@ class _ProfileSignatureScreenState extends State<ProfileSignatureScreen> with Li
 
   bool get _signed => data == null ? _sampleSigned : _signatureUrl != null;
 
+  /// The signature checker's last result ({status, issues, readsAs, by}).
+  Map<String, dynamic> get _check => data == null ? const {'status': 'ok', 'by': 'image'} : _p.obj('signatureCheck');
+  bool _rechecking = false;
+  bool _autoChecked = false; // only once, even if the check fails
+
+  /// A signature added before the checker existed is checked once, here.
+  Future<void> _recheck({bool quiet = false}) async {
+    if (!isLive || _rechecking) return;
+    setState(() => _rechecking = true);
+    try {
+      await Api.I.post('/api/doctor/profile/signature/recheck');
+      if (mounted) await reload(quiet: true);
+    } on ApiException catch (e) {
+      if (!quiet && mounted) toast(context, e.message);
+    } finally {
+      if (mounted) setState(() => _rechecking = false);
+    }
+  }
+
+  Widget _checkResult() {
+    final c = _check;
+    if (isLive && _signed && c.isEmpty && !_autoChecked) {
+      _autoChecked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _recheck(quiet: true));
+    }
+    if (!_rechecking && c.isEmpty) {
+      return Row(children: [
+        Expanded(child: Text('Not checked yet', style: tx(14, c: MP.ink2))),
+        D4TextLink('Check now', onTap: () => _recheck()),
+      ]);
+    }
+    if (_rechecking) {
+      return Row(children: [
+        const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+        const Gap(10),
+        Expanded(child: Text('Checking your signature…', style: tx(14, c: MP.ink2))),
+      ]);
+    }
+    final issues = c.list('issues');
+    final ok = c['status'] == 'ok' && issues.isEmpty;
+    final readsAs = c.str('readsAs');
+    final at = F.date(c['checkedAt']);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: ok ? MP.greenSoft : MP.amberSoft, borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Ico(ok ? I.check : I.alert, size: 18, color: ok ? MP.green : MP.amber, stroke: 2.2),
+              const Gap(10),
+              Expanded(child: Text(ok ? 'Signature checked · looks good' : 'Signature checked · please look', style: tx(15, w: w600))),
+            ],
+          ),
+          for (final i in issues) ...[const Gap(8), Text(i.str('message'), style: tx(14, c: MP.ink, h: 1.4))],
+          if (ok && readsAs.isNotEmpty) ...[const Gap(6), Text('Reads as “$readsAs”', style: tx(13, c: MP.ink2))],
+          const Gap(6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  [c.str('by') == 'image+ai' ? 'Checked by MedPin AI' : 'Image check', if (at != null) F.ago(at)].join(' · '),
+                  style: tx(12, c: MP.ink3),
+                ),
+              ),
+              if (isLive) D4TextLink('Check again', onTap: () => _recheck()),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   /// The clinics this doctor practises at: (location id, name, letterhead set?).
   List<(String, String, bool)> get _clinics {
     if (data == null) return const [('', 'City Care Clinic — Salt Lake', true)];
@@ -66,13 +141,8 @@ class _ProfileSignatureScreenState extends State<ProfileSignatureScreen> with Li
       toast(context, 'Signature saved · printed on every prescription');
       return;
     }
-    // A photo of the signature on white paper (or a PNG with a clear background).
-    final file = await Files.chooseSource(context, title: 'Digital signature', allowPdf: false);
-    if (file == null || !mounted) return;
-    final ok = await runAction(context, () => Api.I.upload('/api/doctor/profile/signature', files: {'file': [file]}), busy: _busy);
-    if (ok == null || !mounted) return;
-    toast(context, 'Signature saved · printed on every prescription');
-    reload(quiet: true);
+    // A photo of the signature on white paper, checked and cleaned by the server.
+    if (await chooseAndUploadSignature(context, busy: _busy) && mounted) reload(quiet: true);
   }
 
   Future<void> _openClinic(String locationId) async {
@@ -138,7 +208,8 @@ class _ProfileSignatureScreenState extends State<ProfileSignatureScreen> with Li
                       builder: (_, busy, _) => MpButton(busy ? 'Uploading…' : 'Add signature', icon: I.cameraAlt, onTap: busy ? null : _upload),
                     ),
                   ],
-                  const D4Note('Sign on plain white paper and take a clear photo, or choose a PNG with a transparent background.'),
+                  if (_signed) _checkResult(),
+                  const D4Note('Sign on plain white paper and take a clear photo, or choose a PNG with a transparent background. MedPin checks it and cleans up the background before printing.'),
                 ],
               ),
               D4Card(

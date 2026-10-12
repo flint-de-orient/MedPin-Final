@@ -4,7 +4,7 @@ const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
 const { requireAuth, staff } = require('../middleware/auth');
-const { pick, badRequest, notFound, conflict } = require('../lib/http');
+const { pick, badRequest, notFound, conflict, unprocessable } = require('../lib/http');
 const storage = require('../services/storage');
 const { slotsFor, nextFreeSlot } = require('../services/scheduling');
 
@@ -32,6 +32,7 @@ const profileView = (p) => ({
   ...p.toJSON(),
   photo: storage.withUrl(p.photo),
   signature: storage.withUrl(p.signature),
+  signatureOriginal: undefined,
   qualifications: p.qualifications.map((q) => ({ ...q.toJSON(), proof: storage.withUrl(q.proof) })),
   yearsExperience: p.practisingSince ? new Date().getFullYear() - p.practisingSince : null,
   registrationDisplay: p.registration?.number ? `${p.registration.councilShort || ''} ${p.registration.number}`.trim() : null,
@@ -104,11 +105,48 @@ r.post('/doctor/profile/photo', photoUpload.single('file'), async (req, res) => 
   res.json(profileView(p));
 });
 
-// "Printed on every prescription"
+// "Printed on every prescription". Every upload goes through the signature
+// checker: clear problems are refused (422 SIGNATURE_REJECTED); doubts such as
+// a different name come back as 409 SIGNATURE_CHECK until sent again with
+// accept=true. The cleaned, transparent version is what prints.
 r.post('/doctor/profile/signature', photoUpload.single('file'), async (req, res) => {
   if (!req.file) throw badRequest('Choose a signature image');
   const p = await profileOf(req.user._id);
-  p.signature = await storage.save(req.file.buffer, { folder: 'signatures', name: req.file.originalname, mimeType: req.file.mimetype });
+  const result = await require('../services/signature').check(req.file.buffer, p.displayName);
+  if (result.status === 'rejected') {
+    throw unprocessable(result.issues.find((x) => x.severity === 'block').message, 'SIGNATURE_REJECTED', { issues: result.issues });
+  }
+  const accept = req.body.accept === 'true' || req.body.accept === true;
+  if (result.status === 'warn' && !accept) {
+    throw conflict('Please check this signature', 'SIGNATURE_CHECK', { issues: result.issues, readsAs: result.readsAs });
+  }
+  p.signatureOriginal = await storage.save(req.file.buffer, { folder: 'signatures', name: req.file.originalname, mimeType: req.file.mimetype });
+  p.signature = result.cleaned
+    ? await storage.save(result.cleaned, { folder: 'signatures', name: 'signature.png', mimeType: 'image/png' })
+    : p.signatureOriginal;
+  p.signatureCheck = { status: result.status, issues: result.issues, readsAs: result.readsAs, by: result.by, acceptedWarnings: result.status === 'warn', checkedAt: new Date() };
+  await p.save();
+  res.json(profileView(p));
+});
+
+// Check the signature already on file again (e.g. one added before the checker).
+r.post('/doctor/profile/signature/recheck', async (req, res) => {
+  const p = await profileOf(req.user._id);
+  const file = p.signatureOriginal?.key ? p.signatureOriginal : p.signature;
+  if (!file?.key) throw badRequest('Add a signature first', 'NO_SIGNATURE');
+  const result = await require('../services/signature').check(await storage.read(file.key), p.displayName);
+  const kept = p.signatureCheck?.acceptedWarnings && result.status === 'warn';
+  p.signatureCheck = {
+    status: result.status === 'rejected' ? 'warn' : result.status,
+    // A stored signature that would now be refused stays usable but says why it should be replaced.
+    issues: result.issues.map((x) => (x.severity === 'block' ? { ...x, severity: 'warn' } : x)),
+    readsAs: result.readsAs, by: result.by, acceptedWarnings: kept, checkedAt: new Date(),
+  };
+  if (result.cleaned && !p.signatureOriginal?.key) {
+    // First check of an old upload: keep the photo as the original and print the cleaned one.
+    p.signatureOriginal = p.signature;
+    p.signature = await storage.save(result.cleaned, { folder: 'signatures', name: 'signature.png', mimeType: 'image/png' });
+  }
   await p.save();
   res.json(profileView(p));
 });

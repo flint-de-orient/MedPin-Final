@@ -63,6 +63,10 @@ async function login(phone) {
 }
 
 const tinyPdf = () => Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/MediaBox[0 0 200 200]/Parent 2 0 R>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF');
+// A pen signature on white paper (as a phone photo would give), and a faint one.
+const sigPng = (stroke = '#1a1a2e') => require('sharp')(Buffer.from(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="700" height="260"><rect width="100%" height="100%" fill="#fbfbf8"/><path d="M60 150 C120 40, 160 220, 220 120 S320 60, 360 150 S460 200, 520 110 S600 90, 640 160" stroke="${stroke}" stroke-width="7" fill="none"/></svg>`,
+)).png().toBuffer();
 const tinyPng = () => Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const fileForm = (field, buffer, name, type, extra = {}) => {
   const fd = new FormData();
@@ -252,7 +256,28 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(noSig.status, 409);
     assert.equal(noSig.body.error.code, 'SIGNATURE_REQUIRED');
     assert.equal(ok(await ctx.doc('GET', `/api/consultations/${c.id}`)).consultation.status, 'draft', 'still editable');
-    ok(await ctx.doc('POST', '/api/doctor/profile/signature', undefined, { form: fileForm('file', tinyPng(), 'sig.png', 'image/png') }));
+    // Signature checker: a 1px image and a blank page are refused with the reason.
+    const tiny = await ctx.doc('POST', '/api/doctor/profile/signature', undefined, { form: fileForm('file', tinyPng(), 'sig.png', 'image/png') });
+    assert.equal(tiny.status, 422);
+    assert.equal(tiny.body.error.code, 'SIGNATURE_REJECTED');
+    assert.ok(tiny.body.error.details.issues.some((x) => x.code === 'TOO_SMALL'));
+    const blank = await require('sharp')({ create: { width: 700, height: 260, channels: 3, background: '#ffffff' } }).png().toBuffer();
+    assert.equal((await ctx.doc('POST', '/api/doctor/profile/signature', undefined, { form: fileForm('file', blank, 'sig.png', 'image/png') })).body.error.details.issues[0].code, 'NO_INK');
+    // A faint signature needs "use it anyway"; then it is saved with the warning noted.
+    const faint = await ctx.doc('POST', '/api/doctor/profile/signature', undefined, { form: fileForm('file', await sigPng('#8a8a8a'), 'sig.png', 'image/png') });
+    assert.equal(faint.status, 409);
+    assert.equal(faint.body.error.code, 'SIGNATURE_CHECK');
+    const used = ok(await ctx.doc('POST', '/api/doctor/profile/signature', undefined, { form: fileForm('file', await sigPng('#8a8a8a'), 'sig.png', 'image/png', { accept: 'true' }) }));
+    assert.equal(used.signatureCheck.status, 'warn');
+    assert.equal(used.signatureCheck.acceptedWarnings, true);
+    // A clear one passes; what prints is the cleaned, transparent PNG.
+    const good = ok(await ctx.doc('POST', '/api/doctor/profile/signature', undefined, { form: fileForm('file', await sigPng(), 'sig.png', 'image/png') }));
+    assert.equal(good.signatureCheck.status, 'ok');
+    assert.equal(good.signature.mimeType, 'image/png');
+    const meta = await require('sharp')(Buffer.from(await (await fetch(good.signature.url)).arrayBuffer())).metadata();
+    assert.equal(meta.hasAlpha, true, 'paper made transparent');
+    assert.ok(meta.width < 700, 'cropped to the ink');
+    assert.equal(ok(await ctx.doc('POST', '/api/doctor/profile/signature/recheck')).signatureCheck.status, 'ok');
     // Profile photo: saved on the account (shown in app headers) and on the doctor profile.
     const withPhoto = ok(await ctx.doc('POST', '/api/me/photo', undefined, { form: fileForm('file', tinyPng(), 'me.png', 'image/png') }));
     assert.ok(withPhoto.user.photoUrl, 'the session shows the photo');
