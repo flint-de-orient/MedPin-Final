@@ -5,7 +5,7 @@ import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
-import '../../data/where.dart';
+import '../../widgets/clinic_map.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 import '../../widgets/i18n.dart';
@@ -152,7 +152,8 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     if (l.isEmpty) return {'name': 'No logo yet', 'meta': 'PNG or JPG, on a plain background'};
     final kb = (l.numOr('sizeBytes') / 1024).round();
     final type = l.str('mimeType').split('/').last.toUpperCase();
-    return {'url': l['url'], 'name': l.str('name', 'Logo'), 'meta': '$type · $kb KB', 'isDark': data!.obj('letterhead')['logoIsDark'] == true};
+    final lh = data!.obj('letterhead');
+    return {'url': l['url'], 'name': l.str('name', 'Logo'), 'meta': '$type · $kb KB', 'isDark': lh['logoIsDark'] == true, 'cleaned': lh['logoBackgroundRemoved']};
   }
 
   Future<void> _replaceLogo() async {
@@ -168,7 +169,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     if (file == null || !mounted) return;
     final ok = await runAction(context, () => Api.I.upload('/api/locations/$_locationId/logo', files: {'file': [file]}));
     if (ok == null || !mounted) return;
-    toast(context, 'Logo updated');
+    toast(context, (ok as Map)['backgroundRemoved'] == true ? 'Logo updated · background removed' : 'Logo updated');
     reload(quiet: true);
   }
 
@@ -195,6 +196,15 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     ('AS', 'Dr. Arjun Sen', 'Mon–Sat · 9:00 AM – 1:00 PM'),
     ('RM', 'Dr. Rina Mitra', 'Tue · Thu · 5:00 – 8:00 PM'),
   ];
+
+  /// The saved pin (lat, lng), if any.
+  (double, double)? get _savedPin {
+    final c = data == null ? null : data!.obj('geo')['coordinates'] as List?;
+    return c != null && c.length == 2 ? ((c[1] as num).toDouble(), (c[0] as num).toDouble()) : null;
+  }
+
+  /// A link MedPin made from the pin (not one the clinic pasted).
+  static bool _isPinLink(String url) => url.contains('/maps/search/?api=1&query=');
 
   /// Clinic details are the owner's (the API refuses others); preview edits freely.
   bool get _canEdit => !isLive || Session.I.isOwner;
@@ -458,9 +468,14 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                       child: Container(
                         width: 72,
                         height: 72,
-                        color: _logo['isDark'] == true ? MP.ink : MP.bg,
-                        padding: const EdgeInsets.all(6),
-                        child: Image.network('${_logo['url']}', fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                        color: _logo['isDark'] == true && _logo['cleaned'] != true ? MP.ink : MP.white,
+                        child: CustomPaint(
+                          painter: _logo['cleaned'] == true ? const _Checker() : null,
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Image.network('${_logo['url']}', fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                          ),
+                        ),
                       ),
                     )
                   else Semantics(
@@ -504,7 +519,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                 ],
               ),
               const SizedBox(height: 12),
-              Semantics(
+              if (data == null || _logo['url'] != null) Semantics(
                 liveRegion: true,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -519,7 +534,11 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          "Dark background detected — we'll print a light version",
+                          data == null
+                              ? "Dark background detected — we'll print a light version"
+                              : _logo['cleaned'] == true
+                                  ? 'Background removed · the logo prints on a transparent background'
+                                  : 'Printed as uploaded. For the cleanest print, use a logo on a plain background.',
                           style: tx(14, c: MP.ink2, h: 1.45),
                         ),
                       ),
@@ -539,13 +558,31 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
       child: VGap(
         gap: 16,
         children: [
-          const D7Title('Map link'),
-          if (isLive) UseHereRow(value: _pinAt, onPicked: (p) => setState(() => _pinAt = p)),
+          const D7Title('Map and link'),
+          ClinicMap(
+            lat: _pinAt?.lat ?? _savedPin?.$1,
+            lng: _pinAt?.lng ?? _savedPin?.$2,
+            label: _name.text,
+            editable: _canEdit,
+            onChanged: (p) => setState(() {
+              _pinAt = (lat: p.lat, lng: p.lng);
+              // A link made from the old pin follows the new one (the server makes it on save).
+              if (_isPinLink(_mapUrl.text)) _mapUrl.clear();
+            }),
+            onUseAddress: (place) => setState(() => _address.text = '${place['label'] ?? _address.text}'),
+          ),
           D7Labeled(
             'Google Maps link',
-            help: 'Patients get this with every booking confirmation.',
+            help: _mapUrl.text.trim().isEmpty
+                ? (_pinAt != null || _savedPin != null
+                    ? "Made from the pin when you save. Or paste your clinic's link from Google Maps (Share → Copy link)."
+                    : "Set the pin above, or paste your clinic's link from Google Maps (Share → Copy link).")
+                : _isPinLink(_mapUrl.text)
+                    ? 'Made from the pin. Patients get it with every booking confirmation.'
+                    : 'Your Google Maps link. Patients get it with every booking confirmation; the pin follows it when you save.',
             child: D7Field(
               controller: _mapUrl,
+              onChanged: (_) => setState(() {}),
               keyboard: TextInputType.url,
               ellipsis: true,
               padding: const EdgeInsets.only(left: 46, right: 16),
@@ -794,4 +831,23 @@ class _HoursSheetState extends State<_HoursSheet> {
       ),
     );
   }
+}
+
+/// Light checkerboard behind a transparent logo (shows it has no background).
+class _Checker extends CustomPainter {
+  const _Checker();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()..color = const Color(0xFFEFF2F7);
+    const c = 8.0;
+    for (var y = 0.0; y < size.height; y += c) {
+      for (var x = 0.0; x < size.width; x += c) {
+        if (((x / c).floor() + (y / c).floor()).isEven) canvas.drawRect(Rect.fromLTWH(x, y, c, c), p);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_Checker old) => false;
 }

@@ -1,13 +1,11 @@
-import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
-import '../../data/where.dart';
+import '../../widgets/clinic_map.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import '../../widgets/i18n.dart';
@@ -20,16 +18,6 @@ class ProfileLocationScreen extends StatefulWidget {
   State<ProfileLocationScreen> createState() => _ProfileLocationScreenState();
 }
 
-/// The design's street map (viewBox 320×160, drawn with "slice" = cover).
-const _mapSvg =
-    '<svg viewBox="0 0 320 160">'
-    '<rect width="320" height="160" fill="#EEF2F7"></rect>'
-    '<path d="M0 52h320M0 112h320M72 0v160M196 0v160M268 0v160" stroke="#FFFFFF" stroke-width="10"></path>'
-    '<path d="M0 18 320 142" stroke="#FFFFFF" stroke-width="6"></path>'
-    '<rect x="88" y="66" width="92" height="34" rx="4" fill="#E2E8F0"></rect>'
-    '<rect x="212" y="6" width="44" height="34" rx="4" fill="#DCEBDF"></rect>'
-    '<rect x="8" y="124" width="54" height="30" rx="4" fill="#E2E8F0"></rect>'
-    '</svg>';
 
 class _ProfileLocationScreenState extends State<ProfileLocationScreen> with LiveData {
   static const _types = ['Clinic', 'Hospital', 'Nursing home', 'Diagnostic centre', 'Video consultation'];
@@ -45,18 +33,19 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
   };
   static const _paymentKeys = {'UPI': 'upi', 'Cash': 'cash', 'Card': 'card', 'Net banking': 'net_banking', 'Online': 'online'};
 
-  /// Degrees per map pixel when the pin is dragged (≈2 m).
-  static const _degPerPx = 0.00002;
-
   String? _pickedType;
   bool? _pickedCollect;
-  bool _movingPin = false;
-
-  /// Pin offset from the map centre (dragged while "Move pin" is on).
-  Offset _pin = Offset.zero;
-
-  /// Set with "Here" on the map (the phone's location); wins over a dragged pin.
+  /// The pin as moved on the map (saved with Save).
   ({double lat, double lng})? _here;
+
+  /// "Use this address" from the map: shown in the Address field and saved.
+  String? _addressFromMap;
+
+  /// The saved pin (lat, lng), if any.
+  (double, double)? get _savedPin {
+    final c = data == null ? null : _loc.obj('geo')['coordinates'] as List?;
+    return c != null && c.length == 2 ? ((c[1] as num).toDouble(), (c[0] as num).toDouble()) : null;
+  }
 
   final List<(String, String, String)> _sampleFees = [
     ('New consultation', '15 min · in clinic', '₹600'),
@@ -187,12 +176,6 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
     if (_here != null) {
       body['lat'] = _here!.lat;
       body['lng'] = _here!.lng;
-    } else if (_pin != Offset.zero) {
-      final c = _loc.obj('geo')['coordinates'] as List?;
-      if (c != null && c.length == 2) {
-        body['lat'] = (c[1] as num) - _pin.dy * _degPerPx;
-        body['lng'] = (c[0] as num) + _pin.dx * _degPerPx;
-      }
     }
     // Address, hours and payment details are the clinic owner's; a doctor here saves their own services.
     if (body.isNotEmpty && !Session.I.isOwner) {
@@ -208,15 +191,6 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
     }
     if (mounted) d4Save(context);
   }
-
-  void _toggleMovePin() {
-    setState(() => _movingPin = !_movingPin);
-    if (_movingPin) toast(context, 'Drag on the map to move the pin');
-  }
-
-  /// Keeps the pin's tip inside a [w]×[h] map (offset from its centre).
-  static Offset _clampPin(Offset p, double w, double h) =>
-      Offset(p.dx.clamp(16 - w / 2, w / 2 - 16).toDouble(), p.dy.clamp(32 - h / 2, h / 2).toDouble());
 
   Future<void> _addService() async {
     final r = await d4FormSheet(
@@ -290,7 +264,19 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
           D4Card(
             children: [
               const D4CardTitle('Address'),
-              _map(),
+              ClinicMap(
+                lat: _savedPin?.$1 ?? (data == null ? 22.5867 : null),
+                lng: _savedPin?.$2 ?? (data == null ? 88.4171 : null),
+                label: _name,
+                onChanged: (p) => setState(() => _here = (lat: p.lat, lng: p.lng)),
+                onUseAddress: (place) => setState(() {
+                  _addressFromMap = place['label'] as String?;
+                  _changes['address'] = _addressFromMap;
+                  if (place['area'] != null) _changes['area'] = place['area'];
+                  if (place['city'] != null) _changes['city'] = place['city'];
+                  if (place['pincode'] != null) _changes['pincode'] = place['pincode'];
+                }),
+              ),
               VGap(
                 gap: 12,
                 children: [
@@ -309,8 +295,9 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
                     }),
                   ),
                   D4Field(
+                    key: ValueKey(_addressFromMap),
                     'Address',
-                    _field('DD-24, Sector 1, Salt Lake, Kolkata 700064', 'address'),
+                    _addressFromMap ?? _field('DD-24, Sector 1, Salt Lake, Kolkata 700064', 'address'),
                     onChanged: (v) => _changes['address'] = v.trim(),
                   ),
                   D4Field(
@@ -413,129 +400,8 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
     );
   }
 
-  /// Map: 160px + 1px border, radius 16, pin at the centre, "Move pin" chip.
-  Widget _map() {
-    return Container(
-      height: 162,
-      clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.all(1),
-      decoration: BoxDecoration(color: MP.fill2, borderRadius: BorderRadius.circular(16)),
-      foregroundDecoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: MP.line)),
-      child: Semantics(
-        label: data == null ? 'Map showing City Care Clinic, Salt Lake' : 'Map showing $_name',
-        child: LayoutBuilder(
-          builder: (context, c) {
-            final w = c.maxWidth, h = c.maxHeight;
-            final p = _clampPin(_pin, w, h);
-            final tip = Offset(w / 2 + p.dx, h / 2 + p.dy);
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: RawGestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    gestures: {
-                      if (_movingPin)
-                        PanGestureRecognizer: GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
-                          PanGestureRecognizer.new,
-                          (r) =>
-                              r
-                                // Win over the page scroll as soon as the finger moves.
-                                ..gestureSettings = const DeviceGestureSettings(touchSlop: 1)
-                                ..onUpdate = (d) => setState(() => _pin = _clampPin(_pin + d.delta, w, h)),
-                        ),
-                    },
-                    child: const Svg(_mapSvg, fit: BoxFit.cover),
-                  ),
-                ),
-                // translate(-50%, -100%): the 32px pin box sits on top of the point.
-                Positioned(left: tip.dx - 16, top: tip.dy - 32, child: const IgnorePointer(child: _Pin())),
-                if (isLive)
-                  Positioned(
-                    left: 10,
-                    bottom: 10,
-                    child: Semantics(
-                      button: true,
-                      label: 'Put the pin where I am now',
-                      child: Tap(
-                        onTap: () async {
-                          final p = await Where.pick(context);
-                          if (p == null || !context.mounted) return;
-                          setState(() {
-                            _here = p;
-                            _pin = Offset.zero;
-                          });
-                          toast(context, 'Pin set to your location · tap Save');
-                        },
-                        radius: 999,
-                        color: _here == null ? MP.white : MP.primarySoft,
-                        shadow: const [BoxShadow(color: Color(0x26111827), offset: Offset(0, 1), blurRadius: 3)],
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: SizedBox(
-                          height: 34,
-                          child: Center(widthFactor: 1, child: Text(_here == null ? 'Use my location' : 'Pinned here', style: tx(13, w: w600, c: MP.primary))),
-                        ),
-                      ),
-                    ),
-                  ),
-                Positioned(
-                  right: 10,
-                  bottom: 10,
-                  child: Tap(
-                    onTap: _toggleMovePin,
-                    radius: 999,
-                    color: MP.white,
-                    shadow: const [BoxShadow(color: Color(0x26111827), offset: Offset(0, 1), blurRadius: 3)],
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: SizedBox(
-                      height: 34,
-                      child: Center(
-                        widthFactor: 1,
-                        child: Text(_movingPin ? 'Done' : 'Move pin', style: tx(13, w: w600, c: MP.primary)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
 }
 
-/// Map pin: 32×32, radius 999 except bottom-left, rotated −45°, #003399 with
-/// the button shadow and a 10px white dot.
-class _Pin extends StatelessWidget {
-  const _Pin();
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 32,
-    height: 32,
-    child: Transform.rotate(
-      angle: -math.pi / 4,
-      child: Container(
-        decoration: const BoxDecoration(
-          color: MP.primary,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomRight: Radius.circular(16),
-          ),
-          boxShadow: MPShadow.button,
-        ),
-        child: Center(
-          child: Container(
-            width: 10,
-            height: 10,
-            decoration: const BoxDecoration(color: MP.white, shape: BoxShape.circle),
-          ),
-        ),
-      ),
-    ),
-  );
-}
 
 /// Editable fee: 96×44 (border-box), padding 0 12, 1px #D5DBE5, radius 12,
 /// right-aligned 15/700 tabular figures.

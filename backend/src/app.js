@@ -112,6 +112,7 @@ function createApp() {
   app.use('/api', require('./routes/consultations'));
   app.use('/api', require('./routes/care'));
   app.use('/api', require('./routes/knowledge'));
+  app.use('/api', require('./routes/places'));
   app.use('/api', require('./routes/reports'));
 
   // Dev stand-in for a Razorpay payment link (never in production; only without Razorpay keys).

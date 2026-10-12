@@ -195,6 +195,12 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
   void _go(String stem, [Object? args]) => Nav.go(context, stem, args: args);
 
   /// Rows whose editor is not part of the design yet.
+  /// Like [_open], with screen args.
+  Future<void> _openWith(String stem, Object args) async {
+    await Nav.go(context, stem, args: args);
+    if (mounted && isLive) reload(quiet: true);
+  }
+
   /// Opens a settings screen and refreshes this hub when you come back.
   Future<void> _open(String stem) async {
     await Nav.go(context, stem);
@@ -292,14 +298,14 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
               'Professional details',
               sub: 'Profession, qualifications, registration, specialisations',
               emptyValue: true,
-              onTap: () => _go('Profile-Professional'),
+              onTap: () => _open('Profile-Professional'),
             ),
             _SettingRow(
               'ABDM · HPR ID',
               sub: 'Ayushman Bharat Digital Mission',
               value: _hprLinked ? 'Linked' : 'Link',
               valueColor: _hprLinked ? MP.green : MP.primary,
-              onTap: () => _go('Profile-Professional'),
+              onTap: () => _openWith('Profile-Professional', const {'section': 'abdm'}),
             ),
             _SettingRow(
               'About and photo',

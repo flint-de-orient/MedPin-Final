@@ -26,6 +26,7 @@ const letterheadSchema = new Schema(
     registrationNo: String,
     logo: fileSchema,
     logoIsDark: Boolean,
+    logoBackgroundRemoved: Boolean, // the plain background was made transparent
   },
   { _id: false },
 );

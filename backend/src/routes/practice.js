@@ -52,9 +52,9 @@ r.patch('/practice', ownerOnly, async (req, res) => {
 
 r.post('/practice/logo', ownerOnly, upload.single('file'), async (req, res) => {
   if (!req.file) throw badRequest('Choose a logo file');
-  const logo = await storage.save(req.file.buffer, { folder: 'logos', name: req.file.originalname, mimeType: req.file.mimetype });
-  const practice = await M.Practice.findByIdAndUpdate(req.practiceId, { logo, logoIsDark: req.body.isDark === 'true' }, { new: true });
-  res.json({ logo: storage.withUrl(practice.logo) });
+  const logo = await saveLogo(req.file);
+  const practice = await M.Practice.findByIdAndUpdate(req.practiceId, { logo: logo.file, logoIsDark: false }, { new: true });
+  res.json({ logo: storage.withUrl(practice.logo), backgroundRemoved: logo.removed });
 });
 
 // ── Locations ──
@@ -98,7 +98,34 @@ r.get('/locations', async (req, res) => {
 });
 
 const LOCATION_FIELDS = ['name', 'shortName', 'type', 'address', 'area', 'city', 'pincode', 'landmark', 'phone', 'patientPhone', 'googleMapsUrl', 'hfrId', 'facilities', 'paymentMethods', 'collectFeeAtBooking', 'slotMinutes', 'weeklyHours', 'letterhead'];
-const geoFrom = (body) => require('../lib/geo').pointFromBody(body);
+
+/**
+ * Map pin and Google Maps link from a request: lat / lng first, then the link
+ * (short maps.app.goo.gl links are followed to find the coordinates). With a
+ * pin and no link, a link to the pin is made so patients always get one.
+ * Throws for a link that isn't Google Maps.
+ */
+async function mapFields(body) {
+  const out = {};
+  let url = body.googleMapsUrl == null ? undefined : String(body.googleMapsUrl).trim();
+  if (url) {
+    if (!/^https?:\/\/((www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(url)) {
+      throw badRequest('Paste a Google Maps link (Share → Copy link in Google Maps)', 'BAD_MAPS_LINK');
+    }
+    out.googleMapsUrl = url.slice(0, 500);
+  } else if (url === '') out.googleMapsUrl = '';
+  let geo = require('../lib/geo').pointFrom(body.lat, body.lng);
+  if (!geo && url) {
+    geo = require('../lib/geo').pointFromMapsUrl(url);
+    if (!geo) {
+      const full = await require('../services/places').expandMapsLink(url).catch(() => null);
+      if (full) geo = require('../lib/geo').pointFromMapsUrl(full);
+    }
+  }
+  if (geo) out.geo = geo;
+  return out;
+}
+const pinLink = (geo) => `https://www.google.com/maps/search/?api=1&query=${geo.coordinates[1]},${geo.coordinates[0]}`;
 const validHours = (hours) => {
   for (const h of hours || []) {
     if (h.isOpen !== false && h.closesAt <= h.opensAt) throw badRequest('Closing time must be after opening time', 'BAD_HOURS');
@@ -108,8 +135,9 @@ const validHours = (hours) => {
 r.post('/locations', ownerOnly, async (req, res) => {
   const body = pick(req.body, LOCATION_FIELDS);
   validHours(body.weeklyHours);
+  const map = await mapFields(req.body);
   const loc = await M.Location.create({
-    ...body, practiceId: req.practiceId, geo: geoFrom(req.body),
+    ...body, ...map, practiceId: req.practiceId, ...(map.geo && !map.googleMapsUrl ? { googleMapsUrl: pinLink(map.geo) } : {}),
     weeklyHours: body.weeklyHours || E.WEEKDAYS.map((weekday) => ({ weekday, isOpen: weekday !== 'sun', opensAt: 540, closesAt: 1200 })),
   });
   res.status(201).json(loc);
@@ -124,6 +152,17 @@ const ownLocation = async (req) => {
 
 r.get('/locations/:id', async (req, res) => {
   const loc = ownPractice(req, await M.Location.findById(req.params.id), 'Location');
+  // A logo uploaded before backgrounds were removed is cleaned once, here.
+  if (loc.letterhead?.logo?.key && loc.letterhead.logoBackgroundRemoved == null) {
+    try {
+      const original = await storage.read(loc.letterhead.logo.key);
+      const logo = await saveLogo({ buffer: original, originalname: loc.letterhead.logo.name || 'logo', mimetype: loc.letterhead.logo.mimeType || 'image/png' });
+      loc.letterhead = { ...loc.letterhead.toObject(), ...(logo.removed ? { logo: logo.file, logoIsDark: false } : {}), logoBackgroundRemoved: logo.removed };
+      await loc.save();
+    } catch (err) {
+      console.warn('[logo clean]', err.message);
+    }
+  }
   const [closures, doctors] = await Promise.all([
     M.LocationClosure.find({ locationId: loc._id, endDate: { $gte: T.dayStart() } }).sort({ startDate: 1 }),
     M.DoctorLocation.find({ locationId: loc._id, status: 'active' }).populate('doctorId', 'name'),
@@ -138,23 +177,35 @@ r.patch('/locations/:id', ownerOnly, async (req, res) => {
   const loc = await ownLocation(req);
   const body = pick(req.body, LOCATION_FIELDS);
   validHours(body.weeklyHours);
-  Object.assign(loc, body);
-  if (geoFrom(req.body)) loc.geo = geoFrom(req.body);
+  const map = await mapFields(req.body);
+  Object.assign(loc, body, map);
+  // Keep the patients' link in step with the pin when it was made from the pin (or is missing).
+  const autoLink = !loc.googleMapsUrl || /maps\/search\/\?api=1&query=/.test(loc.googleMapsUrl);
+  if (map.geo && autoLink && !map.googleMapsUrl) loc.googleMapsUrl = pinLink(map.geo);
   if (req.body.hfrId && !/^IN\d{10}$/.test(String(req.body.hfrId).trim())) throw badRequest('Enter the HFR ID like IN1910000123', 'BAD_HFR_ID');
   if (req.body.hfrId) loc.hfrLinkedAt = new Date();
   await loc.save();
   res.json(loc);
 });
 
+/** Saves a logo with its plain background made transparent (the original is kept beside it). */
+async function saveLogo(file) {
+  const { removeLogoBackground } = require('../services/images');
+  const clean = await removeLogoBackground(file.buffer).catch(() => ({ buffer: file.buffer, mimeType: file.mimetype, removed: false }));
+  if (clean.removed) await storage.save(file.buffer, { folder: 'logos/original', name: file.originalname, mimeType: file.mimetype });
+  const name = clean.removed ? String(file.originalname || 'logo').replace(/\.[a-z0-9]+$/i, '') + '.png' : file.originalname;
+  return { file: await storage.save(clean.buffer, { folder: 'logos', name, mimeType: clean.mimeType }), removed: clean.removed };
+}
+
 // Letterhead logo printed on this location's prescriptions.
 r.post('/locations/:id/logo', ownerOnly, upload.single('file'), async (req, res) => {
   const loc = await ownLocation(req);
   if (!req.file) throw badRequest('Choose a logo file');
   if (!/^image\/(png|jpeg|webp)$/.test(req.file.mimetype)) throw badRequest('Use a PNG, JPG or WebP image');
-  const logo = await storage.save(req.file.buffer, { folder: 'logos', name: req.file.originalname, mimeType: req.file.mimetype });
-  loc.letterhead = { ...(loc.letterhead?.toObject?.() || {}), logo, logoIsDark: req.body.isDark === 'true' };
+  const logo = await saveLogo(req.file);
+  loc.letterhead = { ...(loc.letterhead?.toObject?.() || {}), logo: logo.file, logoIsDark: false, logoBackgroundRemoved: logo.removed };
   await loc.save();
-  res.json({ logo: storage.withUrl(loc.letterhead.logo) });
+  res.json({ logo: storage.withUrl(loc.letterhead.logo), backgroundRemoved: logo.removed });
 });
 
 r.post('/locations/:id/deactivate', ownerOnly, async (req, res) => {

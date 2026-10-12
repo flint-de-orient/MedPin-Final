@@ -53,6 +53,25 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> w
   @override
   Future<Object?> fetch() => Api.I.get('/api/doctor/profile');
 
+  final _abdmKey = GlobalKey();
+  bool _flashAbdm = false;
+  bool _jumped = false;
+
+  /// args {'section': 'abdm'}: scroll to the ABDM card once the page is built.
+  void _jumpToSection() {
+    if (_jumped || (Nav.args<Map>(context) ?? const {})['section'] != 'abdm') return;
+    _jumped = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final c = _abdmKey.currentContext;
+      if (c == null || !mounted) return;
+      await Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 450), curve: Curves.easeOut, alignment: 0.15);
+      if (!mounted) return;
+      setState(() => _flashAbdm = true);
+      await Future.delayed(const Duration(milliseconds: 1600));
+      if (mounted) setState(() => _flashAbdm = false);
+    });
+  }
+
   int get _profession {
     if (_pickedProfession != null) return _pickedProfession!;
     if (data == null) return 0;
@@ -200,6 +219,7 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> w
 
   @override
   Widget build(BuildContext context) {
+    if (data != null || !isLive) _jumpToSection();
     final placeholder = livePlaceholder();
     if (placeholder != null) return MpPage(header: const D4Header('Professional details'), body: placeholder);
     final qualifications = _qualifications;
@@ -263,7 +283,15 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> w
               ),
             ],
           ),
-          D4AbdmCard(
+          // Opened from My profile's "ABDM · HPR ID" row: scrolled into view and outlined.
+          AnimatedContainer(
+            key: _abdmKey,
+            duration: const Duration(milliseconds: 400),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: _flashAbdm ? MP.primary : Colors.transparent, width: 2),
+            ),
+            child: D4AbdmCard(
             title: 'Healthcare Professionals Registry',
             body:
                 'Link your HPR ID to be verified through ABDM and to share records with patients’ ABHA accounts, '
@@ -274,6 +302,7 @@ class _ProfileProfessionalScreenState extends State<ProfileProfessionalScreen> w
             hint: 'e.g. 71-1234-5678-9012',
             linkedId: data?.str('hprId'),
             onLink: isLive ? _linkHpr : null,
+          ),
           ),
           D4Card(
             children: [

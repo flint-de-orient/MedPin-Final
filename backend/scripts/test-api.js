@@ -691,13 +691,24 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     // Map: coordinates from a pasted Google Maps link; bad points are ignored.
     const loc = ok(await ctx.doc('PATCH', `/api/locations/${ctx.locationId}`, { googleMapsUrl: 'https://www.google.com/maps/place/City+Care/@22.5867,88.4171,17z' }));
     assert.deepEqual(loc.geo.coordinates, [88.4171, 22.5867]);
+    // Only Google Maps links are accepted; a pin without a link gets one made from it.
+    assert.equal((await ctx.doc('PATCH', `/api/locations/${ctx.locationId}`, { googleMapsUrl: 'https://example.com/where' })).body.error.code, 'BAD_MAPS_LINK');
+    const pinned = ok(await ctx.doc('PATCH', `/api/locations/${ctx.locationId}`, { googleMapsUrl: '', lat: 22.5871, lng: 88.4175 }));
+    assert.equal(pinned.googleMapsUrl, 'https://www.google.com/maps/search/?api=1&query=22.5871,88.4175');
+    assert.equal((await ctx.doc('GET', '/api/geo/search?q=ab')).body.error.code, 'QUERY_TOO_SHORT');
+    // Letterhead logo on a black background → transparent PNG.
+    const logoJpg = await require('sharp')(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#000"/><path d="M60 250 L150 40 L240 250 Z" fill="#1d7ea6"/></svg>')).jpeg().toBuffer();
+    const logo = ok(await ctx.doc('POST', `/api/locations/${ctx.locationId}/logo`, undefined, { form: fileForm('file', logoJpg, 'logo.jpg', 'image/jpeg') }));
+    assert.equal(logo.backgroundRemoved, true);
+    assert.equal(logo.logo.mimeType, 'image/png');
+    assert.equal((await require('sharp')(Buffer.from(await (await fetch(logo.logo.url)).arrayBuffer())).metadata()).hasAlpha, true);
     ok(await ctx.pat('PATCH', '/api/patient/me', { lat: 'x', lng: 91 }));
     ok(await ctx.pat('PATCH', '/api/patient/me', { lat: 22.58, lng: 88.43 }));
     const found = ok(await ctx.pat('GET', '/api/patient/doctors/search'));
     const card = found.items.find((d) => String(d.doctorId) === String(ctx.doctorUserId));
     assert.ok(card && card.km != null && card.km < 5, 'distance from the patient to the clinic');
     const detail = ok(await ctx.pat('GET', `/api/patient/doctors/${ctx.doctorUserId}`));
-    assert.ok(detail.places.some((x) => x.lat === 22.5867), 'directions get the clinic pin');
+    assert.ok(detail.places.some((x) => x.lat === 22.5871), 'directions get the clinic pin');
     assert.equal((await ctx.doc('PATCH', '/api/doctor/profile', { hprId: 'nope' })).status, 400, 'HPR ID format is checked');
 
     // Walk-in: straight into today's queue with a token; not twice.
