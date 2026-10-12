@@ -158,10 +158,35 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
   /// First free date + time matching the patient's wish ("Thu or Fri, after 5 PM",
   /// "morning", "Sat evening"); null when it says nothing usable.
   static (int, String)? preferredSlot(String wish, List<Map<String, dynamic>> days) {
-    final w = wish.toLowerCase();
-    if (w.isEmpty || w.contains('any')) return null;
-    const names = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-    final wantDays = {for (var i = 0; i < 7; i++) if (RegExp('\\b${names[i]}').hasMatch(w)) i + 1};
+    // Bengali (০-৯) and Devanagari (०-९) digits count like 0-9.
+    var w = wish.toLowerCase().replaceAllMapped(RegExp('[০-৯०-९]'), (m) {
+      final c = m.group(0)!.codeUnitAt(0);
+      return '${c >= 0x09E6 && c <= 0x09EF ? c - 0x09E6 : c - 0x0966}';
+    });
+    if (w.isEmpty || w.contains('any') || w.contains('যেকোনো') || w.contains('कभी भी')) return null;
+    // Day names in English, Bengali and Hindi (Mon = 1 … Sun = 7).
+    const names = [
+      ['mon', 'সোম', 'सोम'],
+      ['tue', 'মঙ্গল', 'मंगल'],
+      ['wed', 'বুধ', 'बुध'],
+      ['thu', 'বৃহস্পতি', 'गुरु', 'बृहस्पति'],
+      ['fri', 'শুক্র', 'शुक्र'],
+      ['sat', 'শনি', 'शनि'],
+      ['sun', 'রবি', 'रवि', 'इतवार'],
+    ];
+    final wantDays = {
+      for (var i = 0; i < 7; i++)
+        if (RegExp('\\b${names[i][0]}').hasMatch(w) || names[i].skip(1).any(w.contains)) i + 1,
+    };
+    // "5 টার পরে" / "5 बजे के बाद" → after 5; "আগে" / "से पहले" → before.
+    w = w
+        .replaceAllMapped(RegExp(r'(\d{1,2})(?::(\d{2}))?\s*(?:টা|টার|টায়)?\s*(?:পরে|পর)'), (m) => 'after ${m.group(1)}${m.group(2) == null ? '' : ':${m.group(2)}'}')
+        .replaceAllMapped(RegExp(r'(\d{1,2})(?::(\d{2}))?\s*(?:বজে|बजे)?\s*(?:के बाद|बाद)'), (m) => 'after ${m.group(1)}${m.group(2) == null ? '' : ':${m.group(2)}'}')
+        .replaceAllMapped(RegExp(r'(\d{1,2})(?::(\d{2}))?\s*(?:টা|টার)?\s*(?:আগে)'), (m) => 'before ${m.group(1)}${m.group(2) == null ? '' : ':${m.group(2)}'}')
+        .replaceAllMapped(RegExp(r'(\d{1,2})(?::(\d{2}))?\s*(?:बजे)?\s*(?:से पहले|पहले)'), (m) => 'before ${m.group(1)}${m.group(2) == null ? '' : ':${m.group(2)}'}');
+    if (w.contains('সকাল') || w.contains('सुबह')) w += ' morning';
+    if (w.contains('দুপুর') || w.contains('दोपहर')) w += ' afternoon';
+    if (w.contains('সন্ধ্যা') || w.contains('বিকেল') || w.contains('शाम')) w += ' evening';
     int? toMin(String h, String? m, String? ap) {
       var hh = int.parse(h) % 12;
       if ((ap ?? (int.parse(h) < 8 ? 'pm' : 'am')) == 'pm') hh += 12;
@@ -495,3 +520,8 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
     );
   }
 }
+
+/// First free (day index, time) matching a patient's wish like "Thu after 5 PM"
+/// (English, বাংলা or हिन्दी). Exposed for tests.
+@visibleForTesting
+(int, String)? preferredSlotFor(String wish, List<Map<String, dynamic>> days) => _AppointmentsManageSheetState.preferredSlot(wish, days);

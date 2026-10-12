@@ -4,6 +4,7 @@ import '../core/nav.dart';
 import '../screens/auth/auth_login.dart';
 import '../screens/auth/auth_otp.dart';
 import '../screens/auth/auth_clinic_setup.dart';
+import '../screens/auth/auth_patient_register.dart';
 import '../screens/auth/auth_patient_setup.dart';
 import '../screens/auth/auth_register.dart';
 import '../screens/auth/auth_welcome.dart';
@@ -123,6 +124,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Auth-Register': ScreenSpec(stem: 'Auth-Register', title: 'Register', group: 'Sign in', panel: 'doctor', builder: (_) => const AuthRegisterScreen()),
   'Auth-Welcome': ScreenSpec(stem: 'Auth-Welcome', title: 'Welcome · doctor or patient', group: 'Sign in', panel: 'doctor', builder: (_) => const AuthWelcomeScreen()),
   'Auth-Clinic-Setup': ScreenSpec(stem: 'Auth-Clinic-Setup', title: 'Start your clinic', group: 'Sign in', panel: 'doctor', builder: (_) => const AuthClinicSetupScreen()),
+  'Auth-Patient-Register': ScreenSpec(stem: 'Auth-Patient-Register', title: 'Register · patient', group: 'Sign in', panel: 'patient', builder: (_) => const AuthPatientRegisterScreen()),
   'Auth-Patient-Setup': ScreenSpec(stem: 'Auth-Patient-Setup', title: 'Patient sign-up', group: 'Sign in', panel: 'patient', builder: (_) => const AuthPatientSetupScreen()),
   'Legal': ScreenSpec(stem: 'Legal', title: 'Terms of Use · Privacy Policy', group: 'Sign in', panel: 'doctor', builder: (_) => const LegalScreen()),
   'Doctor-Home': ScreenSpec(stem: 'Doctor-Home', title: 'Home', group: 'Clinician · tabs', panel: 'doctor', builder: (_) => const DoctorHomeScreen()),

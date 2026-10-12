@@ -4,6 +4,8 @@ import '../core/icons.dart';
 import '../core/nav.dart';
 import '../core/tokens.dart';
 import 'i18n.dart';
+import '../data/config.dart';
+import '../data/nav_counts.dart';
 
 class NavItem {
   final String label;
@@ -93,7 +95,7 @@ class FloatingNav extends StatelessWidget {
                             ),
                             child: Center(
                               widthFactor: 1,
-                              child: Text('${it.badge}', style: tx(11, w: w700, c: MP.white, h: 1)),
+                              child: Text(it.badge! > 99 ? '99+' : '${it.badge}', style: tx(11, w: w700, c: MP.white, h: 1)),
                             ),
                           ),
                         ),
@@ -113,6 +115,7 @@ class FloatingNav extends StatelessWidget {
 class DoctorNav extends StatelessWidget {
   final int current;
   const DoctorNav({super.key, required this.current});
+  /// The design's tabs (sample badge); live badges come from [NavCounts].
   static const items = [
     NavItem('Home', I.home, 'Doctor-Dashboard'),
     NavItem('Patients', I.users, 'Doctor-Patients'),
@@ -121,7 +124,20 @@ class DoctorNav extends StatelessWidget {
     NavItem('History', I.history, 'Doctor-History'),
   ];
   @override
-  Widget build(BuildContext context) => FloatingNav(items: items, current: current);
+  Widget build(BuildContext context) {
+    if (AppMode.preview) return FloatingNav(items: items, current: current);
+    NavCounts.refresh();
+    return ValueListenableBuilder(
+      valueListenable: NavCounts.counts,
+      builder: (_, c, _) => FloatingNav(current: current, items: [
+        items[0],
+        items[1],
+        NavItem('Messages', I.message, 'Doctor-Messages', badge: c.messages > 0 ? c.messages : null),
+        items[3],
+        items[4],
+      ]),
+    );
+  }
 }
 
 /// Clinician tabs (first version): Home · Care · Nutrition · Profile.
@@ -135,7 +151,19 @@ class ClinicianNav extends StatelessWidget {
     NavItem('Profile', I.user, 'Profile'),
   ];
   @override
-  Widget build(BuildContext context) => FloatingNav(items: items, current: current, fontSize: 12, gap: 4, badgeTop: 4);
+  Widget build(BuildContext context) {
+    if (AppMode.preview) return FloatingNav(items: items, current: current, fontSize: 12, gap: 4, badgeTop: 4);
+    NavCounts.refresh();
+    return ValueListenableBuilder(
+      valueListenable: NavCounts.counts,
+      builder: (_, c, _) => FloatingNav(current: current, fontSize: 12, gap: 4, badgeTop: 4, items: [
+        items[0],
+        NavItem('Care', I.heart, 'Care', badge: c.care > 0 ? c.care : null),
+        items[2],
+        items[3],
+      ]),
+    );
+  }
 }
 
 /// Front desk: Today · Patients · Profile.

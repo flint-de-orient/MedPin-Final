@@ -30,7 +30,7 @@ class D8TabHeader extends StatefulWidget {
 class _D8TabHeaderState extends State<D8TabHeader> with LiveData {
   @override
   Future<Object?> fetch() =>
-      widget.unread != null ? Future.value(const <String, dynamic>{}) : Api.I.get('/api/notifications', query: {'unread': true, 'limit': 1});
+      widget.unread != null ? Future.value(const <String, dynamic>{}) : Api.I.get('/api/notifications', query: {'unread': true, 'limit': 1, if (Session.I.practiceId != null) 'practiceId': Session.I.practiceId});
 
   @override
   Widget build(BuildContext context) {

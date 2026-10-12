@@ -1,6 +1,5 @@
 // Patient summaries, medicine safety checks, issuing prescriptions and PDFs.
-const PDFDocument = require('pdfkit');
-const { setupFonts, write } = require('../lib/pdftext');
+const rxpdf = require('./rxpdf');
 const M = require('../models');
 const T = require('../lib/time');
 const { conflict, badRequest } = require('../lib/http');
@@ -191,14 +190,7 @@ async function issueConsultation(consult, doctorUser) {
   });
 
   // PDF is generated now so it can be downloaded or sent straight away.
-  const vitals = consult.printVitalsOnRx && consult.vitalsId ? await M.Vitals.findById(consult.vitalsId) : null;
-  const location = consult.locationId ? await M.Location.findById(consult.locationId) : null;
-  const practice = await M.Practice.findById(consult.practiceId, 'logo name');
-  const image = async (file) => (file?.key ? storage.read(file.key).catch(() => null) : null);
-  const [signature, logo] = await Promise.all([image(doctor.signature), image(location?.letterhead?.logo || practice?.logo)]);
-  const pdf = await renderPrescriptionPdf({ rx, patient, doctor, location, vitals, complaint: consult.chiefComplaint, signature, logo, practiceName: practice?.name });
-  rx.file = await storage.save(pdf, { folder: 'prescriptions', name: `Rx-${String(rx.rxNumber).padStart(4, '0')}.pdf`, mimeType: 'application/pdf', pages: 1 });
-  await rx.save();
+  await buildPrescriptionPdf(rx, { consult, patient, doctor });
 
   consult.status = 'issued';
   consult.prescriptionId = rx._id;
@@ -208,101 +200,36 @@ async function issueConsultation(consult, doctorUser) {
   return rx;
 }
 
-function renderPrescriptionPdf({ rx, patient, doctor, location, vitals, complaint, signature, logo, practiceName }) {
-  return new Promise((resolve, reject) => {
-    const doc = setupFonts(new PDFDocument({ size: 'A4', margin: 48 }));
-    const chunks = [];
-    doc.on('data', (c) => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-    const W = doc.page.width - 96;
-    const img = (buf, x, y, opts) => {
-      try {
-        doc.image(buf, x, y, opts);
-        return true;
-      } catch {
-        return false; // unsupported image (e.g. HEIC): the PDF is still produced
-      }
-    };
-
-    // Letterhead: doctor and clinic on the left, logo on the right.
-    const lh = location?.letterhead || {};
-    const top = doc.y;
-    if (logo) img(logo, 48 + W - 64, top, { fit: [64, 64], align: 'right' });
-    doc.fontSize(18);
-    write(doc, lh.doctorNamePrinted || rx.doctorName || 'Doctor', { width: W - 76 });
-    doc.fontSize(10).fillColor('#555');
-    if (lh.tagline || doctor?.degreesSummary) write(doc, lh.tagline || doctor.degreesSummary, { width: W - 76 });
-    const reg = lh.registrationNo || (doctor?.registration?.number && `${doctor.registration.councilShort || ''} ${doctor.registration.number}`.trim());
-    if (reg) write(doc, `Reg. ${reg}`, { width: W - 76 });
-    if (location) write(doc, [location.name || practiceName, location.address, location.phone && `Phone ${location.phone}`].filter(Boolean).join(' · '), { width: W - 76 });
-    doc.y = Math.max(doc.y, top + 68);
-    doc.moveTo(48, doc.y + 4).lineTo(48 + W, doc.y + 4).strokeColor('#D9DEE7').stroke();
-    doc.fillColor('#000').moveDown();
-
-    doc.fontSize(11);
-    write(doc, `Rx ${String(rx.rxNumber).padStart(4, '0')}   ·   ${T.dayKey(rx.issuedAt)}`);
-    write(doc, `Patient: ${patient.name}   ${T.ageFrom(patient) ?? ''}${patient.gender ? ` ${patient.gender[0].toUpperCase()}` : ''}   ·   +91 ${patient.phone}`);
-    if (patient.allergies?.length) write(doc, `Allergies: ${patient.allergies.map((a) => a.allergen).join(', ')}`);
-    doc.moveDown(0.5);
-    if (complaint) write(doc, `Complaint: ${complaint}`);
-    if (vitals) {
-      const parts = [
-        vitals.bpSystolic && `BP ${vitals.bpSystolic}/${vitals.bpDiastolic} mmHg`,
-        vitals.pulse && `Pulse ${vitals.pulse}`,
-        vitals.spo2 && `SpO2 ${vitals.spo2}%`,
-        vitals.weightKg && `Weight ${vitals.weightKg} kg`,
-        vitals.bloodSugar && `Sugar ${vitals.bloodSugar} mg/dL`,
-      ].filter(Boolean);
-      if (parts.length) write(doc, `Vitals: ${parts.join(' · ')}`);
-    }
-    if (rx.diagnosisSummary) write(doc, `Diagnosis: ${rx.diagnosisSummary}`);
-    doc.moveDown().fontSize(13);
-    write(doc, 'Medicines');
-    doc.fontSize(11);
-    rx.items.forEach((item, i) => {
-      const when = item.frequency === 'weekly' ? `Once a week${item.weekday ? ` · ${item.weekday}` : ''}` : doseText(item.dose);
-      const food = item.foodRelation ? ` · ${item.foodRelation.replace('_', ' ')}` : '';
-      const dur = item.duration?.value ? ` · ${item.duration.value} ${item.duration.unit}` : item.duration?.unit === 'ongoing' ? ' · ongoing' : '';
-      write(doc, `${i + 1}. ${item.name} ${item.strength || ''} — ${when}${food}${dur}${item.quantity ? ` (${item.quantity})` : ''}`);
-      if (item.instructions) {
-        doc.fillColor('#555');
-        write(doc, `    ${item.instructions}`);
-        doc.fillColor('#000');
-      }
-    });
-    if (rx.tests.length) {
-      doc.moveDown().fontSize(13);
-      write(doc, 'Tests');
-      doc.fontSize(11);
-      write(doc, rx.tests.join(', '));
-    }
-    if (rx.advice) {
-      doc.moveDown().fontSize(13);
-      write(doc, 'Advice');
-      doc.fontSize(11);
-      write(doc, rx.advice);
-    }
-    if (rx.followUpDate) {
-      doc.moveDown();
-      write(doc, `Follow-up: ${T.dayKey(rx.followUpDate)}`);
-    }
-    doc.moveDown();
-    write(doc, `Valid till ${T.dayKey(rx.validUntil)}`);
-
-    // Signature block, bottom right.
-    doc.moveDown(2);
-    if (doc.y > doc.page.height - 160) doc.addPage();
-    const sy = doc.y;
-    const signed = signature ? img(signature, 48 + W - 160, sy, { fit: [160, 56], align: 'right' }) : false;
-    doc.y = sy + 60;
-    doc.fontSize(10);
-    write(doc, rx.doctorName || 'Doctor', { align: 'right', width: W });
-    if (reg) write(doc, `Reg. ${reg}`, { align: 'right', width: W });
-    doc.moveDown(1.5).fontSize(9).fillColor('#777');
-    write(doc, signed ? 'Digitally signed by the doctor · Generated by MedPin.' : 'Generated by MedPin.', { width: W });
-    doc.end();
+/**
+ * Draws the prescription PDF (services/rxpdf.js) from the consultation and
+ * saves it on [rx]. Already-loaded records can be passed in.
+ */
+async function buildPrescriptionPdf(rx, { consult, patient, doctor } = {}) {
+  consult = consult || (rx.consultationId ? await M.Consultation.findById(rx.consultationId) : null);
+  patient = patient || (await M.Patient.findById(rx.patientId));
+  doctor = doctor || (await M.DoctorProfile.findOne({ userId: rx.doctorId }));
+  const vitals = consult?.printVitalsOnRx && consult.vitalsId ? await M.Vitals.findById(consult.vitalsId) : null;
+  const locationId = rx.locationId || consult?.locationId;
+  const location = locationId ? await M.Location.findById(locationId) : null;
+  const practice = await M.Practice.findById(rx.practiceId, 'logo name');
+  const appt = consult?.appointmentId ? await M.Appointment.findById(consult.appointmentId, 'mode') : null;
+  const image = async (file) => (file?.key ? storage.read(file.key).catch(() => null) : null);
+  const [signature, logo] = await Promise.all([image(doctor?.signature), image(location?.letterhead?.logo || practice?.logo)]);
+  const { buffer, pages } = await rxpdf.renderPrescription({
+    rx, patient, doctor, location, vitals, complaint: consult?.chiefComplaint, signature, logo, practiceName: practice?.name, mode: appt?.mode,
   });
+  const name = `Prescription ${rxpdf.rxNo(rx)} · ${patient?.name || 'Patient'} · ${rxpdf.fmtDate(rx.issuedAt)}.pdf`.replace(/[\/:*?"<>|]/g, '');
+  rx.file = await storage.save(buffer, { folder: 'prescriptions', name, mimeType: 'application/pdf', pages });
+  rx.pdfVersion = rxpdf.PDF_VERSION;
+  await rx.save();
+  return rx;
 }
 
-module.exports = { checkItems, patientSummary, issueConsultation, renderPrescriptionPdf, doseText, dosesPerDay, durationDays, quantityFor };
+/** Digital prescriptions made before the current layout are drawn again once. */
+async function ensurePrescriptionPdf(rx) {
+  if (rx.kind !== 'digital' || !rx.consultationId) return rx;
+  if (rx.file?.key && (rx.pdfVersion || 1) >= rxpdf.PDF_VERSION) return rx;
+  return buildPrescriptionPdf(rx);
+}
+
+module.exports = { checkItems, patientSummary, issueConsultation, buildPrescriptionPdf, ensurePrescriptionPdf, doseText, dosesPerDay, durationDays, quantityFor };

@@ -294,6 +294,20 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     // Flip one hex digit of the signature (always a real change).
     const tampered = await fetch(issued.prescription.file.url.replace(/sig=(\w)/, (_, c) => `sig=${c === '0' ? '1' : '0'}`));
     assert.equal(tampered.status, 403, 'signed links cannot be forged');
+    // View / Download: a fresh link, the current layout, named for the patient.
+    const fresh = ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}/pdf`));
+    assert.match(fresh.name, /^Prescription RX-0001 · .+\.pdf$/);
+    const freshPdf = Buffer.from(await (await fetch(fresh.url)).arrayBuffer()).toString('latin1');
+    assert.ok((freshPdf.match(/\/Subtype\s*\/Image/g) || []).length >= 2, 'signature and verification QR are printed');
+    assert.equal(ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}`)).pdfVersion, require('../src/services/rxpdf').PDF_VERSION);
+    // QR verification page: genuine with the token, not verified without it.
+    const { verifyUrl } = require('../src/services/rxpdf');
+    const vpage = await fetch(verifyUrl(ctx.rxId).replace(/^https?:\/\/[^/]+/, base));
+    assert.equal(vpage.status, 200);
+    const vhtml = await vpage.text();
+    assert.match(vhtml, /Genuine/);
+    assert.doesNotMatch(vhtml, /9\d{9}/, 'the verify page never shows the phone number');
+    assert.equal((await fetch(`${base}/rx/${ctx.rxId}/verify?t=nope`)).status, 404);
     assert.equal((await ctx.doc('POST', `/api/consultations/${c.id}/issue`)).status, 409);
     const appt = ok(await ctx.doc('GET', `/api/appointments/${ctx.apptId}`));
     assert.equal(appt.status, 'completed');
@@ -349,6 +363,16 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(vn.message.kind, 'voice');
     assert.equal(vn.message.voice.durationSec, 7);
     assert.equal((await fetch(vn.message.voice.file.url)).status, 200, 'the note plays from its link');
+    // The thread's patient is always the patient, even if their account was listed with another role first.
+    const patUserId = (await M.Patient.findById(ctx.patientId)).userId;
+    await M.Conversation.updateOne({ _id: ctx.convoId }, { $push: { participants: { $each: [{ userId: patUserId, role: 'staff' }], $position: 0 } } });
+    const own = ok(await ctx.pat('POST', `/api/conversations/${ctx.convoId}/messages`, { text: 'Is it fine to walk after lunch?' }), 201);
+    assert.equal(own.message.senderType, 'patient', 'shown on the patient side in every app');
+    await M.Message.updateOne({ _id: own.message.id }, { senderType: 'staff' }); // an older mislabelled one
+    const seen = ok(await ctx.doc('GET', `/api/conversations/${ctx.convoId}/messages`)).items.find((x) => x.id === own.message.id);
+    assert.equal(seen.senderType, 'patient');
+    assert.equal(seen.mine, false, "not the doctor's own");
+    await M.Conversation.updateOne({ _id: ctx.convoId }, { $pull: { participants: { userId: patUserId, role: 'staff' } } });
     ok(await ctx.pat('POST', `/api/conversations/${ctx.convoId}/messages`, { text: 'Should I take the tablet before food?' }), 201);
     assert.equal((await ctx.pat('POST', `/api/conversations/${ctx.convoId}/messages`, { text: '  ' })).status, 400);
     const inbox = ok(await ctx.desk('GET', '/api/inbox?tab=unread'));
@@ -403,6 +427,9 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(split[0].flagLabel, '1 high');
     assert.equal((await ctx.pat('POST', `/api/patient/records/${up.record.id}/split`, { tests: [] })).status, 404, 'parent replaced');
     const recs = ok(await ctx.pat('GET', '/api/patient/records'));
+    // The patient's own copy; someone else's prescription id is not found.
+    assert.match(ok(await ctx.pat('GET', `/api/patient/prescriptions/${ctx.rxId}/pdf`)).url, /\/files\//);
+    assert.equal((await ctx.pat('GET', '/api/patient/prescriptions/000000000000000000000000/pdf')).status, 404);
     assert.ok(recs.counts.prescription >= 1 && recs.counts.test_result >= 1);
     const labs = ok(await ctx.doc('GET', `/api/patients/${ctx.patientId}/lab-results?filter=abnormal`));
     assert.equal(labs.abnormalFindings, 1);

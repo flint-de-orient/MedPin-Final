@@ -29,9 +29,16 @@ async function openConversation(req, id) {
 }
 
 const senderTypeFor = async (req, convo) => {
-  const p = convo.participants.find((x) => String(x.userId) === String(req.user._id));
-  if (p?.role === 'patient') return 'patient';
-  if (p?.role === 'doctor') return 'doctor';
+  const mine = convo.participants.filter((x) => String(x.userId) === String(req.user._id));
+  // The thread's own patient writes as the patient, unless they are also on this clinic's team.
+  const patient = convo.patientId ? await M.Patient.findById(convo.patientId, 'userId') : null;
+  if (patient?.userId && String(patient.userId) === String(req.user._id)) {
+    const member = convo.practiceId ? await M.Member.exists({ userId: req.user._id, practiceId: convo.practiceId, status: 'active' }) : null;
+    if (!member) return 'patient';
+  }
+  if (mine.some((x) => x.role === 'patient') && !mine.some((x) => x.role !== 'patient')) return 'patient';
+  if (mine.some((x) => x.role === 'doctor')) return 'doctor';
+  if (mine.some((x) => x.role === 'patient')) return 'patient';
   return 'staff';
 };
 
@@ -57,6 +64,7 @@ threads.get('/:id/messages', async (req, res) => {
   const pinned = convo.pinnedMessageId ? await M.Message.findById(convo.pinnedMessageId) : null;
   const patient = convo.patientId ? await M.Patient.findById(convo.patientId, 'name userId') : null;
   const lastSeen = patient?.userId ? convo.participants.find((p) => String(p.userId) === String(patient.userId))?.lastReadAt : null;
+  const patientIsOnlyPatient = Boolean(patient?.userId) && !(convo.practiceId && (await M.Member.exists({ userId: patient.userId, practiceId: convo.practiceId, status: 'active' })));
   const nextVisit = convo.patientId ? await M.Appointment.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting'] } }).sort({ startAt: 1 }) : null;
   // Shared records show as cards ("HbA1c · 7.4%, shared report · 30 Sep").
   const recIds = msgs.filter((m) => m.recordId).map((m) => m.recordId);
@@ -73,7 +81,12 @@ threads.get('/:id/messages', async (req, res) => {
       nextVisit: nextVisit && { startAt: nextVisit.startAt, token: String(nextVisit.tokenNo).padStart(2, '0') },
     },
     pinned: pinned && !pinned.deletedForEveryoneAt ? messageView(pinned, req.user._id) : null,
-    items: msgs.map((m) => ({ ...messageView(m, req.user._id), record: recordOf(m) })),
+    items: msgs.map((m) => {
+      const v = { ...messageView(m, req.user._id), record: recordOf(m) };
+      // Older messages the thread's patient sent while listed with another role: shown as theirs.
+      if (patientIsOnlyPatient && String(m.senderId?._id || m.senderId) === String(patient.userId) && v.senderType !== 'patient' && v.senderType !== 'system') v.senderType = 'patient';
+      return v;
+    }),
   });
 });
 

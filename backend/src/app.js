@@ -96,6 +96,33 @@ function createApp() {
     }
     res.redirect(303, `/pharmacy/orders/${found.order._id}?t=${encodeURIComponent(found.token)}`);
   });
+  // QR on every prescription PDF: anyone (a pharmacist) can check it is real.
+  // Shows only what is needed to trust it; the patient appears as initials.
+  app.get('/rx/:id/verify', async (req, res) => {
+    const { verifyToken, rxNo, fmtDate } = require('./services/rxpdf');
+    const { safeEqual } = require('./lib/security');
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const page = (title, body) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
+<body style="margin:0;background:#F7F9FC;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#111827">
+<div style="max-width:440px;margin:0 auto;padding:32px 20px"><div style="font-weight:800;color:#003399;font-size:20px;margin-bottom:20px">MedPin</div>${body}</div></body>`;
+    const ok = /^[a-f\d]{24}$/i.test(req.params.id) && safeEqual(String(req.query.t || ''), verifyToken(req.params.id));
+    const rx = ok ? await M.Prescription.findById(req.params.id).populate('patientId', 'name') : null;
+    if (!rx) {
+      return res.status(404).send(page('Not verified', `<div style="background:#FDECEC;border:1px solid #F3C4C4;border-radius:16px;padding:20px"><h2 style="margin:0 0 6px;color:#B91C1C">Not verified</h2><p style="margin:0;color:#545E72">This QR code doesn't match a MedPin prescription. Ask the clinic to confirm it.</p></div>`));
+    }
+    const profile = await M.DoctorProfile.findOne({ userId: rx.doctorId }, 'registration displayName');
+    const loc = rx.locationId ? await M.Location.findById(rx.locationId, 'name city') : null;
+    const valid = !rx.validUntil || rx.validUntil >= new Date();
+    const ini = String(rx.patientId?.name || '').split(/\s+/).filter(Boolean).map((w) => `${w[0].toUpperCase()}.`).join(' ');
+    const reg = profile?.registration?.number ? `${profile.registration.number}${profile.registration.councilShort ? ` · ${profile.registration.councilShort}` : ''}` : '';
+    const row = (k, v) => (v ? `<div style="display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #E5E9F0"><span style="color:#69738A">${k}</span><span style="font-weight:600;text-align:right">${esc(v)}</span></div>` : '');
+    const badge = valid
+      ? '<span style="background:#E8F5EC;color:#15803D;border-radius:999px;padding:4px 12px;font-weight:700;font-size:13px">✓ Genuine · valid</span>'
+      : '<span style="background:#FEF6E7;color:#B45309;border-radius:999px;padding:4px 12px;font-weight:700;font-size:13px">Genuine · expired</span>';
+    res.set('Cache-Control', 'no-store').send(page('Prescription verified', `<div style="background:#fff;border:1px solid #E5E9F0;border-radius:24px;padding:20px">${badge}
+<h2 style="margin:14px 0 4px">${esc(rxNo(rx))}</h2><p style="margin:0 0 12px;color:#545E72">Issued through MedPin</p>
+${row('Doctor', rx.doctorName || profile?.displayName)}${row('Reg. No.', reg)}${row('Clinic', loc && [loc.name, loc.city].filter(Boolean).join(', '))}${row('Patient', ini)}${row('Date', fmtDate(rx.issuedAt))}${row('Valid till', rx.validUntil && fmtDate(rx.validUntil))}${row('Medicines', String(rx.items.length))}</div>`));
+  });
   app.use('/api/auth', auth.router);
   app.use('/api/me', me);
   app.use('/api/notifications', notifications);

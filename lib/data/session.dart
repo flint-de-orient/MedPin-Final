@@ -56,6 +56,10 @@ class Session extends ChangeNotifier {
   /// Code returned by the API for test numbers / dev mode (never in production).
   String? pendingDevCode;
 
+  /// Details typed on Register (name, gender, age) waiting for the phone to
+  /// be verified; the patient profile is created right after the code.
+  Map<String, dynamic>? pendingSignup;
+
   bool get signedIn => refreshToken != null && account != null;
 
   /// True when this session was restored from storage at app launch (the app
@@ -255,6 +259,7 @@ class Session extends ChangeNotifier {
 
   Future<void> _clearLocal() async {
     accessToken = refreshToken = null;
+    pendingSignup = null;
     account = null;
     try {
       await store.clear();

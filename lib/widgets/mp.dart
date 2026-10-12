@@ -497,6 +497,8 @@ class MpInput extends StatefulWidget {
   final TextEditingController? controller;
   final TextAlign align;
   final bool tab;
+  final List<TextInputFormatter>? inputFormatters;
+  final Iterable<String>? autofillHints;
   const MpInput({
     super.key,
     this.label,
@@ -525,6 +527,8 @@ class MpInput extends StatefulWidget {
     this.controller,
     this.align = TextAlign.start,
     this.tab = false,
+    this.inputFormatters,
+    this.autofillHints,
   });
 
   @override
@@ -563,6 +567,8 @@ class _MpInputState extends State<MpInput> {
       maxLines: widget.obscure ? 1 : widget.maxLines,
       minLines: multi ? widget.maxLines : 1,
       onChanged: widget.onChanged,
+      inputFormatters: widget.inputFormatters,
+      autofillHints: widget.autofillHints,
       textAlign: widget.align,
       style: tx(widget.fontSize, h: multi ? 1.5 : null, tab: widget.tab),
       cursorColor: MP.primary,

@@ -13,7 +13,10 @@ import 'package:medpin_app/data/api.dart';
 import 'package:medpin_app/data/config.dart';
 import 'package:medpin_app/data/session.dart';
 import 'package:medpin_app/screens/auth/auth_clinic_setup.dart';
+import 'package:medpin_app/screens/auth/auth_otp.dart';
+import 'package:medpin_app/screens/auth/auth_patient_register.dart';
 import 'package:medpin_app/screens/auth/auth_patient_setup.dart';
+import 'package:medpin_app/screens/auth/sign_in_flow.dart';
 import 'package:medpin_app/screens/auth/auth_welcome.dart';
 
 /// Sign-up for a new number (doctor starts a clinic / patient profile) and
@@ -57,6 +60,8 @@ void _serve({String afterLanding = 'Doctor-Dashboard'}) {
         {'key': 'general', 'label': 'General physician'},
         {'key': 'diabetes', 'label': 'Diabetes & thyroid'},
       ];
+    } else if (p == '/api/auth/otp/request') {
+      out = {'maskedPhone': '+91 98300 •••75', 'resendInSec': 30, 'method': 'server'};
     } else if (p == '/api/auth/session') {
       out = _account(afterLanding);
     } else if (req.method == 'POST') {
@@ -167,6 +172,51 @@ void main() {
     t.takeException(); // the landing screen has no mocked data
     await t.pumpWidget(const SizedBox());
     await t.pump(const Duration(seconds: 40));
+  });
+
+  testWidgets('Register (patients): details, then the code, then the profile is created', (t) async {
+    _serve(afterLanding: 'Main');
+    _calls.clear();
+    await _pump(t, const AuthPatientRegisterScreen(), 'Auth-Patient-Register');
+    expect(find.text('Create your account'), findsOneWidget);
+    expect(find.textContaining('For patients.'), findsOneWidget);
+    // Fields: 0 name, 1 age, 2 mobile
+    await _enter(t, 0, '  Priya   Sharma ');
+    await _enter(t, 1, '29');
+    await _enter(t, 2, '12345 67890');
+    await _tap(t, find.text('Send code'));
+    expect(_calls.any((c) => c.$2 == '/api/auth/otp/request'), isFalse, reason: 'not a valid Indian mobile');
+    await _enter(t, 2, '98300 41275');
+    await _tap(t, find.text('Send code'));
+    expect(_calls.any((c) => c.$2 == '/api/auth/otp/request'), isFalse, reason: 'terms must be accepted');
+    await _tap(t, find.textContaining("I agree to MedPin's"));
+    await _tap(t, find.text('Male'));
+    await _tap(t, find.text('Send code'));
+    expect(_bodyOf('POST', '/api/auth/otp/request'), {'phone': '9830041275'});
+    expect(find.byType(AuthOtpScreen), findsOneWidget, reason: 'opens the code screen');
+    expect(find.text('Sent to +91 98300 •••75'), findsOneWidget);
+    expect(Session.I.pendingSignup, {'name': 'Priya Sharma', 'gender': 'male', 'ageYears': 29, 'termsAccepted': true});
+
+    // The code is verified (Auth-OTP): a new number, so the profile is made.
+    final note = await t.runAsync(() => finishSignIn({'accessToken': 'a', 'refreshToken': 'r', ..._account('Auth-Welcome')}));
+    expect(note, isNull);
+    expect(_bodyOf('POST', '/api/patient/register'), {'name': 'Priya Sharma', 'gender': 'male', 'ageYears': 29, 'termsAccepted': true});
+    expect(Session.I.landing, 'Main');
+    expect(Session.I.pendingSignup, isNull);
+    await t.pumpWidget(const SizedBox());
+    await t.pump(const Duration(seconds: 40));
+  });
+
+  test('Register with a number that already has an account just signs in', () async {
+    _serve(afterLanding: 'Main');
+    Session.I.pendingSignup = {'name': 'Priya Sharma', 'gender': 'female', 'ageYears': 29, 'termsAccepted': true};
+    final note = await finishSignIn({'accessToken': 'a', 'refreshToken': 'r', ..._account('Main')});
+    expect(note, contains('already have a MedPin account'));
+    expect(_calls.any((c) => c.$2 == '/api/patient/register'), isFalse);
+    Session.I.pendingSignup = {'name': 'Dr. Ananya Sen', 'gender': 'female', 'ageYears': 40, 'termsAccepted': true};
+    final doc = await finishSignIn({'accessToken': 'a', 'refreshToken': 'r', ..._account('Doctor-Dashboard')});
+    expect(doc, contains('set up for a clinic'));
+    expect(_calls.any((c) => c.$2 == '/api/patient/register'), isFalse);
   });
 
   test('Parallel 401s refresh the token once and nobody is signed out', () async {

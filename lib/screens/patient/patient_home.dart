@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' hide Text;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
 import '../../data/device_sync.dart';
@@ -14,6 +13,8 @@ import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import 'p1_sheets.dart';
 import 'patient_log.dart';
+import '../../data/rx_pdf.dart';
+import '../../data/downloads.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Main.dc.html — "Patient · Home".
@@ -348,13 +349,13 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
   Map<String, dynamic>? get _lab => data == null ? null : (data!.obj('latestLab').isEmpty ? null : data!.obj('latestLab'));
 
   Future<void> _download(BuildContext context) async {
-    final url = _rx?['url'] as String?;
-    if (url == null) {
-      toast(context, 'This prescription has no file yet');
-      return;
+    final rx = _rx;
+    if (rx == null) return toast(context, 'This prescription has no file yet');
+    if (rx['uploaded'] == true) {
+      await Downloads.save(context, rx['url'] as String?, name: 'Prescription', title: 'Prescription downloaded');
+    } else {
+      await RxPdf.download(context, rx['id']?.toString(), patient: true);
     }
-    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) toast(context, "Couldn't open the prescription");
   }
 
   Future<void> _openLog(BuildContext context, int tab) async {

@@ -103,6 +103,9 @@ class Api {
 
   /// Doses, medicines or reminder settings changed: medicine alarms re-sync (set in main).
   void Function()? onMedicinesChanged;
+
+  /// Called after something that changes the tab-bar badges (see NavCounts).
+  void Function()? onCountsChanged;
   static final _alarmPaths = RegExp(r'^/api/patient/(doses|medicines|me$|records/[^/]+/add-medicines)');
 
   Future<dynamic> _send(String method, String path, {Object? body, Map<String, Object?>? query, bool retried = false}) async {
@@ -131,6 +134,8 @@ class Api {
     }
 
     if (res.statusCode < 300 && method != 'GET' && _alarmPaths.hasMatch(path)) onMedicinesChanged?.call();
+    // Reading a chat or handling an alert changes the tab-bar badges.
+    if (res.statusCode < 300 && method != 'GET' && (path.endsWith('/read') || path.startsWith('/api/alerts/'))) onCountsChanged?.call();
     // Account language / app lock also change from the patient's own settings.
     if (res.statusCode < 300 && method == 'PATCH' && (path == '/api/me' || path == '/api/patient/me') && body is Map) {
       await session.patchUser(body.cast<String, dynamic>());

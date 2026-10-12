@@ -11,6 +11,7 @@ import '../../data/firebase_phone.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../../data/push.dart';
+import 'sign_in_flow.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Auth-OTP.dc.html — "Login · code" (Sign in).
@@ -138,8 +139,11 @@ class _AuthOtpScreenState extends State<AuthOtpScreen> with SingleTickerProvider
       final res = Session.I.pendingMethod == 'firebase'
           ? await FirebasePhone.I.verify(_code.text)
           : ((await Api.I.post('/api/auth/otp/verify', {'phone': phone, 'code': _code.text, ...Session.deviceInfo}) as Map).cast<String, dynamic>());
-      await Session.I.signIn(res);
-      if (mounted) Nav.reset(context, Session.I.landing);
+      final note = await finishSignIn(res);
+      if (!mounted) return;
+      // Register could not create the profile: the patient sign-up asks again.
+      Nav.reset(context, Session.I.landing == 'Auth-Welcome' && note != null ? 'Auth-Patient-Setup' : Session.I.landing);
+      if (note != null) toast(context, note);
       Future.delayed(const Duration(milliseconds: 600), Push.I.flushPending);
     } on ApiException catch (e) {
       if (!mounted) return;

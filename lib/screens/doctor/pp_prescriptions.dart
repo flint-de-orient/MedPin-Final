@@ -5,6 +5,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
+import '../../data/rx_pdf.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: PP-Prescriptions.dc.html — "Patient profile · Prescriptions".
@@ -103,9 +104,19 @@ class _PpPrescriptionsScreenState extends State<PpPrescriptionsScreen> with Live
             summary: _summary(x),
             meta: _meta(x),
             tag: _tag(x),
-            onView: () => Nav.go(context, 'Prescriptions', args: {'prescriptionId': x.str('id'), 'patientId': rec.id}),
-            onDownload: () => d6OpenUrl(context, x.obj('file').str('url'), fail: "Couldn't open the prescription"),
+            // View opens the prescription itself; Download saves it to the phone.
+            onView: () => RxPdf.view(context, x.str('id')),
+            onDownload: () => RxPdf.download(context, x.str('id')),
           ),
+        // The full folder: every prescription, send to patient, file a paper one.
+        Center(
+          child: D6Link(
+            'All prescriptions · file a paper one',
+            leading: I.fileText,
+            minHeight: 44,
+            onTap: () => Nav.go(context, 'Prescriptions', args: {'patientId': rec.id}),
+          ),
+        ),
       ],
     );
   }

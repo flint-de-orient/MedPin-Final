@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'patient_finddoctor.dart' show openDoctorBooking;
+import '../../data/rx_pdf.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Patient-DoctorDetail.dc.html — "Patient · doctor page (Dr. Sen)".
@@ -770,8 +771,8 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
               onTap: () {
                 if (last == null) {
                   p2Missing(context, 'The prescription view');
-                } else if (last['prescriptionUrl'] is String) {
-                  p2Open(context, last.str('prescriptionUrl'), failed: "Couldn't open the prescription");
+                } else if (last['prescriptionId'] != null) {
+                  RxPdf.view(context, last.str('prescriptionId'), patient: true);
                 } else {
                   Nav.go(context, 'Patient-Records');
                 }

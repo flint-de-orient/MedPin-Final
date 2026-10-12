@@ -10,6 +10,7 @@ import 'core/tokens.dart';
 import 'data/api.dart';
 import 'data/firebase_phone.dart';
 import 'data/med_alarms.dart';
+import 'data/nav_counts.dart';
 import 'data/push.dart';
 import 'data/session.dart';
 
@@ -21,6 +22,7 @@ void main() {
   // Push notifications start once someone is signed in (restored or new).
   Session.I.deviceToken = () => Push.I.token;
   Api.I.onMedicinesChanged = MedAlarms.I.sync;
+  Api.I.onCountsChanged = () => NavCounts.refresh(force: true);
   var wasSignedIn = false;
   Session.I.addListener(() {
     final now = Session.I.signedIn;
@@ -31,6 +33,7 @@ void main() {
     if (!now && wasSignedIn) {
       Push.I.forget();
       MedAlarms.I.clear();
+      NavCounts.clear();
     }
     wasSignedIn = now;
   });
@@ -90,6 +93,7 @@ class _AccountRefresher with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed || !Session.I.signedIn) return;
+    NavCounts.refresh(force: true); // chats may have come in while away
     if (DateTime.now().difference(_last) < const Duration(minutes: 1)) return;
     _last = DateTime.now();
     Session.I.reloadAccount().catchError((_) {}); // offline: keep the saved account

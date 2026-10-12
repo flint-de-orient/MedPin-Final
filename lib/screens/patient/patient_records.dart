@@ -6,6 +6,8 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
+import '../../data/rx_pdf.dart';
+import '../../data/downloads.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Patient-Records.dc.html — "Patient · Health records".
@@ -181,19 +183,17 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> with LiveDa
       toast(context, 'Downloading ${r.title}');
       return;
     }
-    String? url;
     final files = x.list('files');
-    if (files.isNotEmpty) url = files.first['url'] as String?;
+    final url = files.isNotEmpty ? files.first['url'] as String? : null;
     if (url == null && x['prescriptionId'] != null) {
-      final full = await runAction(context, () => Api.I.get('/api/patient/records/${x.str('id')}'));
-      if (full is Map) url = full.cast<String, dynamic>().obj('prescription').obj('file')['url'] as String?;
+      await RxPdf.download(context, x.str('prescriptionId'), patient: true);
+      return;
     }
-    if (!mounted) return;
     if (url == null) {
       toast(context, 'This record has no file to download');
       return;
     }
-    await p3Open(context, url, what: r.title);
+    await Downloads.save(context, url, name: r.title, title: 'Downloaded');
   }
 
   @override
@@ -560,7 +560,13 @@ class _RecordSheetState extends State<_RecordSheet> with LiveData {
             ),
           const Gap(20),
           if (url != null) ...[
-            MpButton('Open file', icon: I.download, onTap: () => p3Open(context, url, what: r.str('title', 'the file'))),
+            MpButton(
+              'Open file',
+              icon: I.download,
+              onTap: () => r['prescriptionId'] != null && r.list('files').isEmpty
+                  ? RxPdf.view(context, r.str('prescriptionId'), patient: true)
+                  : p3Open(context, url, what: r.str('title', 'the file')),
+            ),
             const Gap(20),
           ],
           if (data != null) ...[

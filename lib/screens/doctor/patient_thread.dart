@@ -506,6 +506,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
 
   @override
   void dispose() {
+    // Replies that came in while the thread was open are read too.
+    if (isLive && _readSent && _convId != null) Api.I.post('/api/conversations/$_convId/read', const {'pauseAi': false}).catchError((_) => null);
     _voice.dispose();
     _scroll.dispose();
     _reply.dispose();

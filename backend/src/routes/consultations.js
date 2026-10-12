@@ -6,7 +6,7 @@ const T = require('../lib/time');
 const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
 const { pick, badRequest, notFound, conflict, escapeRegex } = require('../lib/http');
 const storage = require('../services/storage');
-const { checkItems, patientSummary, issueConsultation } = require('../services/clinical');
+const { checkItems, patientSummary, issueConsultation, ensurePrescriptionPdf } = require('../services/clinical');
 const { careConversation, postMessage } = require('../services/care');
 const { transition } = require('../services/scheduling');
 const { notify } = require('../services/notify');
@@ -210,6 +210,16 @@ r.get('/prescriptions/:id', async (req, res) => {
   if (!rx) throw notFound('Prescription');
   await patientInPractice(req, rx.patientId);
   res.json({ ...rx.toJSON(), file: storage.withUrl(rx.file) });
+});
+
+// View / Download: a fresh link to the PDF (drawn again if it predates the current layout).
+r.get('/prescriptions/:id/pdf', async (req, res) => {
+  const rx = await M.Prescription.findById(req.params.id);
+  if (!rx) throw notFound('Prescription');
+  await patientInPractice(req, rx.patientId);
+  await ensurePrescriptionPdf(rx);
+  if (!rx.file?.key) throw notFound('Prescription PDF');
+  res.json(storage.withUrl(rx.file));
 });
 
 module.exports = r;

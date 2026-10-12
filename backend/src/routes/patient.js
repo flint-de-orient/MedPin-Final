@@ -27,6 +27,7 @@ r.post('/register', async (req, res) => {
   if (await M.Patient.exists({ userId: req.user._id })) throw conflict('You already have a profile', 'ALREADY_REGISTERED');
   const { name, gender, ageYears, dateOfBirth } = req.body;
   if (!name || !E.GENDERS.includes(gender)) throw badRequest('Enter your name and gender');
+  if (req.body.termsAccepted) await M.User.updateOne({ _id: req.user._id }, { termsAcceptedAt: new Date() });
   const existing = await M.Patient.findOne({ phone: req.user.phone });
   if (existing) {
     existing.userId = req.user._id;
@@ -72,6 +73,15 @@ r.patch('/me', async (req, res) => {
     await req.user.save();
   }
   res.json(meView(p, req.user));
+});
+
+// The patient's own prescription PDF (View / Download in Records).
+r.get('/prescriptions/:id/pdf', async (req, res) => {
+  const rx = isId(req.params.id) ? await M.Prescription.findOne({ _id: req.params.id, patientId: req.patient._id }) : null;
+  if (!rx) throw notFound('Prescription');
+  await require('../services/clinical').ensurePrescriptionPdf(rx);
+  if (!rx.file?.key) throw notFound('Prescription PDF');
+  res.json(storage.withUrl(rx.file));
 });
 
 r.post('/addresses', async (req, res) => {

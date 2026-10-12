@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
+import '../../data/nav_counts.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Doctor-Messages.dc.html — "Doctor · Messages tab".
@@ -173,6 +174,8 @@ class _DoctorMessagesScreenState extends State<DoctorMessagesScreen> with LiveDa
       for (final c in d.obj('direct').list('items')) (F.date(c.obj('lastMessage')['at']) ?? DateTime(2000), _directChat(c, team)),
     ]..sort((a, b) => b.$1.compareTo(a.$1));
     final unread = d.obj('all').numOr('unread').toInt() + d.obj('direct').numOr('unread').toInt();
+    // The tab-bar badge shows the same number as the header.
+    WidgetsBinding.instance.addPostFrameCallback((_) => NavCounts.setMessages(unread));
     final urgent = urgentRow == null
         ? null
         : () {

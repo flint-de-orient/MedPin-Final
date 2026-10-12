@@ -2,12 +2,10 @@ import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../app/splash.dart' show kLogoHeroTag;
-import '../../data/api.dart';
 import '../../data/config.dart';
-import '../../data/firebase_phone.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
-import 'auth_register.dart';
+import 'sign_in_flow.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Auth-Login.dc.html — "Login" (Sign in).
@@ -41,44 +39,16 @@ class _AuthLoginScreenState extends State<AuthLoginScreen> {
     }
     if (_busy) return;
     setState(() => _busy = true);
-    try {
-      final res = await Api.I.post('/api/auth/otp/request', {'phone': digits}) as Map;
-      final s = Session.I
-        ..pendingPhone = digits
-        ..pendingMaskedPhone = res['maskedPhone'] as String?
-        ..pendingResendIn = (res['resendInSec'] as num?)?.toInt() ?? 30
-        ..pendingDevCode = res['devCode'] as String?
-        ..pendingMethod = res['method'] == 'firebase' ? 'firebase' : 'server';
-      if (s.pendingMethod == 'firebase') {
-        // Firebase texts the code; Android may also read it and sign in by itself.
-        await FirebasePhone.I.sendCode(digits, onAutoVerified: _signedInAutomatically);
-      }
-      if (!context.mounted) return;
-      if (s.pendingDevCode != null) toast(context, 'Test code: ${s.pendingDevCode}');
-      Nav.go(context, 'Auth-OTP');
-    } on ApiException catch (e) {
-      if (context.mounted) toast(context, e.message);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    Session.I.pendingSignup = null; // plain sign-in, not Register
+    await sendSignInCode(context, digits);
+    if (mounted) setState(() => _busy = false);
   }
 
-  static Future<void> _signedInAutomatically(Map<String, dynamic> body) async {
-    await Session.I.signIn(body);
-    final ctx = Nav.key.currentContext;
-    if (ctx != null && ctx.mounted) Nav.reset(ctx, Session.I.landing);
-  }
-
+  /// Patients register themselves; doctors are set up by MedPin and staff
+  /// are added by their clinic, so Register is for patients.
   void _register(BuildContext context) {
-    // Registering starts by verifying the phone; new numbers land on Register.
-    if (!AppMode.preview) {
-      _sendCode(context);
-      return;
-    }
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      settings: const RouteSettings(name: 'Auth-Register'),
-      builder: (_) => const AuthRegisterScreen(fromLogin: true),
-    ));
+    final digits = _phone.text.replaceAll(RegExp(r'\D'), '');
+    Nav.go(context, 'Auth-Patient-Register', args: {if (digits.length == 10) 'phone': digits});
   }
 
   @override

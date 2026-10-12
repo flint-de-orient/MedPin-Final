@@ -5,11 +5,11 @@ import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
-import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
 import 'signature_gate.dart';
 import 'patient_picker.dart';
+import '../../data/rx_pdf.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Prescriptions.dc.html — "Prescriptions" (Priya Sharma's list).
@@ -216,8 +216,8 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
       toast(context, 'No PDF for this prescription yet');
       return;
     }
-    // Opens in the phone's PDF viewer (it can save or print); without a viewer, the share sheet.
-    await Downloads.open(context, url, name: 'Prescription ${rx.date}');
+    // Saves to Downloads › MedPin (fresh link; older PDFs are redrawn in the current layout).
+    await RxPdf.download(context, rx.id);
   }
 
   final _busy = ValueNotifier(false);
