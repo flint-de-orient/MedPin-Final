@@ -50,6 +50,7 @@ class P1 {
       sub: 'You walked 4 of 5 planned days',
       cta: 'See your progress',
       icon: I.activity,
+      image: 'assets/images/hero_health.jpg',
     ),
   ];
 
@@ -125,6 +126,7 @@ class P1 {
         sub: plan.isEmpty ? 'Out of 100' : 'You did ${plan['doneThisWeek']} of ${plan['daysPerWeek']} planned days',
         cta: 'See your progress',
         icon: I.activity,
+        image: 'assets/images/hero_health.jpg',
       ));
     }
     return out;
@@ -209,6 +211,9 @@ class P1Slide {
 
   /// Route arguments for [stem] (the appointment, record or medicine).
   final Object? args;
+
+  /// A full-card background photo (its left side fades into blue already).
+  final String? image;
   const P1Slide({
     required this.spec,
     required this.tag,
@@ -218,6 +223,7 @@ class P1Slide {
     this.icon,
     this.stem,
     this.args,
+    this.image,
   });
 }
 
@@ -325,17 +331,24 @@ class P1HeroSlide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final photo = slide.icon == null;
+    final backdrop = slide.image;
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
+        // The icon tile stays on photo cards too.
         if (photo)
           ConstrainedBox(constraints: BoxConstraints(maxWidth: textMaxWidth), child: _text())
         else
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: _text()),
+              // On a photo the text keeps to the blue side.
+              Expanded(
+                child: backdrop == null
+                    ? _text()
+                    : Align(alignment: Alignment.centerLeft, child: ConstrainedBox(constraints: BoxConstraints(maxWidth: textMaxWidth), child: _text())),
+              ),
               const Gap(12),
               _fade(
                 Container(
@@ -364,7 +377,28 @@ class P1HeroSlide extends StatelessWidget {
             boxShadow: MPShadow.floatStrong,
           ),
           clipBehavior: Clip.antiAlias,
-          child: photo
+          child: backdrop != null
+              ? Stack(
+                  children: [
+                    // The whole card is the photo; the person is on its right.
+                    Positioned.fill(
+                      child: _fade(Image.asset(backdrop, fit: BoxFit.cover, alignment: Alignment.centerRight)),
+                    ),
+                    // A light blue wash on the left keeps the white text easy to read.
+                    const Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xF2003399), Color(0x99003399), Color(0x00003399)],
+                            stops: [0.0, 0.45, 0.72],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(child: Padding(padding: const EdgeInsets.all(20), child: content)),
+                  ],
+                )
+              : photo
               ? Stack(
                   children: [
                     Positioned(
