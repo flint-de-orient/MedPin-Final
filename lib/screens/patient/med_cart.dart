@@ -37,6 +37,9 @@ class _MedCartScreenState extends State<MedCartScreen> with LiveData {
   final _items = <_Item>[_metformin, _atorvastatin];
   final _qty = <int>[3, 2];
   String? _addressId;
+
+  /// Prescriptions not to send with the order (all go unless untick).
+  final _skip = <String>{};
   final _busy = ValueNotifier(false);
 
   @override
@@ -144,7 +147,11 @@ class _MedCartScreenState extends State<MedCartScreen> with LiveData {
       return;
     }
     final a = data == null ? null : _address;
-    await Nav.go(context, 'Med-Pharmacy', args: {if (a != null) 'addressId': a.str('id', a.str('_id'))});
+    await Nav.go(context, 'Med-Pharmacy', args: {
+      if (a != null) 'addressId': a.str('id', a.str('_id')),
+      // The ticked prescriptions go with the order.
+      if (data != null) 'attach': [for (final p in _cart.list('prescriptions')) if (!_skip.contains(p.str('id'))) p.str('id')],
+    });
     if (mounted && data != null) reload(quiet: true);
   }
 
@@ -163,6 +170,90 @@ class _MedCartScreenState extends State<MedCartScreen> with LiveData {
         "${F.doctorShort(p.str('doctorName', 'your doctor'))}'s${F.date(p['issuedAt']) != null ? ' ${F.dayMonth(F.date(p['issuedAt'])!)}' : ''}",
     ];
     return "We'll attach ${F.joinAnd(parts)} ${rx.length == 1 ? 'prescription' : 'prescriptions'} automatically.";
+  }
+
+  /// "Prescriptions attached": each prescription that can go with the order
+  /// (tick to send), which cart medicines it covers, and a warning for any
+  /// medicine none of them lists. Adding a photo comes back here refreshed.
+  Widget _prescriptions() {
+    final live = data != null;
+    final rx = live ? _cart.list('prescriptions') : const <Map<String, dynamic>>[];
+    final uncovered = live ? [for (final u in (_cart['uncovered'] as List? ?? const [])) '$u'] : const <String>[];
+    final sent = rx.where((p) => !_skip.contains(p.str('id'))).length;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: MPDeco.card(shadow: null),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Prescriptions attached', style: tx(15, w: w700)),
+          const Gap(2),
+          Text(
+            !live
+                ? _rxText
+                : rx.isEmpty
+                    ? 'No valid prescription on file yet. Add a photo of one so the pharmacy can check your order.'
+                    : 'The pharmacy sees ${sent == rx.length ? (rx.length == 1 ? 'this prescription' : 'these prescriptions') : '$sent of ${rx.length}'} with your order.',
+            style: tx(13, h: 1.4, c: MP.ink2),
+          ),
+          for (final p in rx) ...[
+            const Gap(12),
+            _RxRow(
+              title: [
+                p.str('kind') == 'uploaded' ? 'Prescription photo' : F.doctorShort(p.str('doctorName', 'Your doctor')),
+                if (F.date(p['issuedAt']) != null) F.dayMonth(F.date(p['issuedAt'])!),
+              ].join(' · '),
+              sub: () {
+                final covers = [for (final c in (p['covers'] as List? ?? const [])) '$c'];
+                return covers.isEmpty
+                    ? (p.str('kind') == 'uploaded' ? p.str('doctorName', 'Uploaded by you') : 'Doesn’t list the medicines in your cart')
+                    : 'Covers ${F.joinAnd(covers)}';
+              }(),
+              on: !_skip.contains(p.str('id')),
+              onChanged: (v) => setState(() => v ? _skip.remove(p.str('id')) : _skip.add(p.str('id'))),
+            ),
+          ],
+          if (uncovered.isNotEmpty) ...[
+            const Gap(12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(color: MP.amberSoft, borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(padding: EdgeInsets.only(top: 1), child: Ico(I.alert, size: 16, color: MP.amber)),
+                  const Gap(8),
+                  Expanded(
+                    child: Text(
+                      '${F.joinAnd(uncovered)} ${uncovered.length == 1 ? 'isn’t' : 'aren’t'} on any prescription. Add a photo of one so the pharmacy can give ${uncovered.length == 1 ? 'it' : 'them'}.',
+                      style: tx(13, h: 1.4, c: MP.amber),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const Gap(14),
+          MpHitSlop(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () async {
+                await Nav.go(context, 'Records-Add', args: const {'kind': 'prescription', 'title': 'Prescription'});
+                if (mounted && live) reload(quiet: true);
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Ico(I.camera, size: 16, color: MP.primary, stroke: 2),
+                  const Gap(6),
+                  Text('Add a prescription photo', style: tx(14, w: w600, c: MP.primary)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -236,37 +327,7 @@ class _MedCartScreenState extends State<MedCartScreen> with LiveData {
               ),
 
             // Prescriptions attached
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: MPDeco.card(shadow: null),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Prescriptions attached', style: tx(15, w: w700)),
-                            const Gap(2),
-                            Text(_rxText, style: tx(13, h: 1.4, c: MP.ink2)),
-                          ],
-                        ),
-                      ),
-                      const Gap(12),
-                      const P2Pill('Coming soon', height: 24, padX: 10),
-                    ],
-                  ),
-                  const Gap(14),
-                  MpHitSlop(child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Nav.go(context, 'Records-Add'),
-                    child: Text('Attach prescriptions yourself for now', style: tx(14, w: w600, c: MP.primary)),
-                  )),
-                ],
-              ),
-            ),
+            _prescriptions(),
 
             // Deliver to home
             Container(
@@ -538,4 +599,42 @@ class _AddressSheetState extends State<_AddressSheet> {
       ),
     );
   }
+}
+
+/// One prescription with a tick: send it with the order or not.
+class _RxRow extends StatelessWidget {
+  final String title;
+  final String sub;
+  final bool on;
+  final ValueChanged<bool> onChanged;
+  const _RxRow({required this.title, required this.sub, required this.on, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        checked: on,
+        label: '$title. $sub',
+        excludeSemantics: true,
+        onTap: () => onChanged(!on),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onChanged(!on),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(padding: const EdgeInsets.only(top: 2), child: MpCheck(value: on, onChanged: onChanged)),
+              const Gap(12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: tx(14, w: w600)),
+                    const Gap(1),
+                    Text(sub, style: tx(13, c: MP.ink2, h: 1.35)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 }

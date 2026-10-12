@@ -973,10 +973,10 @@ const cartOf = async (patientId) => (await M.Cart.findOne({ patientId })) || M.C
 async function cartView(cart, patient) {
   const courses = await M.MedicationCourse.find({ _id: { $in: cart.items.map((i) => i.courseId).filter(Boolean) } });
   const today = T.dayStart();
-  // "Prescriptions attached": the valid prescriptions that go with an order.
-  const prescriptions = await M.Prescription.find({ patientId: patient._id, validUntil: { $gte: new Date() } }, 'doctorName issuedAt').sort({ issuedAt: -1 }).limit(10);
+  // "Prescriptions attached": what can go with the order, and which cart medicines each one covers.
+  const { prescriptions, uncovered } = await cartPrescriptions(patient, cart);
   return {
-    prescriptions: prescriptions.map((p) => ({ id: p._id, doctorName: p.doctorName, issuedAt: p.issuedAt })),
+    prescriptions, uncovered,
     addresses: patient.addresses,
     ...cart.toJSON(),
     items: cart.items.map((i) => {
@@ -1064,6 +1064,34 @@ r.get('/pharmacies/quotes', async (req, res) => {
   res.json({ mode, items: out, note: 'Final price depends on the pharmacy' });
 });
 
+/**
+ * Prescriptions that can go with a medicine order: valid digital ones and
+ * prescription photos uploaded in the last 6 months. covers: the cart
+ * medicines each one lists. uncovered: cart medicines none of them list.
+ */
+async function cartPrescriptions(patient, cart) {
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const cartNames = cart.items.map((i) => i.name);
+  const covers = (names) => cartNames.filter((c) => names.some((n) => {
+    const a = norm(c).split(' ')[0];
+    return a && norm(n).split(' ').includes(a);
+  }));
+  const [digital, uploaded] = await Promise.all([
+    M.Prescription.find({ patientId: patient._id, validUntil: { $gte: new Date() } }, 'doctorName issuedAt items rxNumber').sort({ issuedAt: -1 }).limit(10),
+    M.MedicalRecord.find({ patientId: patient._id, kind: 'prescription', deletedAt: null, origin: { $ne: 'from_doctor' }, recordDate: { $gte: T.addDays(new Date(), -183) } }, 'title sourceName extractedDoctor recordDate extractedMedicines files')
+      .sort({ recordDate: -1 }).limit(10),
+  ]);
+  const prescriptions = [
+    ...digital.map((p) => ({ id: p._id, kind: 'digital', doctorName: p.doctorName, issuedAt: p.issuedAt, covers: covers(p.items.map((i) => i.name)) })),
+    ...uploaded.filter((r) => r.files?.length).map((r) => ({
+      id: r._id, kind: 'uploaded', doctorName: r.extractedDoctor || r.sourceName || null, issuedAt: r.recordDate, title: r.title,
+      covers: covers((r.extractedMedicines || []).map((m) => m.name)),
+    })),
+  ];
+  const covered = new Set(prescriptions.flatMap((p) => p.covers));
+  return { prescriptions, uncovered: cartNames.filter((n) => !covered.has(n)) };
+}
+
 r.post('/orders', async (req, res) => {
   const cart = await cartOf(req.patient._id);
   if (!cart.items.length) throw badRequest('Your cart is empty', 'CART_EMPTY');
@@ -1073,7 +1101,12 @@ r.post('/orders', async (req, res) => {
   const q = await quote(cart, pharmacy);
   const address = req.patient.addresses.id(req.body.addressId) || req.patient.addresses.find((a) => a.isDefault) || req.patient.addresses[0];
   if (mode === 'delivery' && !address) throw badRequest('Add a delivery address first', 'ADDRESS_REQUIRED');
-  const prescriptionIds = await M.Prescription.find({ patientId: req.patient._id, validUntil: { $gte: new Date() } }).distinct('_id');
+  // The prescriptions the patient kept ticked in the cart (all valid ones when the app doesn't say).
+  const offered = (await cartPrescriptions(req.patient, cart)).prescriptions;
+  const chosen = Array.isArray(req.body.attach) ? new Set(req.body.attach.map(String)) : null;
+  const keep = offered.filter((p) => !chosen || chosen.has(String(p.id)));
+  const prescriptionIds = keep.filter((p) => p.kind === 'digital').map((p) => p.id);
+  const prescriptionRecordIds = keep.filter((p) => p.kind === 'uploaded').map((p) => p.id);
   const byName = new Map(cart.items.map((i) => [`${i.name}|${i.strength || ''}`, i]));
   const { randomToken, sha256 } = require('../lib/security');
   const pharmacyToken = randomToken(24);
@@ -1084,7 +1117,7 @@ r.post('/orders', async (req, res) => {
       const c = byName.get(`${l.name}|${l.strength || ''}`);
       return { ...l, courseId: c?.courseId, unitsPerStrip: c?.unitsPerStrip || 10, unitPrice: l.unitPrice ?? undefined, lineTotal: l.lineTotal ?? undefined };
     }),
-    prescriptionIds, deliveryAddress: mode === 'delivery' ? pick(address, ['line', 'area', 'city', 'pincode']) : undefined,
+    prescriptionIds, prescriptionRecordIds, deliveryAddress: mode === 'delivery' ? pick(address, ['line', 'area', 'city', 'pincode']) : undefined,
     subtotal: q.subtotal, deliveryFee: q.deliveryFee, total: q.total, statusHistory: [{ status: 'placed', at: new Date() }],
     etaText: mode === 'delivery' ? pharmacy.deliveryEtaText : pharmacy.pickupEtaMin ? `Ready in ${pharmacy.pickupEtaMin} min` : undefined,
   });

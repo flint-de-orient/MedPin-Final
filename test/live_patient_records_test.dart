@@ -249,7 +249,7 @@ void main() {
     expect(find.text('Metformin 500 mg'), findsOneWidget);
     expect(find.text('Dr. Arjun Sen · strip of 10'), findsOneWidget);
     expect(find.text('3 strips'), findsOneWidget);
-    expect(find.text("We'll attach Dr. Sen's 29 Sep prescription automatically."), findsOneWidget);
+    expect(find.text('The pharmacy sees this prescription with your order.'), findsOneWidget);
     expect(find.text('Flat 3B, 12 Purbachal Rd, Salt Lake'), findsOneWidget);
     expect(find.textContaining('Add Vitamin D3 too?', findRichText: true), findsOneWidget);
 

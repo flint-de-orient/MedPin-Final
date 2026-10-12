@@ -125,6 +125,7 @@ const orderSchema = new Schema(
       },
     ],
     prescriptionIds: [{ type: Schema.Types.ObjectId, ref: 'Prescription' }],
+    prescriptionRecordIds: [{ type: Schema.Types.ObjectId, ref: 'MedicalRecord' }], // prescription photos the patient uploaded
     deliveryAddress: { line: String, area: String, city: String, pincode: String },
     subtotal: rupees,
     deliveryFee: { ...rupees, default: 0 },

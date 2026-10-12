@@ -82,16 +82,19 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 /** The pharmacy's page for one order (opened from the WhatsApp / email link). */
 async function pharmacyPage(order, token) {
-  const [patient, pharmacy, prescriptions] = await Promise.all([
+  const [patient, pharmacy, prescriptions, photos] = await Promise.all([
     M.Patient.findById(order.patientId, 'name phone'),
     M.Pharmacy.findById(order.pharmacyId, 'name'),
     M.Prescription.find({ _id: { $in: order.prescriptionIds } }, 'rxNumber issuedAt doctorName file items'),
+    M.MedicalRecord.find({ _id: { $in: order.prescriptionRecordIds || [] } }, 'title sourceName extractedDoctor recordDate files'),
   ]);
   const next = NEXT[order.mode][order.status] || [];
   const rows = order.items.map((i) => `<tr><td>${esc(i.name)} ${esc(i.strength || '')}</td><td>${i.strips} × ${i.unitsPerStrip || 10}</td><td>${i.lineTotal != null ? `₹${i.lineTotal}` : ''}</td></tr>`).join('');
-  const rx = prescriptions.length
-    ? prescriptions.map((p) => `<li><a href="${esc(storage.signedUrl(p.file?.key, 7 * 24 * 3600) || '#')}">Rx ${String(p.rxNumber || '').padStart(4, '0')}</a> · ${esc(p.doctorName || '')} · ${p.issuedAt ? p.issuedAt.toISOString().slice(0, 10) : ''}</li>`).join('')
-    : '<li>No prescription attached — ask the patient before giving prescription-only medicines.</li>';
+  const rxItems = [
+    ...prescriptions.map((p) => `<li><a href="${esc(storage.signedUrl(p.file?.key, 7 * 24 * 3600) || '#')}">Rx ${String(p.rxNumber || '').padStart(4, '0')}</a> · ${esc(p.doctorName || '')} · ${p.issuedAt ? p.issuedAt.toISOString().slice(0, 10) : ''}</li>`),
+    ...photos.map((r) => `<li><a href="${esc(storage.signedUrl(r.files?.[0]?.key, 7 * 24 * 3600) || '#')}">Prescription photo</a> · ${esc(r.extractedDoctor || r.sourceName || '')} · ${r.recordDate ? r.recordDate.toISOString().slice(0, 10) : ''}</li>`),
+  ];
+  const rx = rxItems.length ? rxItems.join('') : '<li>No prescription attached — ask the patient before giving prescription-only medicines.</li>';
   const addr = order.deliveryAddress ? [order.deliveryAddress.line, order.deliveryAddress.area, order.deliveryAddress.city, order.deliveryAddress.pincode].filter(Boolean).join(', ') : '';
   const buttons = next.map((s) => `<button name="status" value="${s}" class="${s === 'cancelled' ? 'ghost' : ''}">${esc(LABEL[s])}</button>`).join(' ');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MedPin order</title>

@@ -155,6 +155,8 @@ class _MedPharmacyScreenState extends State<MedPharmacyScreen> with LiveData {
         'pharmacyId': q.obj('pharmacy').str('id'),
         'mode': mode,
         if (args['addressId'] != null) 'addressId': args['addressId'],
+        // The prescriptions kept ticked in the cart.
+        if (args['attach'] is List) 'attach': args['attach'],
         if (how == 'online') 'payOnline': true,
       }),
       busy: _busy,

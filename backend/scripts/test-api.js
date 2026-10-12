@@ -12,6 +12,9 @@ env.msg91.authKey = '';
 env.exposeDevOtp = true;
 // …and never call a real AI provider (see scripts/test-ai.js for that).
 env.ai.provider = 'off';
+// Never call Razorpay from tests (even when real keys are in .env); steps that
+// need keys set fake ones and answer for Razorpay themselves.
+Object.assign(env.razorpay, { keyId: undefined, keySecret: undefined, webhookSecret: undefined, payoutAccountNumber: undefined });
 // The area name for "near …" answers from a fixed table, never the internet.
 require('../src/services/places').reverse = async (lat) => (lat > 22.6 ? { area: 'New Town', city: 'Kolkata' } : { area: 'Salt Lake', city: 'Kolkata' });
 // IFSC lookups answer from a fixed table, never the internet.
@@ -467,7 +470,14 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const quotes = ok(await ctx.pat('GET', '/api/patient/pharmacies/quotes?mode=delivery'));
     assert.equal(quotes.items[0].total, 6 * 36 + 15);
     ok(await ctx.pat('POST', '/api/patient/addresses', { line: 'Flat 3B, 12 Purbachal Rd, Salt Lake', isDefault: true }), 201);
-    const order = ok(await ctx.pat('POST', '/api/patient/orders', { pharmacyId: quotes.items[0].pharmacy.id, mode: 'delivery' }), 201);
+    // The cart lists the prescriptions that can go with it and what each covers.
+    const withRx = ok(await ctx.pat('GET', '/api/patient/cart'));
+    const rx0 = withRx.prescriptions.find((p) => p.kind === 'digital');
+    assert.ok(rx0, "the doctor's prescription is offered");
+    assert.deepEqual(rx0.covers, [withRx.items[0].name], 'it lists the Metformin in the cart');
+    assert.deepEqual(withRx.uncovered, [], 'every cart medicine is covered');
+    const order = ok(await ctx.pat('POST', '/api/patient/orders', { pharmacyId: quotes.items[0].pharmacy.id, mode: 'delivery', attach: [String(rx0.id)] }), 201);
+    assert.deepEqual(order.prescriptionIds.map(String), [String(rx0.id)], 'only the ticked prescription goes with it');
     assert.equal(order.status, 'placed');
     assert.equal(ok(await ctx.pat('GET', '/api/patient/cart')).count, 0);
     assert.ok(order.prescriptionIds.length > 0, 'valid prescriptions go with the order');

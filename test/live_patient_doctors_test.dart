@@ -140,8 +140,8 @@ void main() {
     expect(find.text('Dr. Arjun Sen'), findsOneWidget);
     expect(find.text('Dr. Rina Mitra'), findsOneWidget);
     expect(find.text('Mou Banerjee'), findsNothing); // dietician: listed on Profile instead
-    expect(find.text('Diabetes & thyroid · City Care Clinic, Salt Lake'), findsOneWidget);
-    expect(find.text('Heart · City Care Clinic, Salt Lake'), findsOneWidget);
+    expect(find.text('Diabetes & thyroid · City Care, Salt Lake'), findsOneWidget);
+    expect(find.text('Heart · City Care, Salt Lake'), findsOneWidget);
     expect(find.text('2 medicines · 0% taken'), findsOneWidget);
     expect(find.text('Visit details'), findsOneWidget);
     // The shared clinic thread's unread count shows once.
