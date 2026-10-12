@@ -7,6 +7,7 @@ import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
 import '../doctor/common_d4.dart';
+import '../../data/checkout.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Patient-Medicines.dc.html — "Patient · Medicines tab".
@@ -1375,10 +1376,8 @@ class _OrdersSheet extends StatelessWidget {
                   );
                   if (!context.mounted || choice == null) return;
                   if (choice == 'pay') {
-                    final r = await runAction(context, () => Api.I.post('/api/patient/orders/${o['id']}/pay'));
-                    if (r is! Map || !context.mounted) return;
-                    await p2Open(context, r['url'] as String?, failed: "Couldn't open the payment page");
-                    nav.pop(true);
+                    final paid = await Checkout.pay(context, kind: 'order', id: '${o['id']}');
+                    if (context.mounted) nav.pop(paid);
                     return;
                   }
                   final yes = await d4Confirm(

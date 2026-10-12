@@ -36,6 +36,8 @@ r.post('/billing/webhook', async (req, res) => {
     }
   }
   if (String(event).startsWith('payout.')) await require('../services/payouts').onWebhook(event, payload.payout?.entity);
+  // In-app Checkout payments (backup for the app's own confirm).
+  if (event === 'payment.captured' || event === 'order.paid') await require('../services/checkout').onWebhook(event, payload);
   if (event === 'invoice.paid') {
     await M.Invoice.updateOne({ razorpayInvoiceId: payload.invoice?.entity?.id }, { status: 'paid', paidAt: new Date(), razorpayPaymentId: payload.payment?.entity?.id });
   }

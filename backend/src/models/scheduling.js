@@ -97,6 +97,7 @@ const paymentSchema = new Schema(
     paymentLinkUrl: String,
     paymentLinkSentAt: Date,
     razorpayOrderId: String,
+    razorpayOrderAmount: Number, // the amount that Razorpay order was made for
     razorpayPaymentId: { type: String, sparse: true, unique: true },
     note: String,
     payoutId: ref('Payout'), // set once this online fee is paid out to the doctor

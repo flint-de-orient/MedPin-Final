@@ -5,6 +5,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
+import '../../data/checkout.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Med-Pharmacy.dc.html — "Medicines · choose pharmacy".
@@ -160,11 +161,11 @@ class _MedPharmacyScreenState extends State<MedPharmacyScreen> with LiveData {
     );
     if (res is! Map || !mounted) return;
     p3CartChanged.value++;
-    if (res['payUrl'] is String) {
-      toast(context, 'Order placed with $name · finish paying');
-      await p2Open(context, res['payUrl'] as String, failed: "Couldn't open the payment page. Pay from Orders in Medicines.");
-    } else if (how == 'online') {
-      toast(context, 'Order placed with $name · online payment is not available now, ${cashLabel.toLowerCase()}');
+    if (how == 'online' && res['payment'] == 'online') {
+      // Pay now in the app; if it's closed, the order waits and can be paid from Orders.
+      final paid = await Checkout.pay(context, kind: 'order', id: '${res['id']}');
+      if (!mounted) return;
+      toast(context, paid ? 'Order placed with $name · paid' : 'Order placed with $name · pay any time from Orders in Medicines');
     } else {
       toast(context, 'Order placed with $name · ${cashLabel.toLowerCase()}');
     }

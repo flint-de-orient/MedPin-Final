@@ -152,6 +152,8 @@ class I {
   static const download = '<path d="M12 3v12M7 10l5 5 5-5M4 19h16"/>';
   static const downloadAlt = '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>';
   static const upload = '<path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>';
+  static const creditCard = '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>';
+  static const wallet = '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>';
   static const lock = '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>';
   static const bell = '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>';
   static const phone =

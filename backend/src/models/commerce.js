@@ -143,6 +143,8 @@ const orderSchema = new Schema(
       linkUrl: String,
       paidAt: Date,
       razorpayPaymentId: String,
+      razorpayOrderId: String, // in-app Checkout (services/checkout.js)
+      razorpayOrderAmount: Number,
       refundedAt: Date,
     },
     // The pharmacy confirms / packs / delivers through a private link (no account needed).

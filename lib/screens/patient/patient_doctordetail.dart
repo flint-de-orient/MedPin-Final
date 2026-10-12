@@ -7,6 +7,7 @@ import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'patient_finddoctor.dart' show openDoctorBooking;
 import '../../data/rx_pdf.dart';
+import '../../data/checkout.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Patient-DoctorDetail.dc.html — "Patient · doctor page (Dr. Sen)".
@@ -521,17 +522,12 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
     );
   }
 
-  /// Opens the clinic's payment link for the next visit's fee.
+  /// Pays the next visit's fee in the app (Razorpay Checkout).
   Future<void> _payOnline() async {
     final next = _next;
     if (next == null) return;
-    final res = await runAction(context, () => Api.I.post('/api/patient/appointments/${next.str('id')}/pay'));
-    if (res is! Map || !mounted) return;
-    await p2Open(context, res['url'] as String?, failed: "Couldn't open the payment page");
-    // The clinic sees it as paid once the payment goes through.
-    Future.delayed(const Duration(seconds: 8), () {
-      if (mounted) reload(quiet: true);
-    });
+    final paid = await Checkout.pay(context, kind: 'fee', id: next.str('id'));
+    if (paid && mounted) reload(quiet: true);
   }
 
   Widget _todo(String text, bool done, VoidCallback onTap) => MpHitSlop(child: Semantics(

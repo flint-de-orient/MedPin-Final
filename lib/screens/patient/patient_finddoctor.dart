@@ -9,6 +9,7 @@ import '../../data/voice.dart';
 import '../../data/where.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import '../../data/checkout.dart';
 import '../../widgets/i18n.dart';
 
 /// Patient app · Find a doctor. Not an artboard in the design canvas: opened
@@ -150,7 +151,13 @@ class _Doc {
 /// Opens the booking sheet for one doctor (Doctor tab "Book a visit",
 /// doctor page "Book"). Returns true when a visit was booked or requested.
 Future<bool> openDoctorBooking(BuildContext context, String doctorId) async {
-  final card = await runAction(context, () => Api.I.get('/api/patient/doctors/$doctorId'));
+  // Distance from where the phone is now, like the list (cached; no prompt here).
+  final here = await Where.here(ask: false).timeout(const Duration(seconds: 3), onTimeout: () => null);
+  if (!context.mounted) return false;
+  final card = await runAction(
+    context,
+    () => Api.I.get('/api/patient/doctors/$doctorId', query: here == null ? null : {'lat': '${here.lat}', 'lng': '${here.lng}'}),
+  );
   if (card is! Map || !context.mounted) return false;
   final doc = _Doc.fromJson(card.cast<String, dynamic>());
   final res = await openSheet<String>(context, (_) => _DoctorSheet(doc: doc, showPage: false));
@@ -630,6 +637,13 @@ String _joinAnd(List<String> xs) {
   return '${xs.sublist(0, xs.length - 1).join(', ')} and ${xs.last}';
 }
 
+/// "350 m", "2.4 km"; "Nearby" within 50 m (GPS isn't more exact than that).
+String distanceLabel(double km) {
+  if (km < 0.05) return 'Nearby';
+  if (km < 1) return '${((km * 1000) / 10).round() * 10} m';
+  return '${km.toStringAsFixed(km < 10 ? 1 : 0)} km';
+}
+
 // ── Screen ───────────────────────────────────────────────────────────────────
 
 class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
@@ -850,7 +864,10 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
         'Find a doctor',
         subtitle: placeholder != null
             ? 'Doctors on MedPin'
-            : '$total doctor${total == 1 ? '' : 's'} on MedPin${_area.isEmpty ? '' : ' near $_area'}',
+            : data != null && data!.containsKey('from') && data!['from'] == null
+                // No location: distances can't be shown.
+                ? '$total doctor${total == 1 ? '' : 's'} on MedPin · turn on location to see how far'
+                : '$total doctor${total == 1 ? '' : 's'} on MedPin${_area.isEmpty ? '' : ' near $_area'}',
       ),
       body: SingleChildScrollView(
         controller: _scroll,
@@ -1422,7 +1439,7 @@ class _DoctorCard extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              if (d.km != null) _InfoPill(I.pin, '${d.km!.toStringAsFixed(1)} km'),
+              if (d.km != null) _InfoPill(I.pin, distanceLabel(d.km!)),
               if (d.video) const _InfoPill(_icVideo, 'Video visit'),
               if (d.langs.isNotEmpty) _InfoPill(_icGlobe, d.langs.join(' · ')),
             ],
@@ -1573,6 +1590,11 @@ class _DoctorSheetState extends State<_DoctorSheet> {
     if (res is! Map || !mounted) return;
     final appt = (res['appointment'] as Map?)?.cast<String, dynamic>();
     final token = appt?['tokenNo'];
+    // Booked with a fee: pay now in the app, or at the clinic.
+    if (appt != null && (appt['fee'] as num? ?? 0) > 0 && appt['feeStatus'] == 'pending') {
+      await Checkout.pay(context, kind: 'fee', id: '${appt['id'] ?? appt['_id']}', laterLabel: 'Pay at the clinic', optional: true);
+      if (!mounted) return;
+    }
     Navigator.pop(
       context,
       appt != null
@@ -1640,7 +1662,7 @@ class _DoctorSheetState extends State<_DoctorSheet> {
                 MpKV('Clinic', where),
                 if (d.km != null) ...[
                   const MpDivider(),
-                  MpKV('Distance', '${d.km!.toStringAsFixed(1)} km from you'),
+                  MpKV('Distance', d.km! < 0.05 ? 'Right here' : '${distanceLabel(d.km!)} from you'),
                 ],
                 if (d.langs.isNotEmpty) ...[
                   const MpDivider(),

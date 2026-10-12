@@ -12,6 +12,8 @@ env.msg91.authKey = '';
 env.exposeDevOtp = true;
 // …and never call a real AI provider (see scripts/test-ai.js for that).
 env.ai.provider = 'off';
+// The area name for "near …" answers from a fixed table, never the internet.
+require('../src/services/places').reverse = async (lat) => (lat > 22.6 ? { area: 'New Town', city: 'Kolkata' } : { area: 'Salt Lake', city: 'Kolkata' });
 // IFSC lookups answer from a fixed table, never the internet.
 require('../src/services/banks').fetchImpl = async (url) => {
   const code = url.split('/').pop();
@@ -400,6 +402,18 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(found.items.length, 1);
     assert.equal(found.items[0].mine, true);
     assert.ok(found.items[0].km < 3);
+    assert.equal(found.from, 'here', 'distances from the phone');
+    assert.equal(found.area, 'Salt Lake', 'the area the phone is in');
+    // Video only when a video consultation service exists.
+    const dl = await M.DoctorLocation.findOne({ doctorId: ctx.doctorUserId });
+    const hasVideo = dl.services.some((s) => s.mode === 'video');
+    assert.equal(found.items[0].video, Boolean(hasVideo && (await M.DoctorProfile.findOne({ userId: ctx.doctorUserId })).offersVideo));
+    // From another place the distance changes, on the list and the detail.
+    const far = ok(await ctx.pat('GET', '/api/patient/doctors/search?specialty=diabetes&lat=22.62&lng=88.46'));
+    assert.ok(far.items[0].km > found.items[0].km);
+    assert.equal(far.area, 'New Town');
+    const farDetail = ok(await ctx.pat('GET', `/api/patient/doctors/${ctx.doctorUserId}?lat=22.62&lng=88.46`));
+    assert.equal(farDetail.km, far.items[0].km, 'detail measures from the same place');
     const detail = ok(await ctx.pat('GET', `/api/patient/doctors/${ctx.doctorUserId}`));
     assert.ok(detail.lastVisit);
     const req = ok(await ctx.pat('POST', '/api/patient/visit-requests', { doctorId: ctx.doctorUserId, visitType: 'follow_up', preferredTime: 'Thu or Fri, after 5 PM' }), 201);
@@ -484,13 +498,19 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const second = ok(await ctx.pat('POST', '/api/patient/orders', { pharmacyId: quotes.items[0].pharmacy.id, mode: 'pickup' }), 201);
     assert.equal(ok(await ctx.pat('POST', `/api/patient/orders/${second.id}/cancel`)).status, 'cancelled');
 
-    // Pay online: the order gets a payment link; once paid, the pharmacy sees "Paid online"; cancelling refunds it.
+    // Pay online in the app (Razorpay Checkout): start → Checkout → confirm. No keys here: test mode.
     ok(await ctx.pat('POST', '/api/patient/cart/items', { courseId: course._id, packOption: '1_month' }), 201);
     const third = ok(await ctx.pat('POST', '/api/patient/orders', { pharmacyId: quotes.items[0].pharmacy.id, mode: 'pickup', payOnline: true }), 201);
     assert.equal(third.payment, 'online');
-    assert.match(third.payUrl, /\/dev\/pay\/order\//);
-    assert.equal((await fetch(third.payUrl)).status, 200, 'the payment page opens');
-    assert.equal((await fetch(third.payUrl, { method: 'POST', headers: { accept: 'application/json' } })).status, 200);
+    const co = ok(await ctx.pat('POST', '/api/patient/checkout', { kind: 'order', id: third.id }));
+    assert.deepEqual([co.test, co.amount, co.currency, co.title], [true, third.total, 'INR', 'Medicines']);
+    assert.equal(co.prefill.contact, '+919230592842');
+    const forged = await ctx.pat('POST', '/api/patient/checkout/confirm', { kind: 'order', id: third.id, orderId: 'order_someone_else' });
+    assert.deepEqual([forged.status, forged.body.error.code], [400, 'BAD_SIGNATURE']);
+    const done = ok(await ctx.pat('POST', '/api/patient/checkout/confirm', { kind: 'order', id: third.id, orderId: co.orderId }));
+    assert.equal(done.paid, true);
+    assert.equal(ok(await ctx.pat('POST', '/api/patient/checkout/confirm', { kind: 'order', id: third.id, orderId: co.orderId })).already, true, 'confirming twice is fine');
+    assert.equal((await ctx.pat('POST', '/api/patient/checkout', { kind: 'order', id: third.id })).status, 409, 'nothing left to pay');
     const paidOrder = await M.Order.findById(third.id);
     assert.equal(paidOrder.pay.status, 'paid');
     await M.Order.updateOne({ _id: third.id }, { pharmacyTokenHash: sha256('pharmacy-test-token-2') });
@@ -498,6 +518,39 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal((await ctx.pat('POST', `/api/patient/orders/${third.id}/pay`)).status, 409, 'already paid');
     ok(await ctx.pat('POST', `/api/patient/orders/${third.id}/cancel`));
     assert.equal((await M.Order.findById(third.id)).pay.status, 'refunded', 'a paid order that is cancelled is refunded');
+
+    {
+      const checkout = require('../src/services/checkout');
+      const saved = { ...env.razorpay };
+      const realFetch = checkout.fetchImpl;
+      Object.assign(env.razorpay, { keyId: 'rzp_test_key', keySecret: 'test_secret' });
+      let created = 0;
+      checkout.fetchImpl = async (url, opts) => {
+        assert.equal(url, 'https://api.razorpay.com/v1/orders');
+        const body = JSON.parse(opts.body);
+        created += 1;
+        return { ok: true, status: 200, json: async () => ({ id: 'order_RZP123', amount: body.amount, notes: body.notes }) };
+      };
+      try {
+        ok(await ctx.pat('POST', '/api/patient/cart/items', { courseId: course._id, packOption: '1_month' }), 201);
+        const fourth = ok(await ctx.pat('POST', '/api/patient/orders', { pharmacyId: quotes.items[0].pharmacy.id, mode: 'pickup', payOnline: true }), 201);
+        const live = ok(await ctx.pat('POST', '/api/patient/checkout', { kind: 'order', id: fourth.id }));
+        assert.deepEqual([live.test, live.keyId, live.orderId], [false, 'rzp_test_key', 'order_RZP123']);
+        ok(await ctx.pat('POST', '/api/patient/checkout', { kind: 'order', id: fourth.id }));
+        assert.equal(created, 1, 'a second try reuses the Razorpay order');
+        const bad = await ctx.pat('POST', '/api/patient/checkout/confirm', { kind: 'order', id: fourth.id, orderId: 'order_RZP123', paymentId: 'pay_1', signature: 'x'.repeat(64) });
+        assert.equal(bad.body.error.code, 'BAD_SIGNATURE', 'a made-up signature is refused');
+        assert.notEqual((await M.Order.findById(fourth.id)).pay.status, 'paid');
+        const sig = require('crypto').createHmac('sha256', 'test_secret').update('order_RZP123|pay_1').digest('hex');
+        const good = ok(await ctx.pat('POST', '/api/patient/checkout/confirm', { kind: 'order', id: fourth.id, orderId: 'order_RZP123', paymentId: 'pay_1', signature: sig }));
+        assert.deepEqual([good.paid, good.paymentId], [true, 'pay_1']);
+        const o4 = await M.Order.findById(fourth.id);
+        assert.deepEqual([o4.pay.status, o4.pay.razorpayPaymentId], ['paid', 'pay_1']);
+      } finally {
+        Object.assign(env.razorpay, saved);
+        checkout.fetchImpl = realFetch;
+      }
+    }
 
     // An uploaded prescription's medicines (read by AI) are added when the patient says so.
     const rec = await M.MedicalRecord.create({
@@ -803,16 +856,19 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(walk.tokenNo >= 1);
     assert.equal((await ctx.doc('POST', '/api/appointments/walk-in', { patientId: ctx.patientId })).body.error.code, 'ALREADY_TODAY');
 
-    // Pay online: the patient's link opens a page (dev stand-in) and paying marks the visit paid.
+    // Pay the visit fee in the app (Checkout; test mode without keys). The desk's
+    // payment link still works too (checked on its own page).
     const fee = await M.Payment.findOne({ appointmentId: walk.id, status: 'pending' });
     assert.ok(fee, 'the walk-in has a fee to pay');
     {
       const link = ok(await ctx.pat('POST', `/api/patient/appointments/${walk.id}/pay`));
-      const page = await fetch(link.url);
-      assert.equal(page.status, 200, 'the payment link opens (was a 404)');
-      assert.match(await page.text(), /Pay ₹/);
-      assert.equal((await fetch(link.url, { method: 'POST', headers: { accept: 'application/json' } })).status, 200);
+      assert.equal((await fetch(link.url)).status, 200, 'the payment link page opens');
+      const co = ok(await ctx.pat('POST', '/api/patient/checkout', { kind: 'fee', id: walk.id }));
+      assert.deepEqual([co.title, co.amount], ['Consultation fee', fee.amount]);
+      assert.match(co.detail, /Dr\./, 'shows the doctor');
+      ok(await ctx.pat('POST', '/api/patient/checkout/confirm', { kind: 'fee', id: walk.id, orderId: co.orderId }));
       assert.equal((await M.Appointment.findById(walk.id)).feeStatus, 'paid');
+      assert.equal((await M.Payment.findById(fee._id)).method, 'online');
       assert.equal((await ctx.pat('POST', `/api/patient/appointments/${walk.id}/pay`)).status, 409, 'nothing left to pay');
       // Payouts: after the 2-day hold the weekly run bundles the doctor's online fees.
       await M.Payment.updateOne({ _id: fee._id }, { paidAt: new Date(Date.now() - 3 * 864e5) });

@@ -288,6 +288,8 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
                   ),
                 ],
               ),
+              // Only the chosen way's details show; the other's saved details are kept.
+              if (_preferred == 'upi')
               D4Card(
                 children: [
                   const D4CardTitle('UPI'),
@@ -295,11 +297,10 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
                   ..._upiNotes(),
                 ],
               ),
+              if (_preferred == 'bank')
               D4Card(
                 children: [
-                  D4CardTitle(_preferred == 'upi' ? 'Bank account · optional' : 'Bank account'),
-                  if (_preferred == 'upi')
-                    const D4Note('Only needed if you’d like payouts to a bank account instead of UPI. Your UPI ID doesn’t share your account number or IFSC, so type them here.'),
+                  const D4CardTitle('Bank account'),
                   D11Field('Account holder', _holder, caps: TextCapitalization.words),
                   D11Field(
                     'Account number',

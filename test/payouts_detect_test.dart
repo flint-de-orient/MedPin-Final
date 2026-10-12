@@ -86,13 +86,17 @@ void main() {
 
     // UPI: a payment app's handle names the app, not a bank; the name on it
     // fills the empty account holder.
+    // Only the chosen way's details show.
+    expect(find.text('UPI ID'), findsNothing, reason: 'nothing saved: bank account is chosen');
     await t.enterText(field('Account holder'), '');
+    await t.tap(find.text('UPI'));
+    await settle(t, 3);
+    expect(find.text('IFSC'), findsNothing);
     await t.enterText(field('UPI ID'), 'tanmoydas5242@oksbi');
     await settle(t);
     expect(find.text('Google Pay UPI ID · paid into the bank you linked in Google Pay'), findsOneWidget);
     expect(find.textContaining('State Bank'), findsNothing, reason: '@oksbi says nothing about where the money is');
     expect(find.text('Name on this UPI ID: Tanmoy Das'), findsOneWidget);
-    expect(find.text('Tanmoy Das'), findsOneWidget, reason: 'account holder filled in');
     await t.enterText(field('UPI ID'), 'ghost@oksbi');
     await settle(t);
     expect(find.textContaining('This UPI ID doesn’t exist'), findsOneWidget);
@@ -102,6 +106,10 @@ void main() {
     await t.enterText(field('UPI ID'), 'tanmoydas5242@oksbi');
     await settle(t);
 
+    await t.tap(find.text('Bank account'));
+    await settle(t, 3);
+    expect(find.text('UPI ID'), findsNothing);
+    expect(find.text('Tanmoy Das'), findsOneWidget, reason: 'the name on the UPI ID filled the account holder');
     // IFSC: a wrong one is flagged and can't be saved.
     await t.enterText(field('IFSC'), 'SBIN0999999');
     await settle(t);

@@ -248,8 +248,11 @@ const haversineKm = (a, b) => {
   const [lng2, lat2] = b;
   const rad = (x) => (x * Math.PI) / 180;
   const h = Math.sin(rad(lat2 - lat1) / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lng2 - lng1) / 2) ** 2;
-  return +(12742 * Math.asin(Math.sqrt(h))).toFixed(1);
+  return +(12742 * Math.asin(Math.sqrt(h))).toFixed(2);
 };
+
+/** Where distances are measured from: the phone's location (?lat&lng), else the saved one. */
+const originOf = (req) => require('../lib/geo').pointFrom(req.query.lat, req.query.lng)?.coordinates || req.patient.geo?.coordinates || null;
 
 async function doctorCards(req, profiles, origin) {
   const myDoctors = new Set((await M.CareTeamAccess.find({ patientId: req.patient._id, accessLevel: { $ne: 'not_shared' } }).distinct('userId')).map(String));
@@ -270,7 +273,9 @@ async function doctorCards(req, profiles, origin) {
       doctorId: prof.userId, name: prof.displayName, initials: prof.displayName.replace(/^Dr\.?\s*/i, '').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
       photo: storage.withUrl(prof.photo), headline: prof.headline, specialtyKeys: prof.specialtyKeys, degrees: prof.degreesSummary,
       years: prof.practisingSince ? new Date().getFullYear() - prof.practisingSince : null, languages: prof.languagesSpoken,
-      gender: prof.gender, video: prof.offersVideo, verified: prof.verifiedNow(), presence: prof.presence,
+      // "Video visit" only when the doctor offers video and has a video consultation service.
+      gender: prof.gender, video: Boolean(prof.offersVideo && places.some((d) => d.services.some((s) => s.mode === 'video'))),
+      verified: prof.verifiedNow(), presence: prof.presence,
       clinic: best.place.practiceId?.name, location: { id: best.place.locationId._id, name: best.place.locationId.name, area: best.place.locationId.area },
       km: best.km, fee: best.fee, nextSlot: best.next && { startAt: best.next.startAt, time: best.next.time },
       availableToday: Boolean(best.next && T.dayKey(best.next.startAt) === T.dayKey(new Date())), mine: myDoctors.has(String(prof.userId)),
@@ -290,20 +295,32 @@ r.get('/doctors/search', async (req, res) => {
     q.$or = [{ displayName: re }, { specialisations: re }, { conditionsTreated: re }, { headline: re }];
   }
   const profiles = await M.DoctorProfile.find(q).limit(100);
-  const origin = require('../lib/geo').pointFrom(req.query.lat, req.query.lng)?.coordinates || req.patient.geo?.coordinates;
+  const live = require('../lib/geo').pointFrom(req.query.lat, req.query.lng)?.coordinates;
+  const origin = originOf(req);
   let cards = await doctorCards(req, profiles, origin);
+  if (req.query.video === 'true') cards = cards.filter((c) => c.video);
   if (req.query.today === 'true') cards = cards.filter((c) => c.availableToday);
   if (req.query.withinKm) cards = cards.filter((c) => c.km != null && c.km <= Number(req.query.withinKm));
   if (req.query.area) cards = cards.filter((c) => new RegExp(escapeRegex(req.query.area), 'i').test(c.location.area || ''));
   if (req.query.sort === 'soonest') cards.sort((a, b) => new Date(a.nextSlot?.startAt || 8.64e15) - new Date(b.nextSlot?.startAt || 8.64e15));
   else cards.sort((a, b) => (a.km ?? 1e9) - (b.km ?? 1e9) || Number(b.mine) - Number(a.mine));
-  res.json({ total: cards.length, emergency: req.query.q ? assistant.isEmergencyText(req.query.q) : false, area: req.patient.area || req.patient.addresses.find((a) => a.isDefault)?.area || null, items: cards });
+  // "near Salt Lake": the area the phone is in now, else the saved address.
+  let area = req.patient.area || req.patient.addresses.find((a) => a.isDefault)?.area || null;
+  if (live) {
+    const here = await require('../services/places').reverse(+live[1].toFixed(3), +live[0].toFixed(3)).catch(() => null);
+    area = here?.area || here?.city || area;
+  }
+  res.json({
+    total: cards.length, emergency: req.query.q ? assistant.isEmergencyText(req.query.q) : false,
+    area, from: live ? 'here' : origin ? 'saved' : null, items: cards,
+  });
 });
 
 r.get('/doctors/:doctorId', async (req, res) => {
   const prof = await M.DoctorProfile.findOne({ userId: req.params.doctorId });
   if (!prof) throw notFound('Doctor');
-  const [card] = await doctorCards(req, [prof], req.patient.geo?.coordinates);
+  const origin = originOf(req);
+  const [card] = await doctorCards(req, [prof], origin);
   const places = await M.DoctorLocation.find({ doctorId: prof.userId, status: 'active' }).populate('locationId', 'name address area googleMapsUrl geo');
   const access = await M.CareTeamAccess.findOne({ patientId: req.patient._id, userId: prof.userId });
   const [nextVisit, lastVisit, records, history, courses] = await Promise.all([
@@ -328,7 +345,7 @@ r.get('/doctors/:doctorId', async (req, res) => {
     specialty: spec?.label || null,
     avgReplyMinutes: prof.avgReplyMinutes,
     qualifications: prof.qualifications.map((q) => ({ name: q.name, institution: q.institution, year: q.year })),
-    places: places.map((d) => ({ locationId: d.locationId._id, name: d.locationId.name, address: d.locationId.address, area: d.locationId.area, mapUrl: d.locationId.googleMapsUrl, lat: d.locationId.geo?.coordinates?.[1] ?? null, lng: d.locationId.geo?.coordinates?.[0] ?? null, km: haversineKm(req.patient.geo?.coordinates, d.locationId.geo?.coordinates), services: d.services })),
+    places: places.map((d) => ({ locationId: d.locationId._id, name: d.locationId.name, address: d.locationId.address, area: d.locationId.area, mapUrl: d.locationId.googleMapsUrl, lat: d.locationId.geo?.coordinates?.[1] ?? null, lng: d.locationId.geo?.coordinates?.[0] ?? null, km: haversineKm(origin, d.locationId.geo?.coordinates), services: d.services })),
     access: access && { level: access.accessLevel, since: access.since },
     nextVisit,
     lastVisit: lastVisit && {
@@ -467,6 +484,16 @@ r.post('/appointments/:id/todos/:todoId', async (req, res) => {
   t.doneAt = t.done ? new Date() : undefined;
   await a.save();
   res.json(a.todos);
+});
+
+// In-app payment (Razorpay Checkout): start → the app opens Checkout → confirm
+// with Razorpay's signed result. kind: 'fee' (id = appointment) or 'order'.
+r.post('/checkout', async (req, res) => {
+  res.json(await require('../services/checkout').start({ kind: req.body.kind, id: req.body.id, patient: req.patient }));
+});
+r.post('/checkout/confirm', async (req, res) => {
+  const { kind, id, orderId, paymentId, signature } = req.body;
+  res.json(await require('../services/checkout').confirm({ kind, id, orderId, paymentId, signature, patient: req.patient }));
 });
 
 // "Pay online" for a visit fee still pending (a Razorpay link the app opens).
@@ -1059,18 +1086,18 @@ r.post('/orders', async (req, res) => {
   });
   cart.items = [];
   await cart.save();
-  // "Pay online now": a payment link the app opens; otherwise cash on delivery / at the counter.
-  let payUrl = null;
-  if (req.body.payOnline === true || req.body.payOnline === 'true') {
-    payUrl = await require('../services/payments').orderLink(order, req.patient, pharmacy.name).catch((err) => {
-      console.warn('[order pay]', err.message);
-      return null;
-    });
+  // "Pay online now": the app opens Razorpay Checkout for it (POST /checkout);
+  // otherwise cash on delivery / at the counter.
+  const online = req.body.payOnline === true || req.body.payOnline === 'true';
+  if (online) {
+    order.pay = { ...(order.pay?.toObject?.() || {}), method: 'online', status: 'due' };
+    await order.save();
   }
+  const payUrl = null;
   await require('../services/orders').notifyPharmacy(order, pharmacy, req.patient, pharmacyToken).catch((err) => console.warn('[order]', err.message));
   res.status(201).json({
     ...order.toJSON(), pharmacyName: pharmacy.name, payUrl,
-    payment: payUrl ? 'online' : mode === 'delivery' ? 'cash_on_delivery' : 'pay_at_pharmacy',
+    payment: online ? 'online' : mode === 'delivery' ? 'cash_on_delivery' : 'pay_at_pharmacy',
   });
 });
 
