@@ -106,6 +106,16 @@ const doctorProfileSchema = new Schema(
 );
 doctorProfileSchema.index({ displayName: 'text', specialisations: 'text', conditionsTreated: 'text' });
 
+// The blue "Verified" tick: a registration number on file and every degree's
+// proof approved by the MedPin team. Kept up to date on every save, so adding
+// a degree, a new proof (back in review) or clearing the registration removes it.
+doctorProfileSchema.methods.verifiedNow = function verifiedNow() {
+  return Boolean(this.registration?.number) && this.qualifications.length > 0 && this.qualifications.every((q) => q.proofStatus === 'verified');
+};
+doctorProfileSchema.pre('save', function setVerified() {
+  this.isVerified = this.verifiedNow();
+});
+
 const sessionSchema = new Schema({ startMin: minuteOfDay, endMin: minuteOfDay }, { _id: false });
 
 const scheduleDaySchema = new Schema(

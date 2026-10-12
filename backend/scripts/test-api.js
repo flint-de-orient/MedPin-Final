@@ -694,8 +694,6 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     }
 
     // Setup checklist for a doctor; Home health score and summary; device readings once only.
-    const dash = ok(await ctx.doc('GET', '/api/dashboard'));
-    assert.ok(!dash.setup || dash.setup.steps.some((x) => x.key === 'pin' && x.done), 'the clinic pin step is done');
     const day = new Date().toISOString().slice(0, 10);
     const at = new Date(Date.now() - 3600e3).toISOString();
     const sync = { source: 'Health Connect', days: [{ date: day, steps: 6400 }], readings: [{ kind: 'pulse', at, value: 72 }, { kind: 'bp', at, value: 128, value2: 82 }, { kind: 'spo2', at, value: 300 }] };
@@ -725,6 +723,14 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(decided.status, 303);
     const after = ok(await ctx.doc('GET', '/api/doctor/profile'));
     assert.equal(after.qualifications.find((x) => x.name === 'MBBS').proofStatus, 'verified');
+    // The blue tick follows the rule: registration on file and every degree verified.
+    assert.equal(after.isVerified, Boolean(after.registration?.number) && after.qualifications.every((x) => x.proofStatus === 'verified'));
+    const more = ok(await ctx.doc('POST', '/api/doctor/qualifications', { name: 'Fellowship', institution: 'RSSDI', year: 2015 }), 201);
+    assert.equal(more.isVerified, false, 'a new degree without proof removes the tick');
+    assert.equal((await M.DoctorProfile.findOne({ userId: ctx.doctorUserId })).isVerified, false);
+    // The doctor's photo also shows in the app's headers (account summary).
+    const me = ok(await ctx.doc('GET', '/api/me'));
+    assert.ok(me.user.photoUrl, 'header photo');
   });
 
   server.close();

@@ -269,7 +269,7 @@ class D3StatTiles extends StatelessWidget {
             children: [
               Text(s.$1, textAlign: TextAlign.center, style: tx(22, w: w800, h: 1.1, em: -0.02, tab: true, c: s.$3)),
               const SizedBox(height: 4),
-              Text(s.$2, textAlign: TextAlign.center, style: tx(12, h: 1.3, c: MP.ink2)),
+              MpTileLabel(s.$2, style: tx(12, h: 1.3, c: MP.ink2)),
             ],
           ),
         ),

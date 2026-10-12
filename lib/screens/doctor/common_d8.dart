@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/photo.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../../widgets/i18n.dart';
@@ -75,11 +76,10 @@ class _D8TabHeaderState extends State<D8TabHeader> with LiveData {
             child: Tap(
               onTap: () => Nav.tab(context, 'Profile'),
               radius: 999,
-              color: MP.primarySoft,
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child: Center(child: Text(initials, style: tx(15, w: w700, c: MP.primary, h: 1))),
+              // The profile photo once there is one (it updates as soon as it changes).
+              child: ListenableBuilder(
+                listenable: Session.I,
+                builder: (_, _) => MpAvatar(initials, size: 40, fontSize: 15, photo: isLive ? myPhotoUrl : null),
               ),
             ),
           ),

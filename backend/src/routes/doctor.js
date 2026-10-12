@@ -36,6 +36,7 @@ const profileView = (p) => ({
   yearsExperience: p.practisingSince ? new Date().getFullYear() - p.practisingSince : null,
   registrationDisplay: p.registration?.number ? `${p.registration.councilShort || ''} ${p.registration.number}`.trim() : null,
   completionPct: completion(p),
+  isVerified: p.verifiedNow(),
 });
 
 r.get('/doctor/profile', async (req, res) => {

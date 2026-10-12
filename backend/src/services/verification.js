@@ -71,7 +71,6 @@ async function decide(userId, qid, t, decision, note) {
   q.proofStatus = decision === 'approve' ? 'verified' : 'upload';
   q.proofNote = decision === 'reject' ? String(note || 'Please upload a clearer copy').slice(0, 300) : undefined;
   // "Verified" badge once every qualification is verified and a registration number is on file.
-  profile.isVerified = Boolean(profile.registration?.number) && profile.qualifications.length > 0 && profile.qualifications.every((x) => x.proofStatus === 'verified');
   await profile.save();
   await notify([profile.userId], {
     type: 'proof_review', title: decision === 'approve' ? `${q.name} verified` : `${q.name}: proof not accepted`,

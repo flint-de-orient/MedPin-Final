@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Text;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../core/icons.dart';
@@ -1372,5 +1373,132 @@ class MpGrid extends StatelessWidget {
       rows.add(IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: cells)));
     }
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
+  }
+}
+
+/// Centred label for narrow tiles (stat cards): wraps between words, and if
+/// one word is still wider than the tile (large phone text, long words) the
+/// text shrinks a little instead of breaking the word in the middle.
+class MpTileLabel extends LeafRenderObjectWidget {
+  final String text;
+  final TextStyle style;
+  const MpTileLabel(this.text, {super.key, required this.style});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderTileLabel(tr(context, text), style, MediaQuery.textScalerOf(context), Directionality.of(context));
+
+  @override
+  void updateRenderObject(BuildContext context, covariant RenderObject renderObject) => (renderObject as _RenderTileLabel)
+    ..text = tr(context, text)
+    ..style = style
+    ..scaler = MediaQuery.textScalerOf(context)
+    ..direction = Directionality.of(context);
+}
+
+class _RenderTileLabel extends RenderBox {
+  _RenderTileLabel(this._text, this._style, this._scaler, this._direction);
+  String _text;
+  TextStyle _style;
+  TextScaler _scaler;
+  TextDirection _direction;
+  final _painter = TextPainter(textAlign: TextAlign.center);
+
+  set text(String v) {
+    if (v == _text) return;
+    _text = v;
+    markNeedsLayout();
+    markNeedsSemanticsUpdate();
+  }
+
+  set style(TextStyle v) {
+    if (v == _style) return;
+    _style = v;
+    markNeedsLayout();
+  }
+
+  set scaler(TextScaler v) {
+    if (v == _scaler) return;
+    _scaler = v;
+    markNeedsLayout();
+  }
+
+  set direction(TextDirection v) {
+    if (v == _direction) return;
+    _direction = v;
+    markNeedsLayout();
+  }
+
+  double _widestWord(double size) {
+    var w = 0.0;
+    for (final word in _text.split(RegExp(r'\s+'))) {
+      final tp = TextPainter(text: TextSpan(text: word, style: _style.copyWith(fontSize: size)), textDirection: _direction, textScaler: _scaler, maxLines: 1)..layout();
+      if (tp.width > w) w = tp.width;
+      tp.dispose();
+    }
+    return w;
+  }
+
+  /// Lays the text out for [width] at the largest size whose longest word fits.
+  void _layoutFor(double width) {
+    var size = _style.fontSize ?? 14;
+    if (width.isFinite) {
+      while (size > 9 && _widestWord(size) > width) {
+        size -= 0.5;
+      }
+    }
+    _painter
+      ..text = TextSpan(text: _text, style: _style.copyWith(fontSize: size))
+      ..textDirection = _direction
+      ..textScaler = _scaler
+      ..layout(maxWidth: width.isFinite ? width : double.infinity);
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => _widestWord(9);
+  @override
+  double computeMaxIntrinsicWidth(double height) {
+    _layoutFor(double.infinity);
+    return _painter.width;
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) {
+    _layoutFor(width);
+    return _painter.height;
+  }
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => computeMinIntrinsicHeight(width);
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    _layoutFor(constraints.maxWidth);
+    return constraints.constrain(Size(constraints.maxWidth.isFinite ? constraints.maxWidth : _painter.width, _painter.height));
+  }
+
+  @override
+  void performLayout() {
+    _layoutFor(constraints.maxWidth);
+    size = constraints.constrain(Size(constraints.maxWidth.isFinite ? constraints.maxWidth : _painter.width, _painter.height));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    _painter.paint(context.canvas, offset + Offset((size.width - _painter.width) / 2, 0));
+  }
+
+  @override
+  void describeSemanticsConfiguration(SemanticsConfiguration config) {
+    super.describeSemanticsConfiguration(config);
+    config
+      ..label = _text
+      ..textDirection = _direction;
+  }
+
+  @override
+  void dispose() {
+    _painter.dispose();
+    super.dispose();
   }
 }

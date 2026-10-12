@@ -85,6 +85,7 @@ import '../screens/doctor/profile_about.dart';
 import '../screens/doctor/profile_chat.dart';
 import '../screens/doctor/profile_notifications.dart';
 import '../screens/doctor/profile_payouts.dart';
+import '../screens/doctor/profile_signature.dart';
 import '../screens/doctor/profile_privacy.dart';
 import '../screens/doctor/profile_help.dart';
 import '../screens/doctor/lab_report.dart';
@@ -200,6 +201,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Profile-About': ScreenSpec(stem: 'Profile-About', title: 'Profile · about and photo', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileAboutScreen()),
   'Profile-Chat': ScreenSpec(stem: 'Profile-Chat', title: 'Profile · chat and urgent messages', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileChatScreen()),
   'Profile-Notifications': ScreenSpec(stem: 'Profile-Notifications', title: 'Profile · notifications', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileNotificationsScreen()),
+  'Profile-Signature': ScreenSpec(stem: 'Profile-Signature', title: 'Profile · letterhead and signature', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileSignatureScreen()),
   'Profile-Payouts': ScreenSpec(stem: 'Profile-Payouts', title: 'Profile · payouts and bank account', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfilePayoutsScreen()),
   'Profile-Privacy': ScreenSpec(stem: 'Profile-Privacy', title: 'Profile · privacy and data', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfilePrivacyScreen()),
   'Profile-Help': ScreenSpec(stem: 'Profile-Help', title: 'Profile · help and support', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileHelpScreen()),

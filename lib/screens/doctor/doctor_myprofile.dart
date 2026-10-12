@@ -70,17 +70,20 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
 
   int get _completion => data == null ? 85 : _p.numOr('completionPct').round();
 
+  /// A photo / signature counts once its file is stored (it then has a link).
+  bool _hasFile(String k) => _p.obj(k).str('url').isNotEmpty;
+
   /// What's still missing, in the order the completion check counts it.
   String get _completionHint {
     if (data == null) return 'Add your languages and a clinic photo to appear higher in patient search.';
     final missing = [
-      if (_p['photo'] == null) 'a photo',
+      if (!_hasFile('photo')) 'a photo',
       if (_p.str('bio').isEmpty) 'a short bio',
       if (_languages.isEmpty) 'your languages',
       if (_p.list('qualifications').isEmpty) 'your qualifications',
       if (_p.obj('registration').str('number').isEmpty) 'your registration',
       if ((_p['specialisations'] as List? ?? const []).isEmpty) 'your specialisations',
-      if (_p['signature'] == null) 'your signature',
+      if (!_hasFile('signature')) 'your signature',
     ];
     if (missing.isEmpty) return 'Your profile is complete.';
     return 'Add ${F.joinAnd(missing.take(2).toList())} to appear higher in patient search.';
@@ -141,7 +144,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
     return '$when · ${via[0].toUpperCase()}${via.substring(1)}';
   }
 
-  bool get _signatureMissing => data == null || _p['signature'] == null;
+  bool get _signatureMissing => data == null || !_hasFile('signature');
   bool get _hprLinked => data != null && _p.str('hprId').isNotEmpty;
 
   List<Map<String, dynamic>> get _team => [
@@ -196,6 +199,25 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
   Future<void> _open(String stem) async {
     await Nav.go(context, stem);
     if (mounted && isLive) reload(quiet: true);
+  }
+
+  bool _sampleAppLock = true;
+  bool get _appLock => data == null ? _sampleAppLock : _user['appLock'] != false;
+
+  /// App lock (fingerprint / PIN): PATCH /api/me; the lock follows at once.
+  Future<void> _setAppLock(bool v) async {
+    if (!isLive) {
+      setState(() => _sampleAppLock = v);
+      return;
+    }
+    setState(() => data!.obj('me').obj('user')['appLock'] = v);
+    final ok = await runAction(context, () => Api.I.patch('/api/me', {'appLock': v}));
+    if (!mounted) return;
+    if (ok == null) {
+      reload(quiet: true);
+      return;
+    }
+    toast(context, v ? 'App lock on' : 'App lock off');
   }
 
   Future<void> _changePhoto() async {
@@ -333,15 +355,15 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
               sub: 'Printed on every prescription',
               value: _signatureMissing ? 'Signature missing' : null,
               valueColor: MP.amber,
-              onTap: () => _go('Clinic-Editor'),
+              onTap: () => _open('Profile-Signature'),
             ),
           ]),
           _Group('Team', [
-            _SettingRow('Staff and assistants', sub: _staffLine, onTap: () => _go('People')),
+            _SettingRow('Staff and assistants', sub: _staffLine, onTap: () => _open('People')),
             _SettingRow(
               'Colleagues you work with',
               sub: _colleaguesLine,
-              onTap: () => _go('People'),
+              onTap: () => _open('People'),
             ),
           ]),
           _Group('Account', [
@@ -354,6 +376,12 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
             _SettingRow('Plan and billing', sub: _planLine, onTap: () => _go('Billing')),
             _SettingRow('Privacy and data', onTap: () => _open('Profile-Privacy')),
             _SettingRow('App language', sub: _appLanguage, onTap: _pickAppLanguage),
+            _SettingRow(
+              'App lock',
+              sub: 'Fingerprint or PIN to open MedPin',
+              trailing: MpSwitch(value: _appLock, onChanged: _setAppLock),
+              onTap: () => _setAppLock(!_appLock),
+            ),
             _SettingRow('Help and support', onTap: () => _open('Profile-Help')),
           ]),
           D4OutlineButton('Log out', border: MP.redLine, onTap: () => signOut(context)),
@@ -554,8 +582,12 @@ class _SettingRow extends StatelessWidget {
   /// The design keeps an empty value slot on this row (one more 12px gap).
   final bool emptyValue;
   final VoidCallback onTap;
+
+  /// In place of the chevron (e.g. a switch).
+  final Widget? trailing;
   const _SettingRow(
     this.title, {
+    this.trailing,
     this.sub,
     this.value,
     this.valueColor = MP.ink2,
@@ -590,7 +622,7 @@ class _SettingRow extends StatelessWidget {
                 : D4TextLink(v, color: valueColor, onTap: onValue),
           ],
           const SizedBox(width: 12),
-          const Ico(I.chevronRight, size: 18, color: MP.ink3, stroke: 2),
+          trailing ?? const Ico(I.chevronRight, size: 18, color: MP.ink3, stroke: 2),
         ],
       ),
     );

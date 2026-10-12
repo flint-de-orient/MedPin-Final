@@ -73,11 +73,18 @@ async function accountSummary(user) {
   };
   if (first) landing = LANDING[first.role] || 'Staff-Today';
   else if (patient) landing = 'Main'; // patient home's screen name in the app
+  // Profile photo: the account's, else the doctor profile's (photos added before both were kept in step).
+  let photoKey = user.photo?.key;
+  if (!photoKey) {
+    const prof = await M.DoctorProfile.findOne({ userId: user._id }, 'photo');
+    photoKey = prof?.photo?.key;
+    if (photoKey) await M.User.updateOne({ _id: user._id }, { photo: prof.photo });
+  }
   return {
     user: {
       id: user._id, name: user.name, phone: user.phone, email: user.email, language: user.language, appLock: user.appLock,
       // Week-long link so the saved session can show the photo between sign-ins.
-      photoUrl: user.photo?.key ? require('../services/storage').signedUrl(user.photo.key, 7 * 24 * 3600) : null,
+      photoUrl: photoKey ? require('../services/storage').signedUrl(photoKey, 7 * 24 * 3600) : null,
     },
     memberships: members.map((m) => ({
       id: m._id, practiceId: m.practiceId?._id, practiceName: m.practiceId?.name, role: m.role, isOwner: m.isOwner, status: m.status,

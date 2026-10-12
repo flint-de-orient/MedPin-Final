@@ -260,7 +260,7 @@ async function doctorCards(req, profiles, origin) {
       doctorId: prof.userId, name: prof.displayName, initials: prof.displayName.replace(/^Dr\.?\s*/i, '').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
       photo: storage.withUrl(prof.photo), headline: prof.headline, specialtyKeys: prof.specialtyKeys, degrees: prof.degreesSummary,
       years: prof.practisingSince ? new Date().getFullYear() - prof.practisingSince : null, languages: prof.languagesSpoken,
-      gender: prof.gender, video: prof.offersVideo, verified: prof.isVerified, presence: prof.presence,
+      gender: prof.gender, video: prof.offersVideo, verified: prof.verifiedNow(), presence: prof.presence,
       clinic: best.place.practiceId?.name, location: { id: best.place.locationId._id, name: best.place.locationId.name, area: best.place.locationId.area },
       km: best.km, fee: best.fee, nextSlot: best.next && { startAt: best.next.startAt, time: best.next.time },
       availableToday: Boolean(best.next && T.dayKey(best.next.startAt) === T.dayKey(new Date())), mine: myDoctors.has(String(prof.userId)),

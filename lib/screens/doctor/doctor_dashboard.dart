@@ -4,6 +4,7 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/photo.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../../widgets/i18n.dart';
 
@@ -73,53 +74,6 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
     (I.calendarDots, 'Follow-ups', 'Doctor-FollowUps'),
   ];
 
-  Widget _setupCard(Map<String, dynamic> setup) {
-    final steps = setup.list('steps');
-    return MpCard(
-      radius: 20,
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('SET UP YOUR CLINIC', style: tx(12, w: w700, c: MP.primary, em: 0.06)),
-          const Gap(4),
-          Text('${setup.numOr('done')} of ${setup.numOr('total')} done', style: tx(18, w: w700)),
-          const Gap(8),
-          for (final st in steps)
-            Tap(
-              onTap: st['done'] == true ? null : () async {
-                await Nav.go(context, st.str('screen'));
-                if (mounted) reload(quiet: true);
-              },
-              radius: 12,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: st['done'] == true ? MP.greenSoft : MP.primarySoft, shape: BoxShape.circle),
-                    child: Ico(st['done'] == true ? I.check : I.chevronRight, size: 16, color: st['done'] == true ? MP.green : MP.primary, stroke: 2.2),
-                  ),
-                  const Gap(12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(st.str('title'), style: tx(15, w: w600, c: st['done'] == true ? MP.ink3 : MP.ink)),
-                        Text(st.str('detail'), style: tx(13, c: MP.ink3)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final placeholder = livePlaceholder();
@@ -169,7 +123,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                 Tap(
                   onTap: () => Nav.go(context, 'Doctor-MyProfile'),
                   radius: 999,
-                  child: MpAvatar(F.initials(_name), size: 44, fontSize: 15, photo: isLive ? myPhotoUrl : null),
+                  child: ListenableBuilder(
+                    listenable: Session.I,
+                    builder: (_, _) => MpAvatar(F.initials(_name), size: 44, fontSize: 15, photo: isLive ? myPhotoUrl : null),
+                  ),
                 ),
               ],
             ),
@@ -196,9 +153,6 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                 ],
               ),
 
-              // New clinic: what to set up first (hidden once done).
-              if (data != null && data!.obj('setup').isNotEmpty) _setupCard(data!.obj('setup')),
-
               // Stats
               MpGrid(
                 columns: 3,
@@ -212,7 +166,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                         children: [
                           Text(s.$1, style: tx(30, w: w800, h: 1, em: -0.02, tab: true, c: s.$3)),
                           const Gap(6),
-                          Text(s.$2, textAlign: TextAlign.center, style: tx(13, c: MP.ink2, h: 1.3)),
+                          MpTileLabel(s.$2, style: tx(13, c: MP.ink2, h: 1.3)),
                         ],
                       ),
                     ),
