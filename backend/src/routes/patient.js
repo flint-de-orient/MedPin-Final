@@ -275,7 +275,7 @@ async function doctorCards(req, profiles, origin) {
       years: prof.practisingSince ? new Date().getFullYear() - prof.practisingSince : null, languages: prof.languagesSpoken,
       // "Video visit" only when the doctor offers video and has a video consultation service.
       gender: prof.gender, video: Boolean(prof.offersVideo && places.some((d) => d.services.some((s) => s.mode === 'video'))),
-      verified: prof.verifiedNow(), presence: prof.presence,
+      verified: prof.verifiedNow(), ...(await require('../services/presence').presenceOf(prof)),
       clinic: best.place.practiceId?.name, location: { id: best.place.locationId._id, name: best.place.locationId.name, area: best.place.locationId.area },
       km: best.km, fee: best.fee, nextSlot: best.next && { startAt: best.next.startAt, time: best.next.time },
       availableToday: Boolean(best.next && T.dayKey(best.next.startAt) === T.dayKey(new Date())), mine: myDoctors.has(String(prof.userId)),
@@ -343,7 +343,6 @@ r.get('/doctors/:doctorId', async (req, res) => {
     ...(card || { doctorId: prof.userId, name: prof.displayName }),
     bio: prof.bio,
     specialty: spec?.label || null,
-    avgReplyMinutes: prof.avgReplyMinutes,
     qualifications: prof.qualifications.map((q) => ({ name: q.name, institution: q.institution, year: q.year })),
     places: places.map((d) => ({ locationId: d.locationId._id, name: d.locationId.name, address: d.locationId.address, area: d.locationId.area, mapUrl: d.locationId.googleMapsUrl, lat: d.locationId.geo?.coordinates?.[1] ?? null, lng: d.locationId.geo?.coordinates?.[0] ?? null, km: haversineKm(origin, d.locationId.geo?.coordinates), services: d.services })),
     access: access && { level: access.accessLevel, since: access.since },
@@ -410,7 +409,7 @@ r.get('/my-doctors', async (req, res) => {
     out.push({
       specialty: spec?.label || null, practiceId: c.practiceId?._id, area: place?.locationId?.area || place?.locationId?.shortName || null, locationId: place?.locationId?._id || null,
       doctorId: c.userId._id, name: prof?.displayName || c.userId.name, role: c.role, headline: prof?.headline, clinic: c.practiceId?.name,
-      presence: prof?.presence, avgReplyMinutes: prof?.avgReplyMinutes, nextVisit: next && { id: next._id, startAt: next.startAt, token: String(next.tokenNo).padStart(2, '0') },
+      ...(await require('../services/presence').presenceOf(c.userId._id)), nextVisit: next && { id: next._id, startAt: next.startAt, token: String(next.tokenNo).padStart(2, '0') },
       lastSeenAt: last?.completedAt, followUpDue: fu?.dueDate, medicines: meds, adherencePct: docAdh?.pct ?? null,
       conversationId: convo?._id, unread: convo?.participants.find((p) => String(p.userId) === String(req.user._id))?.unreadCount || 0,
     });
@@ -1153,16 +1152,16 @@ r.get('/urgent/doctors', async (req, res) => {
   ]);
   const labels = new Map((await M.Specialty.find({ key: { $in: profiles.flatMap((x) => x.specialtyKeys) } }, 'key label')).map((s) => [s.key, s.label]));
   const order = { available: 0, in_clinic: 1, away: 2 };
-  const items = team.filter((c) => c.userId).map((c) => {
+  const items = await Promise.all(team.filter((c) => c.userId).map(async (c) => {
     const prof = profiles.find((x) => String(x.userId) === String(c.userId._id));
     const place = places.find((d) => String(d.doctorId) === String(c.userId._id) && String(d.practiceId) === String(c.practiceId?._id) && d.locationId?.phone)
       || places.find((d) => String(d.doctorId) === String(c.userId._id) && d.locationId?.phone);
     return {
       doctorId: c.userId._id, name: prof?.displayName || c.userId.name, gender: prof?.gender || null,
       specialty: prof ? labels.get(prof.specialtyKeys[0]) || null : null, clinic: c.practiceId?.name || null,
-      presence: prof?.presence || 'away', avgReplyMinutes: prof?.avgReplyMinutes ?? null, clinicPhone: place?.locationId?.phone || null,
+      ...(await require('../services/presence').presenceOf(c.userId._id)), clinicPhone: place?.locationId?.phone || null,
     };
-  });
+  }));
   items.sort((a, b) => order[a.presence] - order[b.presence]);
   res.json({ items, call: '108' });
 });

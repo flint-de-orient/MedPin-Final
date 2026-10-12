@@ -363,12 +363,13 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
   Widget _header() {
     final presence = _doctor.str('presence');
     final reply = _doctor['avgReplyMinutes'];
+    final note = _doctor.str('presenceNote'); // live, from the server
     final (String status, Color statusColor) = data == null
         ? ('Available now', MP.green)
         : switch (presence) {
-            'available' => ('Available now${reply is num ? ' · replies in ~${reply.round()} min' : ''}', MP.green),
-            'in_clinic' => ('In clinic now', MP.amber),
-            _ => ('Replies when back', MP.ink3),
+            'available' => ('Available now${note.isNotEmpty ? ' · $note' : reply is num ? ' · replies in ~${reply.round()} min' : ''}', MP.green),
+            'in_clinic' => (note.isNotEmpty ? 'In clinic · $note' : 'In clinic now', MP.amber),
+            _ => (note.isNotEmpty ? note : 'Replies when back', MP.ink3),
           };
     final visit = data?.obj('conversation').obj('nextVisit') ?? const <String, dynamic>{};
     final at = F.date(visit['startAt']);

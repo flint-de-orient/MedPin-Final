@@ -22,14 +22,16 @@ class _ProfileChatScreenState extends State<ProfileChatScreen> with LiveData {
     ('anyone', 'All patients of your practice', 'Anyone linked to your clinic can start a chat'),
     ('nobody', 'Nobody', 'Patients are asked to call the clinic instead'),
   ];
+  // What patients see is worked out live: "In clinic now" during your clinic
+  // hours, "Available now" when you're in the app within reply hours, else
+  // "Back at …". Away keeps you from showing as available.
   static const _presence = [
-    ('available', 'Available', 'Patients see "Available now"'),
-    ('in_clinic', 'In clinic', 'Replies may take a while'),
-    ('away', 'Away', 'Your clinic team sees new messages'),
+    ('auto', 'Automatic', 'From your clinic hours and when you use the app'),
+    ('away', 'Away', 'Never shown as available · your clinic team sees new messages'),
   ];
 
   String _whoCan = 'booked';
-  String _status = 'in_clinic';
+  String _status = 'auto';
   bool _aiReplies = true;
   bool _urgent = true;
   String _from = '09:00';
@@ -56,7 +58,7 @@ class _ProfileChatScreenState extends State<ProfileChatScreen> with LiveData {
     _from = c.obj('replyHours').str('from', '09:00');
     _to = c.obj('replyHours').str('to', '20:00');
     _away.text = c.str('awayMessage');
-    _status = data!.str('presence', 'away');
+    _status = data!.str('presence') == 'away' ? 'away' : 'auto';
     _replyMin = data!.numOr('avgReplyMinutes', 15).toInt();
   }
 
@@ -119,7 +121,7 @@ class _ProfileChatScreenState extends State<ProfileChatScreen> with LiveData {
                     D4OptionCard(title: p.$2, sub: p.$3, selected: _status == p.$1, onTap: () => setState(() => _status = p.$1)),
                   D4StepperRow(
                     title: 'Usual reply time',
-                    sub: 'Shown to patients as "replies in ~$_replyMin min"',
+                    sub: 'Used until MedPin has measured your replies to patients',
                     value: '$_replyMin min',
                     onMinus: _replyMin > 5 ? () => setState(() => _replyMin -= 5) : null,
                     onPlus: _replyMin < 240 ? () => setState(() => _replyMin += 5) : null,

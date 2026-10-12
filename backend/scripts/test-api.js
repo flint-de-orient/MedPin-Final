@@ -925,6 +925,72 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(me.user.photoUrl, 'header photo');
   });
 
+  await step("a doctor's status is worked out live", async () => {
+    const { presenceOf } = require('../src/services/presence');
+    const T = require('../src/lib/time');
+    const dl = await M.DoctorLocation.findOne({ doctorId: ctx.doctorUserId, status: 'active' });
+    const day = dl.schedule.week.find((w) => w.sessions?.length);
+    assert.ok(day, 'the doctor has a weekly session');
+    // A day ahead when the clinic is really open (no leave or closure), per the booking rules.
+    const { slotsFor } = require('../src/services/scheduling');
+    let d = null;
+    for (let i = 3; i < 30 && !d; i += 1) {
+      const c = T.addDays(T.dayStart(new Date()), i);
+      if ((await slotsFor({ doctorId: ctx.doctorUserId, locationId: dl.locationId, day: c, now: new Date(0) })).open) d = c;
+    }
+    assert.ok(d, 'an open clinic day');
+    const s = (dl.schedule.week.find((w) => w.weekday === T.weekday(d)) || day).sessions[0];
+    const at = (min) => T.atMinute(d, min);
+    const prof = await M.DoctorProfile.findOne({ userId: ctx.doctorUserId });
+    // In a session: "In clinic · Salt Lake until …".
+    // The session as it really runs (inside the clinic's opening hours).
+    const dls0 = await M.DoctorLocation.find({ doctorId: ctx.doctorUserId, status: 'active' }).populate('locationId', 'name shortName status weeklyHours');
+    const real = (await require('../src/services/presence').sessionsOn(ctx.doctorUserId, d, dls0))[0];
+    assert.ok(real, 'a session that day');
+    const inClinic = await presenceOf(prof, at(real.startMin + 10));
+    assert.equal(inClinic.presence, 'in_clinic');
+    assert.match(inClinic.presenceNote, / until \d{1,2}:\d{2} (AM|PM)$/);
+    // 2 AM: away, with when they're next in.
+    const night = await presenceOf(prof, at(2 * 60));
+    assert.equal(night.presence, 'away');
+    assert.match(night.presenceNote, /^Back (today|tomorrow|[A-Z][a-z]{2}) at /);
+    // In reply hours, outside a session, using the app now: available.
+    const free = [21 * 60 - 30, 19 * 60, 13 * 60 + 15, 8 * 60].map((m) => m).find((m) => {
+      const rh = prof.chatSettings?.replyHours || { from: '09:00', to: '20:00' };
+      const [fh, fm] = rh.from.split(':').map(Number);
+      const [th, tm] = rh.to.split(':').map(Number);
+      const inSession = real.startMin <= m && m < real.endMin;
+      return m >= fh * 60 + fm && m < th * 60 + tm && !inSession;
+    });
+    if (free != null) {
+      await M.User.updateOne({ _id: ctx.doctorUserId }, { lastActiveAt: at(free - 5) });
+      assert.equal((await presenceOf(prof, at(free))).presence, 'available');
+      // Not used the app for an hour: not "available".
+      assert.equal((await presenceOf(prof, at(free + 60))).presence, 'away');
+      // The doctor chose "Away": never shown as available.
+      prof.presence = 'away';
+      await M.User.updateOne({ _id: ctx.doctorUserId }, { lastActiveAt: at(free - 5) });
+      assert.equal((await presenceOf(prof, at(free))).presence, 'away');
+      prof.presence = 'auto';
+    }
+    // Reply time: the median of real replies (3 or more) to patients.
+    const convo = await M.Conversation.findOne({ patientId: ctx.patientId, type: 'care' });
+    const t0 = new Date(Date.now() - 3 * 3600e3);
+    const rows = [];
+    for (const [i, mins] of [[0, 4], [1, 6], [2, 30]]) {
+      const asked = new Date(t0.getTime() + i * 40 * 60e3);
+      rows.push({ conversationId: convo._id, senderType: 'patient', kind: 'text', text: `q${i}`, createdAt: asked });
+      rows.push({ conversationId: convo._id, senderType: 'doctor', senderId: ctx.doctorUserId, kind: 'text', text: `a${i}`, createdAt: new Date(asked.getTime() + mins * 60e3) });
+    }
+    await M.Message.insertMany(rows);
+    const { replyMinutes } = require('../src/services/presence');
+    assert.equal(await replyMinutes(ctx.doctorUserId, new Date(Date.now() + 31 * 60e3)), 6, 'median of 4, 6 and 30 minutes');
+    // Patients get the live status in Find a doctor.
+    const found = ok(await ctx.pat('GET', '/api/patient/doctors/search'));
+    assert.ok(['available', 'in_clinic', 'away'].includes(found.items[0].presence));
+    assert.ok('presenceNote' in found.items[0]);
+  });
+
   await step('front desk books a confirmed visit; the bell shows emergencies', async () => {
     // The earlier "sign out other devices" step ended this session; sign in again.
     await M.OtpRequest.deleteMany({ phone: '9749681391' }); // test only: skip the resend wait

@@ -66,8 +66,8 @@ const doctorProfileSchema = new Schema(
     },
     offersVideo: { type: Boolean, default: false },
     acceptingBookings: { type: Boolean, default: true },
-    presence: enumOf(E.DOCTOR_PRESENCE, { default: 'away' }),
-    avgReplyMinutes: Number,
+    presence: enumOf(E.DOCTOR_PRESENCE, { default: 'auto' }), // the doctor's choice; what patients see is live
+    avgReplyMinutes: Number, // the doctor's own estimate, used until enough replies are measured
     followUpReminder: {
       daysBefore: { type: Number, default: 3 },
       channels: { type: [enumOf(E.REMINDER_CHANNELS)], default: ['whatsapp', 'app'] },

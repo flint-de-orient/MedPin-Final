@@ -324,12 +324,15 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
 
     final presence = _d.str('presence');
     final reply = _d['avgReplyMinutes'];
+    // Live from the server: presenceNote is "At Salt Lake until 1:00 PM …",
+    // "replies in ~10 min" or "Back today at 5:00 PM".
+    final note = _d.str('presenceNote');
     final (String status, Color statusColor, Color dot) = data == null
         ? ('Available now · replies in ~10 min', MP.green, MP.green)
         : switch (presence) {
-            'available' => ('Available now${reply is num ? ' · replies in ~${reply.round()} min' : ''}', MP.green, MP.green),
-            'in_clinic' => ('In clinic now · replies after the clinic', MP.amber, MP.amber),
-            _ => ('Away · replies later', MP.ink3, MP.lineStrong),
+            'available' => ('Available now${note.isNotEmpty ? ' · $note' : reply is num ? ' · replies in ~${reply.round()} min' : ''}', MP.green, MP.green),
+            'in_clinic' => (note.isNotEmpty ? 'In clinic · $note' : 'In clinic now · replies after the clinic', MP.amber, MP.amber),
+            _ => (note.isNotEmpty ? 'Away · $note' : 'Away · replies later', MP.ink3, MP.lineStrong),
           };
     final sub = data == null
         ? 'MBBS, MD · Diabetes & hormones'

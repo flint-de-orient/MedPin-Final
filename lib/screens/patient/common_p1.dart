@@ -144,15 +144,20 @@ class P1 {
   /// A doctor's presence line and dot: "Available now" / "In clinic · usually
   /// replies in 15 min" / "Away · his clinic team will see it".
   static ({String status, Color color, Color dot}) presence(Map<String, dynamic> d) {
+    final note = d['presenceNote'] is String ? d['presenceNote'] as String : '';
     switch (d['presence']) {
       case 'available':
-        return (status: 'Available now', color: MP.green, dot: MP.green);
+        return (status: note.isEmpty ? 'Available now' : 'Available now · $note', color: MP.green, dot: MP.green);
       case 'in_clinic':
         final mins = d['avgReplyMinutes'] as num?;
-        return (status: mins == null ? 'In clinic' : 'In clinic · usually replies in ${mins.round()} min', color: MP.ink2, dot: MP.amber);
+        return (
+          status: note.isNotEmpty ? 'In clinic · $note' : (mins == null ? 'In clinic' : 'In clinic · usually replies in ${mins.round()} min'),
+          color: MP.ink2,
+          dot: MP.amber,
+        );
       default:
         final pron = d['gender'] == 'female' ? 'her' : d['gender'] == 'male' ? 'his' : 'their';
-        return (status: 'Away · $pron clinic team will see it', color: MP.ink2, dot: MP.lineStrong);
+        return (status: note.isNotEmpty ? 'Away · $note' : 'Away · $pron clinic team will see it', color: MP.ink2, dot: MP.lineStrong);
     }
   }
 

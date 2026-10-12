@@ -10,6 +10,7 @@ const userSchema = new Schema(
   {
     phone: { ...phone(true), unique: true },
     phoneVerifiedAt: Date,
+    lastActiveAt: Date, // last app use (at most every 2 min); a doctor's "Available now"
     name: { type: String, trim: true, maxlength: 120 },
     email: { type: String, trim: true, lowercase: true, match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
     avatarUrl: String,

@@ -28,6 +28,12 @@ async function requireAuth(req, _res, next) {
   }
   req.user = user;
   req.sessionId = payload.sid;
+  // When this person last used the app (a doctor's live status); at most one write per 2 minutes.
+  const now = Date.now();
+  if (!user.lastActiveAt || now - user.lastActiveAt > 2 * 60e3) {
+    user.lastActiveAt = new Date(now);
+    M.User.updateOne({ _id: user._id }, { lastActiveAt: user.lastActiveAt }).catch(() => {});
+  }
   return next();
 }
 

@@ -27,7 +27,8 @@ module.exports = {
   PAYMENT_METHODS: ['upi', 'cash', 'card', 'net_banking', 'online'],
   VERIFICATION_STATUSES: ['not_submitted', 'in_review', 'verified', 'rejected'],
   PROOF_STATUSES: ['upload', 'review', 'verified'],
-  DOCTOR_PRESENCE: ['available', 'in_clinic', 'away'],
+  // auto: worked out live (services/presence.js); away: the doctor's own "don't show me available".
+  DOCTOR_PRESENCE: ['auto', 'available', 'in_clinic', 'away'],
   REMINDER_CHANNELS: ['app', 'whatsapp', 'sms'],
 
   // Patient ↔ care team (Patient-Me "Who can see your record")
