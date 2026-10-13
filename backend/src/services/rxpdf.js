@@ -17,7 +17,7 @@ const { hmac } = require('../lib/security');
 const { setupFonts, write, heightOf } = require('../lib/pdftext');
 
 /** Bump when the layout changes; older PDFs are drawn again when opened. */
-const PDF_VERSION = 3; // 3: print-friendly letterhead (clean in black & white)
+const PDF_VERSION = 4; // 3: print-friendly letterhead; 4: no box outlines
 
 // App tokens (lib/core/tokens.dart).
 const C = {
@@ -146,7 +146,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     const tile = 56;
     const tx0 = M;
     if (!img(logo, tx0, 24, { fit: [tile, tile], align: 'center', valign: 'center' })) {
-      doc.roundedRect(tx0, 24, tile, tile, 12).lineWidth(1.2).stroke(C.primary);
+      doc.roundedRect(tx0, 24, tile, tile, 12).fill(C.primarySoft);
       text(initials(clinic || doctorName), tx0, 24 + tile / 2 - 11, { size: 20, weight: 'bold', color: C.primary, width: tile, align: 'center' });
     }
     let y = 22;
@@ -164,7 +164,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     // ── Meta strip ──
     y = bandH + 14;
     const metaH = 40;
-    doc.roundedRect(M, y, W, metaH, 10).lineWidth(0.8).fillAndStroke(C.primarySoft, C.primaryLine);
+    doc.roundedRect(M, y, W, metaH, 10).fill(C.primarySoft);
     const cells = [
       ['Prescription no.', rxNo(rx)],
       ['Date', fmtDate(rx.issuedAt)],
@@ -189,21 +189,20 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     const home = (patient.addresses || []).find((a) => a.isDefault) || (patient.addresses || [])[0];
     const homeLine = home ? [home.line, home.area, home.city, home.pincode].filter(Boolean).join(', ') : patient.area || '';
     const allergies = (patient.allergies || []).map((a) => a.allergen || a.name).filter(Boolean);
-    label('Patient', M + 14, y + 12, C.ink3);
-    let py = text(patient.name, M + 14, y + 23, { size: 13, weight: 'bold', width: W - 28 }) + 1;
-    py = text(facts, M + 14, py, { size: 9.5, color: C.ink2, width: W - 28 }) + 2;
-    if (homeLine) py = text(homeLine, M + 14, py, { size: 9, color: C.ink3, width: W - 28 }) + 2;
+    label('Patient', M, y + 2, C.ink3);
+    let py = text(patient.name, M, y + 13, { size: 13, weight: 'bold', width: W }) + 1;
+    py = text(facts, M, py, { size: 9.5, color: C.ink2, width: W }) + 2;
+    if (homeLine) py = text(homeLine, M, py, { size: 9, color: C.ink3, width: W }) + 2;
     if (allergies.length) {
       const pill = `Allergies: ${allergies.join(', ')}`;
       doc.fontSize(8.5);
-      const pw = Math.min(W - 28, doc.font('semi').widthOfString(pill) + 22);
+      const pw = Math.min(W, doc.font('semi').widthOfString(pill) + 22);
       doc.font('latin');
-      doc.roundedRect(M + 14, py + 3, pw, 18, 9).fillAndStroke(C.redSoft, C.redLine);
-      text(pill, M + 25, py + 7.5, { size: 8.5, weight: 'semi', color: C.red, width: pw - 18 });
+      doc.roundedRect(M, py + 3, pw, 18, 9).fill(C.redSoft);
+      text(pill, M + 11, py + 7.5, { size: 8.5, weight: 'semi', color: C.red, width: pw - 18 });
       py += 22;
     }
     const cardH = py - y + 10;
-    doc.roundedRect(M, y, W, cardH, 10).lineWidth(1).strokeColor(C.line).stroke();
     y += cardH + 12;
 
     // ── Clinical notes ──
@@ -237,7 +236,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       for (const v of vitalsParts) {
         const vw = doc.font('semi').widthOfString(v) + 16;
         if (vx + vw > M + W) { vx = M + 44; vy += 22; }
-        doc.roundedRect(vx, vy, vw, 18, 9).lineWidth(0.6).fillAndStroke(C.fill, C.line);
+        doc.roundedRect(vx, vy, vw, 18, 9).fill(C.fill);
         text(v, vx + 8, vy + 4.5, { size: 8.5, weight: 'semi', color: C.ink, width: vw });
         vx += vw + 6;
       }
@@ -271,7 +270,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       { k: 'Instructions', w: W - 438 },
     ];
     const tableHead = () => {
-      doc.roundedRect(M, y, W, 22, 6).lineWidth(0.6).fillAndStroke(C.fill, C.line);
+      doc.roundedRect(M, y, W, 22, 6).fill(C.fill);
       let x = M;
       for (const c of cols) {
         label(c.k, x + 6, y + 8, C.ink2);
@@ -318,7 +317,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       doc.fontSize(6.5);
       const bw = doc.font('bold').widthOfString(badge) + 10;
       doc.font('latin');
-      doc.roundedRect(x + 6, ny + 2, bw, 12, 6).lineWidth(0.6).fillAndStroke(bf, bc);
+      doc.roundedRect(x + 6, ny + 2, bw, 12, 6).fill(bf);
       text(badge, x + 11, ny + 4.6, { size: 6.5, weight: 'bold', color: bc, spacing: 0.4 });
       if (sub) text(sub, x + bw + 12, ny + 3, { size: 8.5, color: C.ink3, width: cols[1].w - bw - 18 });
       x += cols[1].w;
@@ -335,7 +334,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       if (notes) iy = text(notes, x + 6, iy, { size: 8.5, color: C.ink2, width: cols[6].w - 10 }) + 3;
       if (item.caution) text(item.caution, x + 6, iy, { size: 8, weight: 'semi', color: C.amber, width: cols[6].w - 10 });
       y += rowH;
-      doc.moveTo(M, y).lineTo(M + W, y).lineWidth(0.8).strokeColor(C.line).stroke();
+      doc.moveTo(M, y).lineTo(M + W, y).lineWidth(0.5).strokeColor('#E2E6EC').stroke();
     });
     y += 12;
 
@@ -349,7 +348,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       for (const t of rx.tests) {
         const w = doc.font('semi').widthOfString(t) + 18;
         if (tx + w > M + W) { tx = M; ty += 24; ensure(24); }
-        doc.roundedRect(tx, ty, w, 19, 9.5).lineWidth(1).fillAndStroke(C.white, C.primaryLine);
+        doc.roundedRect(tx, ty, w, 19, 9.5).fill(C.primarySoft);
         text(t, tx + 9, ty + 5, { size: 9, weight: 'semi', color: C.primary });
         tx += w + 6;
       }
@@ -377,7 +376,6 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     ensure(96);
     const sy = y;
     if (qr) {
-      doc.roundedRect(M, sy + 8, 74, 74, 10).lineWidth(1).strokeColor(C.line).stroke();
       img(qr, M + 9, sy + 17, { fit: [56, 56] });
       text('Scan to verify', M + 86, sy + 30, { size: 9.5, weight: 'semi', color: C.ink });
       text('Checks this prescription with MedPin.', M + 86, sy + 44, { size: 8, color: C.ink3, width: 150 });
@@ -386,7 +384,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     const sx = M + W - sw;
     const signed = img(signature, sx + (sw - 150) / 2, sy, { fit: [150, 46], align: 'center', valign: 'bottom' });
     if (!signed) {
-      doc.roundedRect(sx + 20, sy + 4, sw - 40, 40, 8).dash(3, { space: 3 }).lineWidth(1).strokeColor(C.lineStrong).stroke().undash();
+      doc.roundedRect(sx + 20, sy + 4, sw - 40, 40, 8).fill(C.fill);
       text('Signature on file · scan to verify', sx + 20, sy + 19, { size: 8, color: C.ink3, width: sw - 40, align: 'center' });
     }
     doc.moveTo(sx, sy + 50).lineTo(sx + sw, sy + 50).lineWidth(1).strokeColor(C.lineStrong).stroke();
