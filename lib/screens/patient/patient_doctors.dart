@@ -423,6 +423,7 @@ class _FindDoctorBanner extends StatelessWidget {
                       'assets/images/hero_patient.jpg',
                       fit: BoxFit.cover,
                       alignment: const Alignment(0.55, -0.35),
+                      filterQuality: FilterQuality.high,
                     ),
                   ),
                   Positioned(

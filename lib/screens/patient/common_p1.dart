@@ -340,8 +340,8 @@ class P1HeroSlide extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // The icon tile stays on photo cards too.
-        if (photo)
+        // Photo cards: no icon tile, the photo says it.
+        if (photo || backdrop != null)
           ConstrainedBox(constraints: BoxConstraints(maxWidth: textMaxWidth), child: _text())
         else
           Row(
@@ -387,7 +387,7 @@ class P1HeroSlide extends StatelessWidget {
                   children: [
                     // The whole card is the photo; the person is on its right.
                     Positioned.fill(
-                      child: _fade(Image.asset(backdrop, fit: BoxFit.cover, alignment: Alignment.centerRight)),
+                      child: _fade(Image.asset(backdrop, fit: BoxFit.cover, alignment: Alignment.centerRight, filterQuality: FilterQuality.high)),
                     ),
                     // A light blue wash on the left keeps the white text easy to read.
                     const Positioned.fill(
@@ -411,7 +411,7 @@ class P1HeroSlide extends StatelessWidget {
                       right: 0,
                       width: imageWidth,
                       height: 212,
-                      child: Image.asset('assets/images/hero_patient.jpg', fit: BoxFit.cover),
+                      child: Image.asset('assets/images/hero_patient.jpg', fit: BoxFit.cover, filterQuality: FilterQuality.high),
                     ),
                     Positioned.fill(
                       child: DecoratedBox(
