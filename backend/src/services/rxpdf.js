@@ -17,12 +17,12 @@ const { hmac } = require('../lib/security');
 const { setupFonts, write, heightOf } = require('../lib/pdftext');
 
 /** Bump when the layout changes; older PDFs are drawn again when opened. */
-const PDF_VERSION = 2;
+const PDF_VERSION = 3; // 3: print-friendly letterhead (clean in black & white)
 
 // App tokens (lib/core/tokens.dart).
 const C = {
   primary: '#003399', primaryDark: '#002470', primarySoft: '#EBF1FB', primaryLine: '#B8C6E3', primaryMid: '#7F99CC',
-  ink: '#111827', ink2: '#545E72', ink3: '#69738A', line: '#E5E9F0', lineStrong: '#D5DBE5',
+  ink: '#111827', ink2: '#3F4757', ink3: '#555E6F', line: '#C9D0DB', lineStrong: '#AEB7C4',
   fill: '#F1F4F9', bg: '#F7F9FC', amber: '#B45309', amberSoft: '#FEF6E7', red: '#B91C1C', redSoft: '#FDECEC', redLine: '#F3C4C4',
   green: '#15803D', white: '#FFFFFF',
 };
@@ -138,31 +138,33 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     const rightH = 14 + addrH + contact.length * 12;
     const bandH = Math.max(96, 24 + Math.max(leftH, rightH, 56) + 18);
 
-    doc.rect(0, 0, PAGE_W, bandH).fill(C.primary);
-    doc.rect(0, bandH, PAGE_W, 3).fill(C.primaryMid);
-    // Logo tile (white, so dark and light logos both read on blue).
+    // White letterhead: a blue bar on top and a blue rule under it. Clean in
+    // colour and on a black & white printer or photocopier (no solid fills).
+    doc.rect(0, 0, PAGE_W, 6).fill(C.primary);
+    doc.rect(M, bandH - 2, W, 1.5).fill(C.primary);
+    // Logo: on white, in its own colours; initials when there is none.
     const tile = 56;
     const tx0 = M;
-    doc.roundedRect(tx0, 24, tile, tile, 12).fill(C.white);
-    if (!img(logo, tx0 + 6, 30, { fit: [tile - 12, tile - 12], align: 'center', valign: 'center' })) {
+    if (!img(logo, tx0, 24, { fit: [tile, tile], align: 'center', valign: 'center' })) {
+      doc.roundedRect(tx0, 24, tile, tile, 12).lineWidth(1.2).stroke(C.primary);
       text(initials(clinic || doctorName), tx0, 24 + tile / 2 - 11, { size: 20, weight: 'bold', color: C.primary, width: tile, align: 'center' });
     }
     let y = 22;
     const lx = M + tile + 16;
-    y = text(doctorName, lx, y, { size: 20, weight: 'bold', color: C.white, width: leftW }) + 2;
-    if (quals) y = text(quals, lx, y, { size: 9.5, color: '#DCE4F5', width: leftW }) + 1;
-    if (doctor?.headline) y = text(doctor.headline, lx, y, { size: 9, color: '#DCE4F5', width: leftW }) + 1;
-    if (reg) text(reg, lx, y + 2, { size: 9, weight: 'semi', color: C.white, width: leftW });
+    y = text(doctorName, lx, y, { size: 20, weight: 'bold', color: C.primaryDark, width: leftW }) + 2;
+    if (quals) y = text(quals, lx, y, { size: 9.5, color: C.ink2, width: leftW }) + 1;
+    if (doctor?.headline) y = text(doctor.headline, lx, y, { size: 9, color: C.ink2, width: leftW }) + 1;
+    if (reg) text(reg, lx, y + 2, { size: 9, weight: 'semi', color: C.ink, width: leftW });
     const rx0 = M + W - rightW;
     let ry = 24;
-    if (clinic) ry = text(clinic, rx0, ry, { size: 10.5, weight: 'bold', color: C.white, width: rightW, align: 'right' }) + 2;
-    if (addr) ry = text(addr, rx0, ry, { size: 8.5, color: '#DCE4F5', width: rightW, align: 'right' }) + 2;
-    for (const c of contact) ry = text(c, rx0, ry, { size: 8.5, color: '#DCE4F5', width: rightW, align: 'right' }) + 1;
+    if (clinic) ry = text(clinic, rx0, ry, { size: 10.5, weight: 'bold', color: C.primaryDark, width: rightW, align: 'right' }) + 2;
+    if (addr) ry = text(addr, rx0, ry, { size: 8.5, color: C.ink2, width: rightW, align: 'right' }) + 2;
+    for (const c of contact) ry = text(c, rx0, ry, { size: 8.5, color: C.ink2, width: rightW, align: 'right' }) + 1;
 
     // ── Meta strip ──
     y = bandH + 14;
     const metaH = 40;
-    doc.roundedRect(M, y, W, metaH, 10).fill(C.primarySoft);
+    doc.roundedRect(M, y, W, metaH, 10).lineWidth(0.8).fillAndStroke(C.primarySoft, C.primaryLine);
     const cells = [
       ['Prescription no.', rxNo(rx)],
       ['Date', fmtDate(rx.issuedAt)],
@@ -235,7 +237,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       for (const v of vitalsParts) {
         const vw = doc.font('semi').widthOfString(v) + 16;
         if (vx + vw > M + W) { vx = M + 44; vy += 22; }
-        doc.roundedRect(vx, vy, vw, 18, 9).fill(C.fill);
+        doc.roundedRect(vx, vy, vw, 18, 9).lineWidth(0.6).fillAndStroke(C.fill, C.line);
         text(v, vx + 8, vy + 4.5, { size: 8.5, weight: 'semi', color: C.ink, width: vw });
         vx += vw + 6;
       }
@@ -248,9 +250,10 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     const newPage = () => {
       doc.addPage({ size: 'A4', margin: 0 });
       pageCount += 1;
-      doc.rect(0, 0, PAGE_W, 36).fill(C.primary);
-      text(doctorName, M, 12, { size: 10.5, weight: 'bold', color: C.white, width: W / 2 });
-      text(`${patient.name}  ·  ${rxNo(rx)}  ·  ${fmtDate(rx.issuedAt)}`, M + W / 2, 13, { size: 9, color: '#DCE4F5', width: W / 2, align: 'right' });
+      doc.rect(0, 0, PAGE_W, 6).fill(C.primary);
+      text(doctorName, M, 16, { size: 10.5, weight: 'bold', color: C.primaryDark, width: W / 2 });
+      text(`${patient.name}  ·  ${rxNo(rx)}  ·  ${fmtDate(rx.issuedAt)}`, M + W / 2, 17, { size: 9, color: C.ink2, width: W / 2, align: 'right' });
+      doc.rect(M, 36, W, 1).fill(C.primary);
       return 56;
     };
     const ensure = (h) => {
@@ -268,7 +271,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       { k: 'Instructions', w: W - 438 },
     ];
     const tableHead = () => {
-      doc.roundedRect(M, y, W, 22, 6).fill(C.fill);
+      doc.roundedRect(M, y, W, 22, 6).lineWidth(0.6).fillAndStroke(C.fill, C.line);
       let x = M;
       for (const c of cols) {
         label(c.k, x + 6, y + 8, C.ink2);
@@ -315,7 +318,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       doc.fontSize(6.5);
       const bw = doc.font('bold').widthOfString(badge) + 10;
       doc.font('latin');
-      doc.roundedRect(x + 6, ny + 2, bw, 12, 6).fill(bf);
+      doc.roundedRect(x + 6, ny + 2, bw, 12, 6).lineWidth(0.6).fillAndStroke(bf, bc);
       text(badge, x + 11, ny + 4.6, { size: 6.5, weight: 'bold', color: bc, spacing: 0.4 });
       if (sub) text(sub, x + bw + 12, ny + 3, { size: 8.5, color: C.ink3, width: cols[1].w - bw - 18 });
       x += cols[1].w;

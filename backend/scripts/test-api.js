@@ -312,6 +312,13 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const freshPdf = Buffer.from(await (await fetch(fresh.url)).arrayBuffer()).toString('latin1');
     assert.ok((freshPdf.match(/\/Subtype\s*\/Image/g) || []).length >= 2, 'signature and verification QR are printed');
     assert.equal(ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}`)).pdfVersion, require('../src/services/rxpdf').PDF_VERSION);
+    // A new clinic logo reaches prescriptions already issued: the PDF is drawn again.
+    const before = (await M.Prescription.findById(ctx.rxId)).file.key;
+    assert.equal(ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}/pdf`)).key, before, 'nothing changed: same file');
+    ok(await ctx.doc('POST', '/api/practice/logo', undefined, { form: fileForm('file', tinyPng(), 'logo2.png', 'image/png') }));
+    const loc0 = await M.Location.findById((await M.Prescription.findById(ctx.rxId)).locationId);
+    if (loc0?.letterhead?.logo) await M.Location.updateOne({ _id: loc0._id }, { $unset: { 'letterhead.logo': 1 } });
+    assert.notEqual(ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}/pdf`)).key, before, 'new logo: redrawn');
     // QR verification page: genuine with the token, not verified without it.
     const { verifyUrl } = require('../src/services/rxpdf');
     const vpage = await fetch(verifyUrl(ctx.rxId).replace(/^https?:\/\/[^/]+/, base));

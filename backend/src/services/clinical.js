@@ -201,6 +201,25 @@ async function issueConsultation(consult, doctorUser) {
 }
 
 /**
+ * The clinic details printed on a prescription (logo, signature, letterhead,
+ * doctor's name and registration, clinic address and hours). When any of
+ * them changes, prescriptions are drawn again the next time they're opened.
+ */
+async function pdfInputs(rx, { doctor, location, practice } = {}) {
+  doctor = doctor || (await M.DoctorProfile.findOne({ userId: rx.doctorId }, 'signature displayName qualifications degreesSummary registration hprId headline'));
+  location = location !== undefined ? location : rx.locationId ? await M.Location.findById(rx.locationId) : null;
+  practice = practice || (await M.Practice.findById(rx.practiceId, 'logo name'));
+  const lh = location?.letterhead || {};
+  const key = JSON.stringify([
+    doctor?.signature?.key, lh.logo?.key || practice?.logo?.key, lh.tagline, lh.doctorNamePrinted, lh.registrationNo,
+    doctor?.displayName, doctor?.degreesSummary, (doctor?.qualifications || []).map((q) => q.name), doctor?.registration?.number,
+    doctor?.registration?.council, doctor?.hprId, doctor?.headline, location?.name, location?.address, location?.area, location?.city,
+    location?.pincode, location?.phone, location?.hfrId, JSON.stringify(location?.weeklyHours || []), practice?.name,
+  ]);
+  return require('crypto').createHash('sha1').update(key).digest('hex');
+}
+
+/**
  * Draws the prescription PDF (services/rxpdf.js) from the consultation and
  * saves it on [rx]. Already-loaded records can be passed in.
  */
@@ -221,14 +240,19 @@ async function buildPrescriptionPdf(rx, { consult, patient, doctor } = {}) {
   const name = `Prescription ${rxpdf.rxNo(rx)} · ${patient?.name || 'Patient'} · ${rxpdf.fmtDate(rx.issuedAt)}.pdf`.replace(/[\/:*?"<>|]/g, '');
   rx.file = await storage.save(buffer, { folder: 'prescriptions', name, mimeType: 'application/pdf', pages });
   rx.pdfVersion = rxpdf.PDF_VERSION;
+  rx.pdfInputs = await pdfInputs(rx, { doctor, location, practice });
   await rx.save();
   return rx;
 }
 
-/** Digital prescriptions made before the current layout are drawn again once. */
+/**
+ * Draws a digital prescription again when its layout is older or the clinic
+ * changed what's printed on it (a new logo, signature or letterhead).
+ */
 async function ensurePrescriptionPdf(rx) {
   if (rx.kind !== 'digital' || !rx.consultationId) return rx;
-  if (rx.file?.key && (rx.pdfVersion || 1) >= rxpdf.PDF_VERSION) return rx;
+  const fresh = rx.file?.key && (rx.pdfVersion || 1) >= rxpdf.PDF_VERSION && rx.pdfInputs === (await pdfInputs(rx));
+  if (fresh) return rx;
   return buildPrescriptionPdf(rx);
 }
 

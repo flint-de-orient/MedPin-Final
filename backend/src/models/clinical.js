@@ -153,6 +153,7 @@ const prescriptionSchema = new Schema(
     followUpDate: Date,
     file: fileSchema, // generated PDF or scan
     pdfVersion: Number, // layout version of the generated PDF (services/rxpdf.js)
+    pdfInputs: String, // what the PDF was drawn from (logo, signature, letterhead); a change redraws it
     sentAt: Date, // "Prescription sent to Priya"
   },
   baseOptions,
