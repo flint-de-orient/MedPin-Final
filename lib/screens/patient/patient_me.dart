@@ -141,6 +141,8 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
     weightKg: 68.5,
   );
   final List<String> _sharing = [_levels[0], _levels[1], _levels[2], _levels[3]];
+  List<String> _sampleConditions = _conditions;
+  List<String> _sampleAllergies = const [_allergy];
   String _language = _languages.first;
   bool _medReminders = true;
   bool _logReminder = true;
@@ -176,8 +178,8 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
     );
   }
 
-  List<String> get _conditionList => data == null ? _conditions : [for (final c in _p.list('conditions')) c.str('name')];
-  List<String> get _allergyList => data == null ? const [_allergy] : [for (final a in _p.list('allergies')) a.str('allergen')];
+  List<String> get _conditionList => data == null ? _sampleConditions : [for (final c in _p.list('conditions')) c.str('name')];
+  List<String> get _allergyList => data == null ? _sampleAllergies : [for (final a in _p.list('allergies')) a.str('allergen')];
 
   List<Map<String, dynamic>> get _team => data?.list('team') ?? const [];
 
@@ -234,8 +236,30 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
     if (!ok && mounted) setState(() => data = before);
   }
 
-  Future<void> _edit() async {
-    final updated = await openSheet<_Me>(context, (_) => _EditSheet(me: _me));
+  /// Conditions / allergies: their own add-and-remove sheet.
+  Future<void> _editList({required bool allergies}) async {
+    final current = allergies ? _allergyList : _conditionList;
+    final next = await openSheet<List<String>>(context, (_) => _ListSheet(allergies: allergies, items: current));
+    if (next == null || !mounted) return;
+    if (next.length == current.length && next.every(current.contains)) return;
+    final done = allergies ? 'Allergies updated' : 'Conditions updated';
+    if (data == null) {
+      setState(() => allergies ? _sampleAllergies = next : _sampleConditions = next);
+      toast(context, done);
+      return;
+    }
+    // Keep what a doctor added (ICD code, since) for the ones that stay.
+    final key = allergies ? 'allergen' : 'name';
+    final old = _p.list(allergies ? 'allergies' : 'conditions');
+    final body = [
+      for (final n in next) old.firstWhere((o) => o.str(key).toLowerCase() == n.toLowerCase(), orElse: () => {key: n}),
+    ];
+    final ok = await _save({allergies ? 'allergies' : 'conditions': body});
+    if (ok && mounted) toast(context, done);
+  }
+
+  Future<void> _edit([_Focus? focus]) async {
+    final updated = await openSheet<_Me>(context, (_) => _EditSheet(me: _me, focus: focus));
     if (updated == null || !mounted) return;
     if (data == null) {
       setState(() => _sample = updated);
@@ -376,7 +400,8 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                     sub: conditions.isEmpty ? 'None added' : null,
                     subColor: MP.ink3,
                     below: conditions.isEmpty ? null : Wrap(spacing: 6, runSpacing: 6, children: [for (final c in conditions) _Tag(c)]),
-                    onTap: _edit,
+                    trailing: conditions.isEmpty ? const _Action('Add') : null,
+                    onTap: () => _editList(allergies: false),
                   ),
                   _Row(
                     icon: I.alert,
@@ -393,7 +418,8 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                                 MpBadge(a, bg: MP.amberSoft, fg: MP.amber, border: MP.amberLine, icon: I.alert, weight: w600, padX: 8),
                             ],
                           ),
-                    onTap: _edit,
+                    trailing: allergies.isEmpty ? const _Action('Add') : null,
+                    onTap: () => _editList(allergies: true),
                   ),
                   _Row(
                     icon: _icRuler,
@@ -407,7 +433,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                           ].join(' · '),
                     subColor: me.heightCm == null && me.weightKg == null ? MP.ink3 : MP.ink2,
                     trailing: me.heightCm == null && me.weightKg == null ? const _Action('Add') : const _Chevron(),
-                    onTap: _edit,
+                    onTap: () => _edit(_Focus.body),
                   ),
                   _Row(
                     icon: I.drop,
@@ -415,7 +441,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                     sub: me.bloodGroup ?? 'Not added',
                     subColor: me.bloodGroup == null ? MP.ink3 : MP.ink2,
                     trailing: me.bloodGroup == null ? const _Action('Add') : const _Chevron(),
-                    onTap: _edit,
+                    onTap: () => _edit(_Focus.blood),
                   ),
                   _Row(
                     icon: I.phone,
@@ -425,7 +451,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                         : '${me.emergencyName}${me.emergencyPhone == null ? '' : ' · +91 ${me.emergencyPhone}'}',
                     subColor: me.emergencyName == null ? MP.ink3 : MP.ink2,
                     trailing: me.emergencyName == null ? const _Action('Add') : const _Chevron(),
-                    onTap: _edit,
+                    onTap: () => _edit(_Focus.emergency),
                   ),
                 ]),
                 if (viewers.isNotEmpty)
@@ -607,7 +633,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
               ),
             ),
             const Gap(8),
-            MpIconButton(I.pencil, label: 'Edit your details', color: MP.primary, iconSize: 20, onTap: _edit),
+            MpIconButton(I.pencil, label: 'Edit your details', color: MP.primary, iconSize: 20, onTap: () => _edit()),
           ],
         ),
       );
@@ -931,9 +957,13 @@ class _ConsentCardState extends State<_ConsentCard> {
 
 // ── Sheets ───────────────────────────────────────────────────────────────────
 
+/// The part of "Edit details" a Health details row opens on.
+enum _Focus { body, blood, emergency }
+
 class _EditSheet extends StatefulWidget {
   final _Me me;
-  const _EditSheet({required this.me});
+  final _Focus? focus;
+  const _EditSheet({required this.me, this.focus});
   @override
   State<_EditSheet> createState() => _EditSheetState();
 }
@@ -947,6 +977,31 @@ class _EditSheetState extends State<_EditSheet> {
   late final _ecPhone = TextEditingController(text: widget.me.emergencyPhone ?? '');
   late String _gender = widget.me.gender;
   late String? _blood = widget.me.bloodGroup;
+  final _focusKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    // Bring the tapped section into view.
+    if (widget.focus != null) {
+      // After the sheet has slid up (and the keyboard opened), so the whole section shows.
+      Future<void>.delayed(const Duration(milliseconds: 450), () {
+        final c = _focusKey.currentContext;
+        if (c != null && c.mounted) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 250), alignment: 0.15);
+      });
+    }
+  }
+
+  /// The tapped section, set apart with a soft blue panel.
+  Widget _part(_Focus f, Widget child) {
+    if (widget.focus != f) return child;
+    return Container(
+      key: _focusKey,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: MP.primarySoft, borderRadius: BorderRadius.circular(16), border: Border.all(color: MP.primaryLine)),
+      child: child,
+    );
+  }
 
   @override
   void dispose() {
@@ -1031,30 +1086,151 @@ class _EditSheetState extends State<_EditSheet> {
               ),
             ],
           ),
-          Row(
-            children: [
-              Expanded(
-                child: MpInput(label: 'Height', controller: _height, unit: 'cm', keyboard: const TextInputType.numberWithOptions(decimal: true), tab: true),
-              ),
-              const Gap(12),
-              Expanded(
-                child: MpInput(label: 'Weight', controller: _weight, unit: 'kg', keyboard: const TextInputType.numberWithOptions(decimal: true), tab: true),
-              ),
-            ],
+          _part(
+            _Focus.body,
+            Row(
+              children: [
+                Expanded(
+                  child: MpInput(
+                    label: 'Height',
+                    controller: _height,
+                    unit: 'cm',
+                    keyboard: const TextInputType.numberWithOptions(decimal: true),
+                    tab: true,
+                    autofocus: widget.focus == _Focus.body,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: MpInput(label: 'Weight', controller: _weight, unit: 'kg', keyboard: const TextInputType.numberWithOptions(decimal: true), tab: true),
+                ),
+              ],
+            ),
           ),
-          MpSelect(
-            label: 'Blood group',
-            value: _blood ?? 'Not added',
-            options: _bloodGroups,
-            leadingIcon: I.drop,
-            onChanged: (v) => setState(() => _blood = v),
+          _part(
+            _Focus.blood,
+            MpSelect(
+              label: 'Blood group',
+              value: _blood ?? 'Not added',
+              options: _bloodGroups,
+              leadingIcon: I.drop,
+              onChanged: (v) => setState(() => _blood = v),
+            ),
           ),
           const Gap(4),
-          const SectionLabel('Emergency contact', h: 1.35),
-          MpInput(label: 'Name', controller: _ecName, hint: 'e.g. Rohit Sharma'),
-          MpInput(label: 'Phone', controller: _ecPhone, prefixText: '+91', keyboard: TextInputType.phone, hint: '10-digit mobile', tab: true),
+          _part(
+            _Focus.emergency,
+            VGap(
+              gap: 16,
+              children: [
+                const SectionLabel('Emergency contact', h: 1.35),
+                MpInput(label: 'Name', controller: _ecName, hint: 'e.g. Rohit Sharma', autofocus: widget.focus == _Focus.emergency),
+                MpInput(label: 'Phone', controller: _ecPhone, prefixText: '+91', keyboard: TextInputType.phone, hint: '10-digit mobile', tab: true),
+              ],
+            ),
+          ),
           const Gap(4),
           MpButton('Save', onTap: _save),
+        ],
+      ),
+    );
+  }
+}
+
+/// Conditions or allergies: remove with ×, add by typing or a common one.
+class _ListSheet extends StatefulWidget {
+  final bool allergies;
+  final List<String> items;
+  const _ListSheet({required this.allergies, required this.items});
+  @override
+  State<_ListSheet> createState() => _ListSheetState();
+}
+
+class _ListSheetState extends State<_ListSheet> {
+  static const _commonConditions = ['Type 2 diabetes', 'High blood pressure', 'Thyroid', 'Asthma', 'PCOS', 'High cholesterol', 'Heart disease', 'Arthritis'];
+  static const _commonAllergies = ['Penicillin', 'Sulfa drugs', 'Aspirin', 'Ibuprofen', 'Peanuts', 'Shellfish', 'Dust', 'Lactose'];
+  late final List<String> _items = [...widget.items];
+  final _input = TextEditingController();
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  bool _has(String s) => _items.any((x) => x.toLowerCase() == s.toLowerCase());
+
+  void _add([String? text]) {
+    final s = (text ?? _input.text).trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (s.isEmpty) return;
+    setState(() {
+      if (!_has(s)) _items.add(s.length > 60 ? s.substring(0, 60) : s);
+      _input.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = widget.allergies;
+    final common = [for (final c in a ? _commonAllergies : _commonConditions) if (!_has(c)) c];
+    return MpSheet(
+      child: VGap(
+        gap: 16,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: P2SheetHeader(
+              title: a ? 'Allergies' : 'Conditions',
+              subtitle: a ? 'Your doctors are warned before prescribing these.' : 'Long-term health conditions your doctors should know about.',
+            ),
+          ),
+          if (_items.isEmpty)
+            Text(a ? 'No allergies added' : 'No conditions added', style: tx(14, c: MP.ink3))
+          else
+            Column(
+              children: [
+                for (var i = 0; i < _items.length; i++) ...[
+                  if (i > 0) const MpDivider(),
+                  SizedBox(
+                    height: 52,
+                    child: Row(
+                      children: [
+                        if (a) ...[const Ico(I.alert, size: 18, color: MP.amber, stroke: 2), const Gap(10)],
+                        Expanded(child: Text(_items[i], style: tx(16, w: w600))),
+                        MpIconButton(I.close, label: 'Remove ${_items[i]}', color: MP.ink3, iconSize: 18, onTap: () => setState(() => _items.removeAt(i))),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: MpInput(
+                  label: a ? 'Add an allergy' : 'Add a condition',
+                  controller: _input,
+                  hint: a ? 'e.g. Penicillin' : 'e.g. High blood pressure',
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const Gap(12),
+              SizedBox(width: 88, child: MpButton('Add', kind: MpBtn.secondary, onTap: _input.text.trim().isEmpty ? null : _add)),
+            ],
+          ),
+          if (common.isNotEmpty)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final c in common) MpChip(c, icon: I.plus, height: 36, fontSize: 13, onTap: () => _add(c))],
+            ),
+          const Gap(4),
+          MpButton('Save', onTap: () {
+            // Typed but not added yet: keep it too.
+            if (_input.text.trim().isNotEmpty) _add();
+            Navigator.pop(context, _items);
+          }),
         ],
       ),
     );

@@ -301,4 +301,38 @@ void main() {
     expect(t.takeException(), isNull);
     await _tearDown(t);
   });
+  testWidgets('Patient-Me health rows: Conditions / Allergies have their own sheet; others open their section', (t) async {
+    _serve();
+    await _pump(t, const PatientMeScreen(), stem: 'Patient-Me');
+
+    // Conditions: own sheet, add a common one, save → PATCH conditions (old entries kept as sent).
+    await _tap(t, find.text('Conditions'));
+    expect(find.text('Edit details'), findsNothing);
+    expect(find.text('Add a condition'), findsOneWidget);
+    await _tap(t, find.text('Thyroid'));
+    await _tap(t, find.text('Save'));
+    final conds = (_body('PATCH', '/api/patient/me') as Map)['conditions'] as List;
+    expect(conds.first['name'], 'Type 2 diabetes');
+    expect(conds.last, {'name': 'Thyroid'});
+
+    // Allergies: remove the one there, type a new one, save.
+    await _tap(t, find.text('Allergies'));
+    await _tap(t, find.bySemanticsLabel('Remove Sulfa drugs').first);
+    await t.enterText(find.byType(TextField).last, 'Penicillin');
+    await _settle(t);
+    await _tap(t, find.text('Save'));
+    expect((_body('PATCH', '/api/patient/me') as Map)['allergies'], [
+      {'allergen': 'Penicillin'},
+    ]);
+
+    // Blood group opens Edit details on that section.
+    await _tap(t, find.text('Blood group'));
+    expect(find.text('Edit details'), findsOneWidget);
+    expect(
+      find.ancestor(of: find.text('Blood group').last, matching: find.byWidgetPredicate((w) => w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == MP.primarySoft)),
+      findsWidgets,
+    );
+    expect(t.takeException(), isNull);
+    await _tearDown(t);
+  });
 }
