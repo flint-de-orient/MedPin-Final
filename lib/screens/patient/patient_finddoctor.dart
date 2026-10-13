@@ -1037,7 +1037,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
                 background: MP.primarySoft,
                 color: MP.primary,
                 onTap: () async {
-                  final said = await Voice.dictate(context, title: 'Describe what you need', hint: 'e.g. “Skin doctor near me for an itchy rash”');
+                  final said = await Voice.dictate(context, title: 'Describe what you need', hint: 'e.g. “Skin doctor near me for an itchy rash”', purpose: 'symptoms');
                   if (said != null && mounted) _search(said);
                 },
               ),

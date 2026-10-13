@@ -832,6 +832,14 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
   });
 
   await step('AI endpoints respond without a key (graceful fallback)', async () => {
+    // Speak-to-type: medicine names heard wrong are matched to the catalog (AI is off in tests).
+    const ph = ok(await ctx.doc('GET', '/api/me/voice/phrases'));
+    assert.ok(ph.phrases.includes('Metformin'));
+    const fixed = ok(await ctx.doc('POST', '/api/me/voice/clean', { text: 'met for min 500 twice daily after food', purpose: 'medicine' }));
+    assert.equal(fixed.text, 'Metformin 500 twice daily after food');
+    assert.equal(fixed.source, 'catalog');
+    const kept = ok(await ctx.pat('POST', '/api/me/voice/clean', { text: 'skin doctor near me', purpose: 'symptoms' }));
+    assert.equal(kept.text, 'skin doctor near me', 'nothing changed when nothing was misheard');
     const s = ok(await ctx.doc('POST', '/api/ai/sessions', { patientId: ctx.patientId }), 201);
     const out = ok(await ctx.doc('POST', `/api/ai/sessions/${s.id}/messages`, { text: 'Summarise this patient' }), 201);
     assert.ok(out.answer.text);

@@ -323,7 +323,7 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> with LiveData, 
     if (isLive) {
       // Say the medicine (or use the typed line); the voice screen reads dose and timing from it.
       var text = _medCtrl.text.trim();
-      if (text.isEmpty) text = await Voice.dictate(context, title: 'Say the medicine', hint: 'e.g. “Metformin 500 twice daily after food”') ?? '';
+      if (text.isEmpty) text = await Voice.dictate(context, title: 'Say the medicine', hint: 'e.g. “Metformin 500 twice daily after food”', purpose: 'medicine') ?? '';
       if (text.isEmpty || !mounted) return;
       final r = await Nav.go<D5MedResult>(context, 'Consult-Voice', args: {'text': text, 'consultationId': consultId});
       if (r?.item == null || !mounted) return;

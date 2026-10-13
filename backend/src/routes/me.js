@@ -117,6 +117,21 @@ me.post('/delete-request', async (req, res) => {
 });
 
 // ── Help and support ──
+// Words speech recognition should expect: the medicine catalog and common dose words.
+me.get('/voice/phrases', async (_req, res) => {
+  const meds = await M.Medicine.find({ active: { $ne: false } }, 'genericName brandNames').lean();
+  const names = [...new Set(meds.flatMap((m) => [m.genericName, ...(m.brandNames || [])]).filter(Boolean))];
+  res.json({ phrases: [...names, 'milligram', 'microgram', 'after food', 'before food', 'empty stomach', 'once a day', 'twice daily', 'at bedtime', 'when needed'].slice(0, 200) });
+});
+
+// Speak-to-type: misheard medicine names and medical words fixed before use (services/transcript.js).
+me.post('/voice/clean', async (req, res) => {
+  const { cleanTranscript } = require('../services/transcript');
+  const purpose = ['medicine', 'question', 'symptoms', 'note'].includes(req.body.purpose) ? req.body.purpose : 'note';
+  const alternates = Array.isArray(req.body.alternates) ? req.body.alternates.slice(0, 5).map(String) : [];
+  res.json(await cleanTranscript({ text: req.body.text, alternates, purpose, language: String(req.body.language || 'en').slice(0, 5) }));
+});
+
 me.get('/support', (_req, res) => res.json({ email: env.support.email || null, phone: env.support.phone || null, whatsapp: env.support.whatsapp || null }));
 
 me.post('/support', async (req, res) => {

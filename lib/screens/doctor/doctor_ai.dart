@@ -108,7 +108,7 @@ class _DoctorAiScreenState extends State<DoctorAiScreen> with LiveData {
 
   Future<void> _voice() async {
     if (isLive) {
-      final said = await Voice.dictate(context, title: 'Ask MedPin AI', hint: 'e.g. “Which patients have abnormal kidney results this month?”');
+      final said = await Voice.dictate(context, title: 'Ask MedPin AI', hint: 'e.g. “Which patients have abnormal kidney results this month?”', purpose: 'question');
       if (said != null && mounted) _ask(said, spoken: true);
       return;
     }

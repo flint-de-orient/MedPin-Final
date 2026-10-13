@@ -8,6 +8,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
+import 'patient_picker.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Doctor-Home.dc.html — "Home" (Clinician · tabs).
@@ -317,7 +318,7 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen> with LiveData {
   static const _quick = [
     (I.stethoscope, 'Start consultation', 'Consult-Pick'),
     (I.activity, 'Record vitals', 'Consult-Vitals'),
-    (I.fileText, 'Write prescription', 'Prescriptions'),
+    (I.fileText, 'Write prescription', 'PP-Prescriptions'),
   ];
 
   static const _alerts = [
@@ -452,6 +453,18 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen> with LiveData {
 
   // ── Quick actions ─────────────────────────────────────────────────────────
 
+  /// "Write prescription": choose the patient, then their profile's Prescriptions
+  /// tab (past prescriptions, and Start consultation to write a new one).
+  Future<void> _prescriptionFor(BuildContext context) async {
+    if (!isLive) {
+      Nav.go(context, 'PP-Prescriptions');
+      return;
+    }
+    final id = await pickPatient(context, title: 'Prescription for');
+    if (id == null || !context.mounted) return;
+    Nav.go(context, 'PP-Prescriptions', args: {'patientId': id});
+  }
+
   Widget _quickActions(BuildContext context) {
     // Consultations and prescriptions are for roles that prescribe (doctors);
     // assistants and dieticians keep "Record vitals".
@@ -467,7 +480,11 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen> with LiveData {
           for (var i = 0; i < quick.length; i++) ...[
             if (i > 0) const Gap(8),
             Expanded(
-              child: _QuickTile(icon: quick[i].$1, label: quick[i].$2, onTap: () => Nav.go(context, quick[i].$3)),
+              child: _QuickTile(
+                icon: quick[i].$1,
+                label: quick[i].$2,
+                onTap: () => quick[i].$3 == 'PP-Prescriptions' ? _prescriptionFor(context) : Nav.go(context, quick[i].$3),
+              ),
             ),
           ],
         ],

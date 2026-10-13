@@ -77,7 +77,7 @@ class _ConsultVoiceSheetState extends State<ConsultVoiceSheet> with SingleTicker
   Future<void> _sayAgain() async {
     _wave.forward(from: 0);
     if (!isLive) return;
-    final said = await Voice.dictate(context, title: 'Say the medicine', hint: 'e.g. “Metformin 500 twice daily after food”');
+    final said = await Voice.dictate(context, title: 'Say the medicine', hint: 'e.g. “Metformin 500 twice daily after food”', purpose: 'medicine');
     if (said == null || !mounted) return;
     setState(() {
       _said = said;

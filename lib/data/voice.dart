@@ -27,6 +27,35 @@ class Voice {
   /// "en-IN" / "bn-IN" / "hi-IN" from the account language.
   static String get localeId => switch (Session.I.user['language']) { 'bn' => 'bn-IN', 'hi' => 'hi-IN', _ => 'en-IN' };
 
+  /// The phone's own name for [want] ("en_IN" on Android, "en-IN" on iOS), else
+  /// the same language in another region, else [want] as is.
+  static Future<String> bestLocale(String want) async {
+    try {
+      final all = (await _stt.locales()).map((l) => l.localeId).toList();
+      String n(String s) => s.toLowerCase().replaceAll('_', '-');
+      final exact = all.where((l) => n(l) == n(want));
+      if (exact.isNotEmpty) return exact.first;
+      final lang = n(want).split('-').first;
+      final same = all.where((l) => n(l).split('-').first == lang).toList()
+        ..sort((a, b) => (n(b).endsWith('-in') ? 1 : 0) - (n(a).endsWith('-in') ? 1 : 0));
+      if (same.isNotEmpty) return same.first;
+    } catch (_) {}
+    return want;
+  }
+
+  /// Medicine names and medical words the recogniser should expect (catalog).
+  static List<String>? _phrases;
+  static Future<List<String>> phrases() async {
+    if (_phrases != null) return _phrases!;
+    try {
+      final r = await Api.I.get('/api/me/voice/phrases');
+      _phrases = [for (final p in (r is Map ? r['phrases'] as List? : null) ?? const []) '$p'];
+    } catch (_) {
+      return const [];
+    }
+    return _phrases!;
+  }
+
   static Future<bool> _initStt() async {
     if (_sttReady == true) return true;
     try {
@@ -38,28 +67,110 @@ class Voice {
   }
 
   /// Opens the listening sheet; returns what was said (null if cancelled).
-  static Future<String?> dictate(BuildContext context, {String title = 'Speak now', String? hint}) async {
+  /// [purpose]: 'medicine' (doctor dictating a medicine), 'question', 'symptoms'
+  /// or 'note' — misheard medical words are corrected for it before use.
+  static Future<String?> dictate(BuildContext context, {String title = 'Speak now', String? hint, String purpose = 'note'}) async {
     if (!await _initStt()) {
       if (context.mounted) toast(context, 'Speech input needs microphone access and Google speech services on this phone');
       return null;
     }
     if (!context.mounted) return null;
-    return openSheet<String>(context, (_) => _ListenSheet(title: title, hint: hint));
+    return openSheet<String>(context, (_) => _ListenSheet(title: title, hint: hint, purpose: purpose));
   }
 
   // ── Read aloud ──
   static final _tts = FlutterTts();
   static final speaking = ValueNotifier<String?>(null);
 
+  /// The language of [text] by its script (a Bengali answer is read in Bengali
+  /// even when the app is in English).
+  static String languageOf(String text) {
+    final bn = RegExp(r'[\u0980-\u09FF]').allMatches(text).length;
+    final hi = RegExp(r'[\u0900-\u097F]').allMatches(text).length;
+    final latin = RegExp(r'[A-Za-z]').allMatches(text).length;
+    if (bn > latin / 3 && bn >= hi) return 'bn-IN';
+    if (hi > latin / 3) return 'hi-IN';
+    return 'en-IN';
+  }
+
+  /// Text as it should be heard: no markdown, links or emoji; medical shorthand
+  /// read out ("1-0-1" → "1 in the morning and 1 at night", "mg" → "milligram").
+  static String spoken(String text) {
+    var s = text
+        .replaceAll(RegExp(r'https?://\S+'), ' ')
+        .replaceAll(RegExp(r'[*#_`>|~]'), ' ')
+        .replaceAll(RegExp(r'[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]', unicode: true), ' ')
+        .replaceAll(RegExp(r'^\s*[-•]\s+', multiLine: true), '');
+    s = s.replaceAllMapped(RegExp(r'\b(\d)\s*-\s*(\d)\s*-\s*(\d)\b'), (m) {
+      final parts = [
+        if (m[1] != '0') '${m[1]} in the morning',
+        if (m[2] != '0') '${m[2]} in the afternoon',
+        if (m[3] != '0') '${m[3]} at night',
+      ];
+      return parts.isEmpty ? m[0]! : parts.join(' and ');
+    });
+    const words = {
+      r'\bmg\b': 'milligram', r'\bmcg\b': 'microgram', r'\bml\b': 'millilitre', r'\bIU\b': 'units',
+      r'\bmmHg\b': 'millimetres of mercury', r'\bmg/dL\b': 'milligrams per decilitre', r'\bmmol/L\b': 'millimoles per litre',
+      r'\bHbA1c\b': 'H B A 1 C', r'\bBP\b': 'blood pressure', r'\bSOS\b': 'when needed', r'\bOD\b': 'once a day',
+      r'\bBD\b': 'twice a day', r'\bTDS\b': 'three times a day', r'\bSpO2\b': 'oxygen level', r'\bSpO₂\b': 'oxygen level',
+      r'\bTSH\b': 'T S H', r'\bCBC\b': 'C B C', r'\bECG\b': 'E C G', r'\bRx\b': 'prescription', r'\be\.g\.': 'for example',
+      r'\bDr\.': 'Doctor', r'₹\s?': 'rupees ',
+    };
+    words.forEach((k, v) => s = s.replaceAll(RegExp(k), v));
+    return s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  /// The best installed voice for [locale] (network / higher quality first).
+  static final _voices = <String, Map<String, String>?>{};
+  static Future<Map<String, String>?> _voiceFor(String locale) async {
+    if (_voices.containsKey(locale)) return _voices[locale];
+    Map<String, String>? best;
+    try {
+      final all = ((await _tts.getVoices) as List? ?? const []).whereType<Map>().map((v) => v.map((k, x) => MapEntry('$k', '$x'))).toList();
+      String n(String? s) => (s ?? '').toLowerCase().replaceAll('_', '-');
+      final mine = all.where((v) => n(v['locale']) == n(locale)).toList();
+      int rank(Map<String, String> v) {
+        final name = n(v['name']);
+        final q = n(v['quality']);
+        return (q.contains('very') ? 4 : q.contains('high') ? 3 : 0) + (name.contains('network') ? 2 : 0);
+      }
+      mine.sort((a, b) => rank(b) - rank(a));
+      if (mine.isNotEmpty) best = {'name': mine.first['name']!, 'locale': mine.first['locale']!};
+    } catch (_) {}
+    return _voices[locale] = best;
+  }
+
   /// Reads [text] aloud ([id] marks which answer is playing); again = stop.
   static Future<void> speak(String text, {String? id}) async {
     if (speaking.value == (id ?? text)) return stopSpeaking();
     await _tts.stop();
-    await _tts.setLanguage(localeId);
-    await _tts.setSpeechRate(0.5);
-    _tts.setCompletionHandler(() => speaking.value = null);
-    speaking.value = id ?? text;
-    await _tts.speak(text.replaceAll(RegExp(r'[*#_`>|]'), ' '));
+    final key = id ?? text;
+    speaking.value = key;
+    final locale = languageOf(text);
+    try {
+      await _tts.setLanguage(locale);
+      final voice = await _voiceFor(locale);
+      if (voice != null) await _tts.setVoice(voice);
+      await _tts.setSpeechRate(locale == 'en-IN' ? 0.47 : 0.44);
+      await _tts.setPitch(1.0);
+      await _tts.awaitSpeakCompletion(true);
+      // Sentence by sentence (long answers would be cut off), stopping if asked to.
+      final parts = spoken(text).split(RegExp(r'(?<=[.!?।])\s+')).where((p) => p.trim().isNotEmpty);
+      var chunk = '';
+      for (final p in [...parts, '']) {
+        if (p.isNotEmpty && (chunk.length + p.length) < 600) {
+          chunk = chunk.isEmpty ? p : '$chunk $p';
+          continue;
+        }
+        if (chunk.isNotEmpty) {
+          if (speaking.value != key) return;
+          await _tts.speak(chunk);
+        }
+        chunk = p;
+      }
+    } catch (_) {}
+    if (speaking.value == key) speaking.value = null;
   }
 
   static Future<void> stopSpeaking() async {
@@ -85,7 +196,8 @@ class Voice {
 class _ListenSheet extends StatefulWidget {
   final String title;
   final String? hint;
-  const _ListenSheet({required this.title, this.hint});
+  final String purpose;
+  const _ListenSheet({required this.title, this.hint, this.purpose = 'note'});
 
   @override
   State<_ListenSheet> createState() => _ListenSheetState();
@@ -94,6 +206,8 @@ class _ListenSheet extends StatefulWidget {
 class _ListenSheetState extends State<_ListenSheet> {
   String _text = '';
   bool _listening = false;
+  bool _checking = false;
+  final _edit = TextEditingController();
   late String _locale = Voice.localeId;
   static const _langs = [('en-IN', 'English'), ('bn-IN', 'বাংলা'), ('hi-IN', 'हिन्दी')];
 
@@ -106,19 +220,74 @@ class _ListenSheetState extends State<_ListenSheet> {
   @override
   void dispose() {
     Voice._stt.stop();
+    _edit.dispose();
     super.dispose();
   }
 
   Future<void> _start() async {
-    setState(() => _listening = true);
+    setState(() {
+      _listening = true;
+      _text = '';
+      _edit.text = '';
+    });
+    final locale = await Voice.bestLocale(_locale);
+    final phrases = widget.purpose == 'medicine' ? await Voice.phrases() : const <String>[];
+    if (!mounted) return;
     await Voice._stt.listen(
       onResult: (SpeechRecognitionResult r) {
         if (!mounted) return;
-        setState(() => _text = r.recognizedWords);
-        if (r.finalResult) setState(() => _listening = false);
+        if (!r.finalResult) {
+          setState(() => _text = r.recognizedWords);
+          return;
+        }
+        // The recogniser's most confident guess, then misheard medical words fixed.
+        final alts = [...r.alternates]..sort((a, b) => b.confidence.compareTo(a.confidence));
+        final best = alts.isNotEmpty && alts.first.recognizedWords.trim().isNotEmpty ? alts.first.recognizedWords : r.recognizedWords;
+        setState(() {
+          _text = best;
+          _edit.text = best;
+          _listening = false;
+        });
+        _clean(best, [for (final a in alts) a.recognizedWords]);
       },
-      listenOptions: SpeechListenOptions(localeId: _locale, partialResults: true, listenFor: const Duration(seconds: 60), pauseFor: const Duration(seconds: 4), cancelOnError: true),
+      listenOptions: SpeechListenOptions(
+        localeId: locale,
+        partialResults: true,
+        listenMode: ListenMode.dictation,
+        listenFor: const Duration(seconds: 90),
+        // Doctors pause to think between a name and its dose.
+        pauseFor: Duration(seconds: widget.purpose == 'medicine' ? 6 : 5),
+        cancelOnError: true,
+        autoPunctuation: true,
+        contextualPhrases: phrases.isEmpty ? null : phrases.take(100).toList(),
+      ),
     );
+  }
+
+  /// POST /api/me/voice/clean: catalog names and MedPin AI fix misheard words.
+  Future<void> _clean(String text, List<String> alternates) async {
+    if (!isLive || text.trim().isEmpty) return;
+    setState(() => _checking = true);
+    try {
+      final r = await Api.I.post('/api/me/voice/clean', {
+        'text': text,
+        'alternates': alternates.take(5).toList(),
+        'purpose': widget.purpose,
+        'language': _locale.split('-').first,
+      });
+      final fixed = r is Map ? '${r['text'] ?? ''}'.trim() : '';
+      // Only if the doctor hasn't started editing it.
+      if (mounted && fixed.isNotEmpty && _edit.text == text) {
+        setState(() {
+          _text = fixed;
+          _edit.text = fixed;
+        });
+      }
+    } catch (_) {
+      // Offline: what was heard stays, and can be edited.
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
   }
 
   Future<void> _switch(String locale) async {
@@ -144,11 +313,28 @@ class _ListenSheetState extends State<_ListenSheet> {
             constraints: const BoxConstraints(minHeight: 96),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: _listening ? MP.primary : MP.line)),
-            child: Text(
-              _text.isEmpty ? (_listening ? (widget.hint ?? 'Listening…') : "Didn't catch that. Tap Speak again.") : _text,
-              style: tx(17, h: 1.5, c: _text.isEmpty ? MP.ink3 : MP.ink),
-            ),
+            // While listening: the words as they come. After: the text, editable (fix a word before using it).
+            child: _listening || _text.isEmpty
+                ? Text(
+                    _text.isEmpty ? (_listening ? (widget.hint ?? 'Listening…') : "Didn't catch that. Tap Speak again.") : _text,
+                    style: tx(17, h: 1.5, c: _text.isEmpty ? MP.ink3 : MP.ink),
+                  )
+                : TextField(
+                    controller: _edit,
+                    maxLines: null,
+                    style: tx(17, h: 1.5),
+                    cursorColor: MP.primary,
+                    onChanged: (v) => setState(() => _text = v),
+                    decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
+                  ),
           ),
+          if (_checking) ...[
+            const Gap(8),
+            Text('Checking medical words…', style: tx(13, c: MP.ink3)),
+          ] else if (!_listening && _text.isNotEmpty) ...[
+            const Gap(8),
+            Text('Tap the text to fix a word.', style: tx(13, c: MP.ink3)),
+          ],
           const Gap(16),
           Row(
             children: [
@@ -157,7 +343,7 @@ class _ListenSheetState extends State<_ListenSheet> {
               ),
               const Gap(12),
               Expanded(
-                child: MpButton('Use this', onTap: _text.trim().isEmpty ? null : () => Navigator.pop(context, _text.trim())),
+                child: MpButton('Use this', onTap: _text.trim().isEmpty || _listening ? null : () => Navigator.pop(context, _edit.text.trim().isEmpty ? _text.trim() : _edit.text.trim())),
               ),
             ],
           ),
