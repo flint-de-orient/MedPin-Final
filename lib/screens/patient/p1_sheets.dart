@@ -436,17 +436,43 @@ class _P1LogHistorySheetState extends State<P1LogHistorySheet> with LiveData {
 /// Emergencies get the 108 strip; a suggested specialist opens Find a doctor.
 class P1AiAnswerSheet extends StatefulWidget {
   final String question;
-  final Map<String, dynamic> result;
-  const P1AiAnswerSheet({super.key, required this.question, required this.result});
+  final Map<String, dynamic>? result;
+  /// [result]: an answer already fetched; without it the sheet asks itself.
+  const P1AiAnswerSheet({super.key, required this.question, this.result});
 
   @override
   State<P1AiAnswerSheet> createState() => _P1AiAnswerSheetState();
 }
 
 class _P1AiAnswerSheetState extends State<P1AiAnswerSheet> {
-  late final List<(String, Map<String, dynamic>)> _turns = [(widget.question, widget.result)];
+  /// (question, answer); answer null while MedPin AI is still writing it,
+  /// {'failed': true} when it couldn't be fetched (tap to retry).
+  late final List<(String, Map<String, dynamic>?)> _turns = [(widget.question, widget.result)];
   final _follow = TextEditingController();
   final _busy = ValueNotifier(false);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.result == null) _fetch(0);
+  }
+
+  Future<void> _fetch(int i) async {
+    if (!isLive) {
+      setState(() => _turns[i] = (_turns[i].$1, {'answer': {'text': 'MedPin AI answers here.'}}));
+      return;
+    }
+    _busy.value = true;
+    try {
+      final res = await Api.I.post('/api/patient/ai/ask', {'text': _turns[i].$1, 'inputMode': 'typed'});
+      if (!mounted) return;
+      setState(() => _turns[i] = (_turns[i].$1, res is Map ? res.cast<String, dynamic>() : {'failed': true}));
+    } catch (_) {
+      if (mounted) setState(() => _turns[i] = (_turns[i].$1, const {'failed': true}));
+    } finally {
+      _busy.value = false;
+    }
+  }
 
   @override
   void dispose() {
@@ -457,19 +483,33 @@ class _P1AiAnswerSheetState extends State<P1AiAnswerSheet> {
 
   Future<void> _ask() async {
     final q = _follow.text.trim();
-    if (q.isEmpty) return;
-    if (!isLive) {
-      setState(() => _turns.add((q, {'answer': {'text': 'MedPin AI answers here.'}})));
-      _follow.clear();
-      return;
-    }
-    final res = await runAction(context, () => Api.I.post('/api/patient/ai/ask', {'text': q, 'inputMode': 'typed'}), busy: _busy);
-    if (res is! Map || !mounted) return;
-    setState(() => _turns.add((q, res.cast<String, dynamic>())));
+    if (q.isEmpty || _busy.value) return;
+    // The question shows at once; the answer fills in below it.
+    setState(() => _turns.add((q, null)));
     _follow.clear();
+    await _fetch(_turns.length - 1);
   }
 
-  Widget _answer(BuildContext context, Map<String, dynamic> result) {
+  Widget _answer(BuildContext context, Map<String, dynamic>? result, int i) {
+    if (result == null) return const _AiTyping();
+    if (result['failed'] == true) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: MpHitSlop(
+          child: Tap(
+            onTap: () {
+              setState(() => _turns[i] = (_turns[i].$1, null));
+              _fetch(i);
+            },
+            radius: 10,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text('Couldn’t reach MedPin AI · Tap to try again', style: tx(15, w: w600, c: MP.red)),
+            ),
+          ),
+        ),
+      );
+    }
     final emergency = result['emergency'] == true;
     final specialist = result.str('specialistKey');
     return Column(
@@ -521,7 +561,7 @@ class _P1AiAnswerSheetState extends State<P1AiAnswerSheet> {
                 child: Text(_turns[i].$1, style: tx(15, h: 1.45)),
               ),
             ),
-          _answer(context, _turns[i].$2),
+          _answer(context, _turns[i].$2, i),
         ],
         Row(
           children: [
@@ -537,6 +577,52 @@ class _P1AiAnswerSheetState extends State<P1AiAnswerSheet> {
       ],
     );
   }
+}
+
+/// Three dots pulsing in turn while MedPin AI writes an answer.
+class _AiTyping extends StatefulWidget {
+  const _AiTyping();
+
+  @override
+  State<_AiTyping> createState() => _AiTypingState();
+}
+
+class _AiTypingState extends State<_AiTyping> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        label: 'MedPin AI is writing',
+        child: Row(
+          children: [
+            const Ico(I.sparkle, size: 16, color: MP.primary, stroke: 2),
+            const Gap(10),
+            AnimatedBuilder(
+              animation: _c,
+              builder: (context, _) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < 3; i++) ...[
+                    if (i > 0) const SizedBox(width: 5),
+                    Opacity(
+                      opacity: 0.3 + 0.7 * (((_c.value * 3 - i) % 3) < 1 ? 1 - ((_c.value * 3 - i) % 3) : 0),
+                      child: Container(width: 8, height: 8, decoration: const BoxDecoration(color: MP.primary, shape: BoxShape.circle)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Gap(10),
+            Text('MedPin AI is writing…', style: tx(14, c: MP.ink2)),
+          ],
+        ),
+      );
 }
 
 /// Health score details: GET /api/patient/health-score (what the score is made of).

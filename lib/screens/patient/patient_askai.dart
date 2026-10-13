@@ -74,11 +74,11 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
       P1.closeWithToast(context, 'Sent to MedPin AI');
       return;
     }
-    final res = await runAction(context, () => Api.I.post('/api/patient/ai/ask', {'text': q, 'inputMode': 'typed'}), busy: _busy);
-    if (res is! Map || !mounted) return;
+    // Straight to the answer sheet: the question shows at once and MedPin AI
+    // "types" there while the answer comes.
     final nav = Navigator.of(context);
     nav.pop();
-    openSheet<void>(nav.context, (_) => P1AiAnswerSheet(question: q, result: res.cast<String, dynamic>()));
+    openSheet<void>(nav.context, (_) => P1AiAnswerSheet(question: q));
   }
 
   Future<void> _speak() async {

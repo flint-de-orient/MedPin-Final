@@ -267,7 +267,8 @@ async function patientAnswer(session, question, patient, { excludeId } = {}) {
     'Before answering, check your reply against the rules. Set breaks_rules true if it names a diagnosis, recommends a medicine or dose change, or recommends a test.',
     `Their record (JSON): ${patientContext(summary)}`,
   ].join('\n');
-  const out = await ai.completeJson({ system, messages, schema: PATIENT_ANSWER_SCHEMA, effort: 'medium' });
+  // Short answers for patients: low effort keeps them quick.
+  const out = await ai.completeJson({ system, messages, schema: PATIENT_ANSWER_SCHEMA, effort: 'low' });
   const emergencyWords = isEmergencyText(question);
   const fallback = emergencyWords
     ? 'This could be serious. Please call 108 or go to the nearest emergency department now, and use Emergency in the app to alert your doctor.'
