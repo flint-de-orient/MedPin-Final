@@ -702,6 +702,31 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await ctx.desk('POST', `/api/payments/${first.id}/mark-paid`, { method: 'upi' }));
     const fees = ok(await ctx.doc('GET', '/api/reports/fees'));
     assert.equal(fees.collected, 600);
+    const after = ok(await ctx.doc('GET', '/api/reports/summary?range=30_days'));
+    assert.equal(after.kpis.feesCollected.value, fees.collected, 'the Reports card and Fees report agree');
+    // Filters apply to every card (a location with no visits → all zero).
+    const none = ok(await ctx.doc('GET', '/api/reports/summary?range=30_days&locationIds=000000000000000000000000'));
+    assert.equal(none.kpis.consultations.value, 0);
+    assert.equal(none.kpis.prescriptions.value, 0, 'prescriptions follow the location filter');
+    assert.equal(none.kpis.feesCollected.value, 0, 'fees follow the location filter');
+    assert.equal(ok(await ctx.doc('GET', '/api/reports/fees?locationIds=000000000000000000000000')).collected, 0);
+    // A visit still "booked" after its day ended counts as missed.
+    const T = require('../src/lib/time');
+    const seen = await M.Appointment.findOne({ practiceId: ctx.practiceId, status: 'completed' }).lean();
+    const yesterday = T.addDays(T.dayStart(), -1);
+    const noShow = await M.Appointment.create({
+      practiceId: ctx.practiceId, locationId: seen.locationId, doctorId: seen.doctorId, patientId: seen.patientId,
+      date: yesterday, startAt: T.atMinute(yesterday, 11 * 60), endAt: T.atMinute(yesterday, 11 * 60 + 10), tokenNo: 99, status: 'booked', visitType: 'follow_up', mode: seen.mode,
+    });
+    const withMissed = ok(await ctx.doc('GET', '/api/reports/summary?range=30_days'));
+    assert.equal(withMissed.kpis.missed.value, after.kpis.missed.value + 1, 'booked and never came = missed');
+    // The nightly check marks it missed, so History shows it too (counted once).
+    await require('../src/services/jobs').noShows(new Date());
+    assert.equal((await M.Appointment.findById(noShow._id)).status, 'missed');
+    const hist = ok(await ctx.doc('GET', `/api/history?from=${T.dayKey(yesterday)}`));
+    assert.ok(hist.items.some((x) => x.id === String(noShow._id) && x.status === 'missed'), 'History lists the no-show as missed');
+    assert.equal(ok(await ctx.doc('GET', '/api/reports/summary?range=30_days')).kpis.missed.value, withMissed.kpis.missed.value);
+    await M.Appointment.deleteOne({ _id: noShow._id });
     ok(await ctx.doc('GET', '/api/reports/prescriptions'));
     ok(await ctx.doc('GET', '/api/reports/follow-ups'));
     ok(await ctx.doc('GET', '/api/reports/daily'));

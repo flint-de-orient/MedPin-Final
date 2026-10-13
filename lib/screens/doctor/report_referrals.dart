@@ -5,11 +5,13 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d3.dart';
+import 'patient_picker.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Report-Referrals.dc.html — "Report · Referrals".
 /// Live data: GET /api/referrals?direction=sent|received (period applied
-/// to `referredAt` on the device).
+/// to `referredAt` on the device). "Add a referral" posts /api/referrals;
+/// a row's sheet marks it seen (POST /api/referrals/:id/seen).
 class ReportReferralsScreen extends StatefulWidget {
   const ReportReferralsScreen({super.key});
 
@@ -237,9 +239,18 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
         children: [
           D3StatTiles(d.stats),
           if (d.bars.isNotEmpty) D3BarCard(title: d.barTitle, note: 'Referrals', rows: d.bars),
+          if (live) MpButton('Add a referral', kind: MpBtn.secondary, icon: I.plus, onTap: _add),
           D3SectionHead(d.listTitle, trailing: 'Newest first'),
           if (rows.isNotEmpty)
-            D3ListCard(children: [for (var i = 0; i < rows.length; i++) _row(rows[i], rawRows?[i])]),
+            D3ListCard(children: [for (var i = 0; i < rows.length; i++) _row(rows[i], rawRows?[i])])
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: Text(
+                _tab == 0 ? 'No referrals sent in this period.' : 'No referrals received in this period.',
+                style: tx(14, c: MP.ink3, h: 1.45),
+              ),
+            ),
           if (!_more[_tab] && d.more.isNotEmpty)
             D3ShowMore('Show ${d.more.length} more', onTap: () => setState(() => _more[_tab] = true)),
         ],
@@ -254,10 +265,144 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
       trailing: D3Badge(r.status, tone: r.seen ? D3Tone.green : D3Tone.amber),
       detail: r.detail,
       footer: Text(r.date, style: tx(13, c: MP.ink3)),
-      onTap: () => Nav.go(
-        context,
-        'PP-Summary',
-        args: raw == null ? null : {if (p is Map) 'patientId': p['id'], 'referralId': raw['id']},
+      onTap: raw == null ? () => Nav.go(context, 'PP-Summary') : () => _open(r, raw, p is Map ? '${p['id']}' : null),
+    );
+  }
+
+  Future<void> _add() async {
+    final ok = await openSheet<bool>(context, (_) => _AddReferralSheet(direction: _tab == 0 ? 'sent' : 'received'));
+    if (ok == true && mounted) {
+      toast(context, 'Referral added');
+      reload(quiet: true);
+    }
+  }
+
+  /// A referral: mark it seen, or open the patient.
+  Future<void> _open(_Ref r, Map<String, dynamic> raw, String? patientId) async {
+    final action = await openSheet<String>(
+      context,
+      (_) => MpSheet(
+        title: r.name,
+        subtitle: [r.detail, r.date].where((x) => x.isNotEmpty).join(' · '),
+        showClose: true,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 20),
+          child: VGap(
+            gap: 12,
+            children: [
+              if (raw['status'] == 'awaiting')
+                MpButton(_tab == 0 ? 'They have seen the patient' : 'I have seen the patient', icon: I.check, onTap: () => Navigator.pop(context, 'seen')),
+              if (patientId != null) MpButton('Open patient record', kind: MpBtn.secondary, onTap: () => Navigator.pop(context, 'patient')),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'patient') {
+      Nav.go(context, 'PP-Summary', args: {'patientId': patientId, 'referralId': raw['id']});
+      return;
+    }
+    final done = await runAction(context, () => Api.I.post('/api/referrals/${raw['id']}/seen', {}));
+    if (done != null && mounted) {
+      toast(context, 'Marked as seen');
+      reload(quiet: true);
+    }
+  }
+}
+
+/// Add a referral: sent to another doctor, or received from one.
+class _AddReferralSheet extends StatefulWidget {
+  final String direction;
+  const _AddReferralSheet({required this.direction});
+  @override
+  State<_AddReferralSheet> createState() => _AddReferralSheetState();
+}
+
+class _AddReferralSheetState extends State<_AddReferralSheet> {
+  late String _dir = widget.direction;
+  String? _patientId;
+  String _patientName = '';
+  final _who = TextEditingController();
+  final _specialty = TextEditingController();
+  final _reason = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    for (final c in [_who, _specialty, _reason]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _pick() async {
+    final id = await pickPatient(context, title: 'Who is referred?');
+    if (id == null || !mounted) return;
+    setState(() {
+      _patientId = id;
+      _patientName = 'Patient chosen';
+    });
+    try {
+      final p = await Api.I.get('/api/patients/$id');
+      if (mounted && p is Map) setState(() => _patientName = '${p['name'] ?? 'Patient chosen'}');
+    } on ApiException {
+      // The id is enough to save.
+    }
+  }
+
+  Future<void> _save() async {
+    if (_patientId == null) return toast(context, 'Choose the patient');
+    if (_who.text.trim().isEmpty) return toast(context, _dir == 'sent' ? 'Enter who you referred to' : 'Enter who referred them');
+    setState(() => _saving = true);
+    final r = await runAction(
+      context,
+      () => Api.I.post('/api/referrals', {
+        'patientId': _patientId,
+        'direction': _dir,
+        'counterpartName': _who.text.trim(),
+        if (_specialty.text.trim().isNotEmpty) 'specialty': _specialty.text.trim(),
+        if (_reason.text.trim().isNotEmpty) 'reason': _reason.text.trim(),
+      }),
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (r != null) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sent = _dir == 'sent';
+    return MpSheet(
+      title: 'Add a referral',
+      subtitle: 'It shows in Referrals and on the patient record.',
+      showClose: true,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 20),
+        child: VGap(
+          gap: 16,
+          children: [
+            MpSegmented(
+              options: const ['Sent', 'Received'],
+              index: sent ? 0 : 1,
+              height: 40,
+              fontSize: 14,
+              onChanged: (i) => setState(() => _dir = i == 0 ? 'sent' : 'received'),
+            ),
+            MpInput(
+              label: 'Patient',
+              value: _patientId == null ? '' : _patientName,
+              hint: 'Choose a patient',
+              readOnly: true,
+              onTap: _pick,
+              trailing: const Padding(padding: EdgeInsets.only(right: 12), child: Ico(I.chevronRight, size: 18, color: MP.ink3)),
+            ),
+            MpInput(label: sent ? 'Referred to' : 'Referred by', controller: _who, hint: 'e.g. Dr. Sourav Lahiri or AMRI Hospital'),
+            MpInput(label: 'Specialty', controller: _specialty, hint: 'e.g. Cardiology'),
+            MpInput(label: 'Reason', controller: _reason, hint: 'e.g. Rising creatinine'),
+            MpButton(_saving ? 'Saving…' : 'Save', onTap: _saving ? null : _save),
+          ],
+        ),
       ),
     );
   }

@@ -208,6 +208,14 @@ async function healthScores(now) {
   });
 }
 
+/** Booked / confirmed for a day that has ended and nobody came: marked missed
+ *  (History, Reports and follow-ups then agree). */
+async function noShows(now) {
+  const { transition } = require('./scheduling');
+  const stale = await M.Appointment.find({ status: { $in: ['booked', 'confirmed'] }, date: { $lt: T.dayStart(now) } }).limit(500);
+  for (const a of stale) await transition(a, 'missed').catch((err) => console.warn('[jobs] no-show', err.message));
+}
+
 // ── Runner ───────────────────────────────────────────────
 
 let timer = null;
@@ -223,7 +231,7 @@ async function tick() {
   for (const [name, job] of [
     ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)],
     ['followUps', () => followUpReminders(now)], ['lowStock', () => lowStock(now)], ['dailyLog', () => dailyLogReminders(now)], ['digest', () => dailyDigest(now)],
-    ['scores', () => healthScores(now)],
+    ['scores', () => healthScores(now)], ['noShows', () => noShows(now)],
     ['payouts', () => payouts(now)],
   ]) {
     try {
@@ -248,4 +256,4 @@ function stop() {
   timer = null;
 }
 
-module.exports = { start, stop, tick, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };
+module.exports = { noShows, start, stop, tick, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };

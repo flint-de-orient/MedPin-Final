@@ -54,18 +54,53 @@ async function visits(req, from, to, f, extra = {}) {
     .filter((a) => !f.ageGroups.length || f.ageGroups.includes(ageGroupOf(a.age)));
 }
 
+/** on_time / late / missed once known; "missed" 3 days after the due date with no visit booked. */
+function followUpOutcome(f, today = T.dayStart()) {
+  if (f.outcome) return f.outcome;
+  if (f.status === 'cancelled') return 'pending';
+  return f.dueDate < T.addDays(today, -3) && !['completed', 'booked'].includes(f.status) ? 'missed' : 'pending';
+}
+
 const avg = (arr) => (arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : null);
 const consultMin = (a) => (a.consultStartedAt && a.completedAt ? (new Date(a.completedAt) - new Date(a.consultStartedAt)) / 60000 : null);
 const delta = (now, prev) => (prev ? Math.round(((now - prev) / prev) * 100) : null);
 const countBy = (rows, key) => Object.entries(rows.reduce((acc, x) => { const k = key(x) ?? 'other'; acc[k] = (acc[k] || 0) + 1; return acc; }, {})).map(([k, n]) => ({ key: k, count: n })).sort((a, b) => b.count - a.count);
 
+const hasFilters = (f) => !!(f.locationIds.length || f.visitTypes.length || f.modes.length || f.ageGroups.length || f.doctorId);
+
+/** Booked, didn't come: marked missed, or still booked / confirmed after the day ended. */
+async function missedVisits(req, from, to, f) {
+  const today = T.dayStart();
+  return visits(req, from, to < today ? to : today, f, { status: { $in: ['missed', 'booked', 'confirmed'] } })
+    .then((rows) => rows.filter((a) => a.status === 'missed' || new Date(a.date) < today));
+}
+
+/** Payments of visits that match the filters (all visits in the practice when none are set). */
+async function paymentScope(req, from, to, f) {
+  if (!hasFilters(f)) return {};
+  const appts = await visits(req, T.addDays(from, -31), to, f, { status: { $nin: [] } });
+  return { appointmentId: { $in: appts.map((a) => a._id) } };
+}
+
+/** Digital prescriptions in range; with filters, only those from matching visits (or the chosen doctor). */
+async function rxScope(req, from, to, f) {
+  const q = { practiceId: req.practiceId, kind: 'digital', issuedAt: { $gte: from, $lt: to } };
+  if (f.doctorId) q.doctorId = f.doctorId === 'me' ? req.user._id : f.doctorId;
+  if (f.locationIds.length || f.visitTypes.length || f.modes.length || f.ageGroups.length) {
+    const appts = await visits(req, T.addDays(from, -1), to, f);
+    q.consultationId = { $in: await M.Consultation.find({ appointmentId: { $in: appts.map((a) => a._id) } }).distinct('_id') };
+  }
+  return q;
+}
+
 async function kpis(req, from, to, f) {
   const done = await visits(req, from, to, f);
-  const missed = await visits(req, from, to, f, { status: 'missed' });
+  const missed = await missedVisits(req, from, to, f);
   const ids = done.map((a) => a._id);
   const [rxCount, paid] = await Promise.all([
-    M.Prescription.countDocuments({ practiceId: req.practiceId, kind: 'digital', issuedAt: { $gte: from, $lt: to } }),
-    M.Payment.aggregate([{ $match: { practiceId: req.practiceId, status: 'paid', paidAt: { $gte: from, $lt: to } } }, { $group: { _id: null, sum: { $sum: '$amount' } } }]),
+    rxScope(req, from, to, f).then((q) => M.Prescription.countDocuments(q)),
+    paymentScope(req, from, to, f).then((scope) =>
+      M.Payment.aggregate([{ $match: { practiceId: req.practiceId, status: 'paid', paidAt: { $gte: from, $lt: to }, ...scope } }, { $group: { _id: null, sum: { $sum: '$amount' } } }])),
   ]);
   const times = done.map(consultMin).filter((x) => x != null);
   return {
@@ -76,7 +111,7 @@ async function kpis(req, from, to, f) {
     missed: missed.length,
     missedPct: done.length + missed.length ? Math.round((missed.length / (done.length + missed.length)) * 100) : 0,
     prescriptions: rxCount,
-    prescriptionPct: done.length ? Math.round((rxCount / done.length) * 100) : 0,
+    prescriptionPct: done.length ? Math.min(100, Math.round((rxCount / done.length) * 100)) : 0,
     feesCollected: paid[0]?.sum || 0,
   };
 }
@@ -90,7 +125,9 @@ r.get('/reports/summary', async (req, res) => {
   const perDay = {};
   for (let d = from; d < to; d = T.addDays(d, 1)) perDay[T.dayKey(d)] = 0;
   for (const a of now.done) perDay[T.dayKey(a.date)] = (perDay[T.dayKey(a.date)] || 0) + 1;
-  const fu = await M.FollowUp.find({ practiceId: req.practiceId, dueDate: { $gte: from, $lt: to }, outcome: { $ne: null } }, 'outcome').lean();
+  const fu = (await M.FollowUp.find({ practiceId: req.practiceId, dueDate: { $gte: from, $lt: to }, ...(f.doctorId ? { doctorId: f.doctorId === 'me' ? req.user._id : f.doctorId } : {}) }, 'outcome status dueDate').lean())
+    .map((x) => ({ outcome: followUpOutcome(x) }))
+    .filter((x) => x.outcome !== 'pending');
   const cmp = (k) => (prev ? { previous: prev[k], changePct: delta(now[k], prev[k]) } : {});
   res.json({
     range: { from, to, previousFrom: prev ? prevFrom : null, previousTo: prev ? prevTo : null },
@@ -152,14 +189,7 @@ r.get('/reports/consultations', async (req, res) => {
 
 r.get('/reports/prescriptions', async (req, res) => {
   const { from, to } = rangeOf(req.query);
-  const q = { practiceId: req.practiceId, kind: 'digital', issuedAt: { $gte: from, $lt: to } };
-  if (req.query.doctorId) q.doctorId = req.query.doctorId === 'me' ? req.user._id : req.query.doctorId;
-  const f = filtersOf(req.query);
-  if (f.locationIds.length || f.visitTypes.length || f.modes.length || f.ageGroups.length) {
-    // Only prescriptions from visits that match the filters.
-    const appts = await visits(req, T.addDays(from, -1), to, f);
-    q.consultationId = { $in: await M.Consultation.find({ appointmentId: { $in: appts.map((a) => a._id) } }).distinct('_id') };
-  }
+  const q = await rxScope(req, from, to, filtersOf(req.query));
   let rx = await M.Prescription.find(q).sort({ issuedAt: -1 }).populate('patientId', 'name').lean();
   if (req.query.q) {
     const re = new RegExp(escapeRegex(req.query.q), 'i');
@@ -177,8 +207,13 @@ r.get('/reports/prescriptions', async (req, res) => {
 
 r.get('/reports/fees', async (req, res) => {
   const { from, to } = rangeOf(req.query);
-  const rows = await visits(req, from, to, filtersOf(req.query));
-  const payments = await M.Payment.find({ practiceId: req.practiceId, createdAt: { $gte: from, $lt: to } }).populate('patientId', 'name').populate('locationId', 'name shortName').populate('appointmentId', 'startAt mode').lean();
+  const f = filtersOf(req.query);
+  const rows = await visits(req, from, to, f);
+  const scope = await paymentScope(req, from, to, f);
+  const payments = await M.Payment.find({
+    practiceId: req.practiceId, ...scope,
+    $or: [{ status: 'paid', paidAt: { $gte: from, $lt: to } }, { status: 'pending', createdAt: { $gte: from, $lt: to } }],
+  }).populate('patientId', 'name').populate('locationId', 'name shortName').populate('appointmentId', 'startAt mode').lean();
   const paid = payments.filter((p) => p.status === 'paid');
   const sumBy = (arr, key) => Object.entries(arr.reduce((acc, x) => { const k = key(x) || 'other'; acc[k] = (acc[k] || 0) + x.amount; return acc; }, {})).map(([k, amount]) => ({ key: k, amount }));
   res.json({
@@ -194,9 +229,11 @@ r.get('/reports/fees', async (req, res) => {
 
 r.get('/reports/follow-ups', async (req, res) => {
   const { from, to } = rangeOf(req.query);
-  const fus = await M.FollowUp.find({ practiceId: req.practiceId, dueDate: { $gte: from, $lt: to } }).populate('patientId', 'name phone gender ageYears ageRecordedAt conditions').lean();
+  const f0 = filtersOf(req.query);
+  const fus = await M.FollowUp.find({ practiceId: req.practiceId, dueDate: { $gte: from, $lt: to }, status: { $ne: 'cancelled' }, ...(f0.doctorId ? { doctorId: f0.doctorId === 'me' ? req.user._id : f0.doctorId } : {}) })
+    .populate('patientId', 'name phone gender ageYears ageRecordedAt conditions').lean();
   const today = T.dayStart();
-  const outcome = (f) => f.outcome || (f.dueDate < T.addDays(today, -3) && !['completed', 'booked'].includes(f.status) ? 'missed' : 'pending');
+  const outcome = followUpOutcome;
   const decided = fus.filter((f) => outcome(f) !== 'pending');
   const byCondition = {};
   for (const f of decided) {

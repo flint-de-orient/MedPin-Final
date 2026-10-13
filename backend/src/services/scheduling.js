@@ -180,7 +180,18 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
   await appt.save();
 
   if (to === 'completed' || to === 'missed') {
-    const fu = await M.FollowUp.findOne({ appointmentId: appt._id });
+    let fu = await M.FollowUp.findOne({ appointmentId: appt._id });
+    // Came back on an ordinary booking or as a walk-in: that is the follow-up visit too
+    // (one due within the next 2 weeks, or overdue).
+    if (!fu && to === 'completed') {
+      fu = await M.FollowUp.findOne({
+        practiceId: appt.practiceId, patientId: appt.patientId, status: { $in: ['not_booked', 'no_reply', 'booked'] },
+        dueDate: { $lte: T.addDays(now, 14) },
+        // Not the one this visit just asked for.
+        createdAt: { $lt: appt.consultStartedAt || appt.arrivedAt || appt.startAt },
+      }).sort({ dueDate: 1 });
+      if (fu) fu.appointmentId = appt._id;
+    }
     if (fu) {
       if (to === 'completed') {
         fu.status = 'completed';

@@ -83,9 +83,23 @@ class _ReportFeesScreenState extends State<ReportFeesScreen> with LiveData, D3Fi
     toast(context, '${_pending[i].$1} marked as paid');
   }
 
-  /// "Mark as paid" — recorded as cash, the usual case at the desk.
+  /// "Mark as paid": how it was paid (cash, UPI or card), so collections by method are right.
   Future<void> _markPaidLive(Map<String, dynamic> p) async {
-    final res = await runAction(context, () => Api.I.post('/api/payments/${p['id']}/mark-paid', {'method': 'cash'}), busy: _busy);
+    const methods = [('cash', 'Cash'), ('upi', 'UPI'), ('card', 'Card')];
+    final method = await openSheet<String>(
+      context,
+      (c) => MpSheet(
+        title: 'How was it paid?',
+        subtitle: '${p.str('patient', 'Patient')} · ₹${F.count(p.numOr('amount'))}',
+        showClose: true,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: VGap(gap: 12, children: [for (final m in methods) MpButton(m.$2, kind: MpBtn.secondary, onTap: () => Navigator.pop(c, m.$1))]),
+        ),
+      ),
+    );
+    if (method == null || !mounted) return;
+    final res = await runAction(context, () => Api.I.post('/api/payments/${p['id']}/mark-paid', {'method': method}), busy: _busy);
     if (res == null || !mounted) return;
     toast(context, '${p.str('patient', 'Patient')} marked as paid');
     reload(quiet: true);

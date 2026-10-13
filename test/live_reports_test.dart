@@ -247,8 +247,11 @@ void main() {
     await t.ensureVisible(find.text('Mark as paid').first);
     await t.tap(find.text('Mark as paid').first);
     await _settle(t);
+    expect(find.text('How was it paid?'), findsOneWidget);
+    await t.tap(find.text('UPI').last);
+    await _settle(t);
     final paid = _requests('POST', '/api/payments/$id/mark-paid').single;
-    expect(jsonDecode(paid.body), {'method': 'cash'});
+    expect(jsonDecode(paid.body), {'method': 'upi'});
     expect(find.text('${pending.first['patient']} marked as paid'), findsOneWidget);
 
     await t.tap(find.text('Send payment link').first);
@@ -305,6 +308,15 @@ void main() {
     expect(find.text((s['patientId'] as Map)['name'] as String), findsOneWidget);
     expect(find.text('To ${s['counterpartName']} · ${s['specialty']} · ${s['reason']}'), findsOneWidget);
     expect(find.text('Awaiting'), findsWidgets);
+    expect(find.text('Add a referral'), findsOneWidget);
+    // An awaiting referral can be marked seen.
+    final waiting = sent.firstWhere((x) => x['status'] == 'awaiting');
+    await t.ensureVisible(find.text((waiting['patientId'] as Map)['name'] as String).first);
+    await t.tap(find.text((waiting['patientId'] as Map)['name'] as String).first);
+    await _settle(t);
+    await t.tap(find.text('They have seen the patient'));
+    await _settle(t);
+    expect(_requests('POST', '/api/referrals/${waiting['id']}/seen'), hasLength(1));
 
     await t.tap(find.text('Received · ${received.length}'));
     await t.pump();
