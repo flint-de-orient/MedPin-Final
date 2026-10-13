@@ -919,6 +919,11 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const home = ok(await ctx.pat('GET', '/api/patient/home'));
     assert.ok(home.deviceSync?.at, 'Home shows the last sync');
     assert.deepEqual([home.deviceSync.readings, home.deviceSync.stepDays], [0, 1], 'the last sync says what it brought in');
+    assert.ok(!home.deviceSync.devices?.watch?.at, 'no watch app in the data: not connected');
+    ok(await ctx.pat('POST', '/api/patient/device-sync', { source: 'Health Connect', days: [], readings: [], origins: ['com.android.healthconnect.controller', 'com.mi.health'] }));
+    const dev = ok(await ctx.pat('GET', '/api/patient/home')).deviceSync.devices;
+    assert.deepEqual(dev.watch.apps, ['Mi Fitness'], 'a watch app counts as a watch');
+    assert.ok(!dev.ring?.at, 'no ring');
     // Steps counted by the phone itself (no watch): shown as "counted by your phone".
     ok(await ctx.pat('POST', '/api/patient/device-sync', { source: 'Phone', stepSource: 'phone', days: [{ date: day, steps: 7100, source: 'phone' }], readings: [] }));
     const home2 = ok(await ctx.pat('GET', '/api/patient/home'));

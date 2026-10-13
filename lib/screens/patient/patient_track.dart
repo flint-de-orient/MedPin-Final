@@ -30,8 +30,8 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
   ];
   /// Watches and rings sync through Health Connect (Android) or Apple Health.
   static const _devices = [
-    ('Smartwatch', 'Fitbit, Samsung, Mi, Noise, boAt and more'),
-    ('Smart ring', 'Oura, Ultrahuman, Samsung Galaxy Ring and more'),
+    ('watch', 'Smartwatch', 'Fitbit, Samsung, Mi, Noise, boAt and more'),
+    ('ring', 'Smart ring', 'Oura, Ultrahuman, RingConn and more'),
   ];
 
   final List<bool> _on = [true, true, false, false, false, false];
@@ -42,7 +42,12 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
     final me = (await Api.I.get('/api/patient/me') as Map).cast<String, dynamic>();
     final sync = (me['deviceSync'] as Map?)?.cast<String, dynamic>();
     _synced = F.date(sync?['at']);
-    _source = sync?['source'] as String?;
+    final devices = (sync?['devices'] as Map?)?.cast<String, dynamic>() ?? const {};
+    _seen = {
+      for (final k in ['watch', 'ring'])
+        if (devices[k] is Map && F.date((devices[k] as Map)['at']) != null)
+          k: (at: F.date((devices[k] as Map)['at'])!, app: [for (final a in ((devices[k] as Map)['apps'] as List? ?? const [])) '$a'].join(', ')),
+    };
     final tracked = {for (final m in (me['trackedMeasures'] as List? ?? const [])) '$m'};
     for (var i = 0; i < _items.length; i++) {
       _on[i] = tracked.contains(_items[i].key);
@@ -60,12 +65,13 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
 
   /// The last watch / ring sync (from the Home data the server keeps).
   DateTime? _synced;
-  String? _source;
+  /// When data last came from a watch / ring app, and which app.
+  Map<String, ({DateTime at, String app})> _seen = {};
 
   Future<void> _connect() async {
     if (!isLive) return toast(context, 'Connect your watch or ring');
     final ok = await DeviceSync.connect(context);
-    if (ok && mounted) setState(() => _synced = DateTime.now());
+    if (ok && mounted) reload(quiet: true);
   }
 
   void _toggle(int i) {
@@ -137,19 +143,22 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(_devices[i].$1, style: tx(15, w: w600)),
+                                Text(_devices[i].$2, style: tx(15, w: w600)),
                                 const Gap(1),
-                                Text(_synced == null ? _devices[i].$2 : 'Syncs through ${_source ?? 'your phone'} · ${F.ago(_synced!)}', style: tx(13, c: MP.ink2)),
+                                Text(
+                                  _seen[_devices[i].$1] != null
+                                      ? '${_seen[_devices[i].$1]!.app} · last data ${F.ago(_seen[_devices[i].$1]!.at)}'
+                                      : _synced != null
+                                          ? 'No data from a ${_devices[i].$1} yet · ${_devices[i].$3}'
+                                          : _devices[i].$3,
+                                  style: tx(13, c: MP.ink2),
+                                ),
                               ],
                             ),
                           ),
                           const Gap(12),
-                          if (!isLive)
-                            const MpBadge.blue('Connect')
-                          else if (_synced == null)
-                            const MpBadge.blue('Connect')
-                          else
-                            const MpBadge.green('Connected'),
+                          // Connected only when data has really come from that kind of device.
+                          if (isLive && _seen[_devices[i].$1] != null) const MpBadge.green('Connected') else const MpBadge.blue('Connect'),
                         ],
                       ),
                     ),

@@ -107,9 +107,10 @@ class DeviceSync {
           stepSource = 'phone';
         }
       }
-      final points = has
-          ? _health.removeDuplicates(await _health.getHealthDataFromTypes(types: _types.where((t) => t != HealthDataType.STEPS).toList(), startTime: from, endTime: now))
-          : <HealthDataPoint>[];
+      // Every point (steps too): which app wrote it tells a watch / ring from the phone.
+      final all = has ? _health.removeDuplicates(await _health.getHealthDataFromTypes(types: _types, startTime: from, endTime: now)) : <HealthDataPoint>[];
+      final origins = {for (final p in all) if (p.sourceName.isNotEmpty) p.sourceName}.toList();
+      final points = all.where((p) => p.type != HealthDataType.STEPS).toList();
       final readings = <Map<String, Object?>>[];
       num? val(HealthDataPoint p) => p.value is NumericHealthValue ? (p.value as NumericHealthValue).numericValue : null;
       // Heart rate and SpO₂: the latest of each day is enough.
@@ -141,6 +142,7 @@ class DeviceSync {
       final res = await Api.I.post('/api/patient/device-sync', {
         'source': has ? (Platform.isIOS ? 'Apple Health' : 'Health Connect') : 'Phone',
         'stepSource': stepSource,
+        'origins': origins,
         'days': days,
         'readings': readings,
       }) as Map;

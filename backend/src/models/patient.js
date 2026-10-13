@@ -49,7 +49,11 @@ const patientSchema = new Schema(
     area: String, // "near Salt Lake" for doctor search
     geo: pointSchema,
     riskLevel: enumOf(E.RISK_LEVELS),
-    deviceSync: { at: Date, source: String, readings: Number, stepDays: Number }, // last watch / phone sync and what it brought in
+    // Last watch / phone sync, what it brought in, and when data last came from a watch or ring app.
+    deviceSync: {
+      at: Date, source: String, readings: Number, stepDays: Number,
+      devices: { watch: { at: Date, apps: [String] }, ring: { at: Date, apps: [String] } },
+    },
     // Who sees the daily log (meals, exercise, steps): the patient's choice. Unset: those whose access includes the log.
     logShareWith: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: undefined },
     healthScore: { value: { type: Number, min: 0, max: 100 }, weeklyDelta: Number, computedAt: Date },

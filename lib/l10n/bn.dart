@@ -1496,6 +1496,8 @@ const Map<String, String> bn = {
   'No conversations yet': 'এখনও কোনো কথোপকথন নেই',
   'No conversations yet. Ask MedPin AI anything from the AI Assistant.': 'এখনও কোনো কথোপকথন নেই। AI সহকারী থেকে MedPin AI-কে যেকোনো কিছু জিজ্ঞেস করুন।',
   'No current medicines': 'বর্তমানে কোনো ওষুধ নেই',
+  'No data from a ring yet · Oura, Ultrahuman, RingConn and more': 'এখনও রিং থেকে কোনো তথ্য আসেনি · Oura, Ultrahuman, RingConn ও আরও',
+  'No data from a watch yet · Fitbit, Samsung, Mi, Noise, boAt and more': 'এখনও ঘড়ি থেকে কোনো তথ্য আসেনি · Fitbit, Samsung, Mi, Noise, boAt ও আরও',
   'No declined requests.': 'কোনো প্রত্যাখ্যাত অনুরোধ নেই।',
   'No departments added yet': 'এখনও কোনো বিভাগ যোগ হয়নি',
   'No devices signed in': 'কোনো যন্ত্রে সাইন ইন নেই',

@@ -1496,6 +1496,8 @@ const Map<String, String> hi = {
   'No conversations yet': 'अभी कोई बातचीत नहीं',
   'No conversations yet. Ask MedPin AI anything from the AI Assistant.': 'अभी कोई बातचीत नहीं। AI सहायक से MedPin AI से कुछ भी पूछें।',
   'No current medicines': 'अभी कोई दवा नहीं',
+  'No data from a ring yet · Oura, Ultrahuman, RingConn and more': 'अभी रिंग से कोई डेटा नहीं आया · Oura, Ultrahuman, RingConn और भी',
+  'No data from a watch yet · Fitbit, Samsung, Mi, Noise, boAt and more': 'अभी घड़ी से कोई डेटा नहीं आया · Fitbit, Samsung, Mi, Noise, boAt और भी',
   'No declined requests.': 'कोई मना किया अनुरोध नहीं।',
   'No departments added yet': 'अभी कोई विभाग नहीं जोड़ा',
   'No devices signed in': 'किसी डिवाइस पर साइन इन नहीं',

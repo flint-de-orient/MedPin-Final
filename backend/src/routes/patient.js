@@ -885,8 +885,16 @@ r.post('/device-sync', async (req, res) => {
     }
   }
   const source = String(req.body.source || 'device').slice(0, 40);
-  // What the last sync brought in (the app says "no new readings" when nothing came).
-  await M.Patient.updateOne({ _id: p._id }, { deviceSync: { at: new Date(), source, readings: added, stepDays: steps } });
+  // What the last sync brought in, and which watch / ring apps the data came from.
+  const { classifyOrigins } = require('../services/devices');
+  const found = classifyOrigins(Array.isArray(req.body.origins) ? req.body.origins.slice(0, 50).map(String) : []);
+  const prev = p.deviceSync || {};
+  const now = new Date();
+  const devices = {
+    watch: found.watch.length ? { at: now, apps: found.watch } : prev.devices?.watch,
+    ring: found.ring.length ? { at: now, apps: found.ring } : prev.devices?.ring,
+  };
+  await M.Patient.updateOne({ _id: p._id }, { deviceSync: { at: now, source, readings: added, stepDays: steps, devices } });
   res.json({ days: steps, readings: added, alerted, at: new Date(), source });
 });
 
