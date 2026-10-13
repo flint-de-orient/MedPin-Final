@@ -32,6 +32,7 @@ class P1 {
       sub: '7.4%, a little above your target',
       cta: 'See what it means',
       icon: I.fileText,
+      image: 'assets/images/hero_report.jpg',
       stem: 'Patient-Records',
     ),
     P1Slide(
@@ -97,6 +98,7 @@ class P1 {
                 : '${names.take(2).join(', ')} ${names.length == 1 ? 'is' : 'are'} ${report.str('abnormalDirection', 'high')}',
         cta: 'See what it means',
         icon: I.fileText,
+        image: 'assets/images/hero_report.jpg',
         stem: 'Patient-Records',
         args: report['recordId'] == null ? null : {'recordId': report['recordId']},
       ));
