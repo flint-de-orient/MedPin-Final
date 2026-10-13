@@ -200,6 +200,14 @@ r.get('/home', async (req, res) => {
     weight: series((v) => ({ value: v.weightKg })),
     heart_rate: series((v) => ({ value: v.pulse })),
     spo2: series((v) => ({ value: v.spo2 })),
+    // HbA1c comes from lab reports (the last 7 results).
+    hba1c: (await M.LabResult.find({ patientId: p._id, 'values.analyte': /hba1c|glycated|a1c/i }, 'collectedAt values').sort({ collectedAt: 1 }))
+      .map((r) => {
+        const x = r.values.find((v) => /hba1c|glycated|a1c/i.test(v.analyte || ''));
+        return { at: r.collectedAt, value: x?.value ?? (Number.isFinite(parseFloat(x?.valueText)) ? parseFloat(x.valueText) : null) };
+      })
+      .filter((x) => x.value != null)
+      .slice(-7),
   };
   res.json({
     latestPrescription: useUpload

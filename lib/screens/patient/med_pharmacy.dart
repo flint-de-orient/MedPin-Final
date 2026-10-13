@@ -181,6 +181,14 @@ class _MedPharmacyScreenState extends State<MedPharmacyScreen> with LiveData {
     ).popUntil((r) => r.isFirst || (r.settings.name != 'Med-Pharmacy' && r.settings.name != 'Med-Cart'));
   }
 
+  /// The prescriptions ticked in the cart go with the order.
+  String get _rxLine {
+    final a = (Nav.args<Map>(context) ?? const {})['attach'];
+    if (a is! List) return 'Prescriptions go with your order automatically.';
+    if (a.isEmpty) return 'No prescription goes with this order. The pharmacy may ask for one.';
+    return '${a.length} ${a.length == 1 ? 'prescription goes' : 'prescriptions go'} with your order so the pharmacy can check it.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final placeholder = livePlaceholder();
@@ -255,9 +263,7 @@ class _MedPharmacyScreenState extends State<MedPharmacyScreen> with LiveData {
                   children: [
                     const Ico(I.fileText, size: 18, color: MP.ink2),
                     const Gap(12),
-                    Expanded(child: Text('Prescriptions go with your order automatically.', style: tx(13, h: 1.4))),
-                    const Gap(12),
-                    const P2Pill('Coming soon', bg: MP.white, fontSize: 11),
+                    Expanded(child: Text(_rxLine, style: tx(13, h: 1.4))),
                   ],
                 ),
               ),

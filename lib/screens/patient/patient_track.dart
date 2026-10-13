@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
+import '../../data/device_sync.dart';
+import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
@@ -26,7 +28,11 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
     (key: 'weight', name: 'Weight', source: 'You log it'),
     (key: 'spo2', name: 'SpO₂', source: 'From a device'),
   ];
-  static const _devices = ['Smartwatch', 'Smart ring'];
+  /// Watches and rings sync through Health Connect (Android) or Apple Health.
+  static const _devices = [
+    ('Smartwatch', 'Fitbit, Samsung, Mi, Noise, boAt and more'),
+    ('Smart ring', 'Oura, Ultrahuman, Samsung Galaxy Ring and more'),
+  ];
 
   final List<bool> _on = [true, true, false, false, false, false];
   final _busy = ValueNotifier(false);
@@ -34,6 +40,9 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
   @override
   Future<Object?> fetch() async {
     final me = (await Api.I.get('/api/patient/me') as Map).cast<String, dynamic>();
+    final sync = (me['deviceSync'] as Map?)?.cast<String, dynamic>();
+    _synced = F.date(sync?['at']);
+    _source = sync?['source'] as String?;
     final tracked = {for (final m in (me['trackedMeasures'] as List? ?? const [])) '$m'};
     for (var i = 0; i < _items.length; i++) {
       _on[i] = tracked.contains(_items[i].key);
@@ -48,6 +57,16 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
   }
 
   int get _count => _on.where((v) => v).length;
+
+  /// The last watch / ring sync (from the Home data the server keeps).
+  DateTime? _synced;
+  String? _source;
+
+  Future<void> _connect() async {
+    if (!isLive) return toast(context, 'Connect your watch or ring');
+    final ok = await DeviceSync.connect(context);
+    if (ok && mounted) setState(() => _synced = DateTime.now());
+  }
 
   void _toggle(int i) {
     // Pick up to 4.
@@ -105,17 +124,43 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
                   child: Text('SYNC FROM A DEVICE', style: tx(12, w: w700, c: MP.ink3, em: 0.06)),
                 ),
                 for (var i = 0; i < _devices.length; i++)
-                  Container(
-                    height: i == 0 ? 52 : 53,
-                    decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(_devices[i], style: tx(15, w: w600, c: MP.ink2))),
-                        const Gap(12),
-                        const MpBadge.grey('Coming soon'),
-                      ],
+                  Tap(
+                    onTap: _connect,
+                    radius: 0,
+                    child: Container(
+                      constraints: BoxConstraints(minHeight: i == 0 ? 56 : 57),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_devices[i].$1, style: tx(15, w: w600)),
+                                const Gap(1),
+                                Text(_synced == null ? _devices[i].$2 : 'Syncs through ${_source ?? 'your phone'} · ${F.ago(_synced!)}', style: tx(13, c: MP.ink2)),
+                              ],
+                            ),
+                          ),
+                          const Gap(12),
+                          if (!isLive)
+                            const MpBadge.blue('Connect')
+                          else if (_synced == null)
+                            const MpBadge.blue('Connect')
+                          else
+                            const MpBadge.green('Connected'),
+                        ],
+                      ),
                     ),
                   ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Turn on Health Connect sync in your watch or ring app, then tap Connect.',
+                    style: tx(12, c: MP.ink3, h: 1.4),
+                  ),
+                ),
               ],
             ),
             MpButton('Save · $_count selected', onTap: data == null && isLive ? null : _save),

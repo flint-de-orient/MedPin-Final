@@ -940,6 +940,10 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.deepEqual(ok(await ctx.pat('GET', '/api/patient/home')).logSharedWith.map((x) => String(x.userId)), [everyone[0]]);
     ok(await ctx.pat('PUT', '/api/patient/log-sharing', { userIds: [] }));
     assert.equal(ok(await ctx.pat('GET', '/api/patient/home')).logSharedWith.length, 0, 'private');
+    // HbA1c on Home comes from lab reports.
+    await M.LabResult.create({ patientId: ctx.patientId, testName: 'HbA1c', collectedAt: new Date(), values: [{ analyte: 'HbA1c', value: 7.4, unit: '%' }] });
+    const tr = ok(await ctx.pat('GET', '/api/patient/home')).tracked;
+    assert.equal(tr.hba1c.at(-1).value, 7.4);
 
     // Proof review: the signed link works, a wrong token doesn't, approving tells the doctor.
     const prof = ok(await ctx.doc('POST', '/api/doctor/qualifications', { name: 'MBBS', institution: 'Calcutta Medical College', year: 2010 }), 201);

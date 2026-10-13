@@ -177,7 +177,11 @@ void main() {
     expect(find.text('Diabetes & thyroid · City Care Clinic'), findsOneWidget);
     expect(find.text('Metformin 0% · Glimepiride 0%'), findsOneWidget);
     expect(find.textContaining('Most misses are in the morning.', findRichText: true), findsOneWidget);
-    await _tap(t, find.text('Set'));
+    // Reminders are on, so it offers to change the time: pick one, then OK.
+    await _tap(t, find.text('Change'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('OK'));
+    await t.pumpAndSettle();
     final body = _body('PATCH', '/api/patient/me');
     expect((body['settings'] as Map)['medReminders'], true);
     expect((body['settings'] as Map)['reminderTimes'], {'morning': '07:30'});

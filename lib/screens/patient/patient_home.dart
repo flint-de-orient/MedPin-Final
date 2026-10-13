@@ -277,6 +277,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     'weight': ('Weight', ' kg'),
     'heart_rate': ('Heart rate', ' bpm'),
     'spo2': ('SpO₂', '%'),
+    'hba1c': ('HbA1c', '%'),
   };
 
   /// Sparkline points in the tile's 130×32 box.
@@ -307,6 +308,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
         return v < 50 || v > 100 ? ('Check with your doctor', MP.amber) : ('Normal', MP.green);
       case 'spo2':
         return v < 95 ? ('Low', MP.amber) : ('Normal', MP.green);
+      case 'hba1c':
+        final target = data!.obj('targets').numOr('hba1c', 7);
+        return v > target ? ('Above target', MP.amber) : ('In target', MP.green);
       default:
         return ('', MP.ink3);
     }
@@ -316,7 +320,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     final measures = [
       for (final m in (data!['trackedMeasures'] as List? ?? const []))
         if (_measureLabels.containsKey(m)) '$m',
-    ].take(2);
+    ].take(4);
     final tracked = data!.obj('tracked');
     return [
       for (final m in measures)
@@ -328,9 +332,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
               label: label,
               value: '–',
               points: '',
-              note: 'No reading yet',
+              note: m == 'hba1c' ? 'From your next lab report' : 'No reading yet',
               noteColor: MP.ink3,
-              onTap: () => _openReading(context, m),
+              onTap: () => m == 'hba1c' ? Nav.tab(context, 'Patient-Records') : _openReading(context, m),
             );
           }
           final last = series.last;
@@ -345,7 +349,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
             points: _points([for (final x in series) x.numOr('value')]),
             note: note,
             noteColor: color,
-            onTap: () => _openReading(context, m),
+            onTap: () => m == 'hba1c' ? Nav.tab(context, 'Patient-Records') : _openReading(context, m),
           );
         }(),
     ];
@@ -666,7 +670,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
                   ),
                   sub: 'Goal ${F.count(_stepGoal)} · ${switch (data?.obj('steps').str('source')) {
                     'phone' => 'counted by your phone',
-                    'watch' => 'from your watch',
+                    'watch' => 'from Health Connect',
                     'manual' => 'entered by you',
                     _ => isLive ? 'opens to your phone’s step count' : 'entered by you',
                   }}',

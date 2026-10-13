@@ -126,32 +126,44 @@ class _PatientAdherenceSheetState extends State<PatientAdherenceSheet> with Live
   }
 
   /// The most missed time of day and the reminder time for it.
-  ({String slot, String when, String time})? get _tip {
-    if (data == null) return (slot: 'night', when: 'evening', time: '8:30 PM');
+  ({String slot, String when, String time, bool on, String hhmm})? get _tip {
+    if (data == null) return (slot: 'night', when: 'evening', time: '8:30 PM', on: false, hhmm: '20:30');
     final m = data!.obj('mostMissedSlot');
     if (m.isEmpty) return null;
     final slot = m.str('slot');
     final hhmm = data!.obj('reminderTimes').str(slot, const {'morning': '07:30', 'afternoon': '13:30', 'night': '20:30'}[slot] ?? '20:30');
-    return (slot: slot, when: slot == 'night' ? 'evening' : slot, time: P1.clock(hhmm));
+    // on: reminders are on, so this slot already rings at [time].
+    return (slot: slot, when: slot == 'night' ? 'evening' : slot, time: P1.clock(hhmm), on: data!['medReminders'] != false, hhmm: hhmm);
   }
 
+  /// Set / Change: pick the time for that dose, then reminders are on and
+  /// the phone's alarms move to it (MedAlarms follows PATCH /api/patient/me).
   Future<void> _setReminder() async {
     final tip = _tip!;
     if (!isLive) {
       P1.closeWithToast(context, 'Reminder set for ${tip.time}');
       return;
     }
-    final hhmm = data!.obj('reminderTimes').str(tip.slot);
+    final p = tip.hhmm.split(':');
+    final picked = await showTimePicker(
+      context: context,
+      helpText: 'Reminder for your ${tip.when} medicines',
+      initialTime: TimeOfDay(hour: int.tryParse(p.first) ?? 7, minute: int.tryParse(p.last) ?? 30),
+    );
+    if (picked == null || !mounted) return;
+    final hhmm = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
     final ok = await runAction(
       context,
       () => Api.I.patch('/api/patient/me', {
         'settings': {
           'medReminders': true,
-          if (hhmm.isNotEmpty) 'reminderTimes': {tip.slot: hhmm},
+          'reminderTimes': {tip.slot: hhmm},
         },
       }),
     );
-    if (ok != null && mounted) P1.closeWithToast(context, 'Reminder set for ${tip.time}', true);
+    if (ok == null || !mounted) return;
+    toast(context, '${tip.when[0].toUpperCase()}${tip.when.substring(1)} reminder set for ${P1.clock(hhmm)}');
+    reload(quiet: true);
   }
 
   Future<void> _track(_Doc d) async {
@@ -261,13 +273,17 @@ class _PatientAdherenceSheetState extends State<PatientAdherenceSheet> with Live
                             style: tx(14, h: 1.45),
                             children: [
                               TextSpan(text: 'Most misses are in the ${tip.when}.', style: tx(14, w: w700, h: 1.45, c: MP.amber)),
-                              TextSpan(text: ' A reminder at ${tip.time} can help.'),
+                              TextSpan(
+                                text: tip.on
+                                    ? ' Your reminder rings at ${tip.time}. A time that fits your routine better can help.'
+                                    : ' A reminder at ${tip.time} can help.',
+                              ),
                             ],
                           ),
                         ),
                       ),
                       const Gap(12),
-                      P1SoftButton('Set', padding: 14, background: MP.white, onTap: _setReminder),
+                      P1SoftButton(tip.on ? 'Change' : 'Set', padding: 14, background: MP.white, onTap: _setReminder),
                     ],
                   ),
                 ),
