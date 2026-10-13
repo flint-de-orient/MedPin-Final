@@ -215,6 +215,7 @@ async function buildRows(req, job) {
     } else if (type === 'referrals') {
       const q = { practiceId: req.practiceId, referredAt: { $gte: from, $lt: to } };
       if (f.doctorId) q.doctorId = f.doctorId === 'me' ? req.user._id : f.doctorId;
+      if (f.locationIds.length) q.locationId = { $in: f.locationIds };
       const items = await M.Referral.find(q).sort({ referredAt: 1 }).populate('patientId', 'name phone').lean();
       sets.referrals = {
         header: ['Date', 'Patient', ...mob, 'Direction', 'To / from', 'Specialty', 'Reason', 'Status'],
@@ -303,14 +304,18 @@ r.post('/exports', async (req, res) => {
     job.status = 'done';
     job.completedAt = new Date();
     await job.save();
+    // Email: sent, or why not (no address on the account / email not set up on the server / send failed).
     let emailed = false;
-    if (emailCopy && req.user.email) {
+    let emailFailed = false;
+    const emailNotSetUp = Boolean(emailCopy && !env.smtp.host);
+    if (emailCopy && req.user.email && !emailNotSetUp) {
       emailed = await sendEmail({ to: req.user.email, subject: title, text: 'Your MedPin export is attached.', attachments: [{ filename: job.file.name, content: buffer }] })
         .then((r) => r?.provider === 'smtp')
-        .catch(() => false);
+        .catch((err) => { console.warn('[exports] email', err.message); return false; });
+      emailFailed = !emailed;
     }
     await M.AuditLog.create({ practiceId: req.practiceId, userId: req.user._id, action: 'export.create', entity: 'ExportJob', entityId: job._id, meta: { kind, format, includeMobiles, rows: job.rowCount }, ip: req.ip });
-    res.status(201).json({ ...job.toJSON(), url: storage.signedUrl(job.file.key), emailed, emailMissing: Boolean(emailCopy && !req.user.email) });
+    res.status(201).json({ ...job.toJSON(), url: storage.signedUrl(job.file.key), emailed, emailTo: emailed ? req.user.email : undefined, emailMissing: Boolean(emailCopy && !req.user.email), emailNotSetUp, emailFailed });
   } catch (err) {
     job.status = 'failed';
     job.error = err.message;

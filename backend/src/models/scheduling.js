@@ -163,6 +163,8 @@ const referralSchema = new Schema(
     status: enumOf(E.REFERRAL_STATUSES, { default: 'awaiting' }),
     seenAt: Date,
     consultationId: ref('Consultation'),
+    locationId: ref('Location'), // where the patient is seen (Reports location filter)
+    cancelledAt: Date,
   },
   baseOptions,
 );

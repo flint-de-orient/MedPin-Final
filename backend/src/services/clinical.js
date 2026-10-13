@@ -205,9 +205,26 @@ async function issueConsultation(consult, doctorUser) {
  * doctor's name and registration, clinic address and hours). When any of
  * them changes, prescriptions are drawn again the next time they're opened.
  */
+/**
+ * Where a prescription was written (its letterhead and logo): the prescription's
+ * location, else the consultation's or visit's, else the doctor's clinic location
+ * (one with a letterhead logo first) — so a consult started without a visit
+ * still prints the clinic's logo.
+ */
+async function rxLocation(rx, consult) {
+  if (rx.locationId) return M.Location.findById(rx.locationId);
+  consult = consult !== undefined ? consult : rx.consultationId ? await M.Consultation.findById(rx.consultationId, 'locationId appointmentId') : null;
+  let id = consult?.locationId;
+  if (!id && consult?.appointmentId) id = (await M.Appointment.findById(consult.appointmentId, 'locationId'))?.locationId;
+  if (id) return M.Location.findById(id);
+  const mine = await M.DoctorLocation.find({ doctorId: rx.doctorId, practiceId: rx.practiceId }).distinct('locationId');
+  const options = await M.Location.find({ practiceId: rx.practiceId, ...(mine.length ? { _id: { $in: mine } } : {}), status: { $ne: 'inactive' } }).sort({ createdAt: 1 });
+  return options.find((l) => l.letterhead?.logo?.key) || options[0] || null;
+}
+
 async function pdfInputs(rx, { doctor, location, practice } = {}) {
   doctor = doctor || (await M.DoctorProfile.findOne({ userId: rx.doctorId }, 'signature displayName qualifications degreesSummary registration hprId headline'));
-  location = location !== undefined ? location : rx.locationId ? await M.Location.findById(rx.locationId) : null;
+  location = location !== undefined ? location : await rxLocation(rx);
   practice = practice || (await M.Practice.findById(rx.practiceId, 'logo name'));
   const lh = location?.letterhead || {};
   const key = JSON.stringify([
@@ -228,8 +245,7 @@ async function buildPrescriptionPdf(rx, { consult, patient, doctor } = {}) {
   patient = patient || (await M.Patient.findById(rx.patientId));
   doctor = doctor || (await M.DoctorProfile.findOne({ userId: rx.doctorId }));
   const vitals = consult?.printVitalsOnRx && consult.vitalsId ? await M.Vitals.findById(consult.vitalsId) : null;
-  const locationId = rx.locationId || consult?.locationId;
-  const location = locationId ? await M.Location.findById(locationId) : null;
+  const location = await rxLocation(rx, consult);
   const practice = await M.Practice.findById(rx.practiceId, 'logo name');
   const appt = consult?.appointmentId ? await M.Appointment.findById(consult.appointmentId, 'mode') : null;
   const image = async (file) => (file?.key ? storage.read(file.key).catch(() => null) : null);

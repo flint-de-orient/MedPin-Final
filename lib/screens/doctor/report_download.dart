@@ -69,25 +69,31 @@ class _ReportDownloadSheetState extends State<ReportDownloadSheet> {
       Navigator.pop(context);
       return;
     }
-    final res = await runAction(
-      context,
-      () => Api.I.post('/api/exports', {
-        'kind': 'report',
-        'reportType': _reportType,
-        'format': _formatKeys[_fmt],
-        'filters': _filters.exportFilters,
-        'includeMobiles': _mobiles,
-        'emailCopy': _email,
-      }),
-      busy: _busy,
-    );
-    if (res == null || !mounted) return;
-    final url = res is Map ? res['url'] as String? : null;
-    final opened = url != null && await d3Launch(Uri.parse(url));
-    if (!mounted) return;
-    final note = _email && res is Map ? ' · ${d3EmailNote(res)}' : '';
-    toast(context, opened ? '$name ready$note' : "Couldn't open the $name file$note");
-    Navigator.pop(context);
+    final body = <String, Object?>{
+      'kind': 'report',
+      'reportType': _reportType,
+      'format': _formatKeys[_fmt],
+      'filters': _filters.exportFilters,
+      'includeMobiles': _mobiles,
+    };
+    final fileName = 'MedPin-$_reportType';
+    // With "Email me a copy": one export, emailed (asks for an email if none), then saved here too.
+    final dynamic res;
+    if (_email) {
+      res = await d3EmailExport(context, body, name: fileName, busy: _busy);
+    } else {
+      res = await runAction(context, () => Api.I.post('/api/exports', body), busy: _busy);
+    }
+    if (res is! Map || !mounted) return;
+    final url = res['url'] as String?;
+    final nav = Navigator.of(context);
+    nav.pop();
+    final under = nav.context;
+    if (url == null) {
+      if (under.mounted) toast(under, "The $name file couldn't be made");
+      return;
+    }
+    if (under.mounted) await d3Save(under, url, fileName);
   }
 
   @override

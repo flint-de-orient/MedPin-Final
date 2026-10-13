@@ -122,6 +122,12 @@ void main() {
       launched.add(uri);
       return true;
     };
+    // Saved / shared files are recorded instead of written to the phone.
+    d3Save = (context, url, name) async {
+      launched.add(Uri.parse(url));
+      return true;
+    };
+    d3Share = (context, url, name) async => launched.add(Uri.parse(url));
     await _loadFigtree();
   });
 
@@ -363,7 +369,7 @@ void main() {
     expect(body['includeMobiles'], false);
     expect(body['emailCopy'], true);
     expect(launched.single.toString(), 'http://localhost:4000/files/exports/medpin-prescriptions.xlsx?sig=1');
-    expect(find.text('Excel ready · copy sent to your email'), findsOneWidget);
+    expect(find.text('Report sent to your email'), findsOneWidget);
     expect(t.takeException(), isNull);
     await _tearDown(t);
   });

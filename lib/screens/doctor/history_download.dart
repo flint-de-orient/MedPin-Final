@@ -3,9 +3,9 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
-import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d2.dart';
+import 'common_d3.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: History-Download.dc.html — "Doctor · History · download".
@@ -102,17 +102,19 @@ class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> with LiveDa
     final d = data;
     final from = F.date(d?['from']);
     final to = F.date(d?['to'])?.subtract(const Duration(days: 1));
-    final res = await runAction(
-      context,
-      () => Api.I.post('/api/exports', {
-        'kind': 'appointment_history',
-        'format': _formatKeys[_format],
-        'filters': {if (from != null) 'from': _ymd(from), if (to != null) 'to': _ymd(to)},
-        'includeMobiles': _mobiles,
-        'emailCopy': _email,
-      }),
-      busy: _busy,
-    );
+    final body = <String, Object?>{
+      'kind': 'appointment_history',
+      'format': _formatKeys[_format],
+      'filters': {if (from != null) 'from': _ymd(from), if (to != null) 'to': _ymd(to)},
+      'includeMobiles': _mobiles,
+    };
+    // "Email me a copy": emailed (asks for an email if none), and saved here too.
+    final dynamic res;
+    if (_email) {
+      res = await d3EmailExport(context, body, name: 'MedPin-appointment-history', busy: _busy);
+    } else {
+      res = await runAction(context, () => Api.I.post('/api/exports', body), busy: _busy);
+    }
     if (res is! Map || !mounted) return;
     final nav = Navigator.of(context);
     nav.pop();
@@ -120,7 +122,7 @@ class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> with LiveDa
     var ok = false;
     final under = nav.context;
     if (url != null && under.mounted) {
-      await Downloads.open(under, url, name: 'MedPin-appointment-history');
+      await d3Save(under, url, 'MedPin-appointment-history');
       ok = true;
     }
     if (!under.mounted) return;
@@ -128,7 +130,6 @@ class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> with LiveDa
       toast(under, "The file is ready but couldn't be opened");
       return;
     }
-    if (_email && res['emailed'] == true) toast(under, 'A copy is on its way to your email');
   }
 
   void _download() {

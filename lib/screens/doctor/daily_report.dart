@@ -4,6 +4,7 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'common_d3.dart';
 import 'common_d9.dart';
 import '../../widgets/i18n.dart';
 
@@ -201,7 +202,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with LiveData {
   }
 
   /// PDF of the day via POST /api/exports, opened outside the app.
-  Future<void> _pdf(String done) async {
+  Future<void> _pdf(String done, {bool share = false}) async {
     if (!isLive) {
       toast(context, done);
       return;
@@ -220,7 +221,10 @@ class _DailyReportScreenState extends State<DailyReportScreen> with LiveData {
       busy: _busy,
     );
     if (res is! Map || !mounted) return;
-    await D9Open.url(context, res['url'], failed: "Couldn't open the report");
+    // Share: to the share sheet (WhatsApp, Gmail, Drive…). Download: saved to the phone.
+    final url = res['url'] as String?;
+    if (url == null) return toast(context, "Couldn't make the report");
+    share ? await d3Share(context, url, 'MedPin-daily-report-$day') : await d3Save(context, url, 'MedPin-daily-report-$day');
   }
 
   @override
@@ -231,7 +235,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> with LiveData {
     return MpPage(
       header: MpHeader(
         'Daily report',
-        actions: [MpIconButton(I.share, label: 'Share report', onTap: () => _pdf('Report shared'))],
+        actions: [MpIconButton(I.share, label: 'Share report', onTap: () => _pdf('Report shared', share: true))],
       ),
       body: VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),

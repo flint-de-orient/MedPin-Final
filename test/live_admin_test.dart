@@ -14,6 +14,7 @@ import 'package:medpin_app/data/session.dart';
 import 'package:medpin_app/screens/doctor/billing.dart';
 import 'package:medpin_app/screens/doctor/cards_analytics.dart';
 import 'package:medpin_app/screens/doctor/cards_clinical.dart';
+import 'package:medpin_app/screens/doctor/common_d3.dart';
 import 'package:medpin_app/screens/doctor/common_d9.dart';
 import 'package:medpin_app/screens/doctor/daily_report.dart';
 import 'package:medpin_app/screens/doctor/export.dart';
@@ -134,6 +135,12 @@ void main() {
       launched.add(uri);
       return true;
     };
+    // Saved / shared files are recorded instead of written to the phone.
+    d3Save = (context, url, name) async {
+      launched.add(Uri.parse(url));
+      return true;
+    };
+    d3Share = (context, url, name) async => launched.add(Uri.parse(url));
     await _loadFigtree();
   });
   setUp(launched.clear);

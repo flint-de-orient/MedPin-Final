@@ -167,6 +167,8 @@ class D3ReportHeader extends StatelessWidget {
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
+            // The location pill takes what's left and ends in "…", so the filter
+            // button always fits, whatever the location name or screen width.
             child: Row(
               children: [
                 _Pill(
@@ -176,20 +178,20 @@ class D3ReportHeader extends StatelessWidget {
                     children: [
                       const Ico(I.calendar, size: 16, color: MP.ink),
                       const SizedBox(width: 6),
-                      Text(rangeLabel, style: tx(14, w: w600)),
+                      Text(rangeLabel, maxLines: 1, style: tx(14, w: w600)),
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 170),
-                  child: _Pill(
-                    onTap: filters,
-                    child: Text(locationLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, w: w600)),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _Pill(
+                      onTap: filters,
+                      child: Text(locationLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, w: w600)),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                const Spacer(),
                 const SizedBox(width: 8),
                 MpIconButton(
                   I.filter,
@@ -498,32 +500,18 @@ class D3DownloadBar extends StatelessWidget {
   final D3Filters? filters;
   const D3DownloadBar(this.label, {super.key, this.reportType, this.filters});
 
+  /// Emails this report as a PDF (asks for an email first if the account has none).
   Future<void> _email(BuildContext context) async {
     if (!isLive || reportType == null) {
       toast(context, 'Report sent to your email');
       return;
     }
     final f = filters ?? const D3Filters();
-    final res = await runAction(
+    await d3EmailExport(
       context,
-      () => Api.I.post('/api/exports', {
-        'kind': 'report',
-        'reportType': reportType,
-        'format': 'pdf',
-        'filters': f.exportFilters,
-        'includeMobiles': false,
-        'emailCopy': true,
-      }),
+      {'kind': 'report', 'reportType': reportType, 'format': 'pdf', 'filters': f.exportFilters, 'includeMobiles': false},
+      name: 'MedPin-$reportType',
     );
-    if (res is! Map || !context.mounted) return;
-    if (res['emailed'] == true) {
-      toast(context, 'Report sent to your email');
-      return;
-    }
-    // Not emailed (no email on the account, or email isn't set up): open it instead.
-    toast(context, d3EmailNote(res));
-    final url = res['url'] as String?;
-    if (url != null) await d3Launch(Uri.parse(url));
   }
 
   @override
@@ -583,6 +571,7 @@ String d3RupeesShort(num v) => v.abs() >= 100000 ? '₹${(v / 100000).toStringAs
 String d3EmailNote(Map res) {
   if (res['emailed'] == true) return 'copy sent to your email';
   if (res['emailMissing'] == true) return 'add your email in My profile to get a copy';
+  if (res['emailFailed'] == true) return "the email couldn't be sent";
   return "email isn't set up yet, so no copy was sent";
 }
 
@@ -838,4 +827,90 @@ mixin D3FilterState<W extends StatefulWidget> on LiveData<W> {
     setState(() => _filters = f);
     reload();
   }
+}
+
+// ── Export: download and email ───────────────────────────────────────────────
+
+/// Saves an export to the phone (Downloads › MedPin, with Open). Tests replace it.
+Future<bool> Function(BuildContext context, String url, String name) d3Save =
+    (context, url, name) => Downloads.save(context, url, name: name);
+
+/// Sends an export through the share sheet (Gmail, WhatsApp…). Tests replace it.
+Future<void> Function(BuildContext context, String url, String name) d3Share =
+    (context, url, name) => Downloads.share(context, url, name: name);
+
+/// POST /api/exports [body] with an emailed copy. When the account has no
+/// email it asks for one (saved to the profile) and tries again. When email
+/// can't be sent from MedPin (not set up / failed), the file opens in the share
+/// sheet so it can still be sent from Gmail or any app. Returns the export.
+Future<Map?> d3EmailExport(BuildContext context, Map<String, Object?> body, {String name = 'MedPin-report', ValueNotifier<bool>? busy}) async {
+  Future<Map?> post() async {
+    final r = await runAction(context, () => Api.I.post('/api/exports', {...body, 'emailCopy': true}), busy: busy);
+    return r is Map ? r : null;
+  }
+
+  var res = await post();
+  if (res == null || !context.mounted) return res;
+  if (res['emailMissing'] == true) {
+    final saved = await openSheet<bool>(context, (_) => const _EmailSheet());
+    if (saved != true || !context.mounted) return res;
+    res = await post();
+    if (res == null || !context.mounted) return res;
+  }
+  if (res['emailed'] == true) {
+    toast(context, res['emailTo'] is String ? 'Report sent to ${res['emailTo']}' : 'Report sent to your email');
+    return res;
+  }
+  final url = res['url'] as String?;
+  if (res['emailNotSetUp'] == true || res['emailFailed'] == true) {
+    toast(context, res['emailNotSetUp'] == true ? "MedPin email isn't set up yet. Choose Gmail or any app to send it." : "Couldn't send the email. Choose Gmail or any app to send it.");
+    if (url != null) await d3Share(context, url, name);
+  }
+  return res;
+}
+
+/// "Where should we email reports?" → PATCH /api/me {email}.
+class _EmailSheet extends StatefulWidget {
+  const _EmailSheet();
+  @override
+  State<_EmailSheet> createState() => _EmailSheetState();
+}
+
+class _EmailSheetState extends State<_EmailSheet> {
+  final _email = TextEditingController();
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final e = _email.text.trim();
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(e)) return toast(context, 'Enter a valid email address');
+    final r = await runAction(context, () => Api.I.patch('/api/me', {'email': e}), busy: _busy);
+    if (r != null && mounted) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) => MpSheet(
+    title: 'Where should we email reports?',
+    subtitle: 'Saved to your account. You can change it in My profile.',
+    showClose: true,
+    child: Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: VGap(
+        gap: 16,
+        children: [
+          MpInput(label: 'Email', controller: _email, hint: 'name@example.com', keyboard: TextInputType.emailAddress, autofocus: true),
+          ValueListenableBuilder<bool>(
+            valueListenable: _busy,
+            builder: (_, busy, _) => MpButton(busy ? 'Saving…' : 'Save and send', onTap: busy ? null : _save),
+          ),
+        ],
+      ),
+    ),
+  );
 }

@@ -69,8 +69,11 @@ r.post('/consultations', staff({ perm: 'prescribe' }), async (req, res) => {
     { $setOnInsert: { practiceId: req.practiceId, role: 'doctor', accessLevel: 'full_record', since: new Date(), isPrimary: !hasPrimary } },
     { upsert: true },
   );
+  // Where it happens (prints that location's letterhead): the visit's, the one chosen, else the doctor's first location here.
+  const locationId = appt?.locationId || req.body.locationId || req.user.activeLocationId
+    || (await M.DoctorLocation.findOne({ doctorId: req.user._id, practiceId: req.practiceId }, 'locationId').sort({ createdAt: 1 }))?.locationId;
   const consult = await M.Consultation.create({
-    practiceId: req.practiceId, locationId: appt?.locationId || req.body.locationId || req.user.activeLocationId,
+    practiceId: req.practiceId, locationId,
     doctorId: req.user._id, patientId: pid, appointmentId: appt?._id,
     vitalsId: appt ? (await M.Vitals.findOne({ appointmentId: appt._id }).sort({ recordedAt: -1 }))?._id : undefined,
   });

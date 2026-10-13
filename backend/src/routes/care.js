@@ -81,12 +81,18 @@ r.patch('/follow-ups/:id', async (req, res) => {
 r.get('/referrals', async (req, res) => {
   const direction = req.query.direction || 'sent';
   // Optional period (range=… or from/to, like the reports); default = all time.
+  // Location / doctor filters from the Reports filter sheet.
   const period = {};
   if (req.query.range || req.query.from || req.query.to) {
     const { rangeOf } = require('./reports');
     const { from, to } = rangeOf(req.query);
     period.referredAt = { $gte: from, $lt: to };
   }
+  const locs = list(req.query.locationIds).filter((x) => /^[0-9a-f]{24}$/i.test(x));
+  if (locs.length) period.locationId = { $in: locs };
+  if (req.query.doctorId) period.doctorId = req.query.doctorId === 'me' ? req.user._id : req.query.doctorId;
+  await markReceivedSeen(req.practiceId);
+  await fillLocations(req.practiceId);
   const items = await M.Referral.find({ practiceId: req.practiceId, direction, ...period }).sort({ referredAt: -1 }).populate('patientId', 'name gender ageYears ageRecordedAt');
   const all = await M.Referral.aggregate([{ $match: { practiceId: req.practiceId, ...period } }, { $group: { _id: { d: '$direction', s: '$status' }, n: { $sum: 1 } } }]);
   const c = (d, s) => all.filter((x) => x._id.d === d && (!s || x._id.s === s)).reduce((n, x) => n + x.n, 0);
@@ -98,19 +104,57 @@ r.get('/referrals', async (req, res) => {
   });
 });
 
+/** Older referrals made before locations were kept: the patient's latest visit here. */
+async function fillLocations(practiceId) {
+  const missing = await M.Referral.find({ practiceId, locationId: null }, 'patientId').limit(200);
+  for (const ref of missing) {
+    const last = await M.Appointment.findOne({ practiceId, patientId: ref.patientId, locationId: { $ne: null } }, 'locationId').sort({ startAt: -1 });
+    if (last) await M.Referral.updateOne({ _id: ref._id }, { locationId: last.locationId });
+  }
+}
+
+/** Received and still awaiting, but the patient has since been seen here: seen, on that day. */
+async function markReceivedSeen(practiceId) {
+  const open = await M.Referral.find({ practiceId, direction: 'received', status: 'awaiting' }, 'patientId referredAt').limit(500);
+  for (const ref of open) {
+    const visit = await M.Appointment.findOne({ practiceId, patientId: ref.patientId, status: 'completed', completedAt: { $gte: ref.referredAt } }, 'completedAt').sort({ completedAt: 1 });
+    if (visit) await M.Referral.updateOne({ _id: ref._id, status: 'awaiting' }, { status: 'seen', seenAt: visit.completedAt });
+  }
+}
+
 r.post('/referrals', async (req, res) => {
   await patientInPractice(req, req.body.patientId);
   if (!E.REFERRAL_DIRECTIONS.includes(req.body.direction)) throw badRequest('Choose sent or received');
-  if (!req.body.counterpartName) throw badRequest('Enter who it is to / from');
+  const name = String(req.body.counterpartName || '').trim();
+  if (!name) throw badRequest('Enter who it is to / from');
+  // Where the patient is seen: the location given, else their latest visit here.
+  let locationId = /^[0-9a-f]{24}$/i.test(String(req.body.locationId || '')) ? req.body.locationId : null;
+  if (!locationId) {
+    const last = await M.Appointment.findOne({ practiceId: req.practiceId, patientId: req.body.patientId, locationId: { $ne: null } }, 'locationId').sort({ startAt: -1 });
+    locationId = last?.locationId || null;
+  }
+  const clip = (s, n) => (s == null ? undefined : String(s).trim().slice(0, n) || undefined);
   const ref = await M.Referral.create({
-    ...pick(req.body, ['patientId', 'direction', 'counterpartName', 'counterpartUserId', 'specialty', 'reason', 'consultationId']),
-    practiceId: req.practiceId, doctorId: req.user._id,
+    patientId: req.body.patientId, direction: req.body.direction, counterpartName: name.slice(0, 120),
+    counterpartUserId: req.body.counterpartUserId || undefined, specialty: clip(req.body.specialty, 60), reason: clip(req.body.reason, 200),
+    consultationId: req.body.consultationId || undefined,
+    practiceId: req.practiceId, doctorId: req.user._id, locationId,
   });
   res.status(201).json(ref);
 });
 
+r.post('/referrals/:id/cancel', async (req, res) => {
+  const ref = ownPractice(req, await M.Referral.findById(req.params.id), 'Referral');
+  if (ref.status !== 'awaiting') throw conflict('Only an awaiting referral can be cancelled');
+  ref.status = 'cancelled';
+  ref.cancelledAt = new Date();
+  await ref.save();
+  res.json(ref);
+});
+
 r.post('/referrals/:id/seen', async (req, res) => {
   const ref = ownPractice(req, await M.Referral.findById(req.params.id), 'Referral');
+  if (ref.status === 'cancelled') throw conflict('This referral was cancelled');
   ref.status = 'seen';
   ref.seenAt = req.body.seenAt ? new Date(req.body.seenAt) : new Date();
   await ref.save();

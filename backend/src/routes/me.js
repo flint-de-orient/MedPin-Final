@@ -21,6 +21,10 @@ me.get('/', async (req, res) => res.json(await accountSummary(req.user)));
 me.patch('/', async (req, res) => {
   const body = pick(req.body, ['name', 'email', 'language', 'appLock']);
   if (body.language && !E.LANGUAGES.includes(body.language)) throw badRequest('Unknown language');
+  if (body.email !== undefined) {
+    body.email = String(body.email || '').trim().toLowerCase() || undefined;
+    if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) throw badRequest('Enter a valid email address');
+  }
   Object.assign(req.user, body);
   await req.user.save();
   res.json(await accountSummary(req.user));

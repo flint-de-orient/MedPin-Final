@@ -344,20 +344,23 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> with LiveData
               ),
               const SizedBox(width: 8),
               // A <span> with height 36 + 1px border (content-box) → 38px tall.
-              MpHitSlop(child: GestureDetector(
-                onTap: _filters,
-                child: Container(
-                  height: 38,
-                  padding: const EdgeInsets.fromLTRB(12, 0, 6, 0),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: MP.white,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: MP.lineStrong),
+              // Long location names end in "…" instead of running off the screen.
+              Flexible(
+                child: MpHitSlop(child: GestureDetector(
+                  onTap: _filters,
+                  child: Container(
+                    height: 38,
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: MP.white,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: MP.lineStrong),
+                    ),
+                    child: Text(_f.locationLabel, maxLines: 1, softWrap: false, overflow: TextOverflow.ellipsis, style: tx(14, w: w500)),
                   ),
-                  child: Text(_f.locationLabel, maxLines: 1, softWrap: false, style: tx(14, w: w500)),
-                ),
-              )),
+                )),
+              ),
             ],
           ),
         ],

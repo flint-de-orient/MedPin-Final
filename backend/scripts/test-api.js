@@ -15,6 +15,8 @@ env.ai.provider = 'off';
 // Never call Razorpay from tests (even when real keys are in .env); steps that
 // need keys set fake ones and answer for Razorpay themselves.
 Object.assign(env.razorpay, { keyId: undefined, keySecret: undefined, webhookSecret: undefined, payoutAccountNumber: undefined });
+// Never send real email from tests.
+env.smtp.host = undefined;
 // The area name for "near …" answers from a fixed table, never the internet.
 require('../src/services/places').reverse = async (lat) => (lat > 22.6 ? { area: 'New Town', city: 'Kolkata' } : { area: 'Salt Lake', city: 'Kolkata' });
 // IFSC lookups answer from a fixed table, never the internet.
@@ -727,6 +729,19 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(hist.items.some((x) => x.id === String(noShow._id) && x.status === 'missed'), 'History lists the no-show as missed');
     assert.equal(ok(await ctx.doc('GET', '/api/reports/summary?range=30_days')).kpis.missed.value, withMissed.kpis.missed.value);
     await M.Appointment.deleteOne({ _id: noShow._id });
+    // Referrals: added with the patient's location, filtered by it, cancelled; a received one is
+    // seen once the patient has a completed visit here.
+    const sentRef = ok(await ctx.doc('POST', '/api/referrals', { patientId: ctx.patientId, direction: 'sent', counterpartName: 'Eye clinic', specialty: 'Ophthalmology', reason: 'Diabetic eye check' }), 201);
+    assert.ok(sentRef.locationId, 'location from the latest visit');
+    assert.equal((await ctx.doc('POST', '/api/referrals', { patientId: ctx.patientId, direction: 'sent', counterpartName: '  ' })).status, 400);
+    const sentList = ok(await ctx.doc('GET', `/api/referrals?direction=sent&range=30_days&locationIds=${sentRef.locationId}`));
+    assert.ok(sentList.items.some((x) => x.id === sentRef.id));
+    assert.equal(ok(await ctx.doc('GET', '/api/referrals?direction=sent&locationIds=000000000000000000000000')).items.length, 0, 'location filter applies');
+    ok(await ctx.doc('POST', `/api/referrals/${sentRef.id}/cancel`));
+    assert.equal((await ctx.doc('POST', `/api/referrals/${sentRef.id}/seen`)).status, 409, 'a cancelled referral cannot be seen');
+    const recv = await M.Referral.create({ practiceId: ctx.practiceId, patientId: ctx.patientId, doctorId: ctx.doctorUserId, direction: 'received', counterpartName: 'Dr. Lahiri', referredAt: new Date(Date.now() - 40 * 864e5) });
+    const recvList = ok(await ctx.doc('GET', '/api/referrals?direction=received'));
+    assert.equal(recvList.items.find((x) => x.id === String(recv._id)).status, 'seen', 'seen after the patient came in');
     ok(await ctx.doc('GET', '/api/reports/prescriptions'));
     ok(await ctx.doc('GET', '/api/reports/follow-ups'));
     ok(await ctx.doc('GET', '/api/reports/daily'));
@@ -737,6 +752,16 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
   });
 
   await step('billing limits and exports', async () => {
+    // Email a report: no address → asked for; with one but email not set up → says so (and the file is still made).
+    const noMail = ok(await ctx.doc('POST', '/api/exports', { kind: 'report', reportType: 'referrals', format: 'pdf', emailCopy: true, filters: {} }), 201);
+    assert.equal(noMail.emailMissing, true);
+    assert.ok(noMail.url);
+    assert.equal((await ctx.doc('PATCH', '/api/me', { email: 'not-an-email' })).status, 400);
+    ok(await ctx.doc('PATCH', '/api/me', { email: 'doctor@example.com' }));
+    const notSetUp = ok(await ctx.doc('POST', '/api/exports', { kind: 'report', reportType: 'referrals', format: 'pdf', emailCopy: true, filters: {} }), 201);
+    assert.equal(notSetUp.emailMissing, false);
+    assert.equal(notSetUp.emailNotSetUp, true);
+    assert.equal(notSetUp.emailed, false);
     const b = ok(await ctx.doc('GET', '/api/billing'));
     assert.equal(b.usage.seats.used, 3, 'doctor, front desk, lab technician');
     ok(await ctx.doc('POST', '/api/billing/switch', { planKey: 'clinic' }));

@@ -25,7 +25,8 @@ class _Ref {
   final String detail;
   final String date;
   final bool seen;
-  const _Ref(this.name, this.status, this.detail, this.date, {this.seen = false});
+  final bool cancelled;
+  const _Ref(this.name, this.status, this.detail, this.date, {this.seen = false, this.cancelled = false});
 }
 
 /// One direction of the Sent / Received tabs.
@@ -130,10 +131,11 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
   /// Both directions at once, so switching tabs needs no fetch.
   @override
   Future<Object?> fetch() async {
-    await loadFilters();
+    final f = await loadFilters();
+    // Period and locations are applied by the server too.
     final r = await Future.wait([
-      Api.I.get('/api/referrals', query: {'direction': 'sent'}),
-      Api.I.get('/api/referrals', query: {'direction': 'received'}),
+      Api.I.get('/api/referrals', query: {...f.query, 'direction': 'sent'}),
+      Api.I.get('/api/referrals', query: {...f.query, 'direction': 'received'}),
     ]);
     return {'sent': r[0], 'received': r[1]};
   }
@@ -166,6 +168,7 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
       detail,
       at == null ? '' : F.dayMonth(at),
       seen: seen,
+      cancelled: r['status'] == 'cancelled',
     );
   }
 
@@ -173,24 +176,26 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
   _Dir _liveDir(int i) {
     final dir = i == 0 ? 'sent' : 'received';
     final items = _items(dir);
-    final seen = items.where((r) => r['status'] == 'seen').length;
-    final awaiting = items.where((r) => r['status'] == 'awaiting').length;
+    // Cancelled ones stay in the list but don't count.
+    final live = items.where((r) => r['status'] != 'cancelled').toList();
+    final seen = live.where((r) => r['status'] == 'seen').length;
+    final awaiting = live.where((r) => r['status'] == 'awaiting').length;
     final by = <String, int>{};
-    for (final r in items) {
+    for (final r in live) {
       final s = r.str('specialty', 'Other');
       by[s.isEmpty ? 'Other' : s] = (by[s.isEmpty ? 'Other' : s] ?? 0) + 1;
     }
     final bars = by.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     final refs = [for (final r in items) _refOf(r, dir)];
     return _Dir(
-      tab: '${i == 0 ? 'Sent' : 'Received'} · ${items.length}',
+      tab: '${i == 0 ? 'Sent' : 'Received'} · ${live.length}',
       stats: [
-        (F.count(items.length), i == 0 ? 'Sent' : 'Received', MP.ink),
+        (F.count(live.length), i == 0 ? 'Sent' : 'Received', MP.ink),
         (F.count(seen), i == 0 ? 'Seen by them' : 'Seen by you', MP.green),
         (F.count(awaiting), 'Awaiting', MP.amber),
       ],
       barTitle: i == 0 ? 'Sent to' : 'Received from',
-      bars: [for (final b in bars) D3BarRow(b.key, F.count(b.value), items.isEmpty ? 0 : b.value / items.length)],
+      bars: [for (final b in bars) D3BarRow(b.key, F.count(b.value), live.isEmpty ? 0 : b.value / live.length)],
       listTitle: i == 0 ? 'All sent' : 'All received',
       rows: refs.take(_shown).toList(),
       more: refs.skip(_shown).toList(),
@@ -205,7 +210,7 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
     final d = dirs[_tab];
     final rows = [...d.rows, if (_more[_tab]) ...d.more];
     final rawRows = data == null ? null : _items(_tab == 0 ? 'sent' : 'received');
-    final total = data == null ? 0 : _items('sent').length + _items('received').length;
+    final total = data == null ? 0 : [..._items('sent'), ..._items('received')].where((r) => r['status'] != 'cancelled').length;
     return MpPage(
       header: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -262,7 +267,7 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
     final p = raw?['patientId'];
     return D3RegisterRow(
       name: r.name,
-      trailing: D3Badge(r.status, tone: r.seen ? D3Tone.green : D3Tone.amber),
+      trailing: D3Badge(r.status, tone: r.cancelled ? D3Tone.grey : r.seen ? D3Tone.green : D3Tone.amber),
       detail: r.detail,
       footer: Text(r.date, style: tx(13, c: MP.ink3)),
       onTap: raw == null ? () => Nav.go(context, 'PP-Summary') : () => _open(r, raw, p is Map ? '${p['id']}' : null),
@@ -293,6 +298,7 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
               if (raw['status'] == 'awaiting')
                 MpButton(_tab == 0 ? 'They have seen the patient' : 'I have seen the patient', icon: I.check, onTap: () => Navigator.pop(context, 'seen')),
               if (patientId != null) MpButton('Open patient record', kind: MpBtn.secondary, onTap: () => Navigator.pop(context, 'patient')),
+              if (raw['status'] == 'awaiting') MpButton('Cancel referral', kind: MpBtn.danger, onTap: () => Navigator.pop(context, 'cancel')),
             ],
           ),
         ),
@@ -303,9 +309,10 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
       Nav.go(context, 'PP-Summary', args: {'patientId': patientId, 'referralId': raw['id']});
       return;
     }
-    final done = await runAction(context, () => Api.I.post('/api/referrals/${raw['id']}/seen', {}));
+    final cancel = action == 'cancel';
+    final done = await runAction(context, () => Api.I.post('/api/referrals/${raw['id']}/${cancel ? 'cancel' : 'seen'}', {}));
     if (done != null && mounted) {
-      toast(context, 'Marked as seen');
+      toast(context, cancel ? 'Referral cancelled' : 'Marked as seen');
       reload(quiet: true);
     }
   }
@@ -345,7 +352,8 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
     });
     try {
       final p = await Api.I.get('/api/patients/$id');
-      if (mounted && p is Map) setState(() => _patientName = '${p['name'] ?? 'Patient chosen'}');
+      final name = p is Map ? ((p['patient'] is Map ? p['patient']['name'] : null) ?? p['name']) : null;
+      if (mounted && name != null) setState(() => _patientName = '$name');
     } on ApiException {
       // The id is enough to save.
     }
@@ -375,7 +383,7 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
     final sent = _dir == 'sent';
     return MpSheet(
       title: 'Add a referral',
-      subtitle: 'It shows in Referrals and on the patient record.',
+      subtitle: 'It shows here and in the downloaded report.',
       showClose: true,
       child: Padding(
         padding: const EdgeInsets.only(top: 20),
