@@ -41,6 +41,7 @@ class P1 {
       sub: '6 tablets left',
       cta: 'Order a refill',
       icon: I.pill,
+      image: 'assets/images/hero_refill.jpg',
       stem: 'Patient-Medicines',
     ),
     P1Slide(
@@ -111,6 +112,7 @@ class P1 {
         sub: '${r.numOr('tabletsLeft').toInt()} tablets left',
         cta: 'Order a refill',
         icon: I.pill,
+        image: 'assets/images/hero_refill.jpg',
         stem: 'Patient-Medicines',
         args: {'courseId': r['courseId']},
       ));
@@ -355,7 +357,8 @@ class P1HeroSlide extends StatelessWidget {
                   width: 48,
                   height: 48,
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: _tileBg, borderRadius: BorderRadius.circular(14)),
+                  // On a photo the tile gets a soft blue so the icon stays clear.
+                  decoration: BoxDecoration(color: backdrop != null ? const Color(0x8C003399) : _tileBg, borderRadius: BorderRadius.circular(14)),
                   child: Ico(slide.icon!, size: 24, color: MP.white),
                 ),
               ),
