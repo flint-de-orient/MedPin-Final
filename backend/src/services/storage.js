@@ -50,6 +50,19 @@ async function save(buffer, { folder, name, mimeType, pages }) {
   return { key, name: name || path.basename(key), mimeType, sizeBytes: buffer.length, pages };
 }
 
+/** Writes a file at a given key (moving data between servers keeps the same keys). */
+async function putAt(key, buffer, mimeType) {
+  if (!/^[\w\-./]+$/.test(key) || key.includes('..')) throw new Error('Invalid key');
+  if (useS3) {
+    const { PutObjectCommand } = require('@aws-sdk/client-s3');
+    await s3Client().send(new PutObjectCommand({ Bucket: env.s3.bucket, Key: key, Body: buffer, ContentType: mimeType }));
+    return;
+  }
+  const full = path.join(env.uploadsDir, key);
+  await fs.promises.mkdir(path.dirname(full), { recursive: true });
+  await fs.promises.writeFile(full, buffer);
+}
+
 async function read(key) {
   if (useS3) {
     const { GetObjectCommand } = require('@aws-sdk/client-s3');
@@ -83,4 +96,4 @@ const withUrl = (file) => {
   return { ...plain, url: signedUrl(file.key) };
 };
 
-module.exports = { save, read, signedUrl, verifySignature, withUrl, useS3 };
+module.exports = { save, putAt, read, signedUrl, verifySignature, withUrl, useS3 };
