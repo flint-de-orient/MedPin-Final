@@ -111,7 +111,7 @@ class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> with LiveDa
     // "Email me a copy": emailed (asks for an email if none), and saved here too.
     final dynamic res;
     if (_email) {
-      res = await d3EmailExport(context, body, name: 'MedPin-appointment-history', busy: _busy);
+      res = await d3EmailExport(context, body, name: 'MedPin-appointment-history', busy: _busy, shareOnFail: false);
     } else {
       res = await runAction(context, () => Api.I.post('/api/exports', body), busy: _busy);
     }

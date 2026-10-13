@@ -842,8 +842,9 @@ Future<void> Function(BuildContext context, String url, String name) d3Share =
 /// POST /api/exports [body] with an emailed copy. When the account has no
 /// email it asks for one (saved to the profile) and tries again. When email
 /// can't be sent from MedPin (not set up / failed), the file opens in the share
-/// sheet so it can still be sent from Gmail or any app. Returns the export.
-Future<Map?> d3EmailExport(BuildContext context, Map<String, Object?> body, {String name = 'MedPin-report', ValueNotifier<bool>? busy}) async {
+/// sheet so it can still be sent from Gmail or any app ([shareOnFail]; the
+/// download sheets save the file instead). Returns the export.
+Future<Map?> d3EmailExport(BuildContext context, Map<String, Object?> body, {String name = 'MedPin-report', ValueNotifier<bool>? busy, bool shareOnFail = true}) async {
   Future<Map?> post() async {
     final r = await runAction(context, () => Api.I.post('/api/exports', {...body, 'emailCopy': true}), busy: busy);
     return r is Map ? r : null;
@@ -863,6 +864,10 @@ Future<Map?> d3EmailExport(BuildContext context, Map<String, Object?> body, {Str
   }
   final url = res['url'] as String?;
   if (res['emailNotSetUp'] == true || res['emailFailed'] == true) {
+    if (!shareOnFail) {
+      toast(context, res['emailNotSetUp'] == true ? "MedPin email isn't set up yet, so no copy was emailed" : "Couldn't email a copy. The file is saved on your phone.");
+      return res;
+    }
     toast(context, res['emailNotSetUp'] == true ? "MedPin email isn't set up yet. Choose Gmail or any app to send it." : "Couldn't send the email. Choose Gmail or any app to send it.");
     if (url != null) await d3Share(context, url, name);
   }

@@ -311,7 +311,7 @@ r.post('/exports', async (req, res) => {
     if (emailCopy && req.user.email && !emailNotSetUp) {
       emailed = await sendEmail({ to: req.user.email, subject: title, text: 'Your MedPin export is attached.', attachments: [{ filename: job.file.name, content: buffer }] })
         .then((r) => r?.provider === 'smtp')
-        .catch((err) => { console.warn('[exports] email', err.message); return false; });
+        .catch((err) => { console.warn('[exports] email failed:', err.code || '', err.responseCode || '', err.message); return false; });
       emailFailed = !emailed;
     }
     await M.AuditLog.create({ practiceId: req.practiceId, userId: req.user._id, action: 'export.create', entity: 'ExportJob', entityId: job._id, meta: { kind, format, includeMobiles, rows: job.rowCount }, ip: req.ip });
