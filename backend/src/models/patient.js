@@ -50,6 +50,8 @@ const patientSchema = new Schema(
     geo: pointSchema,
     riskLevel: enumOf(E.RISK_LEVELS),
     deviceSync: { at: Date, source: String, readings: Number, stepDays: Number }, // last watch / phone sync and what it brought in
+    // Who sees the daily log (meals, exercise, steps): the patient's choice. Unset: those whose access includes the log.
+    logShareWith: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: undefined },
     healthScore: { value: { type: Number, min: 0, max: 100 }, weeklyDelta: Number, computedAt: Date },
     trackedMeasures: {
       type: [enumOf(E.TRACKED_MEASURES)],

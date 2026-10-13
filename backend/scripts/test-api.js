@@ -930,6 +930,16 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.deepEqual([home3.steps.today, home3.steps.source], [9000, 'manual'], 'the higher of 9000 typed and 7100 counted');
     assert.equal(await M.HealthLog.countDocuments({ patientId: ctx.patientId, type: 'steps', fromDevice: { $ne: true } }), 1, 'one typed entry per day');
     assert.equal((await ctx.pat('POST', '/api/patient/logs', { type: 'steps', steps: 999999 })).status, 400);
+    // Who sees the daily log: the ticks become the setting; Home shows it; "Change" saves it.
+    const opts = ok(await ctx.pat('GET', '/api/patient/logs/options'));
+    const everyone = opts.shareWith.map((x) => String(x.userId));
+    ok(await ctx.pat('POST', '/api/patient/logs', { type: 'steps', steps: 9100, sharedWith: everyone.join(',') }), 201);
+    assert.equal(ok(await ctx.pat('GET', '/api/patient/home')).logSharedWith.length, everyone.length, 'all ticked: all shown');
+    assert.ok(ok(await ctx.pat('GET', '/api/patient/logs/options')).shareWith.every((x) => x.selected), 'the sheet starts ticked as last saved');
+    ok(await ctx.pat('PUT', '/api/patient/log-sharing', { userIds: [everyone[0]] }));
+    assert.deepEqual(ok(await ctx.pat('GET', '/api/patient/home')).logSharedWith.map((x) => String(x.userId)), [everyone[0]]);
+    ok(await ctx.pat('PUT', '/api/patient/log-sharing', { userIds: [] }));
+    assert.equal(ok(await ctx.pat('GET', '/api/patient/home')).logSharedWith.length, 0, 'private');
 
     // Proof review: the signed link works, a wrong token doesn't, approving tells the doctor.
     const prof = ok(await ctx.doc('POST', '/api/doctor/qualifications', { name: 'MBBS', institution: 'Calcutta Medical College', year: 2010 }), 201);

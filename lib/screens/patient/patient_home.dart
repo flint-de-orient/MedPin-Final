@@ -207,14 +207,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
   }
 
   /// "Change" under the daily log: the first doctor it is shared with.
-  void _openSharing(BuildContext context) {
-    final people = data?.list('logSharedWith') ?? const <Map<String, dynamic>>[];
-    final doctor = people.where((p) => p['role'] == 'doctor').firstOrNull ?? people.firstOrNull;
-    if (data != null && doctor == null) {
-      Nav.tab(context, 'Patient-Doctors');
-      return;
-    }
-    Nav.go(context, 'Patient-DoctorDetail', args: doctor == null ? null : {'doctorId': doctor['userId']});
+  /// "Change": who sees the daily log (all of the care team to choose from).
+  Future<void> _openSharing(BuildContext context) async {
+    if (!isLive) return toast(context, 'Share your daily log');
+    final changed = await openSheet<bool>(context, (_) => const LogSharingSheet());
+    if (changed == true && mounted) reload(quiet: true);
   }
 
   // ── Daily log ──

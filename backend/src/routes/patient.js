@@ -187,7 +187,7 @@ r.get('/home', async (req, res) => {
   const useUpload = upRx && (!rx || upRx.recordDate > rx.issuedAt);
   const [plans, team, adh, readings] = await Promise.all([
     M.ActivityPlan.find({ patientId: p._id, active: true }).limit(1),
-    M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $in: ['full_with_logs', 'daily_log_only'] } }).populate('userId', 'name'),
+    logShareTeam(p),
     care.adherence(p, 30),
     M.Vitals.find({ patientId: p._id, recordedAt: { $gte: T.addDays(today, -30) } }).sort({ recordedAt: 1 }),
   ]);
@@ -254,6 +254,13 @@ async function stepsToday(patientId, since) {
   if (!logs.length) return { today: 0, source: null };
   if (manual > auto) return { today: manual, source: 'manual' };
   return { today: auto, source: device.some((l) => l.stepSource === 'phone') && !device.some((l) => l.stepSource === 'watch') ? 'phone' : 'watch' };
+}
+
+/** The care team the daily log goes to (the patient's choice, else access levels). */
+async function logShareTeam(p) {
+  const team = await M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name');
+  const chosen = Array.isArray(p.logShareWith) ? new Set(p.logShareWith.map(String)) : null;
+  return team.filter((c) => c.userId && (chosen ? chosen.has(String(c.userId._id)) : ['full_with_logs', 'daily_log_only'].includes(c.accessLevel)));
 }
 
 // ── Find a doctor ──
@@ -739,7 +746,9 @@ r.get('/logs/options', async (req, res) => {
     const prof = profiles.find((x) => String(x.userId) === String(c.userId._id));
     const specialty = prof ? labels.get(prof.specialtyKeys[0]) : null;
     const label = c.role === 'dietician' ? `Dietician · ${reviews}` : specialty || c.role.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase());
-    return { userId: c.userId._id, name: c.userId.name, role: c.role, label, seesLogs: ['full_with_logs', 'daily_log_only'].includes(c.accessLevel) };
+    const seesLogs = ['full_with_logs', 'daily_log_only'].includes(c.accessLevel);
+    const selected = Array.isArray(p.logShareWith) ? p.logShareWith.some((id) => String(id) === String(c.userId._id)) : seesLogs;
+    return { userId: c.userId._id, name: c.userId.name, role: c.role, label, seesLogs, selected };
   });
   // Dieticians first (they review food logs), then doctors who already see the log.
   shareWith.sort((a, b) => Number(b.role === 'dietician') - Number(a.role === 'dietician') || Number(b.seesLogs) - Number(a.seesLogs));
@@ -747,11 +756,26 @@ r.get('/logs/options', async (req, res) => {
   res.json({ shareWith, steps: { today: steps.today, goal: p.targets?.stepsPerDay || 8000, source: steps.source }, activityPlans: plans });
 });
 
+// "Share your daily log": who sees new meals, exercise and steps.
+r.put('/log-sharing', async (req, res) => {
+  const ids = list(req.body.userIds).filter(isId);
+  const team = await M.CareTeamAccess.find({ patientId: req.patient._id, userId: { $in: ids }, accessLevel: { $ne: 'not_shared' } }).distinct('userId');
+  req.patient.logShareWith = team;
+  await req.patient.save();
+  res.json({ userIds: team });
+});
+
 r.post('/logs', photoUpload.single('photo'), async (req, res) => {
   const b = req.body;
   if (!E.LOG_TYPES.includes(b.type)) throw badRequest('Choose meal, exercise or steps');
   if (b.type === 'steps' && !(Number.isInteger(Number(b.steps)) && Number(b.steps) >= 0 && Number(b.steps) <= 200000)) throw badRequest('Enter the steps (0–200,000)');
   const sharedWith = list(b.sharedWith).filter(isId);
+  // The ticks become the patient's sharing choice for the next entries too.
+  if (b.sharedWith !== undefined) {
+    const allowed = await M.CareTeamAccess.find({ patientId: req.patient._id, userId: { $in: sharedWith }, accessLevel: { $ne: 'not_shared' } }).distinct('userId');
+    req.patient.logShareWith = allowed;
+    await req.patient.save();
+  }
   const practice = (await M.PatientEnrolment.findOne({ patientId: req.patient._id, status: 'linked' }).populate('practiceId', 'foodLogReviewCadence'))?.practiceId;
   const cadence = { daily: 1, every_3_days: 3, weekly: 7 }[practice?.foodLogReviewCadence || 'every_3_days'];
   if (b.type === 'steps') {

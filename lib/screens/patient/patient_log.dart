@@ -60,7 +60,8 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
     final people = res.list('shareWith');
     _share
       ..clear()
-      ..addAll([for (final p in people) p['seesLogs'] == true]);
+      // Ticked: the patient's saved choice (who sees the daily log).
+      ..addAll([for (final p in people) (p['selected'] ?? p['seesLogs']) == true]);
     return res;
   }
 
@@ -330,6 +331,93 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// "Share your daily log" (Home → Change): who sees new meals, exercise
+/// and steps. GET /api/patient/logs/options, saved with PUT /log-sharing.
+class LogSharingSheet extends StatefulWidget {
+  const LogSharingSheet({super.key});
+
+  @override
+  State<LogSharingSheet> createState() => _LogSharingSheetState();
+}
+
+class _LogSharingSheetState extends State<LogSharingSheet> with LiveData {
+  final _on = <String>{};
+  final _busy = ValueNotifier(false);
+
+  @override
+  Future<Object?> fetch() async {
+    final res = (await Api.I.get('/api/patient/logs/options') as Map).cast<String, dynamic>();
+    _on
+      ..clear()
+      ..addAll([for (final p in res.list('shareWith')) if ((p['selected'] ?? p['seesLogs']) == true) p.str('userId')]);
+    return res;
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final ok = await runAction(context, () => Api.I.put('/api/patient/log-sharing', {'userIds': _on.toList()}), busy: _busy);
+    if (ok == null || !mounted) return;
+    Navigator.pop(context, true);
+    toast(context, _on.isEmpty ? 'Your daily log is private' : 'Sharing updated');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final people = data?.list('shareWith') ?? const <Map<String, dynamic>>[];
+    final placeholder = livePlaceholder();
+    return MpSheet(
+      title: 'Share your daily log',
+      subtitle: 'Who sees your meals, exercise and steps',
+      child: placeholder ??
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (people.isEmpty) Text('No one in your care team yet.', style: tx(14, c: MP.ink2)),
+              for (var i = 0; i < people.length; i++)
+                Tap(
+                  onTap: () => setState(() => _on.contains(people[i].str('userId')) ? _on.remove(people[i].str('userId')) : _on.add(people[i].str('userId'))),
+                  radius: 0,
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 56),
+                    decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
+                    child: Row(
+                      children: [
+                        MpCheck(
+                          value: _on.contains(people[i].str('userId')),
+                          onChanged: (v) => setState(() => v ? _on.add(people[i].str('userId')) : _on.remove(people[i].str('userId'))),
+                        ),
+                        const Gap(12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(people[i].str('name'), style: tx(15, w: w600)),
+                              const Gap(1),
+                              Text(people[i].str('label'), style: tx(13, c: MP.ink2)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              const Gap(20),
+              ValueListenableBuilder<bool>(
+                valueListenable: _busy,
+                builder: (_, busy, _) => MpButton(busy ? 'Saving…' : 'Save', onTap: busy ? null : _save),
+              ),
+            ],
+          ),
     );
   }
 }
