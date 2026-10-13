@@ -38,6 +38,8 @@ dependencies:
   latlong2: ^0.10.1
   smart_auth: ^3.2.0
   razorpay_flutter: ^1.4.7
+  pedometer: ^4.2.0
+  permission_handler: ^13.0.2
 
 dev_dependencies:
   flutter_test:

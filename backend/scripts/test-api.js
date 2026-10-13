@@ -918,6 +918,11 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(summary.body.length > 10, 'a summary even without AI');
     const home = ok(await ctx.pat('GET', '/api/patient/home'));
     assert.ok(home.deviceSync?.at, 'Home shows the last sync');
+    assert.deepEqual([home.deviceSync.readings, home.deviceSync.stepDays], [0, 1], 'the last sync says what it brought in');
+    // Steps counted by the phone itself (no watch): shown as "counted by your phone".
+    ok(await ctx.pat('POST', '/api/patient/device-sync', { source: 'Phone', stepSource: 'phone', days: [{ date: day, steps: 7100, source: 'phone' }], readings: [] }));
+    const home2 = ok(await ctx.pat('GET', '/api/patient/home'));
+    assert.deepEqual([home2.steps.today, home2.steps.source], [7100, 'phone']);
 
     // Proof review: the signed link works, a wrong token doesn't, approving tells the doctor.
     const prof = ok(await ctx.doc('POST', '/api/doctor/qualifications', { name: 'MBBS', institution: 'Calcutta Medical College', year: 2010 }), 201);

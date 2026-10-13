@@ -92,6 +92,7 @@ const healthLogSchema = new Schema(
     durationMin: Number,
     steps: { type: Number, min: 0 },
     fromDevice: Boolean, // synced from a watch / phone (Health Connect, Apple Health)
+    stepSource: String, // 'phone' (its own step sensor) or 'watch'
     note: String, // "2 rotis, dal, salad"
     photo: fileSchema,
     inputMode: enumOf(E.INPUT_MODES, { default: 'typed' }),

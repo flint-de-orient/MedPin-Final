@@ -6,6 +6,7 @@ import 'package:health/health.dart';
 import '../widgets/mp.dart';
 import 'api.dart';
 import 'config.dart';
+import 'phone_steps.dart';
 
 /// Watch / ring / phone readings through Health Connect (Android) or Apple
 /// Health (iPhone): daily steps, heart rate, SpO₂, blood pressure, sugar and
@@ -38,14 +39,18 @@ class DeviceSync {
   static Future<bool> connect(BuildContext context) async {
     if (!supported) return false;
     try {
+      // The phone counts steps itself: no watch needed.
+      final phone = await PhoneSteps.allow();
       await _configure();
       if (Platform.isAndroid && await _health.getHealthConnectSdkStatus() != HealthConnectSdkStatus.sdkAvailable) {
+        // No Health Connect: steps still come from the phone.
+        if (phone && context.mounted) return sync(context, force: true);
         if (context.mounted) toast(context, 'Install Health Connect to sync your watch, then try again');
         await _health.installHealthConnect();
         return false;
       }
       final ok = await _health.requestAuthorization(_types, permissions: [for (final _ in _types) HealthDataAccess.READ]);
-      if (!ok) {
+      if (!ok && !phone) {
         if (context.mounted) toast(context, 'Allow MedPin to read your health data to sync');
         return false;
       }
@@ -58,6 +63,18 @@ class DeviceSync {
     }
   }
 
+  static bool _askedPhone = false;
+
+  /// From Home: asks once for the phone's step sensor, then syncs quietly.
+  static Future<bool> auto() async {
+    if (!supported) return false;
+    if (!_askedPhone && PhoneSteps.supported && !await PhoneSteps.allowed) {
+      _askedPhone = true;
+      await PhoneSteps.allow();
+    }
+    return sync(null);
+  }
+
   /// Sends the last 7 days (at most every 30 minutes unless [force]). Quiet without [context].
   static Future<bool> sync(BuildContext? context, {bool force = false}) async {
     if (!supported) return false;
@@ -65,17 +82,34 @@ class DeviceSync {
     _lastRun = DateTime.now();
     try {
       await _configure();
-      final has = await _health.hasPermissions(_types, permissions: [for (final _ in _types) HealthDataAccess.READ]);
-      if (has != true && !force) return false;
+      final hc = Platform.isIOS || await _health.getHealthConnectSdkStatus() == HealthConnectSdkStatus.sdkAvailable;
+      final has = hc && await _health.hasPermissions(_types, permissions: [for (final _ in _types) HealthDataAccess.READ]) == true;
+      final phoneToday = await PhoneSteps.today();
+      if (!has && phoneToday == null) return false;
       final now = DateTime.now();
       final from = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6));
       final days = <Map<String, Object>>[];
-      for (var d = from; !d.isAfter(now); d = d.add(const Duration(days: 1))) {
-        final end = d.add(const Duration(days: 1));
-        final n = await _health.getTotalStepsInInterval(d, end.isAfter(now) ? now : end);
-        if (n != null && n > 0) days.add({'date': _key(d), 'steps': n});
+      var stepSource = 'watch';
+      if (has) {
+        for (var d = from; !d.isAfter(now); d = d.add(const Duration(days: 1))) {
+          final end = d.add(const Duration(days: 1));
+          final n = await _health.getTotalStepsInInterval(d, end.isAfter(now) ? now : end);
+          if (n != null && n > 0) days.add({'date': _key(d), 'steps': n, 'source': 'watch'});
+        }
       }
-      final points = _health.removeDuplicates(await _health.getHealthDataFromTypes(types: _types.where((t) => t != HealthDataType.STEPS).toList(), startTime: from, endTime: now));
+      // Today from the phone's own sensor when it counted more (or there's no watch).
+      if (phoneToday != null && phoneToday > 0) {
+        final i = days.indexWhere((d) => d['date'] == _key(now));
+        final had = i < 0 ? 0 : days[i]['steps'] as int;
+        if (phoneToday > had) {
+          if (i >= 0) days.removeAt(i);
+          days.add({'date': _key(now), 'steps': phoneToday, 'source': 'phone'});
+          stepSource = 'phone';
+        }
+      }
+      final points = has
+          ? _health.removeDuplicates(await _health.getHealthDataFromTypes(types: _types.where((t) => t != HealthDataType.STEPS).toList(), startTime: from, endTime: now))
+          : <HealthDataPoint>[];
       final readings = <Map<String, Object?>>[];
       num? val(HealthDataPoint p) => p.value is NumericHealthValue ? (p.value as NumericHealthValue).numericValue : null;
       // Heart rate and SpO₂: the latest of each day is enough.
@@ -105,12 +139,14 @@ class DeviceSync {
         readings.add({'kind': 'sugar', 'at': p.dateFrom.toUtc().toIso8601String(), 'value': v.round()});
       }
       final res = await Api.I.post('/api/patient/device-sync', {
-        'source': Platform.isIOS ? 'Apple Health' : 'Health Connect',
+        'source': has ? (Platform.isIOS ? 'Apple Health' : 'Health Connect') : 'Phone',
+        'stepSource': stepSource,
         'days': days,
         'readings': readings,
       }) as Map;
       if (context != null && context.mounted && force) {
-        toast(context, 'Synced ${res['days']} days of steps and ${res['readings']} new readings');
+        final r = res['readings'] as num? ?? 0;
+        toast(context, phoneToday != null && !has ? 'Steps updated from your phone' : 'Synced ${res['days']} days of steps and $r new readings');
       }
       return true;
     } catch (e) {

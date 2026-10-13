@@ -148,7 +148,7 @@ r.get('/home', async (req, res) => {
     M.Appointment.findOne({ patientId: p._id, startAt: { $gte: today }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }).sort({ startAt: 1 }).populate('doctorId', 'name').populate('locationId', 'name shortName'),
     M.LabResult.findOne({ patientId: p._id, createdAt: { $gte: T.addDays(today, -3) } }).sort({ createdAt: -1 }),
     M.MedicationCourse.find({ patientId: p._id, status: 'active' }),
-    M.HealthLog.aggregate([{ $match: { patientId: p._id, type: 'steps', loggedAt: { $gte: today } } }, { $group: { _id: null, n: { $sum: '$steps' } } }]),
+    M.HealthLog.aggregate([{ $match: { patientId: p._id, type: 'steps', loggedAt: { $gte: today } } }, { $group: { _id: null, n: { $sum: '$steps' }, src: { $addToSet: '$stepSource' }, dev: { $max: '$fromDevice' } } }]),
     M.HealthLog.find({ patientId: p._id, loggedAt: { $gte: today } }),
     M.AiSummary.findOne({ patientId: p._id, audience: 'patient' }).sort({ generatedAt: -1 }),
     M.TreatmentPlan.findOne({ patientId: p._id }).sort({ updatedAt: -1 }),
@@ -230,7 +230,7 @@ r.get('/home', async (req, res) => {
     slides,
     tasks,
     tasksDone: tasks.filter((t) => t.done).length,
-    steps: { today: steps[0]?.n || 0, goal: p.targets?.stepsPerDay || 8000 },
+    steps: { today: steps[0]?.n || 0, goal: p.targets?.stepsPerDay || 8000, source: !steps[0] ? null : steps[0].src?.includes('watch') ? 'watch' : steps[0].src?.includes('phone') ? 'phone' : steps[0].dev ? 'watch' : 'manual' },
     refills,
     nextVisit,
     aiSummary: summary || (plan?.healthSummary ? { body: plan.healthSummary, focusItems: plan.focusItems, generatedAt: plan.updatedAt } : null),
@@ -713,7 +713,7 @@ r.get('/logs/options', async (req, res) => {
   const today = T.dayStart();
   const [team, steps, enrolment] = await Promise.all([
     M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name'),
-    M.HealthLog.aggregate([{ $match: { patientId: p._id, type: 'steps', loggedAt: { $gte: today } } }, { $group: { _id: null, n: { $sum: '$steps' } } }]),
+    M.HealthLog.aggregate([{ $match: { patientId: p._id, type: 'steps', loggedAt: { $gte: today } } }, { $group: { _id: null, n: { $sum: '$steps' }, src: { $addToSet: '$stepSource' }, dev: { $max: '$fromDevice' } } }]),
     M.PatientEnrolment.findOne({ patientId: p._id, status: 'linked' }).populate('practiceId', 'foodLogReviewCadence'),
   ]);
   const profiles = await M.DoctorProfile.find({ userId: { $in: team.map((c) => c.userId?._id) } }, 'userId specialtyKeys');
@@ -729,7 +729,7 @@ r.get('/logs/options', async (req, res) => {
   // Dieticians first (they review food logs), then doctors who already see the log.
   shareWith.sort((a, b) => Number(b.role === 'dietician') - Number(a.role === 'dietician') || Number(b.seesLogs) - Number(a.seesLogs));
   const plans = await M.ActivityPlan.find({ patientId: p._id, active: true }, 'name exerciseType durationMin');
-  res.json({ shareWith, steps: { today: steps[0]?.n || 0, goal: p.targets?.stepsPerDay || 8000 }, activityPlans: plans });
+  res.json({ shareWith, steps: { today: steps[0]?.n || 0, goal: p.targets?.stepsPerDay || 8000, source: !steps[0] ? null : steps[0].src?.includes('watch') ? 'watch' : steps[0].src?.includes('phone') ? 'phone' : steps[0].dev ? 'watch' : 'manual' }, activityPlans: plans });
 });
 
 r.post('/logs', photoUpload.single('photo'), async (req, res) => {
@@ -801,7 +801,7 @@ r.post('/device-sync', async (req, res) => {
     if (!day || !Number.isFinite(n) || n < 0 || n > 200000) continue;
     await M.HealthLog.findOneAndUpdate(
       { patientId: p._id, type: 'steps', fromDevice: true, loggedAt: { $gte: day, $lt: T.addDays(day, 1) } },
-      { $set: { steps: n }, $setOnInsert: { patientId: p._id, type: 'steps', fromDevice: true, loggedAt: T.addMinutes(day, 12 * 60) } },
+      { $set: { steps: n, stepSource: d.source === 'phone' ? 'phone' : 'watch' }, $setOnInsert: { patientId: p._id, type: 'steps', fromDevice: true, loggedAt: T.addMinutes(day, 12 * 60) } },
       { upsert: true },
     );
     steps += 1;
@@ -828,7 +828,8 @@ r.post('/device-sync', async (req, res) => {
     }
   }
   const source = String(req.body.source || 'device').slice(0, 40);
-  await M.Patient.updateOne({ _id: p._id }, { deviceSync: { at: new Date(), source } });
+  // What the last sync brought in (the app says "no new readings" when nothing came).
+  await M.Patient.updateOne({ _id: p._id }, { deviceSync: { at: new Date(), source, readings: added, stepDays: steps } });
   res.json({ days: steps, readings: added, alerted, at: new Date(), source });
 });
 

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/device_sync.dart';
+import '../../data/phone_steps.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/photo.dart';
@@ -46,8 +47,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
   @override
   Future<Object?> fetch() async {
     final home = await Api.I.get('/api/patient/home');
-    // Once connected, new watch readings go up quietly (at most every 30 min).
-    if (home is Map && home['deviceSync'] != null) DeviceSync.sync(null);
+    // Steps from the phone and readings from a connected watch go up quietly
+    // (at most every 30 min); the first time, Android asks for "Physical activity".
+    DeviceSync.auto().then((sent) {
+      if (sent && mounted) reload(quiet: true);
+    });
     return home;
   }
 
@@ -166,6 +170,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
   String get _hello => data == null ? 'Good morning,' : '${F.greeting()},';
   /// Last watch / phone sync (null: never connected).
   DateTime? get _synced => F.date(data?.obj('deviceSync')['at']);
+
+  /// The last sync brought in nothing (no watch writing to Health Connect yet).
+  bool get _syncEmpty {
+    final s = data?.obj('deviceSync') ?? const {};
+    return s['readings'] == 0 && s['stepDays'] == 0;
+  }
 
   int get _unread => data == null ? 1 : data!.numOr('unreadNotifications').toInt();
   String get _initials => data == null ? 'PS' : F.initials(Session.I.name.isEmpty ? _name : Session.I.name);
@@ -657,7 +667,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
                       const TextSpan(text: ' steps'),
                     ]),
                   ),
-                  sub: 'Goal ${F.count(_stepGoal)} · entered by you',
+                  sub: 'Goal ${F.count(_stepGoal)} · ${switch (data?.obj('steps').str('source')) {
+                    'phone' => 'counted by your phone',
+                    'watch' => 'from your watch',
+                    'manual' => 'entered by you',
+                    _ => isLive ? 'opens to your phone’s step count' : 'entered by you',
+                  }}',
                   trailing: P1SoftButton('Add', onTap: () => _openLog(context, 2)),
                 ),
                 const Gap(8),
@@ -879,7 +894,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
           Tap(
             onTap: () async {
               if (!isLive) return toast(context, 'Smartwatch and ring sync');
-              final run = _synced == null ? DeviceSync.connect(context) : DeviceSync.sync(context, force: true);
+              final phoneOk = await PhoneSteps.allowed;
+              if (!context.mounted) return;
+              final run = _synced == null || !phoneOk ? DeviceSync.connect(context) : DeviceSync.sync(context, force: true);
               final ok = await run;
               if (ok && mounted) reload(quiet: true);
             },
@@ -891,9 +908,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
                 children: [
                   const Ico(_watch, size: 20, color: MP.ink2),
                   const Gap(12),
-                  Expanded(child: Text(_synced == null ? 'Smartwatch and ring sync' : 'Synced ${F.ago(_synced!)} · tap to sync now', style: tx(14, c: MP.ink2))),
+                  Expanded(child: Text(_synced == null ? 'Smartwatch and ring sync' : (_syncEmpty ? 'Synced ${F.ago(_synced!)} · no new readings from a watch' : 'Synced ${F.ago(_synced!)} · tap to sync now'), style: tx(14, c: MP.ink2))),
                   const Gap(12),
-                  if (!isLive) const MpBadge.grey('Coming soon') else if (_synced == null) const MpBadge.blue('Connect') else const Ico(I.check, size: 18, color: MP.green, stroke: 2.2),
+                  if (!isLive) const MpBadge.grey('Coming soon') else if (_synced == null) const MpBadge.blue('Connect') else if (_syncEmpty) const Ico(I.chevronRight, size: 18, color: MP.ink3) else const Ico(I.check, size: 18, color: MP.green, stroke: 2.2),
                 ],
               ),
             ),
