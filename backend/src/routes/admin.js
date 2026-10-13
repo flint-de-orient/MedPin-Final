@@ -210,7 +210,12 @@ async function buildRows(req, job) {
       const items = await M.FollowUp.find(q).sort({ dueDate: 1 }).populate('patientId', 'name phone').lean();
       sets.follow_ups = {
         header: ['Due', 'Patient', ...mob, 'Advice', 'Status', 'Reminders sent', 'Last reminded'],
-        rows: items.map((x) => [day(x.dueDate), x.patientId?.name, ...(job.includeMobiles ? [mobile(x.patientId)] : []), x.adviceText || '', x.status, x.remindersSent || 0, day(x.lastRemindedAt)]),
+        // Status as the Follow-ups report shows it: came back on time / late, missed (3 days overdue), booked, not booked.
+        rows: items.map((x) => {
+          const outcome = require('./reports').followUpOutcome(x);
+          const status = outcome !== 'pending' ? outcome : x.status;
+          return [day(x.dueDate), x.patientId?.name, ...(job.includeMobiles ? [mobile(x.patientId)] : []), x.adviceText || '', status, x.remindersSent || 0, day(x.lastRemindedAt)];
+        }),
       };
     } else if (type === 'referrals') {
       const q = { practiceId: req.practiceId, referredAt: { $gte: from, $lt: to } };
@@ -263,7 +268,7 @@ async function buildRows(req, job) {
   return sets;
 }
 
-async function render(sets, format, title) {
+async function render(sets, format, title, meta) {
   if (format === 'json') {
     const obj = Object.fromEntries(Object.entries(sets).map(([k, s]) => [k, s.rows.map((row) => Object.fromEntries(s.header.map((h, i) => [h, row[i]])))]));
     return { buffer: Buffer.from(JSON.stringify(obj, null, 2)), mimeType: 'application/json', ext: 'json' };
@@ -282,7 +287,36 @@ async function render(sets, format, title) {
     return { buffer: Buffer.from(await wb.xlsx.writeBuffer()), mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
   }
   const [first] = Object.values(sets);
+  // Reports and history: the letterhead layout (services/reportpdf.js).
+  if (meta) return { buffer: await require('../services/reportpdf').renderReport(sets, meta), mimeType: 'application/pdf', ext: 'pdf' };
   return { buffer: await simplePdf(title, first?.rows || [], first?.header), mimeType: 'application/pdf', ext: 'pdf' };
+}
+
+/** Letterhead and heading for a report PDF: clinic, logo, title, period, locations, who made it. */
+async function reportMeta(req, job, sets) {
+  const { TITLES, fmtDay } = require('../services/reportpdf');
+  const practice = await M.Practice.findById(req.practiceId, 'name logo');
+  const ids = list(job.filters?.locationIds).filter((x) => /^[0-9a-f]{24}$/i.test(x));
+  const locs = await M.Location.find({ practiceId: req.practiceId, ...(ids.length ? { _id: { $in: ids } } : {}), status: { $ne: 'inactive' } }).sort({ createdAt: 1 });
+  const logoFile = practice?.logo?.key ? practice.logo : locs.find((l) => l.letterhead?.logo?.key)?.letterhead.logo;
+  const logo = logoFile?.key ? await storage.read(logoFile.key).catch(() => null) : null;
+  const from = job.filters?.from ? T.parseDay(job.filters.from) : T.addDays(T.dayStart(), -30);
+  const to = job.filters?.to ? T.parseDay(job.filters.to) : T.dayStart();
+  const day = (d) => fmtDay(T.dayKey(d));
+  const key = Object.keys(sets)[0];
+  const type = job.kind === 'appointment_history' ? 'appointments' : job.reportType || key;
+  const short = (l) => l.shortName || l.name;
+  return {
+    type,
+    title: TITLES[type] || 'Report',
+    practiceName: practice?.name || 'MedPin',
+    place: locs.length === 1 ? [locs[0].name, locs[0].address, locs[0].city].filter(Boolean).join(', ') : locs.map(short).join(' · '),
+    period: T.dayKey(from) === T.dayKey(to) ? day(from) : `${day(from)} – ${day(to)}`,
+    locations: ids.length ? locs.map(short).join(', ') : 'All locations',
+    generatedAt: new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }),
+    generatedBy: req.user.name,
+    logo,
+  };
 }
 
 r.post('/exports', async (req, res) => {
@@ -298,7 +332,8 @@ r.post('/exports', async (req, res) => {
   try {
     const sets = await buildRows(req, job);
     const title = `MedPin ${kind.replace('_', ' ')}${reportType ? ` · ${reportType}` : ''} · ${T.dayKey(new Date())}`;
-    const { buffer, mimeType, ext } = await render(sets, format, title);
+    const meta = format === 'pdf' && kind !== 'data_export' ? await reportMeta(req, job, sets) : null;
+    const { buffer, mimeType, ext } = await render(sets, format, title, meta);
     job.file = await storage.save(buffer, { folder: 'exports', name: `medpin-${reportType || kind}-${T.dayKey(new Date())}.${ext}`, mimeType });
     job.rowCount = Object.values(sets).reduce((n, s) => n + s.rows.length, 0);
     job.status = 'done';

@@ -374,3 +374,4 @@ module.exports = r;
 module.exports.rangeOf = rangeOf;
 module.exports.filtersOf = filtersOf;
 module.exports.visits = visits;
+module.exports.followUpOutcome = followUpOutcome;
