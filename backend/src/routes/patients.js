@@ -116,6 +116,13 @@ r.post('/patients/link', async (req, res) => {
   if (!patient) throw notFound('Patient');
   const consent = await M.ConsentCode.findOne({ patientId: patient._id, usedAt: null, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
   if (!consent || !safeEqual(consent.codeHash, hmac(`consent:${patient._id}:${code}`))) {
+    // Guessing: after 5 wrong tries the code stops working and the patient shows a new one.
+    if (consent && ++consent.wrongTries >= 5) {
+      consent.expiresAt = new Date();
+      await consent.save();
+      throw badRequest('Too many wrong tries. Ask the patient to show a new code.', 'WRONG_CODE');
+    }
+    if (consent) await consent.save();
     throw badRequest("That code isn't right or has expired. Ask the patient for the new code.", 'WRONG_CODE');
   }
   consent.usedAt = new Date();

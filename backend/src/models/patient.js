@@ -101,6 +101,7 @@ const consentCodeSchema = new Schema(
     expiresAt: { type: Date, required: true },
     usedAt: Date,
     usedByPracticeId: ref('Practice'),
+    wrongTries: { type: Number, default: 0 }, // 5 wrong tries cancel the code
   },
   baseOptions,
 );

@@ -5,10 +5,11 @@ import 'package:flutter/widgets.dart';
 import 'api.dart';
 import 'config.dart';
 import 'local_notes.dart';
+import 'push.dart';
 import 'session.dart';
 
 /// Medicine alarms rung by the phone itself (work offline, survive reboots):
-/// one alarm per dose for today and tomorrow, from GET /api/patient/doses.
+/// one alarm per dose for the next 7 days, from GET /api/patient/doses.
 /// Re-synced when the patient signs in, opens the app, marks a dose, or
 /// changes medicines / reminder times. Switching "Medicine reminders" off in
 /// Profile removes them.
@@ -35,7 +36,8 @@ class MedAlarms with WidgetsBindingObserver {
       WidgetsBinding.instance.addObserver(this);
     }
     // Alarms at the exact dose time need permission on Android 12+.
-    LocalNotes.I.requestPermission(exactAlarms: true);
+    // Then the server knows whether this phone rings them (or it should push them).
+    LocalNotes.I.requestPermission(exactAlarms: true).then((_) => Push.I.refresh()).catchError((_) {});
     sync();
   }
 
@@ -58,7 +60,7 @@ class MedAlarms with WidgetsBindingObserver {
       final on = (me['settings'] as Map?)?['medReminders'] != false;
       if (!on) return clear();
       final now = DateTime.now();
-      final days = [now, now.add(const Duration(days: 1))];
+      final days = [for (var i = 0; i < 7; i++) now.add(Duration(days: i))];
       final wanted = <int, (DateTime, String, String)>{};
       for (final d in days) {
         final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';

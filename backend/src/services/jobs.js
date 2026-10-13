@@ -69,13 +69,21 @@ async function doseReminders(now, since) {
 }
 
 async function visitReminders(now) {
-  for (const [hours, label] of [[24, 'tomorrow'], [2, 'in 2 hours']]) {
-    const from = new Date(now.getTime() + (hours * 60 - 10) * 60000);
+  // "A day before" (up to 24 h ahead, until 2 h before) and "2 hours before".
+  // Any visit in the window not yet reminded gets it, so a server pause loses nothing.
+  for (const [hours, until] of [[24, 2], [2, 0]]) {
+    const from = new Date(now.getTime() + until * 3600e3);
     const to = new Date(now.getTime() + hours * 3600e3);
     const appts = await M.Appointment.find({ status: { $in: ['booked', 'confirmed'] }, startAt: { $gt: from, $lte: to } }).limit(1000);
     for (const a of appts) {
+      // Booked only shortly before (e.g. this morning for this evening): the confirmation was enough.
+      if (a.createdAt && a.startAt - a.createdAt < (hours === 24 ? 12 : 2) * 3600e3) continue;
       const p = await M.Patient.findById(a.patientId, 'userId settings');
       if (!p?.userId || p.settings?.visitReminders === false) continue;
+      const mins = Math.round((a.startAt - now) / 60000);
+      const label = hours === 2
+        ? (mins < 90 ? `in ${mins} minutes` : 'in about 2 hours')
+        : T.dayKey(a.startAt) === T.dayKey(now) ? 'today' : 'tomorrow';
       await once(`visit${hours}:${a._id}`, async () =>
         notify([p.userId], {
           type: 'visit_reminder', practiceId: a.practiceId, title: `Your visit is ${label}`, body: await visitText(a),
@@ -140,7 +148,8 @@ async function dailyLogReminders(now) {
   const minute = T.minuteOfDay(now);
   const patients = await M.Patient.find({ userId: { $ne: null }, 'settings.dailyLogReminder': { $ne: false } }, 'userId settings').limit(5000);
   for (const p of patients) {
-    if (minute < T.hhmmToMin(p.settings?.dailyLogReminderAt || '20:00')) continue;
+    const at = /^\d{2}:\d{2}$/.test(p.settings?.dailyLogReminderAt || '') ? p.settings.dailyLogReminderAt : '20:00';
+    if (minute < T.hhmmToMin(at)) continue;
     const logged = await M.HealthLog.exists({ patientId: p._id, loggedAt: { $gte: T.dayStart(now) } });
     if (logged) continue;
     await once(`log:${p._id}:${day}`, () =>

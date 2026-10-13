@@ -127,6 +127,7 @@ String _clock(String hhmm) {
 const _icGlobe = '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>';
 const _icHelp = '<circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>';
 const _icCopy = '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>';
+const _icKey = '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>';
 const _icRuler = '<path d="M21.3 15.3 8.7 2.7a1 1 0 0 0-1.4 0L2.7 7.3a1 1 0 0 0 0 1.4l12.6 12.6a1 1 0 0 0 1.4 0l4.6-4.6a1 1 0 0 0 0-1.4Z"/><path d="m7.5 10.5 2-2M10.5 13.5l2-2M13.5 16.5l2-2"/>';
 
 // ── Screen ───────────────────────────────────────────────────────────────────
@@ -146,6 +147,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
   String _language = _languages.first;
   bool _medReminders = true;
   bool _logReminder = true;
+  String _sampleLogAt = '20:00';
   bool _visitReminders = true;
   bool _appLock = true;
 
@@ -377,7 +379,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
     final viewers = _viewerRows;
     final allergies = _allergyList;
     final conditions = _conditionList;
-    final logAt = data == null ? '8:00 PM' : _clock(_settings.str('dailyLogReminderAt', '20:00'));
+    final logAt = _clock(data == null ? _sampleLogAt : _settings.str('dailyLogReminderAt', '20:00'));
     return MpPage(
       nav: const PatientNav(current: 4),
       body: Column(
@@ -392,7 +394,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
               gap: 24,
               children: [
                 _identity(me),
-                _ConsentCard(live: data != null),
+                _ConsentCard(live: data != null, onLinked: () => reload(quiet: true)),
                 _section('Health details', [
                   _Row(
                     icon: I.activity,
@@ -482,9 +484,10 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                   _Row(
                     icon: I.edit,
                     title: 'Daily log reminder',
-                    sub: '$logAt every day',
+                    sub: _logR ? '$logAt every day · Change time' : 'Off',
+                    subColor: _logR ? MP.ink2 : MP.ink3,
                     trailing: MpSwitch(value: _logR, onChanged: (v) => _setReminder('dailyLogReminder', v)),
-                    onTap: () => _setReminder('dailyLogReminder', !_logR),
+                    onTap: _pickLogTime,
                   ),
                   _Row(
                     icon: I.calendar,
@@ -559,6 +562,30 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
       return;
     }
     _toggle(key, v);
+  }
+
+  /// Daily log reminder: pick the time (also turns it on).
+  Future<void> _pickLogTime() async {
+    final now = (data == null ? _sampleLogAt : _settings.str('dailyLogReminderAt', '20:00')).split(':');
+    final picked = await showTimePicker(
+      context: context,
+      helpText: 'Daily log reminder',
+      initialTime: TimeOfDay(hour: int.tryParse(now.first) ?? 20, minute: int.tryParse(now.last) ?? 0),
+    );
+    if (picked == null || !mounted) return;
+    final hhmm = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+    if (data == null) {
+      setState(() {
+        _sampleLogAt = hhmm;
+        _logReminder = true;
+      });
+    } else {
+      final ok = await _save({
+        'settings': {'dailyLogReminder': true, 'dailyLogReminderAt': hhmm},
+      });
+      if (!ok || !mounted) return;
+    }
+    toast(context, "We'll remind you at ${_clock(hhmm)} if nothing is logged");
   }
 
   void _setAppLock(bool v) {
@@ -758,79 +785,40 @@ class _Tag extends StatelessWidget {
 // ── Consent code ─────────────────────────────────────────────────────────────
 
 /// The code a clinic asks for to link this record to their practice
-/// (see Add-Patient-Existing). It changes every 60 seconds.
+/// (see Add-Patient-Existing).
 ///
-/// Live: each code comes from POST /api/patient/consent-code and counts down
-/// to its own expiry.
+/// Nothing is made until the patient taps "Show my code". Each code works
+/// once, for 5 minutes, then the card hides it again (no new codes on their
+/// own). Live: POST /api/patient/consent-code makes it; while it shows, the
+/// card checks GET /api/patient/consent-code/:id so it can say at once when a
+/// clinic has used it.
 class _ConsentCard extends StatefulWidget {
   final bool live;
-  const _ConsentCard({this.live = false});
+
+  /// A clinic used the code (the care team list can refresh).
+  final VoidCallback? onLinked;
+  const _ConsentCard({this.live = false, this.onLinked});
   @override
   State<_ConsentCard> createState() => _ConsentCardState();
 }
 
 class _ConsentCardState extends State<_ConsentCard> {
-  static const _period = 60;
+  static const _minutes = 5;
   int _seed = 0;
-  int _left = _period;
   Timer? _timer;
 
-  /// Live: the current code and when it expires.
-  String? _liveCode;
+  String? _id;
+  String? _code;
   DateTime? _expiresAt;
+  int _total = _minutes * 60;
+  int _left = 0;
   bool _fetching = false;
+  int _tick = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    if (widget.live) _fetch();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() {
-        if (widget.live) {
-          final exp = _expiresAt;
-          if (exp == null) return;
-          _left = exp.difference(DateTime.now()).inSeconds.clamp(0, _period);
-          if (_left <= 0) _fetch();
-        } else if (--_left <= 0) {
-          _next();
-        }
-      });
-    });
-  }
+  /// The clinic that used the code ("" when the name isn't known).
+  String? _linkedBy;
 
-  Future<void> _fetch() async {
-    if (_fetching) return;
-    _fetching = true;
-    try {
-      final r = await Api.I.post('/api/patient/consent-code');
-      if (!mounted || r is! Map) return;
-      setState(() {
-        _liveCode = '${r['code']}';
-        _expiresAt = F.date(r['expiresAt']) ?? DateTime.now().add(const Duration(seconds: _period));
-        _left = _expiresAt!.difference(DateTime.now()).inSeconds.clamp(0, _period);
-      });
-    } on ApiException catch (e) {
-      if (mounted) {
-        setState(() => _expiresAt = DateTime.now().add(const Duration(seconds: 15))); // try again shortly
-        toast(context, e.message);
-      }
-    } finally {
-      _fetching = false;
-    }
-  }
-
-  void _next() {
-    _seed++;
-    _left = _period;
-  }
-
-  /// Six digits; the first matches the code typed in Add-Patient-Existing.
-  String get _code {
-    if (widget.live) return _liveCode ?? '······';
-    if (_seed == 0) return '482917';
-    final n = (482917 + _seed * 7919 * 104729) % 1000000;
-    return n.toString().padLeft(6, '0');
-  }
+  bool get _showing => _code != null && _expiresAt != null;
 
   @override
   void dispose() {
@@ -838,10 +826,108 @@ class _ConsentCardState extends State<_ConsentCard> {
     super.dispose();
   }
 
+  Future<void> _show() async {
+    if (_fetching) return;
+    if (!widget.live) {
+      // Preview: the first code matches the one typed in Add-Patient-Existing.
+      final n = _seed == 0 ? 482917 : (482917 + _seed * 7919 * 104729) % 1000000;
+      _seed++;
+      _start(null, n.toString().padLeft(6, '0'), DateTime.now().add(const Duration(minutes: _minutes)));
+      return;
+    }
+    setState(() => _fetching = true);
+    try {
+      final r = await Api.I.post('/api/patient/consent-code');
+      if (!mounted || r is! Map) return;
+      _start('${r['id'] ?? ''}', '${r['code']}', F.date(r['expiresAt']) ?? DateTime.now().add(const Duration(minutes: _minutes)));
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message);
+    } finally {
+      if (mounted) setState(() => _fetching = false);
+    }
+  }
+
+  void _start(String? id, String code, DateTime expiresAt) {
+    _timer?.cancel();
+    setState(() {
+      _id = id;
+      _code = code;
+      _expiresAt = expiresAt;
+      _linkedBy = null;
+      _total = expiresAt.difference(DateTime.now()).inSeconds.clamp(1, 3600);
+      _left = _total;
+      _tick = 0;
+    });
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
+  }
+
+  void _onTick() {
+    final exp = _expiresAt;
+    if (!mounted || exp == null) return;
+    final left = exp.difference(DateTime.now()).inSeconds;
+    if (left <= 0) {
+      _hide();
+      return;
+    }
+    setState(() => _left = left);
+    // Every 4 s: has a clinic used it?
+    if (widget.live && (_id ?? '').isNotEmpty && ++_tick % 4 == 0) _check();
+  }
+
+  Future<void> _check() async {
+    try {
+      final r = await Api.I.get('/api/patient/consent-code/$_id');
+      if (!mounted || r is! Map || !_showing) return;
+      if (r['status'] == 'used') {
+        _timer?.cancel();
+        setState(() {
+          _linkedBy = '${r['practice'] ?? ''}';
+          _code = null;
+          _expiresAt = null;
+        });
+        widget.onLinked?.call();
+      } else if (r['status'] == 'expired') {
+        _hide();
+      }
+    } catch (_) {
+      // Offline for a moment: the countdown still ends it.
+    }
+  }
+
+  void _hide() {
+    _timer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _code = null;
+      _expiresAt = null;
+      _id = null;
+    });
+  }
+
+  static String _clock(int s) => '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+
+  Widget _whiteButton(String label, VoidCallback? onTap, {String? icon}) => SizedBox(
+        height: 48,
+        child: Tap(
+          onTap: onTap ?? () {},
+          radius: 14,
+          color: MP.white,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[Ico(icon, size: 18, color: MP.primary, stroke: 2), const Gap(8)],
+                Text(label, style: tx(16, w: w700, c: MP.primary)),
+              ],
+            ),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
-    final code = _code;
     final white82 = MP.white.withValues(alpha: 0.82);
+    final code = _code;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -864,17 +950,22 @@ class _ConsentCardState extends State<_ConsentCard> {
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: MP.white.withValues(alpha: 0.22)),
                 ),
-                child: const Ico(I.shield, size: 22, color: MP.white),
+                child: Ico(_linkedBy != null ? I.check : I.shield, size: 22, color: MP.white),
               ),
               const Gap(14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Your consent code', style: tx(17, w: w700, c: MP.white)),
+                    Text(
+                      _linkedBy == null ? 'Your consent code' : (_linkedBy!.isEmpty ? 'Record linked' : 'Linked to $_linkedBy'),
+                      style: tx(17, w: w700, c: MP.white),
+                    ),
                     const Gap(4),
                     Text(
-                      'Give this to a clinic to link your MedPin record. Only you can see it.',
+                      _linkedBy != null
+                          ? 'They can now see your record. Change what they see under Who can see my records.'
+                          : 'Give this to a clinic to link your MedPin record. Only you can see it.',
                       style: tx(14, c: white82, h: 1.45),
                     ),
                   ],
@@ -883,72 +974,83 @@ class _ConsentCardState extends State<_ConsentCard> {
             ],
           ),
           const Gap(18),
-          Row(
-            children: [
-              Expanded(
-                child: Semantics(
-                  label: 'Consent code ${code.split('').join(' ')}',
-                  child: ExcludeSemantics(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '${code.substring(0, 3)} ${code.substring(3)}',
-                        style: tx(34, w: w800, c: MP.white, h: 1.1, em: 0.08, tab: true),
+          if (_linkedBy != null)
+            _whiteButton('Done', () => setState(() => _linkedBy = null))
+          else if (code == null) ...[
+            _whiteButton(_fetching ? 'Getting your code…' : 'Show my code', _fetching ? null : _show, icon: _icKey),
+            const Gap(10),
+            Text('Works once, for 5 minutes. Show it only at the clinic.', style: tx(13, c: white82, h: 1.4)),
+          ] else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Semantics(
+                    label: 'Consent code ${code.split('').join(' ')}',
+                    child: ExcludeSemantics(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '${code.substring(0, 3)} ${code.substring(3)}',
+                          style: tx(34, w: w800, c: MP.white, h: 1.1, em: 0.08, tab: true),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const Gap(12),
-              SizedBox(
-                height: 40,
-                child: MpHitSlop(child: Tap(
-                  onTap: () {
-                    if (widget.live && _liveCode == null) return;
-                    Clipboard.setData(ClipboardData(text: code));
-                    toast(context, 'Code copied');
-                  },
-                  radius: 12,
-                  color: MP.white.withValues(alpha: 0.16),
-                  border: MP.white.withValues(alpha: 0.28),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Ico(_icCopy, size: 16, color: MP.white, stroke: 2),
-                      const Gap(6),
-                      Text('Copy', style: tx(14, w: w600, c: MP.white)),
-                    ],
-                  ),
-                )),
-              ),
-            ],
-          ),
-          const Gap(16),
-          MpProgress(
-            _left / _period,
-            height: 4,
-            color: MP.white,
-            track: MP.white.withValues(alpha: 0.18),
-          ),
-          const Gap(8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Changes in 0:${_left.toString().padLeft(2, '0')}',
-                  style: tx(13, c: white82, tab: true),
+                const Gap(12),
+                SizedBox(
+                  height: 40,
+                  child: MpHitSlop(child: Tap(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: code));
+                      toast(context, 'Code copied');
+                    },
+                    radius: 12,
+                    color: MP.white.withValues(alpha: 0.16),
+                    border: MP.white.withValues(alpha: 0.28),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Ico(_icCopy, size: 16, color: MP.white, stroke: 2),
+                        const Gap(6),
+                        Text('Copy', style: tx(14, w: w600, c: MP.white)),
+                      ],
+                    ),
+                  )),
                 ),
-              ),
-              MpHitSlop(child: Tap(
-                onTap: () => widget.live ? _fetch() : setState(_next),
-                radius: 8,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                child: Text('New code', style: tx(14, w: w600, c: MP.white)),
-              )),
-            ],
-          ),
+              ],
+            ),
+            const Gap(16),
+            MpProgress(
+              _left / _total,
+              height: 4,
+              color: MP.white,
+              track: MP.white.withValues(alpha: 0.18),
+            ),
+            const Gap(8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Valid for ${_clock(_left)}', style: tx(13, c: white82, tab: true)),
+                ),
+                MpHitSlop(child: Tap(
+                  onTap: _hide,
+                  radius: 8,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  child: Text('Hide', style: tx(14, w: w600, c: white82)),
+                )),
+                const Gap(16),
+                MpHitSlop(child: Tap(
+                  onTap: _fetching ? () {} : _show,
+                  radius: 8,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  child: Text('New code', style: tx(14, w: w600, c: MP.white)),
+                )),
+              ],
+            ),
+          ],
         ],
       ),
     );

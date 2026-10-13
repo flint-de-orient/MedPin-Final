@@ -194,6 +194,16 @@ async function ensureDoses(patient, from, to = from) {
     }
   }
   if (ops.length) await M.DoseLog.bulkWrite(ops, { ordered: false });
+  // Future doses that are no longer in the schedule (a reminder time changed,
+  // a medicine was stopped or its dose edited) go, so no alarm rings for them.
+  const keep = new Set(ops.map((o) => `${o.updateOne.filter.courseId}|${o.updateOne.filter.scheduledAt.getTime()}`));
+  const now = new Date();
+  const stale = await M.DoseLog.find(
+    { patientId: patient._id, status: 'due', scheduledAt: { $gt: now > start ? now : start, $lt: T.addDays(end, 1) } },
+    'courseId scheduledAt',
+  );
+  const drop = stale.filter((d) => !keep.has(`${d.courseId}|${d.scheduledAt.getTime()}`)).map((d) => d._id);
+  if (drop.length) await M.DoseLog.deleteMany({ _id: { $in: drop } });
 }
 
 const effectiveStatus = (d, now = new Date()) =>

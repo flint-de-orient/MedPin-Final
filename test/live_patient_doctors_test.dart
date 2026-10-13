@@ -45,6 +45,9 @@ final _calls = <(String, String, Object?)>[];
 bool _called(String method, String path) => _calls.any((c) => c.$1 == method && c.$2 == path);
 Object? _body(String method, String path) => _calls.lastWhere((c) => c.$1 == method && c.$2 == path).$3;
 
+/// What the server says about the consent code being shown.
+String _consentStatus = 'active';
+
 /// Answers a GET from the recorded fixtures (by path), mutations with small stubs.
 Object? _answer(http.Request r) {
   final p = r.url.path;
@@ -58,6 +61,7 @@ Object? _answer(http.Request r) {
     if (p == '/api/patient/me') return _fx('me');
     if (p == '/api/patient/care-team') return _fx('care_team');
     if (p == '/api/notifications') return _fx('notifications');
+    if (p == '/api/patient/consent-code/cc-1') return {'status': _consentStatus, 'practice': 'Heart Point'};
     if (p == '/api/me/support') return {'email': 'help@medpin.in', 'phone': null, 'whatsapp': null};
     return null;
   }
@@ -68,7 +72,7 @@ Object? _answer(http.Request r) {
     };
   }
   if (p == '/api/patient/consent-code') {
-    return {'code': '135790', 'display': '135 790', 'expiresAt': DateTime.now().toUtc().add(const Duration(seconds: 60)).toIso8601String()};
+    return {'id': 'cc-1', 'code': '135790', 'display': '135 790', 'expiresAt': DateTime.now().toUtc().add(const Duration(minutes: 5)).toIso8601String()};
   }
   if (p == '/api/patient/me') return _fx('me');
   if (p == '/api/conversations/$_conv/messages') return {'message': {'id': 'm-1'}, 'aiReply': null};
@@ -272,11 +276,16 @@ void main() {
     await _pump(t, const PatientMeScreen(), stem: 'Patient-Me');
     expect(_called('GET', '/api/patient/me'), isTrue);
     expect(_called('GET', '/api/patient/care-team'), isTrue);
-    expect(_called('POST', '/api/patient/consent-code'), isTrue);
+    // No consent code until the patient asks for one.
+    expect(_called('POST', '/api/patient/consent-code'), isFalse);
     expect(find.text('Priya Sharma'), findsOneWidget);
     expect(find.text('+91 92305 92842'), findsOneWidget);
     expect(find.text('29 yrs · Female'), findsOneWidget);
+    await _tap(t, find.text('Show my code'));
+    expect(_called('POST', '/api/patient/consent-code'), isTrue);
     expect(find.text('135 790'), findsOneWidget);
+    await _tap(t, find.text('Hide'));
+    expect(find.text('135 790'), findsNothing);
     expect(find.text('Type 2 diabetes'), findsOneWidget);
     expect(find.text('Sulfa drugs'), findsOneWidget);
     expect(find.text('158 cm · 68.5 kg · BMI 27.4'), findsOneWidget);
@@ -287,6 +296,14 @@ void main() {
     await _tap(t, find.text('Medicine reminders'));
     expect(_body('PATCH', '/api/patient/me'), {
       'settings': {'medReminders': false},
+    });
+
+    // Daily log reminder: tapping the row picks the time.
+    await _tap(t, find.text('Daily log reminder'));
+    expect(find.byType(TimePickerDialog), findsOneWidget);
+    await _tap(t, find.text('OK'));
+    expect(_body('PATCH', '/api/patient/me'), {
+      'settings': {'dailyLogReminder': true, 'dailyLogReminderAt': '20:00'},
     });
 
     await _tap(t, find.text('Dr. Rina Mitra'));
@@ -332,6 +349,26 @@ void main() {
       find.ancestor(of: find.text('Blood group').last, matching: find.byWidgetPredicate((w) => w is Container && w.decoration is BoxDecoration && (w.decoration as BoxDecoration).color == MP.primarySoft)),
       findsWidgets,
     );
+    expect(t.takeException(), isNull);
+    await _tearDown(t);
+  });
+  testWidgets('Consent code: shown on tap, says at once when a clinic used it', (t) async {
+    _serve();
+    _consentStatus = 'active';
+    await _pump(t, const PatientMeScreen(), stem: 'Patient-Me');
+    await _tap(t, find.text('Show my code'));
+    expect(find.text('135 790'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'Valid for (5:00|4:[45]\d)')), findsOneWidget);
+    _consentStatus = 'used';
+    for (var i = 0; i < 5; i++) {
+      await t.pump(const Duration(seconds: 1));
+    }
+    await _settle(t);
+    expect(_called('GET', '/api/patient/consent-code/cc-1'), isTrue);
+    expect(find.text('Linked to Heart Point'), findsOneWidget);
+    expect(find.text('135 790'), findsNothing);
+    await _tap(t, find.text('Done'));
+    expect(find.text('Show my code'), findsOneWidget);
     expect(t.takeException(), isNull);
     await _tearDown(t);
   });

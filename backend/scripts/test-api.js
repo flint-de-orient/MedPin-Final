@@ -355,6 +355,21 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await ctx.pat('POST', `/api/patient/doses/${dose.id}`, { status: 'taken' }));
     const after = ok(await ctx.pat('GET', '/api/patient/medicines'));
     assert.equal(after.items.find((m) => m.name === 'Metformin').stock.units, 5, 'taking a dose lowers stock');
+    // Reminder settings are checked; a new dose time replaces the old one (no alarm at both).
+    assert.equal((await ctx.pat('PATCH', '/api/patient/me', { settings: { dailyLogReminderAt: '25:99' } })).status, 400);
+    const me = ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { dailyLogReminderAt: '21:30', bogus: 1 } }));
+    assert.equal(me.settings.dailyLogReminderAt, '21:30');
+    assert.equal(me.settings.bogus, undefined, 'unknown settings are not saved');
+    const tomorrow = new Date(Date.now() + 864e5 + 5.5 * 3600e3).toISOString().slice(0, 10);
+    const before = ok(await ctx.pat('GET', `/api/patient/doses?date=${tomorrow}`));
+    const old = me.settings.reminderTimes?.morning || '07:30';
+    ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { reminderTimes: { morning: '06:45' } } }));
+    const moved = ok(await ctx.pat('GET', `/api/patient/doses?date=${tomorrow}`));
+    const morning = moved.items.filter((d) => d.slot === 'morning');
+    assert.ok(morning.length > 0, 'there are morning doses tomorrow');
+    assert.equal(morning.length, before.items.filter((d) => d.slot === 'morning').length, 'same number of morning doses');
+    assert.ok(morning.every((d) => new Date(d.at).toISOString().slice(11, 16) === '01:15'), `morning doses moved from ${old} to 06:45 IST`);
+    ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { reminderTimes: { morning: old }, dailyLogReminderAt: '20:00' } }));
     ok(await ctx.pat('GET', '/api/patient/adherence'));
     const home = ok(await ctx.pat('GET', '/api/patient/home'));
     assert.ok(home.tasks.some((t) => t.kind === 'dose' && t.done));
@@ -589,9 +604,20 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal((await doc2('GET', `/api/patients/${ctx.patientId}`)).status, 404, 'not linked yet');
     const code = ok(await ctx.pat('POST', '/api/patient/consent-code'));
     assert.equal((await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: '000000' === code.code ? '111111' : '000000' })).status, 400);
+    assert.equal(ok(await ctx.pat('GET', `/api/patient/consent-code/${code.id}`)).status, 'active');
+    assert.ok(new Date(code.expiresAt) - Date.now() > 4 * 60 * 1000, 'valid about 5 minutes');
     ok(await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: code.display }));
     ok(await doc2('GET', `/api/patients/${ctx.patientId}`));
+    const used = ok(await ctx.pat('GET', `/api/patient/consent-code/${code.id}`));
+    assert.equal(used.status, 'used');
+    assert.equal(used.practice, 'Heart Point', 'the app says which clinic used it');
     assert.equal((await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: code.code })).status, 400, 'codes are single-use');
+    // 5 wrong tries cancel a code, even the right one after.
+    const c2 = ok(await ctx.pat('POST', '/api/patient/consent-code'));
+    const wrong = c2.code === '000000' ? '111111' : '000000';
+    for (let i = 0; i < 5; i++) assert.equal((await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: wrong })).status, 400);
+    assert.equal((await doc2('POST', '/api/patients/link', { phone: '9230592842', consentCode: c2.code })).status, 400, 'cancelled after 5 wrong tries');
+    assert.equal(ok(await ctx.pat('GET', `/api/patient/consent-code/${c2.id}`)).status, 'expired');
     ctx.doc2 = doc2;
     ctx.doc2Id = s.user.id;
   });

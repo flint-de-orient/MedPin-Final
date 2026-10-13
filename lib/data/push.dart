@@ -51,6 +51,12 @@ class Push {
     }
   }
 
+  /// Tells the server again (e.g. notifications were just allowed, so the phone rings dose alarms itself).
+  Future<void> refresh() async {
+    final t = token;
+    if (t != null) await _register(t);
+  }
+
   Future<void> _register(String t) async {
     token = t;
     if (!Session.I.signedIn) return;
@@ -59,7 +65,8 @@ class Push {
         'token': t,
         'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android',
         // Patients' medicine alarms ring on the phone itself (MedAlarms), so the server doesn't push them.
-        'localAlarms': Session.I.landing == 'Main' && LocalNotes.I.supported,
+        // Only when notifications are allowed; otherwise the server keeps pushing them.
+        'localAlarms': Session.I.landing == 'Main' && await LocalNotes.I.allowed(),
       });
     } on ApiException catch (e) {
       debugPrint('Device not registered: ${e.message}');

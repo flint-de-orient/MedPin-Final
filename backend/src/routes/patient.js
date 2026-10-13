@@ -61,7 +61,22 @@ r.patch('/me', async (req, res) => {
   if (body.ageYears != null) p.ageRecordedAt = new Date();
   if (body.emergencyContact && !body.emergencyContact.name) body.emergencyContact = { name: undefined, phone: undefined };
   Object.assign(p, body);
-  if (req.body.settings) p.settings = { ...p.settings.toObject(), ...req.body.settings, reminderTimes: { ...p.settings.reminderTimes.toObject(), ...(req.body.settings.reminderTimes || {}) } };
+  if (req.body.settings) {
+    const s = req.body.settings;
+    const hhmm = (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+    const next = p.settings.toObject();
+    for (const k of ['medReminders', 'dailyLogReminder', 'visitReminders']) if (typeof s[k] === 'boolean') next[k] = s[k];
+    if (s.dailyLogReminderAt !== undefined) {
+      if (!hhmm(s.dailyLogReminderAt)) throw badRequest('Choose a time like 20:00');
+      next.dailyLogReminderAt = s.dailyLogReminderAt;
+    }
+    for (const [slot, v] of Object.entries(s.reminderTimes || {})) {
+      if (!['morning', 'afternoon', 'night'].includes(slot)) continue;
+      if (!hhmm(v)) throw badRequest('Choose a time like 07:30');
+      next.reminderTimes = { ...next.reminderTimes, [slot]: v };
+    }
+    p.settings = next;
+  }
   if (req.body.conditions) p.conditions = req.body.conditions.map((c) => (typeof c === 'string' ? { name: c } : c));
   if (req.body.allergies) p.allergies = req.body.allergies.map((a) => (typeof a === 'string' ? { allergen: a } : a));
   const here = require('../lib/geo').pointFrom(req.body.lat, req.body.lng);
@@ -92,13 +107,24 @@ r.post('/addresses', async (req, res) => {
   res.status(201).json(req.patient.addresses);
 });
 
-// Rotating 6-digit consent code (valid 60 s); a clinic enters it to link the record.
+// 6-digit consent code, made only when the patient taps "Show my code"; valid
+// 5 minutes and once. A new one cancels the old. A clinic enters it to link the record.
+const CONSENT_MINUTES = 5;
 r.post('/consent-code', async (req, res) => {
   await M.ConsentCode.updateMany({ patientId: req.patient._id, usedAt: null, expiresAt: { $gt: new Date() } }, { expiresAt: new Date() });
   const code = randomDigits(6);
-  const expiresAt = new Date(Date.now() + 60 * 1000);
-  await M.ConsentCode.create({ patientId: req.patient._id, codeHash: hmac(`consent:${req.patient._id}:${code}`), expiresAt });
-  res.json({ code, display: `${code.slice(0, 3)} ${code.slice(3)}`, expiresAt });
+  const expiresAt = new Date(Date.now() + CONSENT_MINUTES * 60 * 1000);
+  const c = await M.ConsentCode.create({ patientId: req.patient._id, codeHash: hmac(`consent:${req.patient._id}:${code}`), expiresAt });
+  res.json({ id: c._id, code, display: `${code.slice(0, 3)} ${code.slice(3)}`, expiresAt, minutes: CONSENT_MINUTES });
+});
+
+// What happened to a code the app is showing: still open, used by a clinic, or expired.
+r.get('/consent-code/:id', async (req, res) => {
+  if (!isId(req.params.id)) throw notFound('Code');
+  const c = await M.ConsentCode.findOne({ _id: req.params.id, patientId: req.patient._id }).populate('usedByPracticeId', 'name');
+  if (!c) return res.json({ status: 'expired' });
+  const status = c.usedAt ? 'used' : c.expiresAt > new Date() ? 'active' : 'expired';
+  res.json({ status, expiresAt: c.expiresAt, usedAt: c.usedAt, practice: c.usedByPracticeId?.name || null });
 });
 
 // ── Who can see my record ──

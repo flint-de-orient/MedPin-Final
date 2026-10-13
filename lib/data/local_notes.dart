@@ -67,6 +67,21 @@ class LocalNotes {
     return await ios?.requestPermissions(alert: true, badge: true, sound: true) ?? false;
   }
 
+  /// Whether notifications can be shown now (the patient didn't turn them off).
+  Future<bool> allowed() async {
+    if (!supported) return false;
+    try {
+      await init();
+      final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (android != null) return await android.areNotificationsEnabled() ?? false;
+      final ios = _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
+      final s = await ios?.checkPermissions();
+      return s?.isEnabled ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   NotificationDetails _details(AndroidNotificationChannel c) => NotificationDetails(
         android: AndroidNotificationDetails(c.id, c.name, channelDescription: c.description, importance: c.importance, priority: c.importance == Importance.max ? Priority.max : Priority.high),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true),
