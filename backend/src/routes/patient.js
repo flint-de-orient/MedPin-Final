@@ -148,7 +148,7 @@ r.get('/home', async (req, res) => {
     M.Appointment.findOne({ patientId: p._id, startAt: { $gte: today }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }).sort({ startAt: 1 }).populate('doctorId', 'name').populate('locationId', 'name shortName'),
     M.LabResult.findOne({ patientId: p._id, createdAt: { $gte: T.addDays(today, -3) } }).sort({ createdAt: -1 }),
     M.MedicationCourse.find({ patientId: p._id, status: 'active' }),
-    M.HealthLog.aggregate([{ $match: { patientId: p._id, type: 'steps', loggedAt: { $gte: today } } }, { $group: { _id: null, n: { $sum: '$steps' }, src: { $addToSet: '$stepSource' }, dev: { $max: '$fromDevice' } } }]),
+    stepsToday(p._id, today),
     M.HealthLog.find({ patientId: p._id, loggedAt: { $gte: today } }),
     M.AiSummary.findOne({ patientId: p._id, audience: 'patient' }).sort({ generatedAt: -1 }),
     M.TreatmentPlan.findOne({ patientId: p._id }).sort({ updatedAt: -1 }),
@@ -230,7 +230,7 @@ r.get('/home', async (req, res) => {
     slides,
     tasks,
     tasksDone: tasks.filter((t) => t.done).length,
-    steps: { today: steps[0]?.n || 0, goal: p.targets?.stepsPerDay || 8000, source: !steps[0] ? null : steps[0].src?.includes('watch') ? 'watch' : steps[0].src?.includes('phone') ? 'phone' : steps[0].dev ? 'watch' : 'manual' },
+    steps: { today: steps.today, goal: p.targets?.stepsPerDay || 8000, source: steps.source },
     refills,
     nextVisit,
     aiSummary: summary || (plan?.healthSummary ? { body: plan.healthSummary, focusItems: plan.focusItems, generatedAt: plan.updatedAt } : null),
@@ -240,6 +240,21 @@ r.get('/home', async (req, res) => {
     unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, readAt: null }),
   });
 });
+
+/**
+ * Today's steps: the phone / watch count and the patient's own entry measure
+ * the same walking, so the higher one counts (never the two added up).
+ */
+async function stepsToday(patientId, since) {
+  const logs = await M.HealthLog.find({ patientId, type: 'steps', loggedAt: { $gte: since } }, 'steps fromDevice stepSource');
+  const sum = (xs) => xs.reduce((a, x) => a + (x.steps || 0), 0);
+  const device = logs.filter((l) => l.fromDevice);
+  const manual = Math.max(0, ...logs.filter((l) => !l.fromDevice).map((l) => l.steps || 0));
+  const auto = sum(device);
+  if (!logs.length) return { today: 0, source: null };
+  if (manual > auto) return { today: manual, source: 'manual' };
+  return { today: auto, source: device.some((l) => l.stepSource === 'phone') && !device.some((l) => l.stepSource === 'watch') ? 'phone' : 'watch' };
+}
 
 // ── Find a doctor ──
 const haversineKm = (a, b) => {
@@ -713,7 +728,7 @@ r.get('/logs/options', async (req, res) => {
   const today = T.dayStart();
   const [team, steps, enrolment] = await Promise.all([
     M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name'),
-    M.HealthLog.aggregate([{ $match: { patientId: p._id, type: 'steps', loggedAt: { $gte: today } } }, { $group: { _id: null, n: { $sum: '$steps' }, src: { $addToSet: '$stepSource' }, dev: { $max: '$fromDevice' } } }]),
+    stepsToday(p._id, today),
     M.PatientEnrolment.findOne({ patientId: p._id, status: 'linked' }).populate('practiceId', 'foodLogReviewCadence'),
   ]);
   const profiles = await M.DoctorProfile.find({ userId: { $in: team.map((c) => c.userId?._id) } }, 'userId specialtyKeys');
@@ -729,16 +744,26 @@ r.get('/logs/options', async (req, res) => {
   // Dieticians first (they review food logs), then doctors who already see the log.
   shareWith.sort((a, b) => Number(b.role === 'dietician') - Number(a.role === 'dietician') || Number(b.seesLogs) - Number(a.seesLogs));
   const plans = await M.ActivityPlan.find({ patientId: p._id, active: true }, 'name exerciseType durationMin');
-  res.json({ shareWith, steps: { today: steps[0]?.n || 0, goal: p.targets?.stepsPerDay || 8000, source: !steps[0] ? null : steps[0].src?.includes('watch') ? 'watch' : steps[0].src?.includes('phone') ? 'phone' : steps[0].dev ? 'watch' : 'manual' }, activityPlans: plans });
+  res.json({ shareWith, steps: { today: steps.today, goal: p.targets?.stepsPerDay || 8000, source: steps.source }, activityPlans: plans });
 });
 
 r.post('/logs', photoUpload.single('photo'), async (req, res) => {
   const b = req.body;
   if (!E.LOG_TYPES.includes(b.type)) throw badRequest('Choose meal, exercise or steps');
-  if (b.type === 'steps' && !(Number(b.steps) >= 0)) throw badRequest('Enter the steps');
+  if (b.type === 'steps' && !(Number.isInteger(Number(b.steps)) && Number(b.steps) >= 0 && Number(b.steps) <= 200000)) throw badRequest('Enter the steps (0–200,000)');
   const sharedWith = list(b.sharedWith).filter(isId);
   const practice = (await M.PatientEnrolment.findOne({ patientId: req.patient._id, status: 'linked' }).populate('practiceId', 'foodLogReviewCadence'))?.practiceId;
   const cadence = { daily: 1, every_3_days: 3, weekly: 7 }[practice?.foodLogReviewCadence || 'every_3_days'];
+  if (b.type === 'steps') {
+    // "Steps today" is the day's total: saving again replaces it.
+    const day = T.dayStart(b.loggedAt ? new Date(b.loggedAt) : new Date());
+    const log = await M.HealthLog.findOneAndUpdate(
+      { patientId: req.patient._id, type: 'steps', fromDevice: { $ne: true }, loggedAt: { $gte: day, $lt: T.addDays(day, 1) } },
+      { $set: { steps: Number(b.steps), sharedWith, inputMode: b.inputMode, note: b.note }, $setOnInsert: { patientId: req.patient._id, type: 'steps', loggedAt: new Date() } },
+      { upsert: true, new: true },
+    );
+    return res.status(201).json(log);
+  }
   const log = await M.HealthLog.create({
     patientId: req.patient._id, type: b.type, mealType: b.mealType, exerciseType: b.exerciseType, durationMin: b.durationMin, steps: b.steps, note: b.note,
     inputMode: b.inputMode, loggedAt: b.loggedAt ? new Date(b.loggedAt) : new Date(), sharedWith, activityPlanId: b.activityPlanId,

@@ -923,6 +923,13 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await ctx.pat('POST', '/api/patient/device-sync', { source: 'Phone', stepSource: 'phone', days: [{ date: day, steps: 7100, source: 'phone' }], readings: [] }));
     const home2 = ok(await ctx.pat('GET', '/api/patient/home'));
     assert.deepEqual([home2.steps.today, home2.steps.source], [7100, 'phone']);
+    // Typed steps are the day's total: saving again replaces it, and it's never added to the phone's count.
+    ok(await ctx.pat('POST', '/api/patient/logs', { type: 'steps', steps: 6000 }), 201);
+    ok(await ctx.pat('POST', '/api/patient/logs', { type: 'steps', steps: 9000 }), 201);
+    const home3 = ok(await ctx.pat('GET', '/api/patient/home'));
+    assert.deepEqual([home3.steps.today, home3.steps.source], [9000, 'manual'], 'the higher of 9000 typed and 7100 counted');
+    assert.equal(await M.HealthLog.countDocuments({ patientId: ctx.patientId, type: 'steps', fromDevice: { $ne: true } }), 1, 'one typed entry per day');
+    assert.equal((await ctx.pat('POST', '/api/patient/logs', { type: 'steps', steps: 999999 })).status, 400);
 
     // Proof review: the signed link works, a wrong token doesn't, approving tells the doctor.
     const prof = ok(await ctx.doc('POST', '/api/doctor/qualifications', { name: 'MBBS', institution: 'Calcutta Medical College', year: 2010 }), 201);
