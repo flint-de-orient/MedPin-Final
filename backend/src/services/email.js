@@ -2,6 +2,18 @@
 const env = require('../config/env');
 
 let transport;
+
+/** Node's built-in roots plus the operating system's (where supported). */
+function trustedCAs() {
+  const tls = require('tls');
+  let system = [];
+  try {
+    system = typeof tls.getCACertificates === 'function' ? tls.getCACertificates('system') : [];
+  } catch {
+    system = [];
+  }
+  return [...tls.rootCertificates, ...system];
+}
 async function sendEmail({ to, subject, text, attachments }) {
   if (!to) return { skipped: true };
   if (!env.smtp.host) {
@@ -14,6 +26,9 @@ async function sendEmail({ to, subject, text, attachments }) {
     secure: env.smtp.port === 465,
     // Gmail app passwords are shown with spaces; the login needs them without.
     auth: env.smtp.user ? { user: env.smtp.user, pass: String(env.smtp.pass || '').replace(/\s+/g, '') } : undefined,
+    // Trust the computer's own certificates too: antivirus mail shields (e.g. Avast)
+    // re-sign mail traffic with a root they add to Windows, which Node doesn't know.
+    tls: { ca: trustedCAs() },
     connectionTimeout: 8000,
     greetingTimeout: 8000,
     socketTimeout: 12000,
