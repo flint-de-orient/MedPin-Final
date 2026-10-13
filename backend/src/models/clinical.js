@@ -154,6 +154,8 @@ const prescriptionSchema = new Schema(
     file: fileSchema, // generated PDF or scan
     pdfVersion: Number, // layout version of the generated PDF (services/rxpdf.js)
     pdfInputs: String, // what the PDF was drawn from (logo, signature, letterhead); a change redraws it
+    // The patient's copies in Bengali / Hindi: { bn: { file, version, inputs, text }, hi: … } (services/rxlang.js).
+    localized: { type: Schema.Types.Mixed, default: undefined },
     sentAt: Date, // "Prescription sent to Priya"
   },
   baseOptions,

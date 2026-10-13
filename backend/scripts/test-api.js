@@ -831,6 +831,20 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok((await kinds(ctx.doctorUserId)).some((k) => /alert_emergency|urgent_message/.test(k)), "the patient's doctor is alerted");
   });
 
+  await step("prescription in the patient's language", async () => {
+    const rx = await M.Prescription.findOne({ patientId: ctx.patientId, kind: 'digital', consultationId: { $ne: null } });
+    assert.ok(rx, 'the patient has a digital prescription');
+    const id = String(rx._id);
+    const en = ok(await ctx.pat('GET', `/api/patient/prescriptions/${id}/pdf`));
+    const bn = ok(await ctx.pat('GET', `/api/patient/prescriptions/${id}/pdf?lang=bn`));
+    assert.equal(bn.lang, 'bn');
+    assert.notEqual(bn.key, en.key, 'a separate Bengali file');
+    assert.match(bn.name, /বাংলা/);
+    const again = ok(await ctx.pat('GET', `/api/patient/prescriptions/${id}/pdf?lang=bn`));
+    assert.equal(again.key, bn.key, 'kept and reused');
+    assert.equal(ok(await ctx.pat('GET', `/api/patient/prescriptions/${id}/pdf?lang=xx`)).lang, 'en');
+  });
+
   await step('AI endpoints respond without a key (graceful fallback)', async () => {
     // Speak-to-type: medicine names heard wrong are matched to the catalog (AI is off in tests).
     const ph = ok(await ctx.doc('GET', '/api/me/voice/phrases'));

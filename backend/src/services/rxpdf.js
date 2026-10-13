@@ -14,10 +14,11 @@ const QRCode = require('qrcode');
 const env = require('../config/env');
 const T = require('../lib/time');
 const { hmac } = require('../lib/security');
-const { setupFonts, write, heightOf } = require('../lib/pdftext');
+const { setupFonts, write, heightOf, runs } = require('../lib/pdftext');
+const { translator } = require('./rxlang');
 
 /** Bump when the layout changes; older PDFs are drawn again when opened. */
-const PDF_VERSION = 4; // 3: print-friendly letterhead; 4: no box outlines
+const PDF_VERSION = 5; // 3: print-friendly letterhead; 4: no box outlines; 5: Bengali / Hindi
 
 // App tokens (lib/core/tokens.dart).
 const C = {
@@ -37,7 +38,7 @@ const DAYS = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 
 const CHANGE = { new: ['NEW', C.primary, C.primarySoft], continued: ['CONTINUED', C.ink2, C.fill], changed: ['DOSE CHANGED', C.amber, C.amberSoft], stopped: ['STOPPED', C.red, C.redSoft] };
 
 const fmtDate = (d, weekday = false) => (d
-  ? new Date(d).toLocaleDateString('en-GB', { ...(weekday ? { weekday: 'short' } : {}), day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).replace(',', '')
+  ? new Date(d).toLocaleDateString('en-GB', { ...(weekday ? { weekday: 'short' } : {}), day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).replace(',', '').replace('Sept', 'Sep')
   : '');
 const rxNo = (rx) => `RX-${String(rx.rxNumber || 0).padStart(4, '0')}`;
 const initials = (s) => String(s || 'M').replace(/^Dr\.?\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
@@ -70,19 +71,19 @@ function registrationOf(doctor, lh) {
   return lh?.registrationNo ? `Reg. No. ${lh.registrationNo}` : '';
 }
 
-function doseCell(item) {
-  if (item.frequency === 'weekly') return ['1 / week', item.weekday ? DAYS[item.weekday] || item.weekday : 'Once a week'];
-  if (item.frequency === 'sos' || item.frequency === 'as_needed') return ['When needed', ''];
+function doseCell(item, t = (s) => s) {
+  if (item.frequency === 'weekly') return [t('1 / week'), item.weekday ? t(DAYS[item.weekday] || item.weekday) : t('Once a week')];
+  if (item.frequency === 'sos' || item.frequency === 'as_needed') return [t('When needed'), ''];
   const d = item.dose || {};
-  return [`${d.morning || 0} – ${d.afternoon || 0} – ${d.night || 0}`, 'Morn – Aft – Night'];
+  return [`${d.morning || 0} – ${d.afternoon || 0} – ${d.night || 0}`, t('Morn – Aft – Night')];
 }
 
-function durationCell(item) {
+function durationCell(item, t = (s) => s) {
   const d = item.duration || {};
-  if (d.unit === 'ongoing') return 'Ongoing';
+  if (d.unit === 'ongoing') return t('Ongoing');
   if (!d.value) return '—';
   const unit = d.value === 1 ? String(d.unit || 'days').replace(/s$/, '') : d.unit || 'days';
-  return `${d.value} ${unit}`;
+  return `${d.value} ${t(unit)}`;
 }
 
 /**
@@ -90,7 +91,11 @@ function durationCell(item) {
  * complaint, signature, logo, practiceName, mode }. Resolves to
  * { buffer, pages }.
  */
-async function renderPrescription({ rx, patient, doctor, location, vitals, complaint, signature, logo, practiceName, mode }) {
+async function renderPrescription({ rx, patient, doctor, location, vitals, complaint, signature, logo, practiceName, mode, lang = 'en', tr = null }) {
+  // lang: the patient's copy in Bengali / Hindi (labels + the doctor's words in [tr]);
+  // medicine names, strengths, tests and the diagnosis stay in English.
+  const t = translator(lang);
+  const local = lang !== 'en';
   const qr = rx._id ? await QRCode.toBuffer(verifyUrl(rx._id), { margin: 0, width: 192, color: { dark: C.primaryDark, light: '#FFFFFF' } }).catch(() => null) : null;
   return new Promise((resolve, reject) => {
     const doc = setupFonts(new PDFDocument({ size: 'A4', margin: 0, bufferPages: true, info: { Title: `Prescription ${rxNo(rx)}`, Author: rx.doctorName || 'MedPin', Creator: 'MedPin' } }));
@@ -121,7 +126,15 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       write(doc, str, { x, y, width, align, lineGap, weight, characterSpacing: spacing });
       return doc.y;
     };
-    const label = (str, x, y, color = C.primary) => text(str.toUpperCase(), x, y, { size: 7.5, weight: 'bold', color, spacing: 0.8 });
+    // Capitals and letter-spacing are for Latin; Bengali / Hindi shapes need neither.
+    const label = (str, x, y, color = C.primary) => (local ? text(str, x, y, { size: 8, weight: 'bold', color }) : text(str.toUpperCase(), x, y, { size: 7.5, weight: 'bold', color, spacing: 0.8 }));
+    /** Width of mixed-script text (each run in its own font). */
+    const widthOf = (str, size, weight) => {
+      doc.fontSize(size);
+      const w = runs(str).reduce((s, r) => s + doc.font(r.font === 'latin' ? (weight === 'bold' ? 'bold' : weight === 'semi' ? 'semi' : 'latin') : r.font).widthOfString(r.text), 0);
+      doc.font('latin');
+      return w;
+    };
 
     // ── Letterhead band ──
     const rightW = 210;
@@ -168,7 +181,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     const cells = [
       ['Prescription no.', rxNo(rx)],
       ['Date', fmtDate(rx.issuedAt)],
-      ['Visit', video ? 'Video consult' : 'In clinic'],
+      ['Visit', video ? t('Video consult') : t('In clinic')],
       ['Next visit', rx.followUpDate ? fmtDate(rx.followUpDate) : '—'],
       ['Valid till', rx.validUntil ? fmtDate(rx.validUntil) : '—'],
     ];
@@ -176,28 +189,26 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     cells.forEach(([k, v], i) => {
       const cx = M + i * cw + 12;
       if (i) doc.moveTo(M + i * cw, y + 10).lineTo(M + i * cw, y + metaH - 10).lineWidth(1).strokeColor(C.primaryLine).stroke();
-      label(k, cx, y + 8, k === 'Next visit' && rx.followUpDate ? C.primary : C.ink3);
+      label(t(k), cx, y + 8, k === 'Next visit' && rx.followUpDate ? C.primary : C.ink3);
       text(v, cx, y + 19, { size: 10.5, weight: k === 'Next visit' && rx.followUpDate ? 'bold' : 'semi', color: k === 'Next visit' && rx.followUpDate ? C.primaryDark : C.ink, width: cw - 18 });
     });
     y += metaH + 10;
 
     // ── Patient card ──
     const age = T.ageFrom(patient);
-    const sex = patient.gender ? patient.gender[0].toUpperCase() + patient.gender.slice(1) : null;
+    const sex = patient.gender ? t(patient.gender[0].toUpperCase() + patient.gender.slice(1)) : null;
     const weight = vitals?.weightKg || patient.weightKg;
-    const facts = [age != null ? `${age} yrs` : null, sex, weight ? `${weight} kg` : null, patient.bloodGroup ? `Blood ${patient.bloodGroup}` : null, patient.phone ? `+91 ${patient.phone}` : null].filter(Boolean).join('   ·   ');
+    const facts = [age != null ? `${age} ${t('yrs')}` : null, sex, weight ? `${weight} kg` : null, patient.bloodGroup ? `${t('Blood')} ${patient.bloodGroup}` : null, patient.phone ? `+91 ${patient.phone}` : null].filter(Boolean).join('   ·   ');
     const home = (patient.addresses || []).find((a) => a.isDefault) || (patient.addresses || [])[0];
     const homeLine = home ? [home.line, home.area, home.city, home.pincode].filter(Boolean).join(', ') : patient.area || '';
     const allergies = (patient.allergies || []).map((a) => a.allergen || a.name).filter(Boolean);
-    label('Patient', M, y + 2, C.ink3);
+    label(t('Patient'), M, y + 2, C.ink3);
     let py = text(patient.name, M, y + 13, { size: 13, weight: 'bold', width: W }) + 1;
     py = text(facts, M, py, { size: 9.5, color: C.ink2, width: W }) + 2;
     if (homeLine) py = text(homeLine, M, py, { size: 9, color: C.ink3, width: W }) + 2;
     if (allergies.length) {
-      const pill = `Allergies: ${allergies.join(', ')}`;
-      doc.fontSize(8.5);
-      const pw = Math.min(W, doc.font('semi').widthOfString(pill) + 22);
-      doc.font('latin');
+      const pill = `${t('Allergies')}: ${allergies.join(', ')}`;
+      const pw = Math.min(W, widthOf(pill, 8.5, 'semi') + 22);
       doc.roundedRect(M, py + 3, pw, 18, 9).fill(C.redSoft);
       text(pill, M + 11, py + 7.5, { size: 8.5, weight: 'semi', color: C.red, width: pw - 18 });
       py += 22;
@@ -213,23 +224,24 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       vitals.temperatureF && `Temp ${vitals.temperatureF} °F`,
       vitals.bloodSugar && `Sugar ${vitals.bloodSugar} mg/dL`,
     ].filter(Boolean) : [];
+    if (tr?.complaint != null) complaint = tr.complaint || complaint;
     if (complaint || rx.diagnosisSummary) {
       const colW = (W - 24) / 2;
       let ly = y;
       let ry2 = y;
       if (complaint) {
-        label('Chief complaint', M, ly);
+        label(t('Chief complaint'), M, ly);
         ly = text(complaint, M, ly + 12, { size: 10, width: colW }) + 8;
       }
       if (rx.diagnosisSummary) {
         const dx = complaint ? M + colW + 24 : M;
-        label('Diagnosis', dx, ry2);
+        label(t('Diagnosis'), dx, ry2);
         ry2 = text(rx.diagnosisSummary, dx, ry2 + 12, { size: 11, weight: 'semi', width: complaint ? colW : W }) + 8;
       }
       y = Math.max(ly, ry2) + 2;
     }
     if (vitalsParts.length) {
-      label('Vitals', M, y);
+      label(t('Vitals'), M, y);
       let vx = M + 44;
       let vy = y - 5;
       doc.fontSize(8.5);
@@ -273,7 +285,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       doc.roundedRect(M, y, W, 22, 6).fill(C.fill);
       let x = M;
       for (const c of cols) {
-        label(c.k, x + 6, y + 8, C.ink2);
+        label(t(c.k), x + 6, y + 8, C.ink2);
         x += c.w;
       }
       y += 26;
@@ -281,25 +293,26 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     ensure(90);
     doc.fontSize(26).fillColor(C.primary).font('noto').text('℞', M - 1, y - 6, { lineBreak: false });
     doc.font('latin');
-    text(`Medicines · ${rx.items.length}`, M + 26, y + 6, { size: 11, weight: 'bold', color: C.ink });
-    text('Generic names in capitals', M + W - 160, y + 8, { size: 8, color: C.ink3, width: 160, align: 'right' });
+    text(`${t('Medicines')} · ${rx.items.length}`, M + 26, y + 6, { size: 11, weight: 'bold', color: C.ink });
+    text(local ? t('Medicine names in English for the chemist') : 'Generic names in capitals', M + W - 230, y + 8, { size: 8, color: C.ink3, width: 230, align: 'right' });
     y += 25;
     tableHead();
     if (!rx.items.length) {
-      text('No medicines prescribed.', M + 6, y + 4, { size: 10, color: C.ink3 });
+      text(t('No medicines prescribed.'), M + 6, y + 4, { size: 10, color: C.ink3 });
       y += 26;
     }
     rx.items.forEach((item, i) => {
       const stopped = item.change === 'stopped';
       const name = `${String(item.name || '').toUpperCase()}${item.strength ? ` ${item.strength}` : ''}`;
       const sub = [item.form ? item.form[0].toUpperCase() + item.form.slice(1) : null].filter(Boolean).join(' · ');
-      const [dose, doseSub] = doseCell(item);
-      const when = item.foodRelation ? FOOD[item.foodRelation] || item.foodRelation : '—';
-      const notes = [item.instructions].filter(Boolean).join('\n');
+      const [dose, doseSub] = doseCell(item, t);
+      const when = item.foodRelation ? t(FOOD[item.foodRelation] || item.foodRelation) : '—';
+      const notes = [tr?.instructions?.[i] || item.instructions].filter(Boolean).join('\n');
+      const caution = tr?.cautions?.[i] || item.caution;
       doc.fontSize(10);
       const nameH = heightOf(doc, name, { width: cols[1].w - 12, weight: 'bold' });
       doc.fontSize(8.5);
-      const notesH = (notes ? heightOf(doc, notes, { width: cols[6].w - 10 }) : 0) + (item.caution ? heightOf(doc, item.caution, { width: cols[6].w - 10 }) + 3 : 0);
+      const notesH = (notes ? heightOf(doc, notes, { width: cols[6].w - 10 }) : 0) + (caution ? heightOf(doc, caution, { width: cols[6].w - 10 }) + 3 : 0);
       const rowH = Math.max(32, nameH + 24, notesH + 14);
       if (y + rowH > BOTTOM) {
         y = newPage();
@@ -313,12 +326,11 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
         doc.moveTo(x + 6, y + 12).lineTo(x + 6 + Math.min(cols[1].w - 12, doc.font('bold').fontSize(10).widthOfString(name)), y + 12).lineWidth(0.8).strokeColor(C.ink3).stroke();
         doc.font('latin');
       }
-      const [badge, bc, bf] = CHANGE[item.change] || CHANGE.new;
-      doc.fontSize(6.5);
-      const bw = doc.font('bold').widthOfString(badge) + 10;
-      doc.font('latin');
+      const [badgeEn, bc, bf] = CHANGE[item.change] || CHANGE.new;
+      const badge = t(badgeEn);
+      const bw = widthOf(badge, local ? 7 : 6.5, 'bold') + 10;
       doc.roundedRect(x + 6, ny + 2, bw, 12, 6).fill(bf);
-      text(badge, x + 11, ny + 4.6, { size: 6.5, weight: 'bold', color: bc, spacing: 0.4 });
+      text(badge, x + 11, ny + (local ? 3.4 : 4.6), { size: local ? 7 : 6.5, weight: 'bold', color: bc, spacing: local ? 0 : 0.4 });
       if (sub) text(sub, x + bw + 12, ny + 3, { size: 8.5, color: C.ink3, width: cols[1].w - bw - 18 });
       x += cols[1].w;
       text(dose, x + 6, y + 6, { size: 10, weight: 'semi', width: cols[2].w - 8 });
@@ -326,13 +338,13 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       x += cols[2].w;
       text(when, x + 6, y + 6, { size: 9, color: C.ink2, width: cols[3].w - 8 });
       x += cols[3].w;
-      text(durationCell(item), x + 6, y + 6, { size: 9, color: C.ink2, width: cols[4].w - 8 });
+      text(durationCell(item, t), x + 6, y + 6, { size: 9, color: C.ink2, width: cols[4].w - 8 });
       x += cols[4].w;
       text(item.quantity ? String(item.quantity) : '—', x + 6, y + 6, { size: 9.5, weight: 'semi', width: cols[5].w - 8 });
       x += cols[5].w;
       let iy = y + 6;
       if (notes) iy = text(notes, x + 6, iy, { size: 8.5, color: C.ink2, width: cols[6].w - 10 }) + 3;
-      if (item.caution) text(item.caution, x + 6, iy, { size: 8, weight: 'semi', color: C.amber, width: cols[6].w - 10 });
+      if (caution) text(caution, x + 6, iy, { size: 8, weight: 'semi', color: C.amber, width: cols[6].w - 10 });
       y += rowH;
       doc.moveTo(M, y).lineTo(M + W, y).lineWidth(0.5).strokeColor('#E2E6EC').stroke();
     });
@@ -341,7 +353,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     // ── Investigations ──
     if (rx.tests?.length) {
       ensure(48);
-      label('Investigations advised', M, y);
+      label(t('Investigations advised'), M, y);
       let tx = M;
       let ty = y + 13;
       doc.fontSize(9);
@@ -356,10 +368,10 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     }
 
     // ── Advice ──
-    const advice = String(rx.advice || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    const advice = String((tr?.advice ?? rx.advice) || '').split('\n').map((s) => s.trim()).filter(Boolean);
     if (advice.length) {
       ensure(40);
-      label('Advice', M, y);
+      label(t('Advice'), M, y);
       y += 14;
       for (const a of advice) {
         doc.fontSize(10);
@@ -377,15 +389,15 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     const sy = y;
     if (qr) {
       img(qr, M + 9, sy + 17, { fit: [56, 56] });
-      text('Scan to verify', M + 86, sy + 30, { size: 9.5, weight: 'semi', color: C.ink });
-      text('Checks this prescription with MedPin.', M + 86, sy + 44, { size: 8, color: C.ink3, width: 150 });
+      text(t('Scan to verify'), M + 86, sy + 30, { size: 9.5, weight: 'semi', color: C.ink, width: 160 });
+      text(t('Checks this prescription with MedPin.'), M + 86, sy + 44, { size: 8, color: C.ink3, width: 160 });
     }
     const sw = 210;
     const sx = M + W - sw;
     const signed = img(signature, sx + (sw - 150) / 2, sy, { fit: [150, 46], align: 'center', valign: 'bottom' });
     if (!signed) {
       doc.roundedRect(sx + 20, sy + 4, sw - 40, 40, 8).fill(C.fill);
-      text('Signature on file · scan to verify', sx + 20, sy + 19, { size: 8, color: C.ink3, width: sw - 40, align: 'center' });
+      text(t('Signature on file · scan to verify'), sx + 20, sy + 19, { size: 8, color: C.ink3, width: sw - 40, align: 'center' });
     }
     doc.moveTo(sx, sy + 50).lineTo(sx + sw, sy + 50).lineWidth(1).strokeColor(C.lineStrong).stroke();
     let gy = text(doctorName, sx, sy + 55, { size: 10.5, weight: 'bold', width: sw, align: 'center' });
@@ -394,15 +406,15 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
 
     // ── Footer on every page ──
     const ids = [doctor?.hprId && `HPR ID ${doctor.hprId}`, location?.hfrId && `HFR ID ${location.hfrId}`].filter(Boolean).join(' · ');
-    const foot = `${signed ? `Digitally signed by ${doctorName}` : 'Issued by the doctor'} · Generated by MedPin${ids ? ` · ${ids}` : ''}`;
+    const foot = `${signed ? `${t('Digitally signed by')} ${doctorName}` : t('Issued by the doctor')} · ${t('Generated by MedPin')}${ids ? ` · ${ids}` : ''}`;
     const range = doc.bufferedPageRange();
     for (let p = range.start; p < range.start + range.count; p++) {
       doc.switchToPage(p);
       const fy = PAGE_H - 44;
-      if (video) text('Issued after a video consultation, as per the Telemedicine Practice Guidelines 2020.', M, fy - 14, { size: 7.5, color: C.ink3, width: W });
+      if (video) text(t('Issued after a video consultation, as per the Telemedicine Practice Guidelines 2020.'), M, fy - 14, { size: 7.5, color: C.ink3, width: W });
       doc.moveTo(M, fy).lineTo(M + W, fy).lineWidth(0.8).strokeColor(C.line).stroke();
       text(foot, M, fy + 8, { size: 7.5, color: C.ink3, width: W - 80 });
-      text(`Page ${p - range.start + 1} of ${range.count}`, M + W - 80, fy + 8, { size: 7.5, weight: 'semi', color: C.ink3, width: 80, align: 'right' });
+      text(`${t('Page')} ${p - range.start + 1} ${t('of')} ${range.count}`, M + W - 80, fy + 8, { size: 7.5, weight: 'semi', color: C.ink3, width: 80, align: 'right' });
     }
     doc.flushPages();
     doc.end();

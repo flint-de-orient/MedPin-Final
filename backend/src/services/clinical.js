@@ -240,7 +240,7 @@ async function pdfInputs(rx, { doctor, location, practice } = {}) {
  * Draws the prescription PDF (services/rxpdf.js) from the consultation and
  * saves it on [rx]. Already-loaded records can be passed in.
  */
-async function buildPrescriptionPdf(rx, { consult, patient, doctor } = {}) {
+async function buildPrescriptionPdf(rx, { consult, patient, doctor, lang = 'en', tr = null } = {}) {
   consult = consult || (rx.consultationId ? await M.Consultation.findById(rx.consultationId) : null);
   patient = patient || (await M.Patient.findById(rx.patientId));
   doctor = doctor || (await M.DoctorProfile.findOne({ userId: rx.doctorId }));
@@ -251,10 +251,18 @@ async function buildPrescriptionPdf(rx, { consult, patient, doctor } = {}) {
   const image = async (file) => (file?.key ? storage.read(file.key).catch(() => null) : null);
   const [signature, logo] = await Promise.all([image(doctor?.signature), image(location?.letterhead?.logo || practice?.logo)]);
   const { buffer, pages } = await rxpdf.renderPrescription({
-    rx, patient, doctor, location, vitals, complaint: consult?.chiefComplaint, signature, logo, practiceName: practice?.name, mode: appt?.mode,
+    rx, patient, doctor, location, vitals, complaint: consult?.chiefComplaint, signature, logo, practiceName: practice?.name, mode: appt?.mode, lang, tr,
   });
-  const name = `Prescription ${rxpdf.rxNo(rx)} · ${patient?.name || 'Patient'} · ${rxpdf.fmtDate(rx.issuedAt)}.pdf`.replace(/[\/:*?"<>|]/g, '');
-  rx.file = await storage.save(buffer, { folder: 'prescriptions', name, mimeType: 'application/pdf', pages });
+  const suffix = { bn: ' (বাংলা)', hi: ' (हिन्दी)' }[lang] || '';
+  const name = `Prescription ${rxpdf.rxNo(rx)} · ${patient?.name || 'Patient'} · ${rxpdf.fmtDate(rx.issuedAt)}${suffix}.pdf`.replace(/[\/:*?"<>|]/g, '');
+  const file = await storage.save(buffer, { folder: 'prescriptions', name, mimeType: 'application/pdf', pages });
+  if (lang !== 'en') {
+    rx.localized = { ...(rx.localized || {}), [lang]: { file, version: rxpdf.PDF_VERSION, inputs: await pdfInputs(rx, { doctor, location, practice }), text: tr } };
+    rx.markModified('localized');
+    await rx.save();
+    return rx;
+  }
+  rx.file = file;
   rx.pdfVersion = rxpdf.PDF_VERSION;
   rx.pdfInputs = await pdfInputs(rx, { doctor, location, practice });
   await rx.save();
@@ -272,4 +280,22 @@ async function ensurePrescriptionPdf(rx) {
   return buildPrescriptionPdf(rx);
 }
 
-module.exports = { checkItems, patientSummary, issueConsultation, buildPrescriptionPdf, ensurePrescriptionPdf, doseText, dosesPerDay, durationDays, quantityFor };
+/**
+ * The patient's copy in [lang] ('bn' / 'hi'; 'en' = the usual PDF). Returns the
+ * file. Drawn again when the layout, the clinic's details or the doctor's
+ * wording change; the translation is reused while the wording is the same.
+ */
+async function localizedPrescriptionPdf(rx, lang) {
+  if (!['bn', 'hi'].includes(lang)) return (await ensurePrescriptionPdf(rx)).file;
+  if (rx.kind !== 'digital' || !rx.consultationId) return (await ensurePrescriptionPdf(rx)).file;
+  const consult = await M.Consultation.findById(rx.consultationId);
+  const tr = await require('./rxlang').freeText(rx, consult?.chiefComplaint, lang);
+  const have = rx.localized?.[lang];
+  const fresh = have?.file?.key && have.version === rxpdf.PDF_VERSION && have.inputs === (await pdfInputs(rx))
+    && have.text?.hash === tr.hash && Boolean(have.text?.translated) === Boolean(tr.translated);
+  if (fresh) return have.file;
+  await buildPrescriptionPdf(rx, { consult, lang, tr });
+  return rx.localized[lang].file;
+}
+
+module.exports = { checkItems, patientSummary, issueConsultation, buildPrescriptionPdf, ensurePrescriptionPdf, localizedPrescriptionPdf, doseText, dosesPerDay, durationDays, quantityFor };

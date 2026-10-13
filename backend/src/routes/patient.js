@@ -90,13 +90,15 @@ r.patch('/me', async (req, res) => {
   res.json(meView(p, req.user));
 });
 
-// The patient's own prescription PDF (View / Download in Records).
+// The patient's own prescription PDF (View / Download in Records), in English or
+// their language: ?lang=bn | hi (labels and the doctor's words translated; medicine names stay English).
 r.get('/prescriptions/:id/pdf', async (req, res) => {
   const rx = isId(req.params.id) ? await M.Prescription.findOne({ _id: req.params.id, patientId: req.patient._id }) : null;
   if (!rx) throw notFound('Prescription');
-  await require('../services/clinical').ensurePrescriptionPdf(rx);
-  if (!rx.file?.key) throw notFound('Prescription PDF');
-  res.json(storage.withUrl(rx.file));
+  const lang = ['bn', 'hi'].includes(req.query.lang) ? req.query.lang : 'en';
+  const file = await require('../services/clinical').localizedPrescriptionPdf(rx, lang);
+  if (!file?.key) throw notFound('Prescription PDF');
+  res.json({ ...storage.withUrl(file), lang });
 });
 
 r.post('/addresses', async (req, res) => {
