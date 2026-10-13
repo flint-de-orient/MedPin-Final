@@ -3,7 +3,8 @@
 // profiles, schedules, leaves, memberships and knowledge base, with the files
 // they point to (photos, signatures, logos, letterheads).
 //
-// Usage: node scripts/export-doctors.js <out-dir>
+// Usage: node scripts/export-doctors.js <out-dir> [--phone 9XXXXXXXXX]
+//   --phone: only that doctor (their practice, its locations and departments).
 //   → <out-dir>/doctors.json (Extended JSON: ids and dates kept) + <out-dir>/files/…
 // Read-only on this database. The output holds personal data: keep it private,
 // never commit it. Load it on the new server with scripts/import-doctors.js.
@@ -26,12 +27,22 @@ function fileKeys(value, out = new Set()) {
 }
 
 async function main() {
-  const outDir = path.resolve(process.argv[2] || 'doctor-export');
+  const args = process.argv.slice(2);
+  const pi = args.indexOf('--phone');
+  const phone = pi >= 0 ? String(args[pi + 1] || '').replace(/\D/g, '').slice(-10) : null;
+  const outDir = path.resolve(args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--phone') || 'doctor-export');
   await connect();
   const db = mongoose.connection.db;
   const col = (n) => db.collection(n);
 
-  const members = await col('members').find({ role: { $in: DOCTOR_ROLES } }).toArray();
+  let only = null;
+  if (phone) {
+    const u = await col('users').findOne({ phone: { $regex: `${phone}$` } }, { projection: { _id: 1 } });
+    if (!u) throw new Error(`No account with phone ${phone}`);
+    only = u._id;
+  }
+  const members = await col('members').find({ role: { $in: DOCTOR_ROLES }, ...(only ? { userId: only } : {}) }).toArray();
+  if (!members.length) throw new Error('No doctor found to export');
   const practiceIds = [...new Set(members.map((m) => String(m.practiceId)))].map((id) => new mongoose.Types.ObjectId(id));
   const doctorIds = [...new Set(members.map((m) => String(m.userId)))].map((id) => new mongoose.Types.ObjectId(id));
   const inPractice = { practiceId: { $in: practiceIds } };
