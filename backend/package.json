@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "dev": "node --watch-path=./src --watch-path=./.env src/server.js",
     "db:sync": "node scripts/sync-indexes.js",
     "db:seed": "node scripts/seed.js",
     "db:test": "node scripts/test-schema.js",
