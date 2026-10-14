@@ -1042,6 +1042,7 @@ const Map<String, String> hi = {
   'Follow-up date': 'फ़ॉलो-अप की तारीख़',
   'Follow-up due': 'फ़ॉलो-अप बाकी',
   'Follow-up due in November': 'नवंबर में फ़ॉलो-अप',
+  'Follow-up for': 'किसका फ़ॉलो-अप',
   'Follow-up on ': 'फ़ॉलो-अप',
   'Follow-up on her haemoglobin report': 'उनकी हीमोग्लोबिन रिपोर्ट का फ़ॉलो-अप',
   'Follow-up overdue': 'फ़ॉलो-अप बकाया',

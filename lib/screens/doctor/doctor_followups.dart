@@ -4,6 +4,7 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'patient_picker.dart';
 import 'common_d1.dart';
 import '../../widgets/i18n.dart';
 
@@ -357,23 +358,24 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> with Live
     reload(quiet: true);
   }
 
+  /// "Schedule a follow-up": choose the patient, then book their follow-up visit.
+  Future<void> _schedule() async {
+    if (!isLive) {
+      Nav.go(context, 'Appointments');
+      return;
+    }
+    final id = await pickPatient(context, title: 'Follow-up for');
+    if (id == null || !mounted) return;
+    await Nav.go(context, 'Appointments-Manage', args: {'patientId': id, 'visitType': 'follow_up'});
+    if (mounted) reload(quiet: true);
+  }
+
   void _openPatient(_Fu r) {
     if (!isLive) {
       Nav.go(context, 'PP-Summary');
       return;
     }
     Nav.go(context, 'Patient-Profile', args: {'patientId': r.patientId});
-  }
-
-  /// "8 – 31 Oct" / "29 Oct – 6 Nov" for the later group.
-  String _range(List<Map<String, dynamic>> later) {
-    final days = [for (final m in later) F.date(m['dueDate'])].whereType<DateTime>().toList()..sort();
-    if (days.isEmpty) return '';
-    final a = days.first;
-    final b = days.last;
-    if (F.sameDay(a, b)) return F.dayMonth(a);
-    if (a.month == b.month && a.year == b.year) return '${a.day} – ${F.dayMonth(b)}';
-    return '${F.dayMonth(a)} – ${F.dayMonth(b)}';
   }
 
   @override
@@ -429,10 +431,8 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> with Live
   Widget _live(BuildContext context) {
     final overdue = _liveRows('overdue');
     final week = _liveRows('this_week');
-    final laterItems = [
-      for (final m in data!.list('items'))
-        if (m['group'] == 'later' && _showTab(_Fu.fromApi(m))) m,
-    ];
+    // Later this month: each patient, like the other groups (name, due date, Book / Remind).
+    final later = _liveRows('later');
     final reminded = overdue.where((r) => r.reminders > 0).length;
     final overdueOpen = overdue.where((r) => r.remindable).length;
     final weekOpen = week.where((r) => r.remindable).length;
@@ -460,7 +460,7 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> with Live
             ),
             _card(week),
           ],
-          if (overdue.isEmpty && week.isEmpty && laterItems.isEmpty)
+          if (overdue.isEmpty && week.isEmpty && later.isEmpty)
             MpCard(
               padding: const EdgeInsets.all(24),
               child: Text(
@@ -469,9 +469,9 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> with Live
                 style: tx(15, c: MP.ink2, h: 1.45),
               ),
             ),
-          if (laterItems.isNotEmpty) ...[
-            _SectionHead('Later this month', d1Count(laterItems.length, 'patient')),
-            _laterCard(_range(laterItems), _daysBefore),
+          if (later.isNotEmpty) ...[
+            _SectionHead('Later this month', '${d1Count(later.length, 'patient')} · reminders go out ${d1Count(_daysBefore, 'day')} before'),
+            _card(later),
           ],
         ],
       ),
@@ -508,7 +508,7 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> with Live
         'Schedule a follow-up',
         icon: I.plus,
         iconStroke: 1.75,
-        onTap: () => Nav.go(context, 'Appointments'),
+        onTap: _schedule,
       ),
     );
   }

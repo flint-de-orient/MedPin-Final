@@ -1042,6 +1042,7 @@ const Map<String, String> bn = {
   'Follow-up date': 'ফলো-আপের তারিখ',
   'Follow-up due': 'ফলো-আপ বাকি',
   'Follow-up due in November': 'নভেম্বরে ফলো-আপ',
+  'Follow-up for': 'কার ফলো-আপ',
   'Follow-up on ': 'ফলো-আপ ',
   'Follow-up on her haemoglobin report': 'ওঁর হিমোগ্লোবিন রিপোর্টের ফলো-আপ',
   'Follow-up overdue': 'ফলো-আপের সময় পেরিয়ে গেছে',
