@@ -225,10 +225,12 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
 }
 
 /** Moves a booking to a new time: the old one is kept as `rescheduled`. */
-async function reschedule(appt, startAt, by) {
+async function reschedule(appt, startAt, by, locationId) {
   if (!['booked', 'confirmed'].includes(appt.status)) throw conflict('Only upcoming visits can be rescheduled', 'BAD_TRANSITION');
+  // Another branch of the same clinic may be chosen (book() checks the doctor has that slot there).
+  const moved = locationId && String(locationId) !== String(appt.locationId);
   const next = await book({
-    practiceId: appt.practiceId, locationId: appt.locationId, doctorId: appt.doctorId, patientId: appt.patientId,
+    practiceId: appt.practiceId, locationId: moved ? locationId : appt.locationId, doctorId: appt.doctorId, patientId: appt.patientId,
     startAt, visitType: appt.visitType, mode: appt.mode, reason: appt.reason, channel: appt.channel, bookedBy: by,
   });
   appt.status = 'rescheduled';
@@ -236,8 +238,11 @@ async function reschedule(appt, startAt, by) {
   await appt.save();
   next.rescheduledFromId = appt._id;
   await next.save();
-  // Keep the original fee record instead of the one book() just created.
-  if (await M.Payment.exists({ appointmentId: appt._id })) {
+  // Same branch: keep the original fee record instead of the one book() just made.
+  // Another branch: its own fee applies, so the old unpaid one is waived.
+  if (moved) {
+    await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { status: 'waived', note: 'Moved to another branch' });
+  } else if (await M.Payment.exists({ appointmentId: appt._id })) {
     await M.Payment.deleteMany({ appointmentId: next._id });
     await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { appointmentId: next._id });
   }

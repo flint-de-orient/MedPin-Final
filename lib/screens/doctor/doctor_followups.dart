@@ -37,6 +37,9 @@ class _Fu {
   final String? appointmentId;
   final String phone;
   final int reminders;
+
+  /// The branch the follow-up was advised at (the booking sheet starts there).
+  final String? locationId;
   const _Fu(
     this.name,
     this.status,
@@ -53,6 +56,7 @@ class _Fu {
     this.appointmentId,
     this.phone = '',
     this.reminders = 0,
+    this.locationId,
   });
 
   /// Not booked yet (a reminder can go out).
@@ -111,6 +115,7 @@ class _Fu {
       conditions: conditions,
       id: m.str('id'),
       patientId: p.str('id', m.str('patientId')),
+      locationId: m['locationId'] is Map ? m.obj('locationId').str('id', m.obj('locationId').str('_id')) : m['locationId'] as String?,
       appointmentId: appt.isEmpty ? (m['appointmentId'] is String ? m['appointmentId'] as String : null) : appt.str('id'),
       phone: phone,
       reminders: m.numOr('remindersSent').toInt(),
@@ -342,6 +347,7 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> with Live
         await Nav.go(context, 'Appointments-Manage', args: {
           'patientId': r.patientId,
           'followUpId': r.id,
+          if (r.locationId != null && r.locationId!.isNotEmpty) 'locationId': r.locationId,
           if (r.appointmentId != null) 'appointmentId': r.appointmentId,
         });
         if (mounted) reload(quiet: true);

@@ -542,6 +542,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(mine.items.length, 1);
     const moved = ok(await ctx.desk('POST', `/api/appointments/${assigned.appointment.id}/reschedule`, { startAt: slots.slots.filter((s) => s.available && !s.walkIn)[1].startAt }));
     assert.ok(moved.rescheduledFromId);
+    assert.equal((await ctx.desk('POST', `/api/appointments/${moved.id}/reschedule`, { startAt: free.startAt, locationId: '000000000000000000000000' })).status, 400, "only this clinic's branches");
     ok(await ctx.pat('GET', '/api/notifications'));
   });
 

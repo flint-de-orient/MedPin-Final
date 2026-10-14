@@ -55,6 +55,10 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
   static const _lookAhead = 10;
   static const _chips = 4;
 
+  /// The branch chosen in the sheet (null: the default below).
+  String? _pickedLoc;
+  bool _switching = false;
+
   @override
   Future<Object?> fetch() async {
     final args = Nav.args<Map>(context) ?? const {};
@@ -96,6 +100,9 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
       mode = 'book';
       final p = (await Api.I.get('/api/patients/$patientId') as Map).cast<String, dynamic>();
       name = p.obj('patient').str('name', 'Patient');
+      // Start at the follow-up's branch, else the branch the patient usually visits.
+      final start = args['locationId'] as String? ?? p.obj('branch').obj('usual').str('id');
+      locationId = start.isEmpty ? null : start;
     } else {
       throw const ApiException(400, 'NO_RECORD', 'Choose an appointment first');
     }
@@ -105,12 +112,19 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
         doctors.where((d) => d.str('userId') == (doctorId ?? me)).firstOrNull ?? (doctorId == null ? doctors.firstOrNull : null);
     doctorId ??= doctor?.str('userId');
     final locations = doctor?.list('locations') ?? const <Map<String, dynamic>>[];
+    bool works(String? id) => id != null && locations.any((l) => l.str('id') == id);
+    // The doctor's choice in the sheet wins; a default only counts if the doctor works there.
+    if (works(_pickedLoc)) {
+      locationId = _pickedLoc;
+    } else if (!works(locationId) && mode == 'book') {
+      locationId = null;
+    }
     locationId ??= locations.firstOrNull?.str('id');
     if (doctorId == null || locationId == null) {
       throw const ApiException(400, 'NO_SCHEDULE', 'Set up a clinic schedule first');
     }
-    final locName =
-        appt?.obj('location').str('name') ?? locations.where((l) => l.str('id') == locationId).firstOrNull?.str('name') ?? '';
+    final picked = locations.where((l) => l.str('id') == locationId).firstOrNull;
+    final locName = picked?.str('name') ?? appt?.obj('location').str('name') ?? '';
     final practice = Session.I.activeMembership?['practiceName'] as String? ?? '';
     final place = [practice, locName].where((s) => s.isNotEmpty).join(' — ');
     final doctorName = appt?.obj('doctor').str('name') ?? doctor?.str('name') ?? '';
@@ -149,6 +163,7 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
       'when': when,
       'doctorId': doctorId,
       'locationId': locationId,
+      'locations': [for (final l in locations) {'id': l.str('id'), 'name': l.str('shortName', l.str('name'))}],
       'visitType': args['visitType'] ?? 'follow_up',
       'days': open,
       'prefers': mode == 'assign' ? when.replaceFirst('Requested: ', '') : '',
@@ -289,6 +304,19 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
   int _date = 0;
   late String? _slot = isLive ? null : '10:00 AM';
 
+  /// Another branch: its free days and times load.
+  Future<void> _pickLocation(String id) async {
+    if (id == data?.str('locationId') || _switching) return;
+    setState(() {
+      _pickedLoc = id;
+      _switching = true;
+      _date = 0;
+      _slot = null;
+    });
+    await reload(quiet: true);
+    if (mounted) setState(() => _switching = false);
+  }
+
   void _pickDate(int i) {
     if (i == _date) return;
     setState(() {
@@ -312,7 +340,7 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
       final ok = await runAction(context, busy: _busy, () {
         final id = d.str('id');
         return switch (action) {
-          'reschedule' => Api.I.post('/api/appointments/$id/reschedule', {'startAt': startAt}),
+          'reschedule' => Api.I.post('/api/appointments/$id/reschedule', {'startAt': startAt, 'locationId': d['locationId']}),
           'assign' => Api.I.post('/api/appointment-requests/$id/assign', {
             'startAt': startAt,
             'doctorId': d['doctorId'],
@@ -401,14 +429,40 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
           ),
 
           if (placeholder != null) placeholder,
-          if (placeholder == null && dates.isEmpty)
+          // Location: the doctor picks the branch; days and times follow it.
+          if (placeholder == null && (data?.list('locations').length ?? 0) > 1) ...[
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text('Location', style: tx(14, w: w600)),
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  for (final (i, l) in data!.list('locations').indexed) ...[
+                    if (i > 0) const SizedBox(width: 8),
+                    D7Pill(l.str('name'), on: data!.str('locationId') == l.str('id'), borderOn: false, onTap: () => _pickLocation(l.str('id'))),
+                  ],
+                ],
+              ),
+            ),
+          ],
+          if (placeholder == null && _switching)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 24, 20, 0),
+              child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: MP.primary))),
+            ),
+          if (placeholder == null && !_switching && dates.isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
               child: Text('No free times in the next $_lookAhead days.', style: tx(14, c: MP.ink2)),
             ),
 
           // New date
-          if (placeholder == null && dates.isNotEmpty) ...[
+          if (placeholder == null && !_switching && dates.isNotEmpty) ...[
           const SizedBox(height: 24),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),

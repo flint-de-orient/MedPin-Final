@@ -131,7 +131,9 @@ r.post('/appointments/:id/status', async (req, res) => {
 
 r.post('/appointments/:id/reschedule', async (req, res) => {
   const appt = await S.getAppointment(req.params.id, req.practiceId);
-  const next = await S.reschedule(appt, req.body.startAt, req.user._id);
+  const loc = /^[0-9a-f]{24}$/i.test(String(req.body.locationId || '')) ? req.body.locationId : undefined;
+  if (loc && !(await M.Location.exists({ _id: loc, practiceId: req.practiceId }))) throw badRequest("Choose one of this clinic's branches");
+  const next = await S.reschedule(appt, req.body.startAt, req.user._id, loc);
   res.json(view(await populate(M.Appointment.findById(next._id))));
 });
 
