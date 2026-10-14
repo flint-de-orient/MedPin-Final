@@ -116,6 +116,33 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
 
   const ctx = {};
 
+  await step('MSG91: codes go through the Flow API with the approved template (network stubbed)', async () => {
+    const { sendOtp, FLOW_URL } = require('../src/services/sms');
+    const saved = { ...env.msg91 };
+    const realFetch = global.fetch;
+    const sent = [];
+    Object.assign(env.msg91, { authKey: 'test-key', senderId: 'MEDPIN', loginTemplateId: 'tpl-login', registerTemplateId: 'tpl-register' });
+    let answer = { type: 'success', message: 'req-1' };
+    global.fetch = async (url, opts) => {
+      sent.push({ url: String(url), opts, body: JSON.parse(opts.body) });
+      return { ok: true, status: 200, json: async () => answer };
+    };
+    try {
+      await sendOtp('9830012345', '482917', 'login');
+      await sendOtp('9830012345', '135790', 'register');
+      assert.equal(sent[0].url, FLOW_URL);
+      assert.equal(sent[0].opts.headers.authkey, 'test-key');
+      assert.deepEqual(sent[0].body, { template_id: 'tpl-login', sender: 'MEDPIN', short_url: '0', recipients: [{ mobiles: '919830012345', OTP: '482917', otp: '482917' }] });
+      assert.equal(sent[1].body.template_id, 'tpl-register');
+      // MSG91 can say 200 { type: 'error' }: that must not count as sent.
+      answer = { type: 'error', message: 'Invalid template' };
+      await assert.rejects(() => sendOtp('9830012345', '111111', 'login'), /Invalid template/);
+    } finally {
+      global.fetch = realFetch;
+      Object.assign(env.msg91, saved);
+    }
+  });
+
   await step('health + auth guard', async () => {
     const h = ok(await api()('GET', '/health'));
     assert.equal(h.db, 'connected');
