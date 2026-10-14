@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../data/photo.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import 'patient_picker.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Doctor-Dashboard.dc.html — "Doctor · dashboard (redesign)".
@@ -68,11 +69,23 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
   static const _actions = [
     (I.users, 'Patient queue', 'Queue-Select'),
     (I.userPlus, 'New patient', 'Add-Patient'),
-    (I.fileText, 'Prescriptions', 'Prescriptions'),
+    (I.fileText, 'Prescriptions', 'PP-Prescriptions'),
     (I.flask, 'Test results', 'PP-Tests'),
     (I.mic, 'Start consultation', 'Consult-Pick'),
     (I.calendarDots, 'Follow-ups', 'Doctor-FollowUps'),
   ];
+
+  /// A quick action. Prescriptions and Test results open a patient's profile on that
+  /// tab, so the patient is chosen here first (cancel stays on Home).
+  Future<void> _open(String screen, String label) async {
+    if (!screen.startsWith('PP-') || !isLive) {
+      Nav.go(context, screen);
+      return;
+    }
+    final id = await pickPatient(context, title: '$label for');
+    if (id == null || !mounted) return;
+    Nav.go(context, screen, args: {'patientId': id});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -243,7 +256,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                         SizedBox(
                           height: 112,
                           child: MpCard(
-                            onTap: () => Nav.go(context, a.$3),
+                            onTap: () => _open(a.$3, a.$2),
                             radius: 16,
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
                             // Two-line labels are taller than the 82px content box; like
