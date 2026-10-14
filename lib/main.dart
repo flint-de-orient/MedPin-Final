@@ -9,6 +9,7 @@ import 'core/nav.dart';
 import 'core/tokens.dart';
 import 'data/api.dart';
 import 'data/firebase_phone.dart';
+import 'data/live.dart';
 import 'data/med_alarms.dart';
 import 'data/nav_counts.dart';
 import 'data/push.dart';
@@ -22,6 +23,7 @@ void main() {
   // Push notifications start once someone is signed in (restored or new).
   Session.I.deviceToken = () => Push.I.token;
   Api.I.onMedicinesChanged = MedAlarms.I.sync;
+  Api.I.onDataChanged = LiveBus.changed;
   Api.I.onCountsChanged = () => NavCounts.refresh(force: true);
   var wasSignedIn = false;
   Session.I.addListener(() {
@@ -72,6 +74,8 @@ class MedPinApp extends StatelessWidget {
             localizationsDelegates: GlobalMaterialLocalizations.delegates,
             theme: medpinTheme(),
             navigatorKey: Nav.key,
+            // Live screens refresh when they come back into view (data/live.dart).
+            navigatorObservers: [LiveBus.routes],
             // App lock covers every screen when it's on (see AppLockGate).
             builder:
                 (context, child) =>

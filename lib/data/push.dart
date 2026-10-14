@@ -8,6 +8,7 @@ import '../core/nav.dart';
 import 'api.dart';
 import 'nav_counts.dart';
 import 'config.dart';
+import 'live.dart';
 import 'local_notes.dart';
 import 'session.dart';
 
@@ -75,6 +76,7 @@ class Push {
 
   void _foreground(RemoteMessage msg) {
     NavCounts.refresh(force: true); // a new chat or alert changes the tab-bar badges
+    LiveBus.changed(); // and whatever screen is open may now be out of date
     final n = msg.notification;
     if (n == null) return;
     final type = msg.data['type']?.toString() ?? '';

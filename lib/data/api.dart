@@ -104,9 +104,15 @@ class Api {
   /// Doses, medicines or reminder settings changed: medicine alarms re-sync (set in main).
   void Function()? onMedicinesChanged;
 
+  /// Any change saved (screens refresh: data/live.dart LiveBus).
+  void Function()? onDataChanged;
+
   /// Called after something that changes the tab-bar badges (see NavCounts).
   void Function()? onCountsChanged;
   static final _alarmPaths = RegExp(r'^/api/patient/(doses|medicines|me$|records/[^/]+/add-medicines)');
+
+  /// Calls that change nothing others see: sign-in, exports, voice clean-up, AI drafts, typing, devices.
+  static final _quietPaths = RegExp(r'^/api/(auth/|exports|me/voice/|me/devices|ai/|.*/typing$|.*/presence|patient/device-sync)');
 
   Future<dynamic> _send(String method, String path, {Object? body, Map<String, Object?>? query, bool retried = false}) async {
     final session = Session.I;
@@ -134,6 +140,8 @@ class Api {
     }
 
     if (res.statusCode < 300 && method != 'GET' && _alarmPaths.hasMatch(path)) onMedicinesChanged?.call();
+    // Something was saved: open screens refresh (not for sign-in, exports, voice, AI drafts).
+    if (res.statusCode < 300 && method != 'GET' && !_quietPaths.hasMatch(path)) onDataChanged?.call();
     // Reading a chat or handling an alert changes the tab-bar badges.
     if (res.statusCode < 300 && method != 'GET' && (path.endsWith('/read') || path.endsWith('/read-all') || path.startsWith('/api/alerts/'))) onCountsChanged?.call();
     // Account language / app lock also change from the patient's own settings.

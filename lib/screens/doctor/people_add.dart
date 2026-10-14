@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'add_patient.dart' show PatientOtpSheet;
 import 'common_d9.dart';
 import '../../widgets/i18n.dart';
 
@@ -95,11 +96,18 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
     if (phone.length != 10) return toast(context, 'Enter a 10-digit mobile number');
 
     if (!_verified) {
-      final sent = await runAction(context, () => Api.I.post('/api/members/phone-otp', {'phone': phone}), busy: _busy);
-      if (sent is! Map || !mounted) return;
-      final dev = sent['devCode'];
-      if (dev != null) toast(context, 'Test code: $dev');
-      final code = await openSheet<String>(context, (_) => _CodeSheet(masked: '${sent['maskedPhone'] ?? D9Fmt.phone(phone)}'));
+      Future<Map?> send() async {
+        final r = await runAction(context, () => Api.I.post('/api/members/phone-otp', {'phone': phone}), busy: _busy);
+        if (r is Map && r['devCode'] != null && mounted) toast(context, 'Test code: ${r['devCode']}');
+        return r is Map ? r : null;
+      }
+
+      final sent = await send();
+      if (sent == null || !mounted) return;
+      final code = await openSheet<String>(
+        context,
+        (_) => PatientOtpSheet(title: 'Confirm the phone', button: 'Confirm and add', masked: '${sent['maskedPhone'] ?? D9Fmt.phone(phone)}', resendIn: (sent['resendInSec'] as num?)?.toInt() ?? 30, resend: send),
+      );
       if (code == null || code.isEmpty || !mounted) return;
       setState(() {
         _otpCode = code;
@@ -297,46 +305,3 @@ class _RoleChip extends StatelessWidget {
 }
 
 /// Live only: the 6-digit code sent to the new member's phone. Returns it.
-class _CodeSheet extends StatefulWidget {
-  final String masked;
-  const _CodeSheet({required this.masked});
-
-  @override
-  State<_CodeSheet> createState() => _CodeSheetState();
-}
-
-class _CodeSheetState extends State<_CodeSheet> {
-  final _code = TextEditingController();
-
-  @override
-  void dispose() {
-    _code.dispose();
-    super.dispose();
-  }
-
-  void _done() {
-    final code = _code.text.replaceAll(RegExp(r'\D'), '');
-    if (code.length != 6) return toast(context, 'Enter the 6-digit code');
-    Navigator.pop(context, code);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: MpSheet(
-        title: 'Confirm the phone',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Enter the code sent to ${widget.masked}', style: tx(14, c: MP.ink2, h: 1.45)),
-            const Gap(16),
-            D9Labeled('Code', child: D9Input(controller: _code, tab: true, keyboard: TextInputType.number)),
-            const Gap(20),
-            MpButton('Confirm and add', onTap: _done),
-          ],
-        ),
-      ),
-    );
-  }
-}

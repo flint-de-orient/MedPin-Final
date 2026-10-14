@@ -12,6 +12,37 @@ import '../widgets/i18n.dart';
 /// design launcher / gallery.
 bool get isLive => !AppMode.preview && Session.I.signedIn;
 
+/// Keeps every live screen current without pull-to-refresh:
+/// - [changed] after anything is saved (the API calls it for every successful
+///   change, a push notification too): open screens refresh quietly, so the list
+///   underneath a form is already up to date when you go back;
+/// - coming back to a screen, or to the app, refreshes it;
+/// - the visible screen also refreshes every 30 s, for changes made on other
+///   phones (front desk, patients).
+class LiveBus {
+  LiveBus._();
+  static final changes = ValueNotifier<int>(0);
+  static void changed() => changes.value++;
+
+  /// Registered on the app's navigator (main.dart) to know which screen is in front.
+  static final routes = RouteObserver<ModalRoute<void>>();
+}
+
+/// Route and app-lifecycle events for one [LiveData] screen.
+class _LiveWatch extends RouteAware with WidgetsBindingObserver {
+  final VoidCallback onBack;
+  final VoidCallback onResume;
+  _LiveWatch(this.onBack, this.onResume);
+
+  @override
+  void didPopNext() => onBack();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) onResume();
+  }
+}
+
 /// Loads one API resource for a screen.
 ///
 /// In preview (launcher, gallery, tests) nothing is fetched and the screen
@@ -24,11 +55,43 @@ mixin LiveData<W extends StatefulWidget> on State<W> {
   /// When the data arrived (for "Updated 4s ago").
   DateTime? loadedAt;
 
-  /// Set to refresh quietly in the background (e.g. the front desk's day).
+  /// How often the screen refreshes while it's in front (default 30 s; chats and
+  /// the queue use less). null keeps the default.
   Duration? get refreshEvery => null;
+
+  /// false for a screen that must not refresh by itself (e.g. a form whose
+  /// fields are filled from [data]).
+  bool get autoRefresh => true;
+
   Timer? _refreshTimer;
+  Timer? _changeDebounce;
+  /// Set for a few seconds after each load (no second load straight after).
+  Timer? _justLoaded;
+  _LiveWatch? _watch;
+  bool _subscribed = false;
 
   Future<Object?> fetch();
+
+  /// In front: the top route and the app on screen.
+  bool get _inFront {
+    final route = ModalRoute.of(context);
+    final app = WidgetsBinding.instance.lifecycleState;
+    return (route?.isCurrent ?? true) && (app == null || app == AppLifecycleState.resumed);
+  }
+
+  void _quiet({bool onlyInFront = true}) {
+    if (!mounted || !isLive || loading) return;
+    if (onlyInFront && !_inFront) return;
+    // Not again within a few seconds of the last load.
+    if (_justLoaded?.isActive ?? false) return;
+    reload(quiet: true);
+  }
+
+  void _onChange() {
+    _changeDebounce?.cancel();
+    // Wait for the saving screen to finish; refresh even when not in front.
+    _changeDebounce = Timer(const Duration(milliseconds: 600), () => _quiet(onlyInFront: false));
+  }
 
   @override
   void initState() {
@@ -40,13 +103,34 @@ mixin LiveData<W extends StatefulWidget> on State<W> {
     Future.microtask(() {
       if (mounted) reload();
     });
-    final every = refreshEvery;
-    if (every != null) _refreshTimer = Timer.periodic(every, (_) => reload(quiet: true));
+    if (!autoRefresh && refreshEvery == null) return;
+    _refreshTimer = Timer.periodic(refreshEvery ?? const Duration(seconds: 30), (_) => _quiet());
+    if (!autoRefresh) return;
+    LiveBus.changes.addListener(_onChange);
+    _watch = _LiveWatch(_quiet, _quiet);
+    WidgetsBinding.instance.addObserver(_watch!);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (_watch != null && !_subscribed && route is PageRoute) {
+      LiveBus.routes.subscribe(_watch!, route);
+      _subscribed = true;
+    }
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _changeDebounce?.cancel();
+    _justLoaded?.cancel();
+    if (_watch != null) {
+      LiveBus.changes.removeListener(_onChange);
+      WidgetsBinding.instance.removeObserver(_watch!);
+      if (_subscribed) LiveBus.routes.unsubscribe(_watch!);
+    }
     super.dispose();
   }
 
@@ -59,6 +143,8 @@ mixin LiveData<W extends StatefulWidget> on State<W> {
     try {
       final res = await fetch();
       if (!mounted) return;
+      _justLoaded?.cancel();
+      _justLoaded = Timer(const Duration(seconds: 3), () {});
       setState(() {
         data = res is Map ? res.cast<String, dynamic>() : {'items': res};
         loadedAt = DateTime.now();

@@ -1198,6 +1198,17 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.deepEqual([bell.unread, bell.urgent], [0, 0], 'no dot once read');
   });
 
+  await step('asking for a code twice quickly reuses the one just sent', async () => {
+    const { issueOtp, checkOtp } = require('../src/routes/auth');
+    const first = await issueOtp('9000012345', 'register');
+    assert.ok(first.devCode);
+    const again = await issueOtp('9000012345', 'register');
+    assert.equal(again.reused, true);
+    assert.ok(again.resendInSec > 0 && again.resendInSec <= 30);
+    assert.equal(again.devCode, undefined, 'no new code');
+    assert.equal(await checkOtp('9000012345', 'register', first.devCode), true, 'the first code still works');
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

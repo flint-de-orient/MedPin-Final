@@ -252,7 +252,7 @@ void main() {
       await _tap(t, find.text('Add to team'));
       expect(_body(_last('POST', '/api/members/phone-otp')), {'phone': '9811100002'});
       expect(find.text('Test code: 123456'), findsOneWidget);
-      expect(find.text('Enter the code sent to +91 98111 •••02'), findsOneWidget);
+      expect(find.text('Enter the 6-digit code sent to +91 98111 •••02.'), findsOneWidget);
       await t.enterText(find.descendant(of: find.byType(MpSheet), matching: find.byType(TextField)), '123456');
       await _tap(t, find.text('Confirm and add'));
       expect(_body(_last('POST', '/api/members')), {

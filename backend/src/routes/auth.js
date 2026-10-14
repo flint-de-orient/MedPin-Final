@@ -17,8 +17,14 @@ async function issueOtp(phone, purpose) {
   const recent = await M.OtpRequest.countDocuments({ phone, createdAt: { $gte: new Date(Date.now() - 15 * 60000) } });
   if (recent >= 5) throw Object.assign(conflict('Too many codes requested. Try again in 15 minutes.', 'OTP_RATE_LIMIT'), { status: 429 });
   const last = await M.OtpRequest.findOne({ phone, purpose }).sort({ createdAt: -1 });
-  if (last && Date.now() - last.createdAt < RESEND_AFTER_S * 1000) {
-    throw Object.assign(conflict('Wait a few seconds before asking for a new code', 'OTP_TOO_SOON'), { status: 429 });
+  const since = last ? Date.now() - last.createdAt : Infinity;
+  if (since < RESEND_AFTER_S * 1000) {
+    // Asked again within 30 s (a second tap, the sheet closed by mistake): the code
+    // just sent still works, so say so and when a new one can go — don't refuse.
+    if (!last.consumedAt && last.expiresAt > new Date() && last.attempts < 5) {
+      return { sent: true, reused: true, maskedPhone: maskPhone(phone), resendInSec: Math.ceil((RESEND_AFTER_S * 1000 - since) / 1000) };
+    }
+    throw Object.assign(conflict('Wait a few seconds before asking for a new code', 'OTP_TOO_SOON'), { status: 429, details: { retryInSec: Math.ceil((RESEND_AFTER_S * 1000 - since) / 1000) } });
   }
   const code = randomDigits(6);
   await M.OtpRequest.create({ phone, purpose, codeHash: hmac(`${phone}:${code}`), expiresAt: new Date(Date.now() + OTP_TTL_MS) });

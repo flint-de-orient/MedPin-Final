@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
@@ -92,15 +94,29 @@ const _existingAccounts = {'9876543210'};
 /// out). Returns the code, or null when cancelled. Used by Add-Patient and
 /// Consult-QuickAdd: a clinic can only register a number the patient confirms.
 Future<String?> verifyPatientPhone(BuildContext context, String digits) async {
-  final otp = await runAction(context, () => Api.I.post('/api/patients/phone-otp', {'phone': digits}));
-  if (otp is! Map || !context.mounted) return null;
-  D5Live.devCode(context, otp);
-  return openSheet<String>(context, (_) => PatientOtpSheet(masked: '${otp['maskedPhone'] ?? D5Live.phone(digits)}'));
+  Future<Map?> send() async {
+    final r = await runAction(context, () => Api.I.post('/api/patients/phone-otp', {'phone': digits}));
+    if (r is Map && context.mounted) D5Live.devCode(context, r);
+    return r is Map ? r : null;
+  }
+
+  final otp = await send();
+  if (otp == null || !context.mounted) return null;
+  return openSheet<String>(
+    context,
+    (_) => PatientOtpSheet(masked: '${otp['maskedPhone'] ?? D5Live.phone(digits)}', resendIn: (otp['resendInSec'] as num?)?.toInt() ?? 30, resend: send),
+  );
 }
 
+/// "Enter the code" sheet for a phone being verified (patient or team member).
+/// Resend counts down, then asks for a new code ([resend] → the API's answer).
 class PatientOtpSheet extends StatefulWidget {
   final String masked;
-  const PatientOtpSheet({super.key, required this.masked});
+  final String title;
+  final int resendIn;
+  final Future<Map?> Function()? resend;
+  final String button;
+  const PatientOtpSheet({super.key, required this.masked, this.title = 'Verify the number', this.resendIn = 30, this.resend, this.button = 'Verify'});
 
   @override
   State<PatientOtpSheet> createState() => PatientOtpSheetState();
@@ -108,9 +124,43 @@ class PatientOtpSheet extends StatefulWidget {
 
 class PatientOtpSheetState extends State<PatientOtpSheet> {
   final _c = TextEditingController();
+  late int _left = widget.resendIn;
+  Timer? _timer;
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick();
+  }
+
+  void _tick() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return t.cancel();
+      setState(() => _left = _left > 0 ? _left - 1 : 0);
+      if (_left == 0) t.cancel();
+    });
+  }
+
+  Future<void> _resend() async {
+    if (widget.resend == null || _left > 0 || _sending) return;
+    setState(() => _sending = true);
+    final r = await widget.resend!();
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      if (r != null) _left = (r['resendInSec'] as num?)?.toInt() ?? 30;
+    });
+    if (r != null) {
+      toast(context, r['reused'] == true ? 'The code already sent still works' : 'New code sent');
+      _tick();
+    }
+  }
 
   @override
   void dispose() {
+    _timer?.cancel();
     _c.dispose();
     super.dispose();
   }
@@ -126,14 +176,28 @@ class PatientOtpSheetState extends State<PatientOtpSheet> {
 
   @override
   Widget build(BuildContext context) => MpSheet(
-    title: 'Verify the number',
+    title: widget.title,
     subtitle: 'Enter the 6-digit code sent to ${widget.masked}.',
     showClose: true,
     child: VGap(
       gap: 16,
       children: [
         MpInput(controller: _c, hint: '6-digit code', keyboard: TextInputType.number, autofocus: true, tab: true),
-        MpButton('Verify', onTap: _save),
+        MpButton(widget.button, onTap: _save),
+        if (widget.resend != null)
+          Center(
+            child: MpHitSlop(
+              child: Tap(
+                onTap: _left > 0 || _sending ? null : _resend,
+                radius: 8,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Text(
+                  _sending ? 'Sending…' : _left > 0 ? 'Resend code in 0:${_left.toString().padLeft(2, '0')}' : 'Resend code',
+                  style: tx(15, w: w600, c: _left > 0 || _sending ? MP.ink3 : MP.primary, tab: true),
+                ),
+              ),
+            ),
+          ),
       ],
     ),
   );
