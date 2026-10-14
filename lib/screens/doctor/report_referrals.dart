@@ -329,7 +329,8 @@ class _AddReferralSheet extends StatefulWidget {
 class _AddReferralSheetState extends State<_AddReferralSheet> {
   late String _dir = widget.direction;
   String? _patientId;
-  String _patientName = '';
+  // The Patient field shows the chosen name (a controller, so it updates when picked).
+  final _patient = TextEditingController();
   final _who = TextEditingController();
   final _specialty = TextEditingController();
   final _reason = TextEditingController();
@@ -337,7 +338,7 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
 
   @override
   void dispose() {
-    for (final c in [_who, _specialty, _reason]) {
+    for (final c in [_patient, _who, _specialty, _reason]) {
       c.dispose();
     }
     super.dispose();
@@ -348,12 +349,12 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
     if (id == null || !mounted) return;
     setState(() {
       _patientId = id;
-      _patientName = 'Patient chosen';
+      _patient.text = 'Patient chosen';
     });
     try {
       final p = await Api.I.get('/api/patients/$id');
       final name = p is Map ? ((p['patient'] is Map ? p['patient']['name'] : null) ?? p['name']) : null;
-      if (mounted && name != null) setState(() => _patientName = '$name');
+      if (mounted && name != null) setState(() => _patient.text = '$name');
     } on ApiException {
       // The id is enough to save.
     }
@@ -399,7 +400,7 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
             ),
             MpInput(
               label: 'Patient',
-              value: _patientId == null ? '' : _patientName,
+              controller: _patient,
               hint: 'Choose a patient',
               readOnly: true,
               onTap: _pick,

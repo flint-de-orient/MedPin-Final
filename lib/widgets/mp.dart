@@ -646,6 +646,16 @@ class _MpInputState extends State<MpInput> {
     _f.addListener(() => setState(() {}));
   }
 
+  /// A field given a [value] (no controller) shows it when the value changes
+  /// (e.g. a patient chosen from a picker), not only the first one.
+  @override
+  void didUpdateWidget(MpInput old) {
+    super.didUpdateWidget(old);
+    if (widget.controller == null && widget.value != old.value && (widget.value ?? '') != _c.text) {
+      _c.text = widget.value ?? '';
+    }
+  }
+
   @override
   void dispose() {
     if (widget.controller == null) _c.dispose();

@@ -302,6 +302,32 @@ void main() {
     await _tearDown(t);
   });
 
+  testWidgets('Report-Referrals: add a referral picks the patient and saves', (t) async {
+    _serve(actions: {
+      '/api/patients': {'items': [{'id': 'p1', 'name': 'Ezikiel Das', 'age': 28, 'gender': 'male', 'phone': '9230592841'}], 'total': 1, 'counts': {'all': 1}},
+      '/api/patients/p1': {'patient': {'id': 'p1', 'name': 'Ezikiel Das'}},
+      '/api/referrals': {'id': 'r1'},
+    });
+    await _pumpLive(t, 'Report-Referrals', const ReportReferralsScreen(), args: {'filters': _period});
+    await t.ensureVisible(find.text('Add a referral'));
+    await t.tap(find.text('Add a referral'));
+    await _settle(t);
+    await t.tap(find.text('Choose a patient'));
+    await _settle(t);
+    expect(find.text('Who is referred?'), findsOneWidget, reason: 'tapping Patient opens the patient list');
+    await t.tap(find.text('Ezikiel Das').last);
+    await _settle(t);
+    expect(find.text('Ezikiel Das'), findsWidgets, reason: 'the chosen patient shows in the field');
+    await t.enterText(find.byType(TextField).at(1), 'Eye clinic');
+    await t.tap(find.text('Save'));
+    await _settle(t);
+    final post = _sent.lastWhere((r) => r.method == 'POST' && r.url.path == '/api/referrals');
+    expect(jsonDecode(post.body), {'patientId': 'p1', 'direction': 'sent', 'counterpartName': 'Eye clinic'});
+    expect(find.text('Referral added'), findsOneWidget);
+    expect(t.takeException(), isNull);
+    await _tearDown(t);
+  });
+
   testWidgets('Report-Referrals: sent and received tabs', (t) async {
     _serve();
     await _pumpLive(t, 'Report-Referrals', const ReportReferralsScreen(), args: {'filters': _period});
