@@ -18,7 +18,7 @@ const { setupFonts, write, heightOf, runs } = require('../lib/pdftext');
 const { translator } = require('./rxlang');
 
 /** Bump when the layout changes; older PDFs are drawn again when opened. */
-const PDF_VERSION = 6; // 3: print-friendly letterhead; 4: no box outlines; 5: Bengali / Hindi; 6: signature at the foot
+const PDF_VERSION = 7; // 7: signature bottom-right; 3: print-friendly letterhead; 4: no box outlines; 5: Bengali / Hindi; 6: signature at the foot
 
 // App tokens (lib/core/tokens.dart).
 const C = {
@@ -434,22 +434,22 @@ async function drawPrescription({ rx, patient, doctor, location, vitals, complai
     // Only when the content leaves no room for it does it go to the next page.
     if (y + 10 > sigTop()) y = newPage();
     const sy = sigTop();
-    const sx = M;
-    const signed = img(signature, sx, sy, { fit: [160, 44], align: 'left', valign: 'bottom' });
+    // Signature bottom-right, right-aligned (where a doctor signs); QR bottom-left.
+    const sx = M + W - sw;
+    const signed = img(signature, M + W - 160, sy, { fit: [160, 44], align: 'right', valign: 'bottom' });
     if (!signed) {
-      doc.roundedRect(sx, sy + 4, sw - 40, 38, 8).fill(C.fill);
-      text(t('Signature on file · scan to verify'), sx + 10, sy + 18, { size: 8, color: C.ink3, width: sw - 60 });
+      doc.roundedRect(sx + 40, sy + 4, sw - 40, 38, 8).fill(C.fill);
+      text(t('Signature on file · scan to verify'), sx + 50, sy + 18, { size: 8, color: C.ink3, width: sw - 60, align: 'right' });
     }
     doc.moveTo(sx, sy + 48).lineTo(sx + sw, sy + 48).lineWidth(0.8).strokeColor(C.lineStrong).stroke();
     // Name and registration (the qualifications are in the letterhead above).
-    const gy = text(doctorName, sx, sy + 53, { size: 10.5, weight: 'bold', color: C.primaryDark, width: sw });
-    if (reg) text(reg, sx, gy, { size: 8.5, color: C.ink2, width: sw });
+    const gy = text(doctorName, sx, sy + 53, { size: 10.5, weight: 'bold', color: C.primaryDark, width: sw, align: 'right' });
+    if (reg) text(reg, sx, gy, { size: 8.5, color: C.ink2, width: sw, align: 'right' });
     if (qr) {
-      const qx = M + W - 56;
       const qy = sy + blockH - 56 - 2;
-      img(qr, qx, qy, { fit: [56, 56] });
-      text(t('Scan to verify'), qx - 170, qy + 16, { size: 9.5, weight: 'semi', color: C.ink, width: 160, align: 'right' });
-      text(t('Checks this prescription with MedPin.'), qx - 170, qy + 30, { size: 8, color: C.ink3, width: 160, align: 'right' });
+      img(qr, M, qy, { fit: [56, 56] });
+      text(t('Scan to verify'), M + 66, qy + 16, { size: 9.5, weight: 'semi', color: C.ink, width: 160 });
+      text(t('Checks this prescription with MedPin.'), M + 66, qy + 30, { size: 8, color: C.ink3, width: 160 });
     }
 
     // ── Footer on every page ──
