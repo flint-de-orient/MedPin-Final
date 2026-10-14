@@ -897,7 +897,7 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const D5Label('Suggested from complaint and reports', color: MP.primary, icon: I.sparkle, bottom: 4),
+              const D5Label("From this patient's record", color: MP.primary, icon: I.fileText, bottom: 4),
               for (var i = 0; i < _dxSuggest.length; i++)
                 D5SuggestRow(
                   name: _dxSuggest[i].$1,
@@ -907,9 +907,45 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
                 ),
             ],
           ),
+        if (isLive)
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _ccCtrl,
+            builder: (_, v, _) => D5AiSuggest(
+              consultId: consultId,
+              ready: v.text.trim().isNotEmpty || vitals != null,
+              beforeAsk: () {
+                save({'chiefComplaint': _ccCtrl.text.trim()}, delay: Duration.zero);
+                return flush();
+              },
+              haveDiagnoses: {for (final d in _dx) d.$1.toLowerCase()},
+              haveTests: {for (final e in _labs.entries) if (e.value) e.key.toLowerCase()},
+              haveMedicines: {for (final m in _medItems) m.str('name').toLowerCase()},
+              onDiagnosis: _addAiDx,
+              onTest: _addLab,
+              onMedicine: _addAiMed,
+            ),
+          ),
       ],
     ),
   );
+
+  /// A MedPin AI diagnosis the doctor chose (name, ICD code, reason).
+  void _addAiDx(Map<String, dynamic> d) {
+    if (_dx.any((x) => x.$1.toLowerCase() == d.str('name').toLowerCase())) return;
+    setState(() {
+      _dx.add((d.str('name'), d.str('icdCode')));
+      _dxItems.add(d);
+    });
+    save({'diagnoses': List.of(_dxItems)});
+  }
+
+  /// A MedPin AI medicine: the dosage sheet opens with it filled in, to check and change.
+  Future<bool> _addAiMed(Map<String, dynamic> item, String reason) async {
+    final r = await _dosage({...item, 'entrySource': 'suggestion'}, reason: reason);
+    if (r?.item == null || !mounted) return false;
+    _addLine(r!);
+    return true;
+  }
 
   // 3 Medications ------------------------------------------------------------
 

@@ -27,6 +27,10 @@ const _sets = [
 const _setKeys = ['patients', 'clinical_summary', 'alerts'];
 
 class _ExportScreenState extends State<ExportScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   final _included = [true, true, true];
   int _format = 0;
   final _busy = ValueNotifier(false);

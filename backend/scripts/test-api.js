@@ -102,7 +102,8 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     { genericName: 'Metformin', drugClass: 'biguanide', strengths: [{ value: 500, unit: 'mg' }], mrpPerStrip: 40 },
     { genericName: 'Glimepiride', drugClass: 'sulfonylurea', strengths: [{ value: 1, unit: 'mg' }, { value: 2, unit: 'mg' }, { value: 4, unit: 'mg' }], mrpPerStrip: 75 },
   ]);
-  await M.LabTest.create({ name: 'HbA1c', panel: 'Diabetes panel', unit: '%' });
+  await M.LabTest.create([{ name: 'HbA1c', panel: 'Diabetes panel', unit: '%' }, { name: 'Lipid profile', panel: 'Lipid panel' }]);
+  await M.IcdCode.create({ code: 'E11.9', name: 'Type 2 diabetes mellitus' });
   await M.Pharmacy.create([
     { name: 'CarePlus Online', type: 'online', deliveryFee: 15, discountPct: 10, deliveryEtaText: 'Delivers tomorrow by 11 AM' },
     { name: 'Salt Lake Medicals', type: 'nearby', pickupEtaMin: 30 },
@@ -292,6 +293,49 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.match(draft.medications[1].caution, /Sulfa/i, 'sulfa allergy flagged on a sulfonylurea');
     const checks = ok(await ctx.doc('GET', `/api/consultations/${c.id}/checks`));
     assert.ok(checks[1].warnings.some((w) => w.type === 'strength'), '3 mg is not a catalog strength');
+    // MedPin AI suggestions (AI stubbed: nothing is sent anywhere).
+    const off = ok(await ctx.doc('POST', `/api/consultations/${c.id}/ai-suggestions`));
+    assert.equal(off.available, false, 'AI off: says so');
+    const aiMod = require('../src/services/ai');
+    const saved = { enabled: aiMod.enabled, completeJson: aiMod.completeJson };
+    let calls = 0;
+    aiMod.enabled = () => true;
+    aiMod.completeJson = async ({ messages }) => {
+      calls += 1;
+      const facts = JSON.parse(messages[0].content);
+      assert.ok(facts.allergies.some((a) => /sulfa/i.test(a)), 'the AI is told about allergies');
+      assert.ok(!JSON.stringify(facts).includes('9230592842'), 'no phone numbers sent');
+      return {
+        model: 'stub',
+        data: {
+          diagnoses: [{ name: 'Diabetes type 2', icdCode: 'E11.9', likelihood: 'likely', reason: 'Thirst and tiredness for 2 weeks' }],
+          tests: [{ name: 'lipid profile', reason: 'Cardiovascular risk' }],
+          medicines: [
+            { name: 'Glimepiride', strength: '1 mg', form: 'Tablet', morning: 1, afternoon: 0, night: 0, frequency: 'daily', foodRelation: 'before_food', durationValue: 30, durationUnit: 'days', reason: 'Add-on', caution: '' },
+            { name: 'Vildagliptin', strength: '50 mg', form: 'Tablet', morning: 1, afternoon: 0, night: 1, frequency: 'daily', foodRelation: 'none', durationValue: 1, durationUnit: 'months', reason: 'Add-on, low hypo risk', caution: 'Check liver function' },
+          ],
+          redFlags: ['Vomiting with drowsiness'],
+        },
+      };
+    };
+    try {
+      const s = ok(await ctx.doc('POST', `/api/consultations/${c.id}/ai-suggestions`));
+      assert.equal(s.diagnoses[0].name, 'Type 2 diabetes mellitus', 'named as in the ICD catalog');
+      assert.equal(s.diagnoses[0].icdCode, 'E11.9');
+      assert.equal(s.tests[0].name, 'Lipid profile', 'matched to the test catalog');
+      assert.ok(!s.medicines.some((m) => m.item.name === 'Glimepiride'), 'sulfonylurea dropped for a sulfa allergy');
+      const v = s.medicines.find((m) => m.item.name === 'Vildagliptin');
+      assert.deepEqual(v.item.dose, { morning: 1, afternoon: 0, night: 1 });
+      assert.equal(v.item.foodRelation, undefined);
+      assert.equal(v.item.entrySource, 'suggestion');
+      assert.deepEqual(s.redFlags, ['Vomiting with drowsiness']);
+      const again = ok(await ctx.doc('POST', `/api/consultations/${c.id}/ai-suggestions`));
+      assert.equal(again.cached, true);
+      assert.equal(calls, 1, 'reused until the consultation changes');
+      assert.equal((await ctx.desk('POST', `/api/consultations/${c.id}/ai-suggestions`)).status, 403, 'only those who prescribe');
+    } finally {
+      Object.assign(aiMod, saved);
+    }
     // No signature yet: issuing is refused and the draft stays a draft (nothing half-issued).
     const noSig = await ctx.doc('POST', `/api/consultations/${c.id}/issue`);
     assert.equal(noSig.status, 409);

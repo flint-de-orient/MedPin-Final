@@ -19,6 +19,10 @@ class PeopleAddScreen extends StatefulWidget {
 }
 
 class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   static const _sampleDepartments = [
     'Endocrinology',
     'Diabetology',

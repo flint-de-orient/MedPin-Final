@@ -21,6 +21,10 @@ class ConsultDiagnosisScreen extends StatefulWidget {
 }
 
 class _ConsultDiagnosisScreenState extends State<ConsultDiagnosisScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   /// Previous diagnoses: label, note shown once reused (renderVals().previous).
   static const _samplePrevious = [
     ('Type 2 diabetes mellitus', 'Reused from 12 Mar 2026'),

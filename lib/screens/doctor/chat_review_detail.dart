@@ -25,6 +25,10 @@ const _audit = ['Urgency: Medium', 'Model-driven', 'No scripted fallback', '2 ci
 const _citations = ['ADA Standards of Care 2026 §9', 'Clinic knowledge base: “Metformin timing”'];
 
 class _ChatReviewDetailScreenState extends State<ChatReviewDetailScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   final _reply = TextEditingController();
   final _pinnedKey = GlobalKey();
   final _endKey = GlobalKey();

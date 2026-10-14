@@ -18,6 +18,10 @@ class DepartmentsScreen extends StatefulWidget {
 }
 
 class _DepartmentsScreenState extends State<DepartmentsScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   @override
   Future<Object?> fetch() => Api.I.get('/api/departments');
 

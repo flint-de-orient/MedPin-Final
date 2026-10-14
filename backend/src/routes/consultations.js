@@ -142,6 +142,12 @@ r.get('/consultations/:id/checks', need('prescribe'), async (req, res) => {
   res.json(await checkItems(patient, c.medications));
 });
 
+// MedPin AI: possible diagnoses, tests and medicine options for the doctor to pick from.
+r.post('/consultations/:id/ai-suggestions', need('prescribe'), async (req, res) => {
+  const c = await getConsult(req);
+  res.json(await require('../services/consultai').suggest(c, { force: req.body?.refresh === true }));
+});
+
 // "From your past prescriptions" and "Suggested for this diagnosis".
 r.get('/consultations/:id/suggestions', need('prescribe'), async (req, res) => {
   const c = await getConsult(req);
@@ -160,7 +166,7 @@ r.get('/consultations/:id/suggestions', need('prescribe'), async (req, res) => {
     forDiagnosis = others.map((o) => ({ ...o.item, reason: `Prescribed ${o.n} times for ${dx[0]}` }));
   }
   const tests = await M.LabTest.find(dx.some((d) => /diabet/i.test(d)) ? { panel: 'Diabetes panel' } : dx.some((d) => /thyroid/i.test(d)) ? { panel: 'Thyroid panel' } : { _id: null });
-  res.json({ fromPastPrescriptions: pastItems, forDiagnosis, tests: tests.map((t) => ({ testName: t.name, panel: t.panel, source: 'ai' })) });
+  res.json({ fromPastPrescriptions: pastItems, forDiagnosis, tests: tests.map((t) => ({ testName: t.name, panel: t.panel, source: 'panel' })) });
 });
 
 r.post('/consultations/:id/vitals', async (req, res) => {

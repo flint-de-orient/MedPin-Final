@@ -25,6 +25,10 @@ class ClinicEditorScreen extends StatefulWidget {
 }
 
 class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   final _name = TextEditingController(text: 'City Care Clinic — Salt Lake');

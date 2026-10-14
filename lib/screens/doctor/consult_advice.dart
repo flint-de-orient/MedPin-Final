@@ -22,6 +22,10 @@ class ConsultAdviceScreen extends StatefulWidget {
 }
 
 class _ConsultAdviceScreenState extends State<ConsultAdviceScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   /// Medicine, dosage line, catalog warning.
   static const List<(String, String, String?)> _sampleMeds = [
     ('Metformin 500 mg', '1-0-1 · After food · 30 days', null),

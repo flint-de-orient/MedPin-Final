@@ -1751,6 +1751,10 @@ class D5Live {
 /// opens or resumes it, keeps the snapshot, and saves every change with
 /// PATCH /api/consultations/:id after a short pause.
 mixin D5Draft<W extends StatefulWidget> on LiveData<W> {
+  /// The draft is being written: never reloaded under the doctor's fingers.
+  @override
+  bool get autoRefresh => false;
+
   String? consultId;
   Map<String, dynamic> consult = const {};
   Map<String, dynamic> summary = const {};
@@ -1986,4 +1990,256 @@ mixin D5Draft<W extends StatefulWidget> on LiveData<W> {
       consult.list('diagnoses').isEmpty &&
       consult.list('medications').isEmpty &&
       consult.list('labOrders').isEmpty;
+}
+
+/// MedPin AI suggestions in a consultation (POST /api/consultations/:id/ai-suggestions):
+/// possible diagnoses with ICD codes, tests and medicine options, each with its
+/// reason, plus red flags. Nothing is added unless the doctor taps Add; a
+/// medicine opens the dosage sheet first. Medicines were already checked
+/// against the patient's allergies and running medicines; any warning shows.
+class D5AiSuggest extends StatefulWidget {
+  final String? consultId;
+
+  /// A complaint (or vitals) is there to suggest from.
+  final bool ready;
+
+  /// Sends the doctor's latest edits first, so the AI sees them.
+  final Future<bool> Function() beforeAsk;
+  final void Function(Map<String, dynamic> diagnosis) onDiagnosis;
+  final void Function(String test) onTest;
+  final Future<bool> Function(Map<String, dynamic> item, String reason) onMedicine;
+
+  /// Already in the consultation (lower-case names): shown as Added.
+  final Set<String> haveDiagnoses;
+  final Set<String> haveTests;
+  final Set<String> haveMedicines;
+
+  const D5AiSuggest({
+    super.key,
+    required this.consultId,
+    required this.ready,
+    required this.beforeAsk,
+    required this.onDiagnosis,
+    required this.onTest,
+    required this.onMedicine,
+    this.haveDiagnoses = const {},
+    this.haveTests = const {},
+    this.haveMedicines = const {},
+  });
+
+  @override
+  State<D5AiSuggest> createState() => _D5AiSuggestState();
+}
+
+class _D5AiSuggestState extends State<D5AiSuggest> {
+  Map<String, dynamic>? _res;
+  bool _asking = false;
+
+  Future<void> _ask({bool refresh = false}) async {
+    if (!isLive || widget.consultId == null || _asking) return;
+    setState(() => _asking = true);
+    try {
+      await widget.beforeAsk();
+      final r = await Api.I.post('/api/consultations/${widget.consultId}/ai-suggestions', {if (refresh) 'refresh': true});
+      if (!mounted) return;
+      setState(() => _res = r is Map ? r.cast<String, dynamic>() : null);
+      if (_res?['available'] == false || _res?['failed'] == true) toast(context, '${_res?['message'] ?? 'MedPin AI is not available'}');
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message);
+    } finally {
+      if (mounted) setState(() => _asking = false);
+    }
+  }
+
+  static const _like = {'likely': 'Likely', 'possible': 'Possible', 'rule_out': 'Rule out'};
+
+  String _dose(Map<String, dynamic> item) {
+    final d = item.obj('dose');
+    String n(Object? v) => v is num ? (v == v.roundToDouble() ? '${v.toInt()}' : '$v') : '0';
+    final pattern = item['frequency'] == 'as_needed'
+        ? 'When needed'
+        : item['frequency'] == 'weekly'
+            ? 'Once a week'
+            : '${n(d['morning'])}-${n(d['afternoon'])}-${n(d['night'])}';
+    const foods = {'before_food': 'before food', 'after_food': 'after food', 'with_food': 'with food', 'empty_stomach': 'empty stomach', 'bedtime': 'at bedtime'};
+    final food = foods[item['foodRelation']];
+    final dur = item.obj('duration');
+    final days = dur['unit'] == 'ongoing' ? 'ongoing' : dur['value'] == null ? null : '${dur['value']} ${dur['unit'] ?? 'days'}';
+    return [pattern, food, days].whereType<String>().join(' · ');
+  }
+
+  Widget _row({
+    required String title,
+    String? badge,
+    Color badgeColor = MP.primary,
+    required String reason,
+    String? warn,
+    required bool added,
+    required VoidCallback onAdd,
+    bool first = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(border: first ? null : const Border(top: BorderSide(color: MP.line))),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(spacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  Text(title, style: tx(15, w: w600)),
+                  if (badge != null && badge.isNotEmpty) Text(badge, style: tx(12, w: w600, c: badgeColor)),
+                ]),
+                const Gap(2),
+                Text(reason, style: tx(13, c: MP.ink2, h: 1.4)),
+                if (warn != null && warn.isNotEmpty) ...[const Gap(4), Text(warn, style: tx(12.5, w: w600, c: MP.amber, h: 1.35))],
+              ],
+            ),
+          ),
+          const Gap(12),
+          SizedBox(
+            height: 36,
+            child: added
+                ? Center(child: Text('Added', style: tx(13, w: w600, c: MP.green)))
+                : Semantics(
+                    button: true,
+                    label: 'Add $title',
+                    excludeSemantics: true,
+                    child: Tap(
+                      onTap: onAdd,
+                      radius: 12,
+                      color: MP.white,
+                      border: MP.lineStrong,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Ico(I.plus, size: 15, color: MP.primary, stroke: 2),
+                        const Gap(4),
+                        Text('Add', style: tx(14, w: w600, c: MP.primary)),
+                      ]),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = _res;
+    final dx = r?.list('diagnoses') ?? const <Map<String, dynamic>>[];
+    final tests = r?.list('tests') ?? const <Map<String, dynamic>>[];
+    final meds = r?.list('medicines') ?? const <Map<String, dynamic>>[];
+    final flags = [for (final f in (r?['redFlags'] as List? ?? const [])) '$f'];
+    final empty = r != null && dx.isEmpty && tests.isEmpty && meds.isEmpty && flags.isEmpty;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: MP.primarySoft, borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            const Ico(I.sparkle, size: 18, color: MP.primary, stroke: 2),
+            const Gap(8),
+            Expanded(child: Text('MedPin AI suggestions', style: tx(15, w: w700, c: MP.primary))),
+            if (r != null && !_asking)
+              MpHitSlop(
+                child: Tap(
+                  onTap: () => _ask(refresh: true),
+                  radius: 8,
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Text('Refresh', style: tx(13, w: w600, c: MP.primary)),
+                ),
+              ),
+          ]),
+          const Gap(8),
+          if (!widget.ready)
+            Text('Add the chief complaint (and vitals) to get suggestions.', style: tx(13, c: MP.ink2, h: 1.4))
+          else if (_asking)
+            Row(children: [
+              const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: MP.primary)),
+              const Gap(10),
+              Expanded(child: Text('Looking at the complaint, vitals and record… about 10 seconds', style: tx(13, c: MP.ink2, h: 1.4))),
+            ])
+          else if (r == null)
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text("Possible diagnoses, tests and medicine options from the complaint, vitals and this patient's record.", style: tx(13, c: MP.ink2, h: 1.4)),
+              const Gap(10),
+              MpButton('Suggest', kind: MpBtn.secondary, icon: I.sparkle, onTap: _ask),
+            ])
+          else if (empty)
+            Text(r['needsComplaint'] == true ? 'Add the chief complaint first.' : 'No suggestions for this one.', style: tx(13, c: MP.ink2))
+          else ...[
+            if (flags.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: MP.redSoft, borderRadius: BorderRadius.circular(12)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Red flags · refer urgently if present', style: tx(12.5, w: w700, c: MP.red)),
+                  const Gap(4),
+                  for (final f in flags) Text('• $f', style: tx(13, c: MP.red, h: 1.4)),
+                ]),
+              ),
+              const Gap(10),
+            ],
+            if (dx.isNotEmpty) ...[
+              const D5Label('Possible diagnoses', color: MP.ink2, bottom: 2),
+              for (var i = 0; i < dx.length; i++)
+                _row(
+                  first: i == 0,
+                  title: dx[i].str('name'),
+                  badge: [if (dx[i].str('icdCode').isNotEmpty) dx[i].str('icdCode'), _like[dx[i]['likelihood']]].whereType<String>().join(' · '),
+                  badgeColor: dx[i]['likelihood'] == 'rule_out' ? MP.amber : MP.primary,
+                  reason: dx[i].str('reason'),
+                  added: widget.haveDiagnoses.contains(dx[i].str('name').toLowerCase()),
+                  onAdd: () => widget.onDiagnosis({
+                    'name': dx[i].str('name'),
+                    if (dx[i].str('icdCode').isNotEmpty) 'icdCode': dx[i].str('icdCode'),
+                    'source': 'ai',
+                    'reason': dx[i].str('reason'),
+                  }),
+                ),
+              const Gap(8),
+            ],
+            if (tests.isNotEmpty) ...[
+              const D5Label('Tests', color: MP.ink2, bottom: 2),
+              for (var i = 0; i < tests.length; i++)
+                _row(
+                  first: i == 0,
+                  title: tests[i].str('name'),
+                  reason: tests[i].str('reason'),
+                  added: widget.haveTests.contains(tests[i].str('name').toLowerCase()),
+                  onAdd: () => widget.onTest(tests[i].str('name')),
+                ),
+              const Gap(8),
+            ],
+            if (meds.isNotEmpty) ...[
+              const D5Label('Medicine options', color: MP.ink2, bottom: 2),
+              for (var i = 0; i < meds.length; i++) _medRow(meds[i], i == 0),
+              const Gap(4),
+            ],
+          ],
+          const Gap(6),
+          Text('Suggestions only. Check each one before adding; you decide the treatment.', style: tx(12, c: MP.ink3, h: 1.4)),
+        ],
+      ),
+    );
+  }
+
+  Widget _medRow(Map<String, dynamic> m, bool first) {
+    final item = m.obj('item');
+    final warn = [m.str('caution'), for (final w in m.list('warnings')) w.str('text')].where((s) => s.isNotEmpty).join(' · ');
+    return _row(
+      first: first,
+      title: [item.str('name'), item.str('strength')].where((s) => s.isNotEmpty).join(' '),
+      badge: _dose(item),
+      badgeColor: MP.ink3,
+      reason: m.str('reason'),
+      warn: warn,
+      added: widget.haveMedicines.contains(item.str('name').toLowerCase()),
+      onAdd: () => widget.onMedicine(item, m.str('reason')),
+    );
+  }
 }

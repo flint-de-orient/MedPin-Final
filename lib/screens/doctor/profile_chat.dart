@@ -17,6 +17,10 @@ class ProfileChatScreen extends StatefulWidget {
 }
 
 class _ProfileChatScreenState extends State<ProfileChatScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   static const _who = [
     ('booked', 'Patients with a booked visit', 'They can message you from 1 day before their visit'),
     ('anyone', 'All patients of your practice', 'Anyone linked to your clinic can start a chat'),

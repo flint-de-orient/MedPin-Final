@@ -263,6 +263,24 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> with LiveData, 
     _matchIcd(name);
   }
 
+  /// A MedPin AI diagnosis the doctor chose (name, ICD code, reason).
+  void _addAiDx(Map<String, dynamic> d) {
+    if (_dx.any((x) => x.toLowerCase() == d.str('name').toLowerCase())) return;
+    setState(() {
+      _dx.add(d.str('name'));
+      _dxItems.add(d);
+    });
+    save({'diagnoses': List.of(_dxItems)});
+  }
+
+  /// A MedPin AI medicine: the dosage sheet opens with it filled in, to check and change.
+  Future<bool> _addAiMed(Map<String, dynamic> item, String reason) async {
+    final r = await Nav.go<D5MedResult>(context, 'Consult-Dosage', args: {'item': {...item, 'entrySource': 'suggestion'}, 'consultationId': consultId, 'reason': reason});
+    if (r?.item == null || !mounted) return false;
+    _addLine(r!);
+    return true;
+  }
+
   /// A typed diagnosis that is in the ICD catalog gets its code.
   Future<void> _matchIcd(String name) async {
     try {
@@ -641,14 +659,33 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> with LiveData, 
           onMic: () => _listen(_dxCtrl, title: 'Diagnosis', submit: _addDx),
           onSubmitted: _addDx,
         ),
-        D5IconText(
-          icon: I.sparkle,
-          size: 14,
-          stroke: 2,
-          gap: 6,
-          text: 'Suggestions appear once you add a chief complaint.',
-          style: tx(13, c: MP.ink3),
-        ),
+        if (isLive)
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _cc,
+            builder: (_, v, _) => D5AiSuggest(
+              consultId: consultId,
+              ready: v.text.trim().isNotEmpty,
+              beforeAsk: () {
+                save({'chiefComplaint': _cc.text.trim()}, delay: Duration.zero);
+                return flush();
+              },
+              haveDiagnoses: {for (final d in _dx) d.toLowerCase()},
+              haveTests: {for (final e in _labs.entries) if (e.value) e.key.toLowerCase()},
+              haveMedicines: {for (final m in _medItems) m.str('name').toLowerCase()},
+              onDiagnosis: _addAiDx,
+              onTest: _addLab,
+              onMedicine: _addAiMed,
+            ),
+          )
+        else
+          D5IconText(
+            icon: I.sparkle,
+            size: 14,
+            stroke: 2,
+            gap: 6,
+            text: 'Suggestions appear once you add a chief complaint.',
+            style: tx(13, c: MP.ink3),
+          ),
       ],
     ),
   );

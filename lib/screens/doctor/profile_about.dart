@@ -19,6 +19,10 @@ class ProfileAboutScreen extends StatefulWidget {
 }
 
 class _ProfileAboutScreenState extends State<ProfileAboutScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   static const _sampleBio =
       'I treat diabetes, thyroid and hormone problems, and help patients bring their sugar and BP into '
       'a healthy range with simple changes they can keep. I see patients at City Care Clinic in Salt Lake '

@@ -33,6 +33,10 @@ const _categories = ['Medicines', 'Diabetes', 'Hypertension', 'Diet'];
 const _maxChars = 2000;
 
 class _KnowledgeEditorScreenState extends State<KnowledgeEditorScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   final _title = TextEditingController(text: 'Metformin timing');
   final _body = TextEditingController(text: _content);
   final _source = TextEditingController(text: 'ADA Standards of Care 2026, Section 9');

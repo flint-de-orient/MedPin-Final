@@ -155,6 +155,10 @@ const _doctors = [
 ];
 
 class _RecordsReviewScreenState extends State<RecordsReviewScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   List<bool> _selected = [true, true, true];
   List<bool> _open = [true, false, false];
 

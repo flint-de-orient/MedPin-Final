@@ -20,6 +20,10 @@ class ProfileLocationScreen extends StatefulWidget {
 
 
 class _ProfileLocationScreenState extends State<ProfileLocationScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   static const _types = ['Clinic', 'Hospital', 'Nursing home', 'Diagnostic centre', 'Video consultation'];
 
   /// API values of [_types] (plus "chamber", which the design doesn't list).

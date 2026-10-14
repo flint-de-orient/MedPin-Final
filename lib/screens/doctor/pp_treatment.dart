@@ -37,6 +37,10 @@ String _dayDate(DateTime d) {
 }
 
 class _PpTreatmentScreenState extends State<PpTreatmentScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   @override
   Future<Object?> fetch() => d6Load(context, {'adh': '/adherence'});
 

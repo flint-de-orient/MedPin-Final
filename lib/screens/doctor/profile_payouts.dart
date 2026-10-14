@@ -27,6 +27,10 @@ class ProfilePayoutsScreen extends StatefulWidget {
 }
 
 class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   String _preferred = 'upi';
   final _upi = TextEditingController(text: 'arjunsen@okhdfcbank');
   final _holder = TextEditingController(text: 'Arjun Sen');

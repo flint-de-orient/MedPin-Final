@@ -22,6 +22,10 @@ class ConsultVitalsScreen extends StatefulWidget {
 }
 
 class _ConsultVitalsScreenState extends State<ConsultVitalsScreen> with LiveData {
+  // A form: don't refresh by itself while it's being filled in.
+  @override
+  bool get autoRefresh => false;
+
   /// Field id → API key.
   static const _keys = {
     'v-sys': 'bpSystolic',

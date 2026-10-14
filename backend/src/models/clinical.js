@@ -110,6 +110,7 @@ const consultationSchema = new Schema(
     diagnoses: [diagnosisSchema],
     medications: [rxItemSchema], // draft medicines; copied to the prescription on issue
     labOrders: [labOrderSchema],
+    aiSuggestions: { type: Schema.Types.Mixed, default: undefined }, // { hash, data } — services/consultai.js
     advice: { items: [adviceItemSchema], freeText: String },
     validity: {
       preset: enumOf(E.VALIDITY_PRESETS, { default: '1_month' }),
