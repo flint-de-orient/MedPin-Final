@@ -129,7 +129,7 @@ void main() {
     _serve();
     await _pump(t, const DoctorPatientsScreen(), stem: 'Doctor-Patients');
     final all = (((_fx('patients') as Map)['counts'] as Map)['all'] as num).toInt();
-    expect(find.text('$all patients · all locations'), findsOneWidget);
+    expect(find.text('$all patients · all branches'), findsOneWidget);
     for (final p in (_fx('patients') as Map)['items'] as List) {
       expect(find.text((p as Map)['name'] as String), findsWidgets);
     }

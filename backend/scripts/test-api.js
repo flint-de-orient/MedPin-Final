@@ -1242,6 +1242,24 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.deepEqual([bell.unread, bell.urgent], [0, 0], 'no dot once read');
   });
 
+  await step('branches: each patient shows where they go; the list filters by branch', async () => {
+    const list = ok(await ctx.doc('GET', '/api/patients'));
+    assert.ok(list.locations.length >= 1, "the clinic's branches for the filter");
+    const row = list.items.find((p) => String(p.id) === String(ctx.patientId));
+    assert.ok(row.branch?.usual?.name, 'usual branch on the row');
+    assert.ok(row.branch.seenAt.includes(String(row.branch.usual.id)));
+    const here = ok(await ctx.doc('GET', `/api/patients?locationId=${row.branch.usual.id}`));
+    assert.ok(here.items.some((p) => String(p.id) === String(ctx.patientId)), 'listed under the branch they visit');
+    const none = ok(await ctx.doc('GET', '/api/patients?locationId=000000000000000000000000'));
+    assert.equal(none.items.length, 0);
+    const detail = ok(await ctx.doc('GET', `/api/patients/${ctx.patientId}`));
+    assert.equal(String(detail.branch.usual.id), String(row.branch.usual.id), 'same on the profile');
+    const visits = ok(await ctx.doc('GET', `/api/patients/${ctx.patientId}/visits`));
+    assert.ok(visits.some((v) => v.location?.name), 'each visit names its branch');
+    const enrol = await M.PatientEnrolment.findOne({ patientId: ctx.patientId });
+    assert.ok(enrol.homeLocationId, 'registered at a branch');
+  });
+
   await step('asking for a code twice quickly reuses the one just sent', async () => {
     const { issueOtp, checkOtp } = require('../src/routes/auth');
     const first = await issueOtp('9000012345', 'register');

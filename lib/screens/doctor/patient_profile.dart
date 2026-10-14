@@ -793,6 +793,19 @@ class _PastConsultations extends StatelessWidget {
     ('18 Sep 2025', 'Type 2 diabetes, HbA1c 8.4% · Dr. Arjun Sen'),
   ];
 
+  /// "Usually at Salt Lake · last at New Town, 9 Oct".
+  static String? _branchLine(D6Rec r) {
+    final d = r.m['detail'];
+    final b = d is Map ? (d['branch'] is Map ? (d['branch'] as Map).cast<String, dynamic>() : null) : null;
+    if (b == null) return null;
+    final usual = b.obj('usual').str('name');
+    final last = b.obj('last');
+    final at = F.date(last['at']);
+    final lastText = last.str('name').isEmpty ? '' : 'last at ${last.str('name')}${at == null ? '' : ', ${F.dayMonth(at)}'}';
+    if (usual.isEmpty) return lastText.isEmpty ? null : lastText[0].toUpperCase() + lastText.substring(1);
+    return lastText.isEmpty ? 'Usually at $usual' : 'Usually at $usual · $lastText';
+  }
+
   static List<Map<String, dynamic>> visits(D6Rec r) {
     final v = r.m['visits'];
     return [for (final x in (v is List ? v : const []).take(3)) (x as Map).cast<String, dynamic>()];
@@ -811,6 +824,7 @@ class _PastConsultations extends StatelessWidget {
                 [
                   [for (final d in v.list('diagnoses')) d.str('name')].where((s) => s.isNotEmpty).join(', '),
                   r.personName(v['doctorId']) ?? '',
+                  v.obj('location').str('name'), // which branch
                 ].where((s) => s.isNotEmpty).join(' · '),
               ),
           ];
@@ -822,6 +836,15 @@ class _PastConsultations extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 12),
             child: D6TitleLink('Past consultations', action: 'View all', onTap: () => d6Go(context, 'Prescriptions')),
           ),
+          if (r != null && _branchLine(r) != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: [
+                const Ico(I.pin, size: 14, color: MP.ink3, stroke: 2),
+                const Gap(6),
+                Expanded(child: Text(_branchLine(r)!, style: tx(13, c: MP.ink2))),
+              ]),
+            ),
           for (var i = 0; i < rows.length; i++)
             D6Row(
               onTap: () => r == null

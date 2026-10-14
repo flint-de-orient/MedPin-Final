@@ -25,7 +25,10 @@ class _Patient {
 
   /// Live: the patient's id (null in the design preview).
   final String? id;
-  const _Patient(this.name, this.meta, this.cond, this.last, [this.flag, this.flagColor = MP.ink2, this.id]);
+
+  /// Which branch they go to: "Salt Lake" or "Salt Lake · last at New Town".
+  final String? branch;
+  const _Patient(this.name, this.meta, this.cond, this.last, [this.flag, this.flagColor = MP.ink2, this.id, this.branch]);
 
   String get initials {
     final s = name.split(' ').where((w) => w.isNotEmpty).map((w) => w[0]).join();
@@ -93,12 +96,40 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> with LiveDa
   String _sort = _sorts.first;
   int _limit = 50;
 
+  /// Branch filter: null = all branches.
+  String? _branchId;
+
   @override
   Future<Object?> fetch() => Api.I.get('/api/patients', query: {
         'filter': _filterKeys[_filter],
         'sort': _sort == _sorts.first ? 'recent' : 'name',
         'limit': _limit,
+        if (_branchId != null) 'locationId': _branchId,
       });
+
+  List<Map<String, dynamic>> get _branches => data?.list('locations') ?? const [];
+
+  String get _branchLabel => _branchId == null ? 'All branches' : _branches.where((b) => b.str('id') == _branchId).map((b) => b.str('name')).firstOrNull ?? 'All branches';
+
+  /// "Salt Lake" · "Salt Lake · last at New Town" (only when they've been to more than one).
+  static String? _branchOf(Map<String, dynamic> p) {
+    final b = p.obj('branch');
+    final usual = b.obj('usual').str('name');
+    final last = b.obj('last').str('name');
+    if (usual.isEmpty) return last.isEmpty ? null : last;
+    return last.isNotEmpty && last != usual ? '$usual · last at $last' : usual;
+  }
+
+  Future<void> _pickBranch() async {
+    final names = ['All branches', for (final b in _branches) b.str('name')];
+    final v = await d2PickOption(context, title: 'Branch', options: names, value: _branchLabel);
+    if (v == null || !mounted) return;
+    setState(() {
+      _branchId = v == 'All branches' ? null : _branches.firstWhere((b) => b.str('name') == v).str('id');
+      _limit = 50;
+    });
+    reload(quiet: true);
+  }
 
   bool _inFilter(_Patient p) => switch (_filter) {
     1 => p.last == 'Today',
@@ -121,6 +152,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> with LiveDa
             flag?.$1,
             flag?.$2 ?? MP.ink2,
             p.str('id'),
+            _branches.length > 1 ? _branchOf(p) : null,
           ),
       ];
     }
@@ -167,7 +199,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> with LiveDa
     return MpPage(
       header: D2TabHeader(
         title: 'Patients',
-        subtitle: all == null ? '248 patients · all locations' : '$all ${all == 1 ? 'patient' : 'patients'} · all locations',
+        subtitle: all == null ? '248 patients · all locations' : '$all ${all == 1 ? 'patient' : 'patients'} · ${_branchId == null ? 'all branches' : _branchLabel}',
         action: D2PillButton('Add patient', icon: I.plus, onTap: () => Nav.go(context, 'Add-Patient')),
         search: D2SearchField(
           hint: 'Search by name or mobile number',
@@ -193,6 +225,29 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> with LiveDa
             child: Row(
               children: [
                 Expanded(child: D2Caps(_sort)),
+                if (_branches.length > 1) ...[
+                  MpHitSlop(child: Tap(
+                    onTap: _pickBranch,
+                    radius: 8,
+                    child: SizedBox(
+                      height: 32,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Ico(I.pin, size: 15, color: MP.primary, stroke: 2),
+                            const Gap(4),
+                            Text(_branchLabel, style: tx(14, w: w600, c: MP.primary)),
+                            const Gap(2),
+                            const Ico(I.chevronDown, size: 16, color: MP.primary, stroke: 2),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )),
+                  const Gap(12),
+                ],
                 MpHitSlop(child: Tap(
                   onTap: _pickSort,
                   radius: 8,
@@ -273,6 +328,14 @@ class _PatientCard extends StatelessWidget {
                     ),
                     const Gap(3),
                     Text(p.meta, style: tx(13, c: MP.ink2, tab: true)),
+                    if (p.branch != null) ...[
+                      const Gap(3),
+                      Row(children: [
+                        const Ico(I.pin, size: 13, color: MP.ink3, stroke: 2),
+                        const Gap(4),
+                        Expanded(child: Text(p.branch!, style: tx(13, c: MP.ink3), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      ]),
+                    ],
                     if (p.cond.isNotEmpty) ...[
                       const Gap(3),
                       Text(p.cond, style: tx(13)),

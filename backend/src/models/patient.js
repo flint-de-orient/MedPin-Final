@@ -115,6 +115,7 @@ const patientEnrolmentSchema = new Schema(
     status: enumOf(E.ENROLMENT_STATUSES, { default: 'pending_code' }),
     shareScope: enumOf(E.SHARE_SCOPES, { default: 'full' }),
     clinicPatientNo: String, // optional practice file number
+    homeLocationId: ref('Location'), // the branch they were registered at (their "usual" one until visits say otherwise)
     linkedBy: ref('User'),
     linkedAt: Date,
     revokedAt: Date,

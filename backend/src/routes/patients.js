@@ -23,6 +23,48 @@ const canEdit = (req) => {
   if (!req.perms.editRecords) throw forbidden("Your role can't edit patient records", 'PERMISSION_REQUIRED');
 };
 
+/**
+ * Which branch each patient goes to, from their visits here: usual (most
+ * completed visits; else where they were registered), last (branch and date of
+ * the last visit) and every branch they've been seen at. One record per
+ * patient — the branch only says where things happened.
+ */
+async function branchesOf(practiceId, patientIds) {
+  const [visits, enrolments, locations] = await Promise.all([
+    M.Appointment.aggregate([
+      { $match: { practiceId, patientId: { $in: patientIds }, status: { $nin: ['cancelled', 'rescheduled'] }, locationId: { $ne: null } } },
+      { $group: { _id: { p: '$patientId', l: '$locationId' }, done: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } }, any: { $sum: 1 }, lastDone: { $max: { $cond: [{ $eq: ['$status', 'completed'] }, '$completedAt', null] } } } },
+    ]),
+    M.PatientEnrolment.find({ practiceId, patientId: { $in: patientIds } }, 'patientId homeLocationId').lean(),
+    M.Location.find({ practiceId }, 'name shortName').lean(),
+  ]);
+  const loc = new Map(locations.map((l) => [String(l._id), { id: l._id, name: l.shortName || l.name }]));
+  const home = new Map(enrolments.map((e) => [String(e.patientId), e.homeLocationId && String(e.homeLocationId)]));
+  const out = new Map();
+  for (const id of patientIds.map(String)) {
+    const mine = visits.filter((v) => String(v._id.p) === id);
+    const byDone = [...mine].sort((a, b) => b.done - a.done || b.any - a.any);
+    const last = [...mine].filter((v) => v.lastDone).sort((a, b) => b.lastDone - a.lastDone)[0];
+    const usualId = byDone[0]?.done ? String(byDone[0]._id.l) : home.get(id) || (byDone[0] ? String(byDone[0]._id.l) : null);
+    out.set(id, {
+      usual: usualId ? loc.get(usualId) || null : null,
+      last: last ? { ...loc.get(String(last._id.l)), at: last.lastDone } : null,
+      seenAt: [...new Set([...mine.map((v) => String(v._id.l)), home.get(id)].filter(Boolean))],
+    });
+  }
+  return out;
+}
+
+/** Where a new patient is registered: the branch given, the user's current one, or their only one. */
+async function registrationBranch(req) {
+  const valid = (id) => id && /^[0-9a-f]{24}$/i.test(String(id));
+  if (valid(req.body.locationId)) return req.body.locationId;
+  if (req.member.locationIds?.length === 1) return req.member.locationIds[0];
+  if (req.user.activeLocationId) return req.user.activeLocationId;
+  const locs = await M.Location.find({ practiceId: req.practiceId, status: { $ne: 'inactive' } }, '_id').limit(2);
+  return locs.length === 1 ? locs[0]._id : undefined;
+}
+
 const listRow = (p, extra = {}) => ({
   id: p._id, name: p.name, phone: p.phone, gender: p.gender, age: T.ageFrom(p),
   conditions: p.conditions.map((c) => c.name), allergies: p.allergies.map((a) => a.allergen), riskLevel: p.riskLevel, hasApp: Boolean(p.userId), ...extra,
@@ -53,12 +95,17 @@ r.get('/patients', async (req, res) => {
     { $group: { _id: '$patientId', at: { $max: '$completedAt' } } },
   ]);
   const lv = new Map(lastVisits.map((x) => [String(x._id), x.at]));
-  const patients = await M.Patient.find(q);
-  const rows = patients.map((p) => listRow(p, { lastVisitAt: lv.get(String(p._id)) || null }));
+  let patients = await M.Patient.find(q);
+  const branch = await branchesOf(req.practiceId, patients.map((p) => p._id));
+  // ?locationId=: patients seen at (or registered at) that branch; one seen at both shows under both.
+  const at = String(req.query.locationId || '');
+  if (/^[0-9a-f]{24}$/i.test(at)) patients = patients.filter((p) => branch.get(String(p._id))?.seenAt.includes(at));
+  const rows = patients.map((p) => listRow(p, { lastVisitAt: lv.get(String(p._id)) || null, branch: branch.get(String(p._id)) }));
   if (req.query.sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name));
   else rows.sort((a, b) => new Date(b.lastVisitAt || 0) - new Date(a.lastVisitAt || 0));
   res.json({
     counts: { all: ids.length, today: todayIds.length, followUpDue: dueIds.length, abnormal: abnormalIds.length },
+    locations: (await M.Location.find({ practiceId: req.practiceId, status: { $ne: 'inactive' } }, 'name shortName').sort({ createdAt: 1 }).lean()).map((l) => ({ id: l._id, name: l.shortName || l.name })),
     total: rows.length,
     items: rows.slice(skip, skip + limit),
   });
@@ -97,7 +144,7 @@ r.post('/patients', async (req, res) => {
     dateOfBirth, userId: user?._id, phoneVerifiedAt: new Date(),
     addresses: address ? [{ line: address, isDefault: true }] : [], createdByPracticeId: req.practiceId, createdBy: req.user._id,
   });
-  await M.PatientEnrolment.create({ patientId: patient._id, practiceId: req.practiceId, status: 'linked', linkedBy: req.user._id, linkedAt: new Date() });
+  await M.PatientEnrolment.create({ patientId: patient._id, practiceId: req.practiceId, status: 'linked', linkedBy: req.user._id, linkedAt: new Date(), homeLocationId: await registrationBranch(req) });
   if (req.member.role === 'doctor') {
     await M.CareTeamAccess.create({ patientId: patient._id, userId: req.user._id, practiceId: req.practiceId, role: 'doctor', isPrimary: true });
   }
@@ -130,7 +177,7 @@ r.post('/patients/link', async (req, res) => {
   await consent.save();
   await M.PatientEnrolment.findOneAndUpdate(
     { patientId: patient._id, practiceId: req.practiceId },
-    { status: 'linked', linkedBy: req.user._id, linkedAt: new Date(), revokedAt: null },
+    { status: 'linked', linkedBy: req.user._id, linkedAt: new Date(), revokedAt: null, $setOnInsert: { homeLocationId: await registrationBranch(req) } },
     { upsert: true },
   );
   if (req.member.role === 'doctor') {
@@ -165,6 +212,7 @@ r.get('/patients/:id', async (req, res) => {
     careTeam: careTeam.map((c) => ({ userId: c.userId?._id, name: c.userId?.name, role: c.role, accessLevel: c.accessLevel, since: c.since })),
     treatmentPlan: plan,
     shareScope: enrolment?.shareScope,
+    branch: (await branchesOf(req.practiceId, [patient._id])).get(String(patient._id)),
     addresses: patient.addresses,
     emergencyContact: patient.emergencyContact,
     alertLimits: patient.alertLimits,
@@ -435,8 +483,9 @@ r.post('/health-logs/:id/review', async (req, res) => {
 
 r.get('/patients/:id/visits', async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
-  const consults = await M.Consultation.find({ patientId: patient._id, practiceId: req.practiceId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).limit(50).populate('vitalsId');
-  res.json(consults);
+  const consults = await M.Consultation.find({ patientId: patient._id, practiceId: req.practiceId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).limit(50).populate('vitalsId').populate('locationId', 'name shortName');
+  // Each visit says which branch it was at.
+  res.json(consults.map((c) => ({ ...c.toJSON(), location: c.locationId ? { id: c.locationId._id, name: c.locationId.shortName || c.locationId.name } : null, locationId: c.locationId?._id || null })));
 });
 
 r.put('/patients/:id/treatment-plan', async (req, res) => {
