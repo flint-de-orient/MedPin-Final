@@ -18,7 +18,7 @@ const { setupFonts, write, heightOf, runs } = require('../lib/pdftext');
 const { translator } = require('./rxlang');
 
 /** Bump when the layout changes; older PDFs are drawn again when opened. */
-const PDF_VERSION = 5; // 3: print-friendly letterhead; 4: no box outlines; 5: Bengali / Hindi
+const PDF_VERSION = 6; // 3: print-friendly letterhead; 4: no box outlines; 5: Bengali / Hindi; 6: signature at the foot
 
 // App tokens (lib/core/tokens.dart).
 const C = {
@@ -91,7 +91,18 @@ function durationCell(item, t = (s) => s) {
  * complaint, signature, logo, practiceName, mode }. Resolves to
  * { buffer, pages }.
  */
-async function renderPrescription({ rx, patient, doctor, location, vitals, complaint, signature, logo, practiceName, mode, lang = 'en', tr = null, preview = false }) {
+/**
+ * Draws the prescription; when it spills onto another page, it is drawn again a
+ * little tighter (less spacing, shorter rows) and that is used if it fits on fewer pages.
+ */
+async function renderPrescription(args) {
+  const normal = await drawPrescription(args, false);
+  if (normal.pages <= 1) return normal;
+  const tight = await drawPrescription(args, true);
+  return tight.pages < normal.pages ? tight : normal;
+}
+
+async function drawPrescription({ rx, patient, doctor, location, vitals, complaint, signature, logo, practiceName, mode, lang = 'en', tr = null, preview = false }, tight = false) {
   // lang: the patient's copy in Bengali / Hindi (labels + the doctor's words in [tr]);
   // medicine names, strengths, tests and the diagnosis stay in English.
   const t = translator(lang);
@@ -149,7 +160,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     const addrH = addr ? heightOf(doc, addr, { width: rightW }) : 0;
     const leftH = nameH + 4 + qualH + (doctor?.headline ? 14 : 0) + (reg ? 14 : 0);
     const rightH = 14 + addrH + contact.length * 12;
-    const bandH = Math.max(96, 24 + Math.max(leftH, rightH, 56) + 18);
+    const bandH = Math.max(tight ? 88 : 96, 24 + Math.max(leftH, rightH, 56) + (tight ? 12 : 18));
 
     // White letterhead: a blue bar on top and a blue rule under it. Clean in
     // colour and on a black & white printer or photocopier (no solid fills).
@@ -192,7 +203,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       label(t(k), cx, y + 8, k === 'Next visit' && rx.followUpDate ? C.primary : C.ink3);
       text(v, cx, y + 19, { size: 10.5, weight: k === 'Next visit' && rx.followUpDate ? 'bold' : 'semi', color: k === 'Next visit' && rx.followUpDate ? C.primaryDark : C.ink, width: cw - 18 });
     });
-    y += metaH + 10;
+    y += metaH + (tight ? 6 : 10);
 
     // ── Patient card ──
     const age = T.ageFrom(patient);
@@ -214,7 +225,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       py += 22;
     }
     const cardH = py - y + 10;
-    y += cardH + 12;
+    y += cardH + (tight ? 6 : 12);
 
     // ── Clinical notes ──
     const vitalsParts = vitals ? [
@@ -313,7 +324,7 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       const nameH = heightOf(doc, name, { width: cols[1].w - 12, weight: 'bold' });
       doc.fontSize(8.5);
       const notesH = (notes ? heightOf(doc, notes, { width: cols[6].w - 10 }) : 0) + (caution ? heightOf(doc, caution, { width: cols[6].w - 10 }) + 3 : 0);
-      const rowH = Math.max(32, nameH + 24, notesH + 14);
+      const rowH = Math.max(tight ? 28 : 32, nameH + (tight ? 20 : 24), notesH + (tight ? 10 : 14));
       if (y + rowH > BOTTOM) {
         y = newPage();
         tableHead();
@@ -348,7 +359,39 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       y += rowH;
       doc.moveTo(M, y).lineTo(M + W, y).lineWidth(0.5).strokeColor('#E2E6EC').stroke();
     });
-    y += 12;
+    y += tight ? 6 : 12;
+
+    // ── Signature block size (drawn at the foot of the last page, below) ──
+    const sw = 230;
+    const blockH = 44 + 6 + 14 + (reg ? 12 : 0);
+    const sigTop = () => BOTTOM - blockH - (video ? 12 : 0);
+
+    // Keeping the signature company: when tests + advice + signature don't all fit
+    // on this page, the last section (advice, else the tests) starts the next page
+    // with the signature — never a page with only a signature on it.
+    const chipRow = tight ? 22 : 24;
+    const adviceLines = String((tr?.advice ?? rx.advice) || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    let testsH = 0;
+    if (rx.tests?.length) {
+      let tx = M;
+      let rows = 1;
+      for (const tn of rx.tests) {
+        const w = widthOf(tn, 9, 'semi') + 18;
+        if (tx + w > M + W) { tx = M; rows += 1; }
+        tx += w + 6;
+      }
+      testsH = 13 + (rows - 1) * chipRow + 19 + (tight ? 22 : 28) - 19;
+    }
+    let adviceH = 0;
+    if (adviceLines.length) {
+      doc.fontSize(10);
+      adviceH = 14 + adviceLines.reduce((h, a) => h + heightOf(doc, a, { width: W - 16 }) + 4, 0) + 6;
+    }
+    let breakBeforeAdvice = false;
+    if (y + testsH + adviceH + 10 > sigTop()) {
+      if (adviceH && y + testsH <= BOTTOM && 56 + adviceH + 10 <= sigTop()) breakBeforeAdvice = true;
+      else if (!adviceH && testsH && 56 + testsH + 10 <= sigTop() && y + testsH <= BOTTOM) y = newPage();
+    }
 
     // ── Investigations ──
     if (rx.tests?.length) {
@@ -359,17 +402,18 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
       doc.fontSize(9);
       for (const t of rx.tests) {
         const w = doc.font('semi').widthOfString(t) + 18;
-        if (tx + w > M + W) { tx = M; ty += 24; ensure(24); }
+        if (tx + w > M + W) { tx = M; ty += chipRow; ensure(chipRow); }
         doc.roundedRect(tx, ty, w, 19, 9.5).fill(C.primarySoft);
         text(t, tx + 9, ty + 5, { size: 9, weight: 'semi', color: C.primary });
         tx += w + 6;
       }
-      y = ty + 28;
+      y = ty + (tight ? 22 : 28);
     }
 
     // ── Advice ──
     const advice = String((tr?.advice ?? rx.advice) || '').split('\n').map((s) => s.trim()).filter(Boolean);
     if (advice.length) {
+      if (breakBeforeAdvice) y = newPage();
       ensure(40);
       label(t('Advice'), M, y);
       y += 14;
@@ -385,24 +429,28 @@ async function renderPrescription({ rx, patient, doctor, location, vitals, compl
     }
 
     // ── Signature and QR ──
-    ensure(96);
-    const sy = y;
-    if (qr) {
-      img(qr, M + 9, sy + 17, { fit: [56, 56] });
-      text(t('Scan to verify'), M + 86, sy + 30, { size: 9.5, weight: 'semi', color: C.ink, width: 160 });
-      text(t('Checks this prescription with MedPin.'), M + 86, sy + 44, { size: 8, color: C.ink3, width: 160 });
-    }
-    const sw = 210;
-    const sx = M + W - sw;
-    const signed = img(signature, sx + (sw - 150) / 2, sy, { fit: [150, 46], align: 'center', valign: 'bottom' });
+    // Always at the foot of the last page, just above the footer: the doctor's
+    // signature bottom-left (closing the prescription), the verify QR bottom-right.
+    // Only when the content leaves no room for it does it go to the next page.
+    if (y + 10 > sigTop()) y = newPage();
+    const sy = sigTop();
+    const sx = M;
+    const signed = img(signature, sx, sy, { fit: [160, 44], align: 'left', valign: 'bottom' });
     if (!signed) {
-      doc.roundedRect(sx + 20, sy + 4, sw - 40, 40, 8).fill(C.fill);
-      text(t('Signature on file · scan to verify'), sx + 20, sy + 19, { size: 8, color: C.ink3, width: sw - 40, align: 'center' });
+      doc.roundedRect(sx, sy + 4, sw - 40, 38, 8).fill(C.fill);
+      text(t('Signature on file · scan to verify'), sx + 10, sy + 18, { size: 8, color: C.ink3, width: sw - 60 });
     }
-    doc.moveTo(sx, sy + 50).lineTo(sx + sw, sy + 50).lineWidth(1).strokeColor(C.lineStrong).stroke();
-    let gy = text(doctorName, sx, sy + 55, { size: 10.5, weight: 'bold', width: sw, align: 'center' });
-    if (quals) gy = text(quals, sx, gy, { size: 8.5, color: C.ink2, width: sw, align: 'center' });
-    if (reg) text(reg, sx, gy, { size: 8.5, color: C.ink2, width: sw, align: 'center' });
+    doc.moveTo(sx, sy + 48).lineTo(sx + sw, sy + 48).lineWidth(0.8).strokeColor(C.lineStrong).stroke();
+    // Name and registration (the qualifications are in the letterhead above).
+    const gy = text(doctorName, sx, sy + 53, { size: 10.5, weight: 'bold', color: C.primaryDark, width: sw });
+    if (reg) text(reg, sx, gy, { size: 8.5, color: C.ink2, width: sw });
+    if (qr) {
+      const qx = M + W - 56;
+      const qy = sy + blockH - 56 - 2;
+      img(qr, qx, qy, { fit: [56, 56] });
+      text(t('Scan to verify'), qx - 170, qy + 16, { size: 9.5, weight: 'semi', color: C.ink, width: 160, align: 'right' });
+      text(t('Checks this prescription with MedPin.'), qx - 170, qy + 30, { size: 8, color: C.ink3, width: 160, align: 'right' });
+    }
 
     // ── Footer on every page ──
     const ids = [doctor?.hprId && `HPR ID ${doctor.hprId}`, location?.hfrId && `HFR ID ${location.hfrId}`].filter(Boolean).join(' · ');
