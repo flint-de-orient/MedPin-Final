@@ -293,6 +293,14 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.match(draft.medications[1].caution, /Sulfa/i, 'sulfa allergy flagged on a sulfonylurea');
     const checks = ok(await ctx.doc('GET', `/api/consultations/${c.id}/checks`));
     assert.ok(checks[1].warnings.some((w) => w.type === 'strength'), '3 mg is not a catalog strength');
+    // Preview: the draft as its PDF; nothing issued or numbered.
+    const rxBefore = await M.Prescription.countDocuments({ consultationId: c.id });
+    const pv = ok(await ctx.doc('GET', `/api/consultations/${c.id}/preview`));
+    const pvPdf = Buffer.from(await (await fetch(pv.url)).arrayBuffer());
+    assert.equal(pvPdf.subarray(0, 5).toString(), '%PDF-', 'a PDF');
+    assert.equal(await M.Prescription.countDocuments({ consultationId: c.id }), rxBefore, 'no prescription created');
+    assert.equal(ok(await ctx.doc('GET', `/api/consultations/${c.id}`)).consultation.status, 'draft');
+    assert.equal((await ctx.desk('GET', `/api/consultations/${c.id}/preview`)).status, 403, 'only those who prescribe');
     // MedPin AI suggestions (AI stubbed: nothing is sent anywhere).
     const off = ok(await ctx.doc('POST', `/api/consultations/${c.id}/ai-suggestions`));
     assert.equal(off.available, false, 'AI off: says so');

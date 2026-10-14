@@ -509,14 +509,9 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
       Nav.go(context, 'Prescriptions');
       return;
     }
-    await flush();
-    if (!mounted) return;
-    Nav.go(
-      context,
-      'Prescriptions',
-      args: {'consultationId': consultId, 'patientId': patientId, if (issuedRxId != null) 'prescriptionId': issuedRxId},
-    );
+    await previewRx();
   }
+
 
   void _generate() {
     if (isLive) {

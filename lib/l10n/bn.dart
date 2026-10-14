@@ -1930,6 +1930,7 @@ const Map<String, String> bn = {
   'Practising since': 'প্র্যাকটিস শুরু',
   'Preferred language': 'পছন্দের ভাষা',
   'Preparing it in your language…': 'আপনার ভাষায় তৈরি হচ্ছে…',
+  'Preparing the preview…': 'প্রিভিউ তৈরি হচ্ছে…',
   'Prescribe': 'প্রেসক্রাইব',
   'Prescribed by (optional)': 'কে লিখেছেন (ঐচ্ছিক)',
   'Prescription': 'প্রেসক্রিপশন',

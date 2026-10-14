@@ -1930,6 +1930,7 @@ const Map<String, String> hi = {
   'Practising since': 'प्रैक्टिस शुरू',
   'Preferred language': 'पसंदीदा भाषा',
   'Preparing it in your language…': 'आपकी भाषा में तैयार हो रहा है…',
+  'Preparing the preview…': 'प्रीव्यू तैयार हो रहा है…',
   'Prescribe': 'पर्चा लिखें',
   'Prescribed by (optional)': 'किसने लिखी (वैकल्पिक)',
   'Prescription': 'पर्चा',

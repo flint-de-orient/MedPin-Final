@@ -4,6 +4,8 @@ import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
+import '../../data/rx_pdf.dart';
+import '../../data/downloads.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
@@ -1884,6 +1886,17 @@ mixin D5Draft<W extends StatefulWidget> on LiveData<W> {
     _pending.addAll(fields);
     _saveTimer?.cancel();
     _saveTimer = Timer(delay, flush);
+  }
+
+  /// "Preview": the prescription exactly as Generate will make it (marked Draft,
+  /// watermarked, nothing issued), opened in the PDF viewer. Once generated, the real one.
+  Future<void> previewRx() async {
+    if (!await flush() || !mounted) return;
+    if (issuedRxId != null) return RxPdf.view(context, issuedRxId);
+    toast(context, 'Preparing the preview…');
+    final r = await runAction(context, () => Api.I.get('/api/consultations/$consultId/preview'), busy: busy);
+    if (r is! Map || !mounted) return;
+    await Downloads.open(context, '${r['url'] ?? ''}', name: 'Prescription preview');
   }
 
   /// Sends the queued changes now; false when the save failed.

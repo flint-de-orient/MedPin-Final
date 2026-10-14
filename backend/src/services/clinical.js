@@ -105,35 +105,24 @@ const VALIDITY_DAYS = { '15_days': 15, '1_month': 30, '3_months': 90 };
 const FOLLOW_UP_DAYS = { '1_week': 7, '2_weeks': 14, '1_month': 28, '3_months': 91 };
 
 /** Turns a draft consultation into an issued prescription, medicine courses and a follow-up. */
-async function issueConsultation(consult, doctorUser) {
-  if (consult.status !== 'draft') throw conflict('This prescription was already generated', 'ALREADY_ISSUED');
-  if (!consult.chiefComplaint && !consult.diagnoses.length) throw badRequest('Add a complaint or diagnosis first', 'EMPTY_CONSULTATION');
-  const patient = await M.Patient.findById(consult.patientId);
-  const now = new Date();
+/** What a consultation's prescription holds (shared by Generate and Preview, so they match). */
+function prescriptionFields(consult, now = new Date()) {
   const validDays = VALIDITY_DAYS[consult.validity?.preset] || 30;
   const validUntil = consult.validity?.validUntil || T.addDays(T.dayStart(now), validDays);
-
   let followUpDate = null;
   if (consult.followUp?.enabled) {
     followUpDate = consult.followUp.date || T.addDays(T.dayStart(now), FOLLOW_UP_DAYS[consult.followUp.preset] || 14);
   }
   const items = consult.medications.map((m) => {
-    const plain = m.toObject();
+    const plain = m.toObject ? m.toObject() : m;
     return { ...plain, quantity: plain.quantity ?? quantityFor(plain) };
   });
-  const doctor = await M.DoctorProfile.findOne({ userId: consult.doctorId });
-  if (!doctor?.signature?.key) {
-    throw conflict('Add your digital signature first — it is printed on every prescription', 'SIGNATURE_REQUIRED');
-  }
-
-  const rx = await M.Prescription.create({
+  return {
     practiceId: consult.practiceId,
     locationId: consult.locationId,
     doctorId: consult.doctorId,
-    doctorName: doctor?.displayName || doctorUser.name,
     patientId: consult.patientId,
     consultationId: consult._id,
-    rxNumber: await M.Counter.next(`rx:${consult.practiceId}`),
     issuedAt: now,
     validUntil,
     diagnosisSummary: consult.diagnoses.map((d) => d.name).join(', '),
@@ -144,6 +133,25 @@ async function issueConsultation(consult, doctorUser) {
       consult.advice.freeText,
     ].filter(Boolean).join('\n'),
     followUpDate,
+  };
+}
+
+async function issueConsultation(consult, doctorUser) {
+  if (consult.status !== 'draft') throw conflict('This prescription was already generated', 'ALREADY_ISSUED');
+  if (!consult.chiefComplaint && !consult.diagnoses.length) throw badRequest('Add a complaint or diagnosis first', 'EMPTY_CONSULTATION');
+  const patient = await M.Patient.findById(consult.patientId);
+  const now = new Date();
+  const fields = prescriptionFields(consult, now);
+  const { followUpDate } = fields;
+  const doctor = await M.DoctorProfile.findOne({ userId: consult.doctorId });
+  if (!doctor?.signature?.key) {
+    throw conflict('Add your digital signature first — it is printed on every prescription', 'SIGNATURE_REQUIRED');
+  }
+
+  const rx = await M.Prescription.create({
+    ...fields,
+    doctorName: doctor?.displayName || doctorUser.name,
+    rxNumber: await M.Counter.next(`rx:${consult.practiceId}`),
   });
 
   await M.MedicationCourse.insertMany(
@@ -281,6 +289,29 @@ async function ensurePrescriptionPdf(rx) {
 }
 
 /**
+ * "Preview": the draft as the prescription PDF Generate would make — same
+ * layout, letterhead, logo and signature — marked "Draft" and watermarked
+ * PREVIEW · NOT ISSUED, with no verification QR. Nothing is issued or numbered.
+ * Returns the stored file (a fresh one each time).
+ */
+async function previewPrescriptionPdf(consult, doctorUser) {
+  const rx = { ...prescriptionFields(consult), _id: null, rxNumber: null, kind: 'digital' };
+  const [patient, doctor] = await Promise.all([M.Patient.findById(consult.patientId), M.DoctorProfile.findOne({ userId: consult.doctorId })]);
+  rx.doctorName = doctor?.displayName || doctorUser?.name;
+  const vitals = consult.printVitalsOnRx && consult.vitalsId ? await M.Vitals.findById(consult.vitalsId) : null;
+  const location = await rxLocation(rx, consult);
+  const practice = await M.Practice.findById(consult.practiceId, 'logo name');
+  const appt = consult.appointmentId ? await M.Appointment.findById(consult.appointmentId, 'mode') : null;
+  const image = async (file) => (file?.key ? storage.read(file.key).catch(() => null) : null);
+  const [signature, logo] = await Promise.all([image(doctor?.signature), image(location?.letterhead?.logo || practice?.logo)]);
+  const { buffer, pages } = await rxpdf.renderPrescription({
+    rx, patient, doctor, location, vitals, complaint: consult.chiefComplaint, signature, logo, practiceName: practice?.name, mode: appt?.mode, preview: true,
+  });
+  const name = `Prescription preview · ${patient?.name || 'Patient'}.pdf`.replace(/[\/:*?"<>|]/g, '');
+  return storage.save(buffer, { folder: 'previews', name, mimeType: 'application/pdf', pages });
+}
+
+/**
  * The patient's copy in [lang] ('bn' / 'hi'; 'en' = the usual PDF). Returns the
  * file. Drawn again when the layout, the clinic's details or the doctor's
  * wording change; the translation is reused while the wording is the same.
@@ -298,4 +329,4 @@ async function localizedPrescriptionPdf(rx, lang) {
   return rx.localized[lang].file;
 }
 
-module.exports = { checkItems, patientSummary, issueConsultation, buildPrescriptionPdf, ensurePrescriptionPdf, localizedPrescriptionPdf, doseText, dosesPerDay, durationDays, quantityFor };
+module.exports = { checkItems, patientSummary, issueConsultation, buildPrescriptionPdf, ensurePrescriptionPdf, localizedPrescriptionPdf, previewPrescriptionPdf, doseText, dosesPerDay, durationDays, quantityFor };

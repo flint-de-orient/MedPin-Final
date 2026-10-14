@@ -421,14 +421,9 @@ class _ConsultBlankScreenState extends State<ConsultBlankScreen> with LiveData, 
       Nav.go(context, 'Prescriptions');
       return;
     }
-    await flush();
-    if (!mounted) return;
-    Nav.go(
-      context,
-      'Prescriptions',
-      args: {'consultationId': consultId, 'patientId': patientId, if (issuedRxId != null) 'prescriptionId': issuedRxId},
-    );
+    await previewRx();
   }
+
 
   // Display values -----------------------------------------------------------
 

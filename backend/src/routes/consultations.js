@@ -142,6 +142,13 @@ r.get('/consultations/:id/checks', need('prescribe'), async (req, res) => {
   res.json(await checkItems(patient, c.medications));
 });
 
+// "Preview": the draft as its prescription PDF, before Generate (nothing is issued).
+r.get('/consultations/:id/preview', need('prescribe'), async (req, res) => {
+  const c = await getConsult(req);
+  const file = await require('../services/clinical').previewPrescriptionPdf(c, req.user);
+  res.json(storage.withUrl(file));
+});
+
 // MedPin AI: possible diagnoses, tests and medicine options for the doctor to pick from.
 r.post('/consultations/:id/ai-suggestions', need('prescribe'), async (req, res) => {
   const c = await getConsult(req);
