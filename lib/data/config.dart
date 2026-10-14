@@ -17,15 +17,17 @@ class AppConfig {
   /// `adb reverse tcp:4000 tcp:4000`. (10.0.2.2 only works on the emulator,
   /// so a phone build pointed there just times out.)
   ///
-  /// Release builds must be given the real HTTPS address:
-  ///   flutter build apk --release --dart-define=API_BASE_URL=https://api.example.com
+  /// Release builds use the live server unless another address is given:
+  ///   flutter build apk --release --dart-define=API_BASE_URL=https://backend.medpin.in
+  static const liveServer = 'https://backend.medpin.in';
+
   static String get apiBaseUrl {
     if (_baseUrl.isNotEmpty) return _baseUrl.endsWith('/') ? _baseUrl.substring(0, _baseUrl.length - 1) : _baseUrl;
-    return 'http://localhost:4000';
+    return kReleaseMode ? liveServer : 'http://localhost:4000';
   }
 
-  /// A release build without a server address cannot work (see [apiBaseUrl]).
-  static bool get missingReleaseServer => kReleaseMode && _baseUrl.isEmpty;
+  /// Release builds always have a server now (the live one by default).
+  static bool get missingReleaseServer => false;
 }
 
 /// Whether screens run against the backend or show the design's sample data.
