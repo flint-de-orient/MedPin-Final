@@ -55,13 +55,6 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     return home;
   }
 
-  static const _food = {
-    'before_food': 'before food',
-    'after_food': 'after food',
-    'with_food': 'with food',
-    'empty_stomach': 'empty stomach',
-    'bedtime': 'at bedtime',
-  };
 
   List<Map<String, dynamic>> get _rawTasks => data?.list('tasks') ?? const [];
 
@@ -85,15 +78,34 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
   _Task _taskFrom(Map<String, dynamic> t) {
     switch (t['kind']) {
       case 'dose':
+        // As the alarm says it: "7:45 AM · after breakfast"; Take once it's due
+        // (from 30 min before), else when it's due ("In 25 min", "Tonight").
         final at = F.date(t['at']);
-        final food = _food[t['foodRelation']];
+        final meal = const {'morning': 'breakfast', 'afternoon': 'lunch', 'night': 'dinner'}[t['slot']] ?? 'food';
+        final how = switch (t['foodRelation']) {
+          'before_food' => 'before $meal',
+          'after_food' => 'after $meal',
+          'with_food' => 'with $meal',
+          'empty_stomach' => 'on an empty stomach',
+          'bedtime' => 'at bedtime',
+          _ => null,
+        };
         final status = t['status'];
+        final now = DateTime.now();
+        final mins = at == null ? 0 : at.difference(now).inMinutes;
+        final due = status != 'missed' && at != null && mins <= 30;
         return (
           icon: I.pill,
           title: t.str('title'),
-          sub: [if (at != null) F.time(at), if (food != null) food].join(' · '),
-          action: '',
-          later: status == 'missed' ? 'Missed' : t['slot'] == 'night' ? 'Tonight' : t['slot'] == 'afternoon' ? 'Afternoon' : '',
+          sub: [if (at != null) F.time(at), if (how != null) how].join(' · '),
+          action: due ? 'Take' : '',
+          later: status == 'missed'
+              ? 'Missed'
+              : mins < 60
+                  ? 'In $mins min'
+                  : t['slot'] == 'night'
+                      ? 'Tonight'
+                      : 'Later today',
           doneLabel: 'Taken',
         );
       case 'visit_todo':
@@ -141,6 +153,14 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
       return;
     }
     final raw = _rawTasks[i];
+    // Take: one tap marks the dose taken (its reminder is cancelled with it).
+    if (raw['kind'] == 'dose') {
+      final ok = await runAction(context, () => Api.I.post('/api/patient/doses/${raw['id']}', {'status': 'taken'}));
+      if (ok == null || !context.mounted) return;
+      toast(context, '${raw['title']} taken');
+      reload(quiet: true);
+      return;
+    }
     final appointment = raw['appointmentId'];
     Object? result = true;
     if (t.action == 'Upload') {

@@ -310,9 +310,14 @@ async function dailyLogUsed(p) {
 
 /** The care team the daily log goes to (the patient's choice, else access levels). */
 async function logShareTeam(p) {
-  const team = await M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name');
+  const [team, plan] = await Promise.all([
+    M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name'),
+    M.TreatmentPlan.findOne({ patientId: p._id, nutritionBy: { $ne: null } }, 'nutritionBy'),
+  ]);
   const chosen = Array.isArray(p.logShareWith) ? new Set(p.logShareWith.map(String)) : null;
-  return team.filter((c) => c.userId && (chosen ? chosen.has(String(c.userId._id)) : ['full_with_logs', 'daily_log_only'].includes(c.accessLevel)));
+  // Whoever asked for the meal log reviews it (unless the patient chose otherwise).
+  const reviewer = plan?.nutritionBy ? String(plan.nutritionBy) : null;
+  return team.filter((c) => c.userId && (chosen ? chosen.has(String(c.userId._id)) : ['full_with_logs', 'daily_log_only'].includes(c.accessLevel) || String(c.userId._id) === reviewer));
 }
 
 // ── Find a doctor ──

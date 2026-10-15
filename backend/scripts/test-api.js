@@ -455,6 +455,22 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       const rel = d.medicine?.foodRelation;
       assert.equal(new Date(d.at).toISOString().slice(11, 16), expectUtc[rel] || '01:15', `${d.medicine?.name} (${rel}) timed around breakfast moved from ${old} to 06:45`);
     }
+    // Your case: a dose taken at the old time, then the meal time changes → still one dose, still taken.
+    const dayDoses = ok(await ctx.pat('GET', `/api/patient/doses?date=${tomorrow}`));
+    const first = dayDoses.items.find((d) => d.slot === 'morning');
+    ok(await ctx.pat('POST', `/api/patient/doses/${first.id}`, { status: 'taken' }));
+    ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { reminderTimes: { morning: '07:10' } } }));
+    const afterMove = ok(await ctx.pat('GET', `/api/patient/doses?date=${tomorrow}`));
+    const sameMed = afterMove.items.filter((d) => d.slot === 'morning' && d.medicine?.name === first.medicine?.name);
+    assert.equal(sameMed.length, 1, 'one dose per medicine and slot, not one at each time');
+    assert.equal(sameMed[0].status, 'taken', 'and it stays taken');
+    // Duplicates left from before (old time + new time) merge, keeping the taken one.
+    const dupOf = await M.DoseLog.findById(first.id);
+    await M.DoseLog.create({ courseId: dupOf.courseId, patientId: dupOf.patientId, slot: 'morning', status: 'due', scheduledAt: new Date(dupOf.scheduledAt.getTime() + 15 * 60000) });
+    const merged = ok(await ctx.pat('GET', `/api/patient/doses?date=${tomorrow}`));
+    assert.equal(merged.items.filter((d) => d.slot === 'morning' && d.medicine?.name === first.medicine?.name).length, 1, 'duplicate merged');
+    ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { reminderTimes: { morning: old } } }));
+
     // Meal log: a task only once the dietician / doctor asks for it ("Ask to log meals").
     const homeNoLog = ok(await ctx.pat('GET', '/api/patient/home'));
     assert.equal(homeNoLog.dailyLog, false, 'nobody asked: no meal log');
@@ -466,6 +482,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const homeLog = ok(await ctx.pat('GET', '/api/patient/home'));
     assert.equal(homeLog.dailyLog, true);
     assert.ok(homeLog.tasks.some((x) => x.kind === 'log'), 'shown once asked');
+    assert.ok(homeLog.logSharedWith.some((x) => String(x.userId) === String(ctx.doctorUserId)), 'the log goes to whoever asked');
     ok(await ctx.doc('PUT', `/api/patients/${ctx.patientId}/meal-log`, { on: false }));
     assert.equal(ok(await ctx.pat('GET', '/api/patient/home')).dailyLog, false, 'off again');
     ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { reminderTimes: { morning: old }, dailyLogReminderAt: '20:00' } }));

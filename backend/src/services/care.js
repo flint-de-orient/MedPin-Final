@@ -194,35 +194,48 @@ async function ensureDoses(patient, from, to = from) {
     patientId: patient._id, trackingEnabled: true, startDate: { $lte: end },
     $or: [{ endDate: null }, { endDate: { $gte: start } }], status: { $ne: 'stopped' },
   });
-  const ops = [];
+  // One dose per medicine, day and slot. A dose is matched by that, not by its
+  // exact time, so changing meal times (or a medicine's food timing) moves the
+  // dose instead of adding a second one; duplicates left by older versions merge.
+  const want = new Map(); // key → { course, slot, scheduledAt }
   for (let day = start; day <= end; day = T.addDays(day, 1)) {
     for (const c of courses) {
       if (c.startDate > day || (c.endDate && c.endDate < day) || (c.stoppedAt && c.stoppedAt < day)) continue;
       if (c.frequency === 'weekly' && c.weekday && c.weekday !== T.weekday(day)) continue;
       for (const slot of SLOTS) {
         if (!(c.dose?.[slot] > 0)) continue;
-        const scheduledAt = T.atMinute(day, doseMinute(patient.settings, slot, c.foodRelation));
-        ops.push({
-          updateOne: {
-            filter: { courseId: c._id, scheduledAt },
-            update: { $setOnInsert: { courseId: c._id, patientId: patient._id, scheduledAt, slot, status: 'due' } },
-            upsert: true,
-          },
-        });
+        want.set(`${c._id}|${T.dayKey(day)}|${slot}`, { course: c, slot, scheduledAt: T.atMinute(day, doseMinute(patient.settings, slot, c.foodRelation)) });
       }
     }
   }
-  if (ops.length) await M.DoseLog.bulkWrite(ops, { ordered: false });
-  // Future doses that are no longer in the schedule (a reminder time changed,
-  // a medicine was stopped or its dose edited) go, so no alarm rings for them.
-  const keep = new Set(ops.map((o) => `${o.updateOne.filter.courseId}|${o.updateOne.filter.scheduledAt.getTime()}`));
+  const existing = await M.DoseLog.find({ patientId: patient._id, scheduledAt: { $gte: start, $lt: T.addDays(end, 1) } }).sort({ scheduledAt: 1 });
+  const groups = new Map();
+  for (const d of existing) {
+    const key = `${d.courseId}|${T.dayKey(d.scheduledAt)}|${d.slot}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(d);
+  }
   const now = new Date();
-  const stale = await M.DoseLog.find(
-    { patientId: patient._id, status: 'due', scheduledAt: { $gt: now > start ? now : start, $lt: T.addDays(end, 1) } },
-    'courseId scheduledAt',
-  );
-  const drop = stale.filter((d) => !keep.has(`${d.courseId}|${d.scheduledAt.getTime()}`)).map((d) => d._id);
+  const drop = [];
+  const moves = [];
+  const inserts = [];
+  for (const [key, w] of want) {
+    const list = groups.get(key) || [];
+    groups.delete(key);
+    if (!list.length) {
+      inserts.push({ courseId: w.course._id, patientId: patient._id, scheduledAt: w.scheduledAt, slot: w.slot, status: 'due' });
+      continue;
+    }
+    // Keep the one the patient marked (taken / skipped), else the first; the rest are duplicates.
+    const keep = list.find((d) => d.status === 'taken') || list.find((d) => d.status !== 'due') || list[0];
+    for (const d of list) if (d !== keep) drop.push(d._id);
+    if (keep.status === 'due' && keep.scheduledAt.getTime() !== w.scheduledAt.getTime()) moves.push({ id: keep._id, scheduledAt: w.scheduledAt });
+  }
+  // Doses no longer in the schedule (medicine stopped, dose or slot changed): future, unmarked ones go.
+  for (const list of groups.values()) for (const d of list) if (d.status === 'due' && d.scheduledAt > now) drop.push(d._id);
   if (drop.length) await M.DoseLog.deleteMany({ _id: { $in: drop } });
+  for (const m of moves) await M.DoseLog.updateOne({ _id: m.id }, { scheduledAt: m.scheduledAt }).catch(() => {});
+  if (inserts.length) await M.DoseLog.insertMany(inserts, { ordered: false }).catch(() => {});
 }
 
 const effectiveStatus = (d, now = new Date()) =>

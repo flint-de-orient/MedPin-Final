@@ -513,6 +513,14 @@ r.put('/patients/:id/meal-log', async (req, res) => {
   const was = Boolean(plan.nutritionBy);
   plan.nutritionBy = on ? req.user._id : null;
   await plan.save();
+  // The reviewer is on the care team (at least for the daily log); the patient can change it in Profile.
+  if (on) {
+    await M.CareTeamAccess.findOneAndUpdate(
+      { patientId: patient._id, userId: req.user._id },
+      { $setOnInsert: { practiceId: req.practiceId, role: req.member.role, accessLevel: 'daily_log_only', since: new Date() } },
+      { upsert: true },
+    );
+  }
   if (on && !was && patient.userId) {
     await notify([patient.userId], {
       type: 'meal_log_requested', practiceId: req.practiceId, title: `${req.user.name || 'Your care team'} asked you to log your meals`,
