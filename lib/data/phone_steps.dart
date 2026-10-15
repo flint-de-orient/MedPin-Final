@@ -51,9 +51,17 @@ class PhoneSteps {
     int base;
     int carry; // steps today from before a phone restart
     final last = (s['last'] as num?)?.toInt();
-    if (s['date'] != day) {
-      // A new day: steps since the last reading (late last night) count from here.
-      base = (last != null && last <= counter) ? last : counter;
+    final lastAt = DateTime.tryParse('${s['lastAt'] ?? ''}');
+    // v2: older versions could start a day from yesterday's last reading (adding
+    // yesterday's evening steps to today); their saved start is not trusted.
+    if (s['date'] != day || s['v'] != 2) {
+      // A new day starts at 0. The sensor only knows steps since the phone was
+      // switched on, so steps since the last reading can't be split at midnight —
+      // they count for today only if that reading was in the last minutes of
+      // yesterday. (Steps before the first reading today come from Health Connect.)
+      final midnight = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+      final closeToMidnight = lastAt != null && lastAt.isBefore(midnight) && midnight.difference(lastAt) <= const Duration(minutes: 20);
+      base = (closeToMidnight && last != null && last <= counter) ? last : counter;
       carry = 0;
     } else {
       base = (s['base'] as num?)?.toInt() ?? counter;
@@ -66,7 +74,7 @@ class PhoneSteps {
     }
     final steps = (carry + counter - base).clamp(0, 200000);
     try {
-      await f.writeAsString(jsonEncode({'date': day, 'base': base, 'carry': carry, 'last': counter}));
+      await f.writeAsString(jsonEncode({'v': 2, 'date': day, 'base': base, 'carry': carry, 'last': counter, 'lastAt': DateTime.now().toIso8601String()}));
     } catch (_) {}
     return steps;
   }

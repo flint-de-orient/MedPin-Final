@@ -97,11 +97,13 @@ class DeviceSync {
           if (n != null && n > 0) days.add({'date': _key(d), 'steps': n, 'source': 'watch'});
         }
       }
-      // Today from the phone's own sensor when it counted more (or there's no watch).
-      if (phoneToday != null && phoneToday > 0) {
+      // Today from the phone's own sensor when it counted more, or when there's
+      // no Health Connect count for today (then it's sent even when lower, so an
+      // earlier wrong total is corrected).
+      if (phoneToday != null) {
         final i = days.indexWhere((d) => d['date'] == _key(now));
         final had = i < 0 ? 0 : days[i]['steps'] as int;
-        if (phoneToday > had) {
+        if (phoneToday > had || i < 0) {
           if (i >= 0) days.removeAt(i);
           days.add({'date': _key(now), 'steps': phoneToday, 'source': 'phone'});
           stepSource = 'phone';

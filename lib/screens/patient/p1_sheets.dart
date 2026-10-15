@@ -410,6 +410,77 @@ class _P1LogHistorySheetState extends State<P1LogHistorySheet> with LiveData {
         ),
       );
 
+  /// A meal: its photo (tap for full size), what it was, and when.
+  Widget _meal(Map<String, dynamic> m) {
+    final at = F.date(m['at']);
+    final url = m.obj('photo').str('url');
+    final review = m['reviewed'] is Map ? m.obj('reviewed') : null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (url.isNotEmpty)
+            Tap(
+              onTap: () => _viewPhoto(url, _cap(m.str('mealType', 'meal'))),
+              radius: 12,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  url,
+                  width: 64,
+                  height: 64,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(width: 64, height: 64, color: MP.line, child: const Center(child: Ico(I.image, size: 20, color: MP.ink3))),
+                ),
+              ),
+            ),
+          if (url.isNotEmpty) const Gap(12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${_cap(m.str('mealType', 'meal'))}${at == null ? '' : ' · ${F.time(at)}'}', style: tx(15, w: w600)),
+                const Gap(2),
+                Text(m.str('note').isEmpty ? (url.isEmpty ? 'No description' : 'Photo only') : m.str('note'), style: tx(13, c: m.str('note').isEmpty ? MP.ink3 : MP.ink2, h: 1.4)),
+                if (review != null) ...[
+                  const Gap(4),
+                  Text('Reviewed${review.str('comment').isEmpty ? '' : ': ${review.str('comment')}'}', style: tx(12.5, w: w600, c: MP.green, h: 1.35)),
+                ],
+              ],
+            ),
+          ),
+          MpIconButton(I.close, label: 'Remove meal', iconSize: 16, size: 32, color: MP.ink3, onTap: () => _delete(m.str('id'), 'Meal')),
+        ],
+      ),
+    );
+  }
+
+  void _viewPhoto(String url, String title) {
+    showDialog<void>(
+      context: context,
+      builder: (c) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InteractiveViewer(child: Image.network(url, fit: BoxFit.contain)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+              child: Row(children: [
+                Expanded(child: Text(title, style: tx(15, w: w600))),
+                MpIconButton(I.close, label: 'Close', onTap: () => Navigator.pop(c)),
+              ]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _day(Map<String, dynamic> d) {
     final steps = d.obj('steps');
     final ex = d.obj('exercise');
@@ -454,18 +525,7 @@ class _P1LogHistorySheetState extends State<P1LogHistorySheet> with LiveData {
                 removeId: x.str('source', 'You') == 'You' ? x.str('id') : null,
                 what: 'Exercise',
               ),
-            for (final m in meals)
-              _entry(
-                title: _cap(m.str('mealType', 'meal')),
-                detail: [
-                  if (F.date(m['at']) != null) F.time(F.date(m['at'])!),
-                  if (m['photo'] is Map) 'with photo',
-                  if (m.str('note').isNotEmpty) '“${m.str('note')}”',
-                  if (m['reviewed'] is Map) 'reviewed${m.obj('reviewed').str('comment').isEmpty ? '' : ': ${m.obj('reviewed').str('comment')}'}',
-                ].join(' · '),
-                removeId: m.str('id'),
-                what: 'Meal',
-              ),
+            for (final m in meals) _meal(m),
           ],
         ],
       ),
