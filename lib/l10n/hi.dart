@@ -2375,6 +2375,7 @@ const Map<String, String> hi = {
   'Steps': 'कदम',
   'Steps today': 'आज के कदम',
   'Steps updated from your phone': 'आपके फ़ोन से कदम अपडेट हुए',
+  'Stock': 'स्टॉक',
   'Stock updated': 'स्टॉक अपडेट हुआ',
   'Stomach': 'पेट',
   'Stomach & liver': 'पेट और लिवर',

@@ -955,7 +955,7 @@ class _MedCard extends StatelessWidget {
                     children: [
                       const Ico(I.pill, size: 16, color: MP.ink),
                       const Gap(8),
-                      Flexible(child: Text('Update stock', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, w: w700))),
+                      Flexible(child: Text('Stock', maxLines: 1, softWrap: false, overflow: TextOverflow.fade, style: tx(14, w: w700))),
                     ],
                   ),
                 ),

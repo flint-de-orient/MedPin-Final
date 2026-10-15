@@ -2375,6 +2375,7 @@ const Map<String, String> bn = {
   'Steps': 'স্টেপ',
   'Steps today': 'আজকের পা',
   'Steps updated from your phone': 'আপনার ফোন থেকে পা গোনা আপডেট হয়েছে',
+  'Stock': 'স্টক',
   'Stock updated': 'স্টক আপডেট হয়েছে',
   'Stomach': 'পেট',
   'Stomach & liver': 'পেট ও লিভার',

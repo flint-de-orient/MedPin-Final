@@ -215,8 +215,8 @@ void main() {
     await _tap(t, find.text('Taken').at(1)); // morning: Myo-inositol, Glimepiride, Metformin
     expect(_body('POST', '/api/patient/doses/6ac8d224bfcb2f5a9d64d6e2'), {'status': 'taken'});
 
-    // Update stock → Save patches the medicine.
-    await _tap(t, find.text('Update stock').first);
+    // Stock → Save patches the medicine.
+    await _tap(t, find.text('Stock').first);
     await _tap(t, find.text('Save'));
     expect(_calls.any((c) => c.$1 == 'PATCH' && c.$2.startsWith('/api/patient/medicines/')), isTrue);
     expect(t.takeException(), isNull);
