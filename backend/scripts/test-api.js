@@ -471,6 +471,20 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(merged.items.filter((d) => d.slot === 'morning' && d.medicine?.name === first.medicine?.name).length, 1, 'duplicate merged');
     ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { reminderTimes: { morning: old } } }));
 
+    // Daily log: the patient's own goals, today's exercise, and a history with what / how much / from where.
+    assert.equal((await ctx.pat('PATCH', '/api/patient/me', { goals: { stepsPerDay: 50 } })).status, 400, 'sensible step goal');
+    ok(await ctx.pat('PATCH', '/api/patient/me', { goals: { stepsPerDay: 9000, exerciseMinPerDay: 40 } }));
+    ok(await ctx.pat('POST', '/api/patient/logs', { type: 'exercise', exerciseType: 'walk', durationMin: 25 }), 201);
+    const homeEx = ok(await ctx.pat('GET', '/api/patient/home'));
+    assert.equal(homeEx.steps.goal, 9000);
+    assert.equal(homeEx.exercise.goal, 40);
+    assert.ok(homeEx.exercise.minutes >= 25, "today's exercise minutes");
+    const hist = ok(await ctx.pat('GET', '/api/patient/logs/history?days=7'));
+    assert.equal(hist.days.length, 7, 'one entry per day, newest first');
+    assert.ok(hist.days[0].exercise.items.some((x) => x.exerciseType === 'walk' && x.durationMin === 25 && x.source === 'You'));
+    assert.equal(hist.days[0].steps.goal, 9000);
+    assert.equal(hist.days[1].exercise.minutes, 0, 'each day starts again at 0');
+
     // Meal log: a task only once the dietician / doctor asks for it ("Ask to log meals").
     const homeNoLog = ok(await ctx.pat('GET', '/api/patient/home'));
     assert.equal(homeNoLog.dailyLog, false, 'nobody asked: no meal log');

@@ -344,87 +344,162 @@ class P1LogHistorySheet extends StatefulWidget {
   State<P1LogHistorySheet> createState() => _P1LogHistorySheetState();
 }
 
+/// Daily log history (GET /api/patient/logs/history): one card per day, newest
+/// first, with steps, exercise and meals against the goals, and every entry's
+/// time, amount and source — "You", "Your phone's step counter", "Health
+/// Connect · Mi Fitness". Entries the patient made can be removed.
 class _P1LogHistorySheetState extends State<P1LogHistorySheet> with LiveData {
-  int _daysBack = 0;
+  int _days = 14;
   bool _changed = false;
 
-  DateTime get _day => DateTime.now().subtract(Duration(days: _daysBack));
-  String get _dayParam => '${_day.year}-${_day.month.toString().padLeft(2, '0')}-${_day.day.toString().padLeft(2, '0')}';
-
   @override
-  Future<Object?> fetch() => Api.I.get('/api/patient/logs', query: {'date': _dayParam});
+  Future<Object?> fetch() => Api.I.get('/api/patient/logs/history', query: {'days': '$_days'});
 
   static String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
-  String _title(Map<String, dynamic> l) => switch (l['type']) {
-        'meal' => _cap(l.str('mealType', 'meal')),
-        'exercise' => '${_cap(l.str('exerciseType', 'exercise'))}${l['durationMin'] == null ? '' : ' · ${l['durationMin']} min'}',
-        _ => '${F.count(l.numOr('steps'))} steps',
-      };
+  String _dayTitle(Map<String, dynamic> d) {
+    final at = F.date(d['date']);
+    if (at == null) return d.str('day');
+    final now = DateTime.now();
+    if (F.sameDay(at, now)) return 'Today';
+    if (F.sameDay(at, now.subtract(const Duration(days: 1)))) return 'Yesterday';
+    return F.dateLong(at);
+  }
 
-  Future<void> _delete(Map<String, dynamic> l) async {
-    final ok = await runAction(context, () => Api.I.delete('/api/patient/logs/${l['id']}'));
+  Future<void> _delete(String id, String what) async {
+    final ok = await runAction(context, () => Api.I.delete('/api/patient/logs/$id'));
     if (ok == null || !mounted) return;
     _changed = true;
-    toast(context, 'Removed from your log');
+    toast(context, '$what removed from your log');
     reload(quiet: true);
   }
 
-  void _go(int back) {
-    setState(() {
-      _daysBack = back;
-      data = null;
-    });
-    reload();
+  Widget _stat(String value, String label, double progress, Color color) => Expanded(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(color: MP.white, borderRadius: BorderRadius.circular(12)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(value, style: tx(16, w: w700, tab: true)),
+              Text(label, style: tx(12, c: MP.ink2)),
+              const Gap(6),
+              MpProgress(progress.clamp(0, 1).toDouble(), height: 4, color: color, track: MP.line),
+            ],
+          ),
+        ),
+      );
+
+  Widget _entry({required String title, required String detail, String? removeId, String what = 'Entry'}) => Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: tx(15, w: w600)),
+                  const Gap(1),
+                  Text(detail, style: tx(13, c: MP.ink2, h: 1.4)),
+                ],
+              ),
+            ),
+            if (removeId != null) MpIconButton(I.close, label: 'Remove $what', iconSize: 16, size: 32, color: MP.ink3, onTap: () => _delete(removeId, what)),
+          ],
+        ),
+      );
+
+  Widget _day(Map<String, dynamic> d) {
+    final steps = d.obj('steps');
+    final ex = d.obj('exercise');
+    final meals = d.list('meals');
+    final stepsTotal = steps.numOr('total').toInt();
+    final stepsGoal = steps.numOr('goal', 8000).toInt();
+    final exMin = ex.numOr('minutes').toInt();
+    final exGoal = ex.numOr('goal', 30).toInt();
+    final empty = stepsTotal == 0 && exMin == 0 && meals.isEmpty;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: MP.fill, borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            Expanded(child: Text(_dayTitle(d), style: tx(16, w: w700))),
+            Text(empty ? 'Nothing logged' : '${meals.length} ${meals.length == 1 ? 'meal' : 'meals'}', style: tx(13, c: MP.ink2)),
+          ]),
+          if (!empty) ...[
+            const Gap(10),
+            Row(children: [
+              _stat(F.count(stepsTotal), 'of ${F.count(stepsGoal)} steps', stepsGoal == 0 ? 0 : stepsTotal / stepsGoal, MP.primary),
+              const Gap(8),
+              _stat('$exMin min', 'of $exGoal min exercise', exGoal == 0 ? 0 : exMin / exGoal, MP.green),
+            ]),
+            if (stepsTotal > 0)
+              _entry(
+                title: '${F.count(stepsTotal)} steps',
+                detail: steps.str('sourceLabel', 'Steps'),
+                removeId: steps.str('source') == 'manual' && steps.str('manualId').isNotEmpty ? steps.str('manualId') : null,
+                what: 'Steps',
+              ),
+            for (final x in ex.list('items'))
+              _entry(
+                title: '${_cap(x.str('exerciseType', 'exercise'))} · ${x.numOr('durationMin').toInt()} min',
+                detail: [
+                  if (F.date(x['at']) != null) F.time(F.date(x['at'])!),
+                  x.str('source', 'You') == 'You' ? 'Logged by you' : 'From ${x.str('source')}',
+                  if (x.str('note').isNotEmpty) x.str('note'),
+                ].join(' · '),
+                removeId: x.str('source', 'You') == 'You' ? x.str('id') : null,
+                what: 'Exercise',
+              ),
+            for (final m in meals)
+              _entry(
+                title: _cap(m.str('mealType', 'meal')),
+                detail: [
+                  if (F.date(m['at']) != null) F.time(F.date(m['at'])!),
+                  if (m['photo'] is Map) 'with photo',
+                  if (m.str('note').isNotEmpty) '“${m.str('note')}”',
+                  if (m['reviewed'] is Map) 'reviewed${m.obj('reviewed').str('comment').isEmpty ? '' : ': ${m.obj('reviewed').str('comment')}'}',
+                ].join(' · '),
+                removeId: m.str('id'),
+                what: 'Meal',
+              ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final items = data?.list('items') ?? const <Map<String, dynamic>>[];
+    final days = data?.list('days') ?? const <Map<String, dynamic>>[];
+    final team = [for (final x in data?.list('sharedWith') ?? const <Map<String, dynamic>>[]) x.str('name')].where((s) => s.isNotEmpty).toList();
+    // Today always; earlier days only when something was logged.
+    final shown = [for (var i = 0; i < days.length; i++) if (i == 0 || days[i].obj('steps').numOr('total') > 0 || days[i].obj('exercise').numOr('minutes') > 0 || days[i].list('meals').isNotEmpty) days[i]];
     return P1PlainSheet(
-      title: 'Your log',
-      subtitle: _daysBack == 0 ? 'Today' : _daysBack == 1 ? 'Yesterday' : F.dateLong(_day),
+      title: 'Your daily log',
+      subtitle: data == null
+          ? 'Last $_days days'
+          : 'Last $_days days · ${team.isEmpty ? 'only you can see it' : 'shared with ${team.join(', ')}'}',
       children: [
-        Row(
-          children: [
-            P1Pill('Earlier day', onTap: () => _go(_daysBack + 1)),
-            if (_daysBack > 0) ...[const Gap(8), P1Pill('Next day', onTap: () => _go(_daysBack - 1))],
-          ],
-        ),
         livePlaceholder() ??
-            (items.isEmpty
-                ? Text('Nothing logged on this day.', style: tx(15, c: MP.ink2))
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < items.length; i++)
-                        P1Row(
-                          first: i == 0,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(_title(items[i]), style: tx(16, w: w600)),
-                                    const Gap(2),
-                                    Text(
-                                      [
-                                        if (F.date(items[i]['loggedAt']) != null) F.time(F.date(items[i]['loggedAt'])!),
-                                        if (items[i].str('note').isNotEmpty) items[i].str('note'),
-                                      ].join(' · '),
-                                      style: tx(13, c: MP.ink2),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Gap(12),
-                              MpIconButton(I.close, label: 'Remove', iconSize: 18, color: MP.ink2, onTap: () => _delete(items[i])),
-                            ],
-                          ),
-                        ),
-                    ],
-                  )),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < shown.length; i++) ...[if (i > 0) const Gap(10), _day(shown[i])],
+                if (shown.length <= 1) ...[
+                  const Gap(10),
+                  Text('Earlier days show here once you log meals, exercise or steps.', style: tx(13, c: MP.ink3)),
+                ],
+              ],
+            ),
+        if (data != null && _days < 60)
+          P1Pill('Show earlier days', onTap: () {
+            setState(() => _days = _days == 14 ? 30 : 60);
+            reload(quiet: true);
+          }),
         MpButton('Done', kind: MpBtn.secondary, onTap: () => Navigator.of(context).pop(_changed)),
       ],
     );

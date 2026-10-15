@@ -265,6 +265,16 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     if (ok != null && mounted) reload(quiet: true);
   }
 
+  int get _exMin => data?.obj('exercise').numOr('minutes').toInt() ?? 0;
+  int get _exGoal => data?.obj('exercise').numOr('goal', 30).toInt() ?? 30;
+  int get _exSessions => data?.obj('exercise').numOr('sessions').toInt() ?? 0;
+
+  /// The patient's daily goals (steps, exercise minutes).
+  Future<void> _openGoals(BuildContext context) async {
+    final saved = await openSheet<bool>(context, (_) => _GoalsSheet(steps: _stepGoal, exercise: _exGoal));
+    if (saved == true && mounted) reload(quiet: true);
+  }
+
   int get _steps => data == null ? 4820 : data!.obj('steps').numOr('today').toInt();
   int get _stepGoal => data == null ? 8000 : data!.obj('steps').numOr('goal', 8000).toInt();
 
@@ -428,11 +438,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
           const Gap(16),
           _pad(_today(context)),
           const Gap(16),
-          // Only when someone on the care team uses a meal log (a dietician, or "daily log" access).
-          if (data == null || data!['dailyLog'] != false) ...[
-            _pad(_dailyLog(context)),
-            const Gap(16),
-          ],
+          // The patient's own log (meals by choice, exercise, steps), shared with whom they pick.
+          _pad(_dailyLog(context)),
+          const Gap(16),
           _pad(_health(context)),
           if (data == null || _ai != null) ...[
             const Gap(16),
@@ -680,6 +688,28 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
                 trailing: _plan['doneToday'] == true ? const _DoneBadge('Done') : P1SoftButton('Mark done', onTap: _markWalkDone),
               ),
             ),
+          if (data != null)
+            _ListRow(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _LogLine(
+                    title: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: '$_exMin', style: tx(16, w: w600, tab: true)),
+                        TextSpan(text: ' of $_exGoal min exercise'),
+                      ]),
+                    ),
+                    sub: _exMin == 0
+                        ? 'Nothing logged yet today'
+                        : '$_exSessions ${_exSessions == 1 ? 'session' : 'sessions'} today${_exMin >= _exGoal ? ' · goal reached' : ''}',
+                    trailing: P1SoftButton('Log', onTap: () => _openLog(context, 1)),
+                  ),
+                  const Gap(8),
+                  MpProgress(_exGoal == 0 ? 0 : math.min(1, _exMin / _exGoal), height: 6, color: MP.green, track: MP.line),
+                ],
+              ),
+            ),
           _ListRow(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -693,7 +723,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
                   ),
                   sub: 'Goal ${F.count(_stepGoal)} · ${switch (data?.obj('steps').str('source')) {
                     'phone' => 'counted by your phone',
-                    'watch' => 'from Health Connect',
+                    'watch' => data!.obj('steps').str('app').isEmpty ? 'from Health Connect' : 'from ${data!.obj('steps').str('app')}',
                     'manual' => 'entered by you',
                     _ => isLive ? 'opens to your phone’s step count' : 'entered by you',
                   }}',
@@ -707,6 +737,23 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
               ],
             ),
           ),
+          if (data != null)
+            Tap(
+              onTap: () => _openGoals(context),
+              radius: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
+                child: Row(
+                  children: [
+                    const Ico(I.star, size: 16, color: MP.ink2),
+                    const Gap(10),
+                    Expanded(child: Text('Your goals · ${F.count(_stepGoal)} steps · $_exGoal min exercise a day', style: tx(13, c: MP.ink2))),
+                    Text('Change', style: tx(13, w: w600, c: MP.primary)),
+                  ],
+                ),
+              ),
+            ),
           Tap(
             onTap: () => _openSharing(context),
             radius: 0,
@@ -1240,6 +1287,74 @@ class _ListRow extends StatelessWidget {
 }
 
 /// Title (16/600) + sub (13, #545E72) with a trailing control.
+/// Daily goals: steps and exercise minutes (they start again each day).
+class _GoalsSheet extends StatefulWidget {
+  final int steps;
+  final int exercise;
+  const _GoalsSheet({required this.steps, required this.exercise});
+  @override
+  State<_GoalsSheet> createState() => _GoalsSheetState();
+}
+
+class _GoalsSheetState extends State<_GoalsSheet> {
+  static const _stepOptions = [4000, 6000, 8000, 10000, 12000];
+  static const _exOptions = [15, 20, 30, 45, 60];
+  late int _steps = widget.steps;
+  late int _ex = widget.exercise;
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final ok = await runAction(context, () => Api.I.patch('/api/patient/me', {'goals': {'stepsPerDay': _steps, 'exerciseMinPerDay': _ex}}), busy: _busy);
+    if (ok == null || !mounted) return;
+    toast(context, 'Goals saved');
+    Navigator.of(context).pop(true);
+  }
+
+  Widget _stepper(String label, String value, VoidCallback? minus, VoidCallback? plus) => Row(
+        children: [
+          Expanded(child: Text(label, style: tx(15, w: w600))),
+          MpIconButton(I.minus, label: 'Less', onTap: minus, color: minus == null ? MP.ink3 : MP.primary),
+          SizedBox(width: 92, child: Center(child: Text(value, style: tx(17, w: w700, tab: true)))),
+          MpIconButton(I.plus, label: 'More', onTap: plus, color: plus == null ? MP.ink3 : MP.primary),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return MpSheet(
+      title: 'Your daily goals',
+      subtitle: 'Set what works for you. Each day starts fresh at 0. Ask your doctor if you are unsure.',
+      showClose: true,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: VGap(
+          gap: 14,
+          children: [
+            _stepper('Steps', F.count(_steps), _steps <= 1000 ? null : () => setState(() => _steps = (_steps - 500).clamp(1000, 30000)),
+                _steps >= 30000 ? null : () => setState(() => _steps = (_steps + 500).clamp(1000, 30000))),
+            Wrap(spacing: 8, runSpacing: 8, children: [for (final s in _stepOptions) MpChip(F.count(s), selected: _steps == s, height: 36, fontSize: 13, onTap: () => setState(() => _steps = s))]),
+            const MpDivider(),
+            _stepper('Exercise', '$_ex min', _ex <= 5 ? null : () => setState(() => _ex = (_ex - 5).clamp(5, 240)),
+                _ex >= 240 ? null : () => setState(() => _ex = (_ex + 5).clamp(5, 240))),
+            Wrap(spacing: 8, runSpacing: 8, children: [for (final m in _exOptions) MpChip('$m min', selected: _ex == m, height: 36, fontSize: 13, onTap: () => setState(() => _ex = m))]),
+            const Gap(4),
+            ValueListenableBuilder<bool>(
+              valueListenable: _busy,
+              builder: (_, busy, _) => MpButton(busy ? 'Saving…' : 'Save goals', onTap: busy ? null : _save),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _LogLine extends StatelessWidget {
   final Widget title;
   final String sub;

@@ -35,6 +35,9 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
   late int _tab = widget.initialTab.clamp(0, _tabs.length - 1);
   int _meal = _mealForNow();
   int _exercise = 0;
+  /// How long (minutes): picked from the chips, or read from the note ("45 min").
+  int? _exMin;
+  static const _durations = [10, 15, 20, 30, 45, 60];
   final List<bool> _share = [true, true, false];
   UploadFile? _photoFile;
   bool _photoSample = false;
@@ -153,13 +156,17 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
       case 1:
         final note = _exerciseNote.text.trim();
         final type = _exercises[_exercise].toLowerCase();
-        final mins = _minutesIn(note);
+        final mins = _exMin ?? _minutesIn(note);
+        if (mins == null || mins <= 0) {
+          toast(context, 'Choose how long you exercised');
+          return;
+        }
         planId = (data?.list('activityPlans') ?? const <Map<String, dynamic>>[]).where((p) => p['exerciseType'] == type).firstOrNull?.str('id');
         fields.addAll({
           'type': 'exercise',
           'exerciseType': type,
           if (note.isNotEmpty) 'note': note,
-          if (mins != null) 'durationMin': '$mins',
+          'durationMin': '$mins',
           if (planId != null) 'activityPlanId': planId,
         });
       default:
@@ -204,7 +211,12 @@ class _PatientLogSheetState extends State<PatientLogSheet> with LiveData {
         ),
       ] else if (_tab == 1) ...[
         pad(_chips(_exercises, _exercise, (i) => setState(() => _exercise = i))),
-        pad(_noteBox(_exerciseNote, 'How long and how hard? E.g. 30 min brisk walk')),
+        pad(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('How long?', style: tx(14, w: w600)),
+          const Gap(8),
+          _chips([for (final m in _durations) '$m min'], _exMin == null ? -1 : _durations.indexOf(_exMin!), (i) => setState(() => _exMin = _durations[i])),
+        ])),
+        pad(_noteBox(_exerciseNote, 'Anything else? E.g. brisk, uphill, 45 min')),
       ] else
         pad(
           MpInput(

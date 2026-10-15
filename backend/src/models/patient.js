@@ -71,7 +71,8 @@ const patientSchema = new Schema(
       pulseMax: Number,
       spo2Min: Number,
     },
-    targets: { sugarFasting: Number, hba1c: Number, ldl: Number, stepsPerDay: { type: Number, default: 8000 } },
+    // stepsPerDay / exerciseMinPerDay: the patient's own daily goals (Daily log).
+    targets: { sugarFasting: Number, hba1c: Number, ldl: Number, stepsPerDay: { type: Number, default: 8000 }, exerciseMinPerDay: { type: Number, default: 30 } },
     settings: {
       medReminders: { type: Boolean, default: true },
       dailyLogReminder: { type: Boolean, default: true },

@@ -61,6 +61,15 @@ r.patch('/me', async (req, res) => {
   if (body.ageYears != null) p.ageRecordedAt = new Date();
   if (body.emergencyContact && !body.emergencyContact.name) body.emergencyContact = { name: undefined, phone: undefined };
   Object.assign(p, body);
+  // Daily goals the patient sets (Daily log → Goals).
+  if (req.body.goals) {
+    const g = req.body.goals;
+    const steps = Number(g.stepsPerDay);
+    const ex = Number(g.exerciseMinPerDay);
+    if (g.stepsPerDay !== undefined && !(steps >= 1000 && steps <= 30000)) throw badRequest('Choose a step goal between 1,000 and 30,000');
+    if (g.exerciseMinPerDay !== undefined && !(ex >= 5 && ex <= 240)) throw badRequest('Choose 5 to 240 minutes of exercise a day');
+    p.targets = { ...(p.targets?.toObject?.() || p.targets || {}), ...(g.stepsPerDay !== undefined ? { stepsPerDay: Math.round(steps) } : {}), ...(g.exerciseMinPerDay !== undefined ? { exerciseMinPerDay: Math.round(ex) } : {}) };
+  }
   if (req.body.settings) {
     const s = req.body.settings;
     const hhmm = (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
@@ -272,7 +281,12 @@ r.get('/home', async (req, res) => {
     slides,
     tasks,
     tasksDone: tasks.filter((t) => t.done).length,
-    steps: { today: steps.today, goal: p.targets?.stepsPerDay || 8000, source: steps.source },
+    steps: { today: steps.today, goal: p.targets?.stepsPerDay || 8000, source: steps.source, app: stepApp(p, steps.source) },
+    // Today's exercise (it starts again at 0 each day) against the patient's goal.
+    exercise: (() => {
+      const ex = logs.filter((l) => l.type === 'exercise');
+      return { minutes: ex.reduce((s, l) => s + (l.durationMin || 0), 0), sessions: ex.length, goal: p.targets?.exerciseMinPerDay || 30 };
+    })(),
     refills,
     nextVisit,
     aiSummary: summary || (plan?.healthSummary ? { body: plan.healthSummary, focusItems: plan.focusItems, generatedAt: plan.updatedAt } : null),
@@ -786,6 +800,50 @@ r.get('/logs', async (req, res) => {
   const day = T.parseDay(req.query.date);
   const logs = await M.HealthLog.find({ patientId: req.patient._id, loggedAt: { $gte: day, $lt: T.addDays(day, 1) } }).sort({ loggedAt: 1 });
   res.json(logs.map((l) => ({ ...l.toJSON(), photo: storage.withUrl(l.photo) })));
+});
+
+/** Which app the counted steps came from ("Mi Fitness"), when a watch app wrote them. */
+function stepApp(p, source) {
+  if (source !== 'watch') return null;
+  return p.deviceSync?.devices?.watch?.apps?.join(', ') || p.deviceSync?.devices?.ring?.apps?.join(', ') || null;
+}
+
+// Daily log history: each day's meals, exercise and steps — what, how much, when
+// and where it came from (you, the phone's step counter, a watch app via Health Connect).
+r.get('/logs/history', async (req, res) => {
+  const p = req.patient;
+  const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
+  const today = T.dayStart();
+  const from = T.addDays(today, -(days - 1));
+  const logs = await M.HealthLog.find({ patientId: p._id, loggedAt: { $gte: from, $lt: T.addDays(today, 1) } }).sort({ loggedAt: 1 });
+  const team = await logShareTeam(p);
+  const goal = { steps: p.targets?.stepsPerDay || 8000, exerciseMin: p.targets?.exerciseMinPerDay || 30 };
+  const out = [];
+  for (let d = today; d >= from; d = T.addDays(d, -1)) {
+    const key = T.dayKey(d);
+    const mine = logs.filter((l) => T.dayKey(l.loggedAt) === key);
+    const meals = mine.filter((l) => l.type === 'meal').map((l) => ({
+      id: l._id, mealType: l.mealType, at: l.loggedAt, note: l.note || '', photo: l.photo?.key ? storage.withUrl(l.photo) : null, source: 'You',
+      reviewed: l.review?.at ? { at: l.review.at, comment: l.review.comment || '' } : null,
+    }));
+    const exercise = mine.filter((l) => l.type === 'exercise').map((l) => ({
+      id: l._id, exerciseType: l.exerciseType, durationMin: l.durationMin || 0, at: l.loggedAt, note: l.note || '', source: l.fromDevice ? 'Health Connect' : 'You',
+    }));
+    // Steps: the counted total and the typed one measure the same walking, so the higher counts.
+    const stepLogs = mine.filter((l) => l.type === 'steps');
+    const counted = stepLogs.filter((l) => l.fromDevice).reduce((s, l) => s + (l.steps || 0), 0);
+    const typed = Math.max(0, ...stepLogs.filter((l) => !l.fromDevice).map((l) => l.steps || 0));
+    const fromPhone = stepLogs.some((l) => l.fromDevice && l.stepSource === 'phone') && !stepLogs.some((l) => l.fromDevice && l.stepSource === 'watch');
+    const stepSource = !stepLogs.length ? null : typed > counted ? 'manual' : fromPhone ? 'phone' : 'watch';
+    const sourceLabel = { manual: 'Entered by you', phone: "Your phone's step counter", watch: `Health Connect${stepApp(p, 'watch') ? ` · ${stepApp(p, 'watch')}` : ''}` }[stepSource] || null;
+    out.push({
+      date: d, day: key,
+      meals,
+      exercise: { minutes: exercise.reduce((s, x) => s + x.durationMin, 0), goal: goal.exerciseMin, items: exercise },
+      steps: { total: Math.max(counted, typed), goal: goal.steps, source: stepSource, sourceLabel, manualId: stepLogs.find((l) => !l.fromDevice)?._id || null },
+    });
+  }
+  res.json({ days: out, goals: goal, sharedWith: team.map((c) => ({ userId: c.userId?._id, name: c.userId?.name, role: c.role })) });
 });
 
 // Patient-Log: who the entry can be shared with, and today's steps for the Steps tab.
