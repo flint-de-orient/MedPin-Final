@@ -48,6 +48,46 @@ class _PpTreatmentScreenState extends State<PpTreatmentScreen> with LiveData {
 
   Map<String, dynamic> _plan(D6Rec r) => r.detail.obj('treatmentPlan');
 
+  /// "Ask to log meals": the patient gets a daily "Log your meals" task and
+  /// reminder, and you review the logs. Off: they aren't asked any more.
+  Widget _mealLogCard(D6Rec r) {
+    final m = r.detail.obj('mealLog');
+    final on = m['on'] == true;
+    final by = m.obj('by').str('name');
+    final first = F.firstName(r.detail.obj('patient').str('name', 'the patient'));
+    return MpCard(
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Ask to log meals', style: tx(16, w: w700)),
+                const Gap(2),
+                Text(
+                  on
+                      ? (by.isEmpty ? '$first logs meals daily for review' : '$first logs meals daily · reviewed by $by')
+                      : '$first is not asked to log meals. Turn on to get a photo or a line after each meal.',
+                  style: tx(13, c: MP.ink2, h: 1.4),
+                ),
+              ],
+            ),
+          ),
+          const Gap(12),
+          MpSwitch(value: on, onChanged: (v) => _setMealLog(r, v)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setMealLog(D6Rec r, bool on) async {
+    final res = await runAction(context, () => Api.I.put('/api/patients/${r.id}/meal-log', {'on': on}));
+    if (res == null || !mounted) return;
+    final first = F.firstName(r.detail.obj('patient').str('name', 'The patient'));
+    toast(context, on ? '$first will be asked to log meals' : '$first is no longer asked to log meals');
+    reload(quiet: true);
+  }
+
   List<(String, String, Color)> _advice(D6Rec r) => [
         for (final s in _sections)
           for (final sec in _plan(r).list('sections'))
@@ -174,6 +214,9 @@ class _PpTreatmentScreenState extends State<PpTreatmentScreen> with LiveData {
           ],
         ),
       ),
+
+      // Daily meal log: asked for by the dietician / doctor (only then is it a task for the patient).
+      if (const ['dietician', 'doctor'].contains(Session.I.activeMembership?['role'])) _mealLogCard(r),
 
       _Adherence(adh: adh, rec: r),
 

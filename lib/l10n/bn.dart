@@ -379,6 +379,7 @@ const Map<String, String> bn = {
   'Ask anything · type @ for a patient': 'যেকোনো কিছু জিজ্ঞেস করুন · রোগীর জন্য @ লিখুন',
   'Ask the AI Assistant': 'AI সহকারীকে জিজ্ঞেস করুন',
   'Ask to delete': 'মুছে ফেলার অনুরোধ করুন',
+  'Ask to log meals': 'খাবার লগ করতে বলুন',
   'Asked #1 AM · app': 'সকাল #1-এ জিজ্ঞেস করেছেন · অ্যাপ',
   'Asked for a home visit': 'বাড়িতে ভিজিটের অনুরোধ',
   'Asked if iron tablets can be taken with tea. Wants her dose confirmed.': 'চায়ের সঙ্গে আয়রন ট্যাবলেট খাওয়া যায় কিনা জিজ্ঞেস করেছেন। ডোজ নিশ্চিত করতে চান।',

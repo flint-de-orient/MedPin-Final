@@ -455,15 +455,19 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       const rel = d.medicine?.foodRelation;
       assert.equal(new Date(d.at).toISOString().slice(11, 16), expectUtc[rel] || '01:15', `${d.medicine?.name} (${rel}) timed around breakfast moved from ${old} to 06:45`);
     }
-    // Meal log: asked for only when someone on the care team uses it (doctor-only: not asked).
+    // Meal log: a task only once the dietician / doctor asks for it ("Ask to log meals").
     const homeNoLog = ok(await ctx.pat('GET', '/api/patient/home'));
-    assert.equal(homeNoLog.dailyLog, false, 'no dietician or daily-log access: no meal log');
+    assert.equal(homeNoLog.dailyLog, false, 'nobody asked: no meal log');
     assert.ok(!homeNoLog.tasks.some((x) => x.kind === 'log'), 'no "Log your meals" task');
-    await M.CareTeamAccess.updateMany({ patientId: ctx.patientId }, { accessLevel: 'daily_log_only' });
+    assert.equal((await ctx.desk('PUT', `/api/patients/${ctx.patientId}/meal-log`, { on: true })).status, 403, 'front desk cannot ask');
+    const asked = ok(await ctx.doc('PUT', `/api/patients/${ctx.patientId}/meal-log`, { on: true }));
+    assert.equal(asked.on, true);
+    assert.equal(ok(await ctx.doc('GET', `/api/patients/${ctx.patientId}`)).mealLog.on, true, 'the profile shows it is asked, and by whom');
     const homeLog = ok(await ctx.pat('GET', '/api/patient/home'));
     assert.equal(homeLog.dailyLog, true);
-    assert.ok(homeLog.tasks.some((x) => x.kind === 'log'), 'shown once someone reads the log');
-    await M.CareTeamAccess.updateMany({ patientId: ctx.patientId }, { accessLevel: 'full_record' });
+    assert.ok(homeLog.tasks.some((x) => x.kind === 'log'), 'shown once asked');
+    ok(await ctx.doc('PUT', `/api/patients/${ctx.patientId}/meal-log`, { on: false }));
+    assert.equal(ok(await ctx.pat('GET', '/api/patient/home')).dailyLog, false, 'off again');
     ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { reminderTimes: { morning: old }, dailyLogReminderAt: '20:00' } }));
     ok(await ctx.pat('GET', '/api/patient/adherence'));
     const home = ok(await ctx.pat('GET', '/api/patient/home'));

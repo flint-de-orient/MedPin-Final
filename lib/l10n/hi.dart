@@ -379,6 +379,7 @@ const Map<String, String> hi = {
   'Ask anything · type @ for a patient': 'कुछ भी पूछें · मरीज़ के लिए @ लिखें',
   'Ask the AI Assistant': 'AI सहायक से पूछें',
   'Ask to delete': 'हटाने का अनुरोध करें',
+  'Ask to log meals': 'खाना लॉग करने को कहें',
   'Asked #1 AM · app': 'सुबह #1 पूछा · ऐप',
   'Asked for a home visit': 'घर पर विज़िट का अनुरोध',
   'Asked if iron tablets can be taken with tea. Wants her dose confirmed.': 'पूछा कि क्या आयरन की गोली चाय के साथ ली जा सकती है। खुराक पक्की करना चाहती हैं।',

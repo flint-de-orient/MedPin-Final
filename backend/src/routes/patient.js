@@ -299,17 +299,13 @@ async function stepsToday(patientId, since) {
 }
 
 /**
- * Is a daily meal log useful for this patient? Only when someone uses it: a
- * dietician on the care team, a dietician set on their treatment plan, or a
- * care-team member given "daily log" access. A patient seeing only a doctor
- * for medicines isn't asked to log meals.
+ * Is "Log your meals" a task for this patient? Only once their dietician (or
+ * doctor) has asked for it — "Ask to log meals" on the treatment plan, which
+ * names who reviews the logs. Until then nobody reads them, so it isn't asked
+ * (the patient can still keep a log from the Log screen if they want to).
  */
 async function dailyLogUsed(p) {
-  const [team, plan] = await Promise.all([
-    M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $ne: 'not_shared' } }, 'role accessLevel').lean(),
-    M.TreatmentPlan.exists({ patientId: p._id, nutritionBy: { $ne: null } }),
-  ]);
-  return Boolean(plan) || team.some((c) => c.role === 'dietician' || c.accessLevel === 'daily_log_only');
+  return Boolean(await M.TreatmentPlan.exists({ patientId: p._id, nutritionBy: { $ne: null } }));
 }
 
 /** The care team the daily log goes to (the patient's choice, else access levels). */

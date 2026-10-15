@@ -211,6 +211,7 @@ r.get('/patients/:id', async (req, res) => {
     adherence: adh,
     careTeam: careTeam.map((c) => ({ userId: c.userId?._id, name: c.userId?.name, role: c.role, accessLevel: c.accessLevel, since: c.since })),
     treatmentPlan: plan,
+    mealLog: plan?.nutritionBy ? { on: true, by: { id: plan.nutritionBy, name: (await M.User.findById(plan.nutritionBy, 'name'))?.name } } : { on: false },
     shareScope: enrolment?.shareScope,
     branch: (await branchesOf(req.practiceId, [patient._id])).get(String(patient._id)),
     addresses: patient.addresses,
@@ -498,6 +499,27 @@ r.put('/patients/:id/treatment-plan', async (req, res) => {
     { upsert: true, new: true, runValidators: true },
   );
   res.json(plan);
+});
+
+// "Ask to log meals": the dietician (or doctor) asks the patient for a daily meal
+// log and becomes who reviews it; off stops asking. Only then is it a task in the app.
+r.put('/patients/:id/meal-log', async (req, res) => {
+  if (!['dietician', 'doctor'].includes(req.member.role)) throw forbidden('Only a dietician or doctor can ask for a meal log', 'PERMISSION_REQUIRED');
+  const patient = await patientInPractice(req, req.params.id);
+  const on = req.body.on === true;
+  let plan = await M.TreatmentPlan.findOne({ patientId: patient._id, practiceId: req.practiceId }).sort({ updatedAt: -1 });
+  if (!plan && !on) return res.json({ on: false });
+  if (!plan) plan = new M.TreatmentPlan({ patientId: patient._id, practiceId: req.practiceId, doctorId: req.user._id });
+  const was = Boolean(plan.nutritionBy);
+  plan.nutritionBy = on ? req.user._id : null;
+  await plan.save();
+  if (on && !was && patient.userId) {
+    await notify([patient.userId], {
+      type: 'meal_log_requested', practiceId: req.practiceId, title: `${req.user.name || 'Your care team'} asked you to log your meals`,
+      body: 'A quick photo or a line after each meal is enough. They will review it.', screen: 'Patient-Log',
+    });
+  }
+  res.json({ on, by: on ? { id: req.user._id, name: req.user.name } : null });
 });
 
 module.exports = r;
