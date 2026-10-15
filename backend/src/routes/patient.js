@@ -70,6 +70,10 @@ r.patch('/me', async (req, res) => {
       if (!hhmm(s.dailyLogReminderAt)) throw badRequest('Choose a time like 20:00');
       next.dailyLogReminderAt = s.dailyLogReminderAt;
     }
+    if (s.bedAt !== undefined) {
+      if (!hhmm(s.bedAt)) throw badRequest('Choose a time like 22:30');
+      next.bedAt = s.bedAt;
+    }
     for (const [slot, v] of Object.entries(s.reminderTimes || {})) {
       if (!['morning', 'afternoon', 'night'].includes(slot)) continue;
       if (!hhmm(v)) throw badRequest('Choose a time like 07:30');
@@ -191,7 +195,8 @@ r.get('/home', async (req, res) => {
     status: care.effectiveStatus(d, now), done: d.status === 'taken', doneLabel: 'Taken',
   }));
   const mealsLogged = logs.filter((l) => l.type === 'meal').map((l) => l.mealType);
-  tasks.push({ kind: 'log', id: 'meal-log', title: 'Log your meals', done: mealsLogged.length >= 2, doneLabel: 'Logged', detail: mealsLogged });
+  const dailyLog = await dailyLogUsed(p);
+  if (dailyLog) tasks.push({ kind: 'log', id: 'meal-log', title: 'Log your meals', done: mealsLogged.length >= 2, doneLabel: 'Logged', detail: mealsLogged });
   if (nextVisit && T.dayKey(nextVisit.startAt) === T.dayKey(now)) {
     for (const t of nextVisit.todos.filter((x) => !x.done)) tasks.push({ kind: 'visit_todo', id: t._id, appointmentId: nextVisit._id, title: t.text, done: false });
   }
@@ -256,6 +261,7 @@ r.get('/home', async (req, res) => {
       doneThisWeek: activity.completions.filter((d) => d >= weekStart).length, doneToday: activity.completions.some((d) => T.dayKey(d) === T.dayKey(now)),
     },
     mealsLogged,
+    dailyLog, // false: no one on the care team uses a meal log, so Home doesn't ask for one
     logSharedWith: team.map((c) => ({ userId: c.userId?._id, name: c.userId?.name, role: c.role })),
     adherence: { pct: adh.overallPct, doctors: adh.perDoctor.length },
     trackedMeasures: p.trackedMeasures,
@@ -290,6 +296,20 @@ async function stepsToday(patientId, since) {
   if (!logs.length) return { today: 0, source: null };
   if (manual > auto) return { today: manual, source: 'manual' };
   return { today: auto, source: device.some((l) => l.stepSource === 'phone') && !device.some((l) => l.stepSource === 'watch') ? 'phone' : 'watch' };
+}
+
+/**
+ * Is a daily meal log useful for this patient? Only when someone uses it: a
+ * dietician on the care team, a dietician set on their treatment plan, or a
+ * care-team member given "daily log" access. A patient seeing only a doctor
+ * for medicines isn't asked to log meals.
+ */
+async function dailyLogUsed(p) {
+  const [team, plan] = await Promise.all([
+    M.CareTeamAccess.find({ patientId: p._id, accessLevel: { $ne: 'not_shared' } }, 'role accessLevel').lean(),
+    M.TreatmentPlan.exists({ patientId: p._id, nutritionBy: { $ne: null } }),
+  ]);
+  return Boolean(plan) || team.some((c) => c.role === 'dietician' || c.accessLevel === 'daily_log_only');
 }
 
 /** The care team the daily log goes to (the patient's choice, else access levels). */
@@ -624,6 +644,7 @@ r.get('/medicines', async (req, res) => {
     running: items.length, fromDoctors: doctors.size, adherence30d: adh.overallPct, allergies, items,
     safety: { checked: items.length, warnings }, nextVisitAt: nextVisit?.startAt || null, pastCount,
     reminderTimes: req.patient.settings?.reminderTimes || null,
+    bedAt: req.patient.settings?.bedAt || '22:30',
     // Medicines read from prescriptions the patient uploaded, not added yet.
     fromUploads: (await M.MedicalRecord.find({ patientId: req.patient._id, kind: 'prescription', deletedAt: null, medicinesAddedAt: null, 'extractedMedicines.0': { $exists: true }, createdAt: { $gte: T.addDays(new Date(), -60) } }).sort({ createdAt: -1 }).limit(5))
       .map((r) => ({ recordId: r._id, title: r.title, date: r.recordDate, doctor: r.extractedDoctor || r.sourceName, medicines: r.extractedMedicines })),
@@ -755,6 +776,7 @@ r.get('/adherence', async (req, res) => {
     doctors,
     medReminders: req.patient.toObject().settings?.medReminders !== false,
     reminderTimes: req.patient.toObject().settings?.reminderTimes || null,
+    bedAt: req.patient.settings?.bedAt || '22:30',
   });
 });
 
@@ -1360,3 +1382,4 @@ r.get('/health-summary', async (req, res) => {
 });
 
 module.exports = r;
+module.exports.dailyLogUsed = dailyLogUsed;

@@ -54,15 +54,25 @@ async function doseReminders(now, since) {
   const courses = new Map((await M.MedicationCourse.find({ _id: { $in: doses.map((d) => d.courseId) } }, 'name strength foodRelation dose')).map((c) => [String(c._id), c]));
   // Phones that ring alarms themselves don't need the server's push too.
   const alarmUsers = new Set((await M.DeviceToken.find({ localAlarms: true }, 'userId')).map((t) => String(t.userId)));
+  // Medicines due at the same time: one reminder listing them, not one each.
+  const groups = new Map();
   for (const d of doses) {
     const p = patients.get(String(d.patientId));
     const c = courses.get(String(d.courseId));
     if (!p?.userId || p.settings?.medReminders === false || !c || alarmUsers.has(String(p.userId))) continue;
-    await once(`dose:${d._id}`, () =>
-      notify([p.userId], {
-        type: 'dose_reminder', title: `Time for ${c.name}${c.strength ? ` ${c.strength}` : ''}`,
-        body: [SLOT_LABEL[d.slot] && `${SLOT_LABEL[d.slot]} dose`, FOOD[c.foodRelation]].filter(Boolean).join(' · '),
-        screen: 'Patient-Medicines', params: { doseId: d._id },
+    const key = `${d.patientId}:${d.scheduledAt.getTime()}`;
+    if (!groups.has(key)) groups.set(key, { p, slot: d.slot, items: [] });
+    groups.get(key).items.push({ d, c });
+  }
+  for (const [key, g] of groups) {
+    const names = g.items.map(({ c }) => `${c.name}${c.strength ? ` ${c.strength}` : ''}`);
+    const foods = [...new Set(g.items.map(({ c }) => FOOD[c.foodRelation]).filter(Boolean))];
+    await once(`dosegroup:${key}`, () =>
+      notify([g.p.userId], {
+        type: 'dose_reminder',
+        title: names.length === 1 ? `Time for ${names[0]}` : `Time for ${names.length} medicines`,
+        body: [names.length > 1 ? names.join(', ') : null, SLOT_LABEL[g.slot] && `${SLOT_LABEL[g.slot]} dose`, foods.join(' / ')].filter(Boolean).join(' · '),
+        screen: 'Patient-Medicines', params: { doseId: g.items[0].d._id },
       }),
     );
   }
@@ -152,6 +162,7 @@ async function dailyLogReminders(now) {
     if (minute < T.hhmmToMin(at)) continue;
     const logged = await M.HealthLog.exists({ patientId: p._id, loggedAt: { $gte: T.dayStart(now) } });
     if (logged) continue;
+    if (!(await require('../routes/patient').dailyLogUsed(p))) continue;
     await once(`log:${p._id}:${day}`, () =>
       notify([p.userId], { type: 'daily_log_reminder', title: "Log today's meals", body: 'A quick photo or a line is enough. Your care team sees it.', screen: 'Patient-Log' }),
     );

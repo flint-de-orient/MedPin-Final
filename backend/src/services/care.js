@@ -164,6 +164,26 @@ async function markRead(convo, userId) {
 // ── Medicine doses and adherence ──────────────────────────
 
 const SLOTS = ['morning', 'afternoon', 'night'];
+
+/** Meal times by slot (settings.reminderTimes is the patient's breakfast / lunch / dinner). */
+const MEALS = { morning: '08:00', afternoon: '13:30', night: '20:30' };
+
+/**
+ * When a dose is due: around the meal of its slot, by how it's taken —
+ * before food 30 min before, after food 15 min after, with food at the meal,
+ * empty stomach 45 min before, at bedtime at the patient's bedtime.
+ * Minutes after midnight (IST).
+ */
+function doseMinute(settings, slot, foodRelation) {
+  const times = settings?.reminderTimes || {};
+  const meal = T.hhmmToMin(/^\d{2}:\d{2}$/.test(times[slot] || '') ? times[slot] : MEALS[slot]);
+  if (foodRelation === 'bedtime') {
+    const bed = settings?.bedAt && /^\d{2}:\d{2}$/.test(settings.bedAt) ? T.hhmmToMin(settings.bedAt) : null;
+    return bed ?? Math.min(23 * 60 + 30, meal + 120);
+  }
+  const offset = { before_food: -30, after_food: 15, with_food: 0, empty_stomach: -45 }[foodRelation] ?? 0;
+  return Math.max(0, Math.min(24 * 60 - 1, meal + offset));
+}
 const MISSED_AFTER_MIN = 180; // a dose not marked 3 h after its time counts as missed
 
 /** Creates the scheduled doses for each day in [from, to] (idempotent). */
@@ -174,7 +194,6 @@ async function ensureDoses(patient, from, to = from) {
     patientId: patient._id, trackingEnabled: true, startDate: { $lte: end },
     $or: [{ endDate: null }, { endDate: { $gte: start } }], status: { $ne: 'stopped' },
   });
-  const times = patient.settings?.reminderTimes || {};
   const ops = [];
   for (let day = start; day <= end; day = T.addDays(day, 1)) {
     for (const c of courses) {
@@ -182,7 +201,7 @@ async function ensureDoses(patient, from, to = from) {
       if (c.frequency === 'weekly' && c.weekday && c.weekday !== T.weekday(day)) continue;
       for (const slot of SLOTS) {
         if (!(c.dose?.[slot] > 0)) continue;
-        const scheduledAt = T.atMinute(day, T.hhmmToMin(times[slot] || { morning: '07:30', afternoon: '13:30', night: '20:30' }[slot]));
+        const scheduledAt = T.atMinute(day, doseMinute(patient.settings, slot, c.foodRelation));
         ops.push({
           updateOne: {
             filter: { courseId: c._id, scheduledAt },
@@ -251,4 +270,4 @@ async function adherence(patient, days = 30, acc) {
   };
 }
 
-module.exports = { raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, markRead, ensureDoses, adherence, effectiveStatus };
+module.exports = { doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, markRead, ensureDoses, adherence, effectiveStatus };

@@ -77,11 +77,13 @@ const patientSchema = new Schema(
       dailyLogReminder: { type: Boolean, default: true },
       dailyLogReminderAt: { type: String, default: '20:00' },
       visitReminders: { type: Boolean, default: true },
+      // Breakfast / lunch / dinner (doses are timed around them: services/care.js doseMinute).
       reminderTimes: {
-        morning: { type: String, default: '07:30' },
+        morning: { type: String, default: '08:00' },
         afternoon: { type: String, default: '13:30' },
         night: { type: String, default: '20:30' },
       },
+      bedAt: { type: String, default: '22:30' }, // "at bedtime" doses
     },
     createdByPracticeId: ref('Practice'),
     createdBy: ref('User'),

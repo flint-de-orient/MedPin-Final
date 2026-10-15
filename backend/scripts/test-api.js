@@ -449,7 +449,21 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const morning = moved.items.filter((d) => d.slot === 'morning');
     assert.ok(morning.length > 0, 'there are morning doses tomorrow');
     assert.equal(morning.length, before.items.filter((d) => d.slot === 'morning').length, 'same number of morning doses');
-    assert.ok(morning.every((d) => new Date(d.at).toISOString().slice(11, 16) === '01:15'), `morning doses moved from ${old} to 06:45 IST`);
+    // Breakfast at 06:45 IST: after food 07:00, before food 06:15, with food / no rule 06:45 (UTC = IST − 5:30).
+    const expectUtc = { after_food: '01:30', before_food: '00:45', with_food: '01:15', empty_stomach: '00:30' };
+    for (const d of morning) {
+      const rel = d.medicine?.foodRelation;
+      assert.equal(new Date(d.at).toISOString().slice(11, 16), expectUtc[rel] || '01:15', `${d.medicine?.name} (${rel}) timed around breakfast moved from ${old} to 06:45`);
+    }
+    // Meal log: asked for only when someone on the care team uses it (doctor-only: not asked).
+    const homeNoLog = ok(await ctx.pat('GET', '/api/patient/home'));
+    assert.equal(homeNoLog.dailyLog, false, 'no dietician or daily-log access: no meal log');
+    assert.ok(!homeNoLog.tasks.some((x) => x.kind === 'log'), 'no "Log your meals" task');
+    await M.CareTeamAccess.updateMany({ patientId: ctx.patientId }, { accessLevel: 'daily_log_only' });
+    const homeLog = ok(await ctx.pat('GET', '/api/patient/home'));
+    assert.equal(homeLog.dailyLog, true);
+    assert.ok(homeLog.tasks.some((x) => x.kind === 'log'), 'shown once someone reads the log');
+    await M.CareTeamAccess.updateMany({ patientId: ctx.patientId }, { accessLevel: 'full_record' });
     ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { reminderTimes: { morning: old }, dailyLogReminderAt: '20:00' } }));
     ok(await ctx.pat('GET', '/api/patient/adherence'));
     const home = ok(await ctx.pat('GET', '/api/patient/home'));

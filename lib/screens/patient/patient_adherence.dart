@@ -131,7 +131,7 @@ class _PatientAdherenceSheetState extends State<PatientAdherenceSheet> with Live
     final m = data!.obj('mostMissedSlot');
     if (m.isEmpty) return null;
     final slot = m.str('slot');
-    final hhmm = data!.obj('reminderTimes').str(slot, const {'morning': '07:30', 'afternoon': '13:30', 'night': '20:30'}[slot] ?? '20:30');
+    final hhmm = data!.obj('reminderTimes').str(slot, const {'morning': '08:00', 'afternoon': '13:30', 'night': '20:30'}[slot] ?? '20:30');
     // on: reminders are on, so this slot already rings at [time].
     return (slot: slot, when: slot == 'night' ? 'evening' : slot, time: P1.clock(hhmm), on: data!['medReminders'] != false, hhmm: hhmm);
   }
@@ -147,7 +147,8 @@ class _PatientAdherenceSheetState extends State<PatientAdherenceSheet> with Live
     final p = tip.hhmm.split(':');
     final picked = await showTimePicker(
       context: context,
-      helpText: 'Reminder for your ${tip.when} medicines',
+      // The slot's meal: doses ring around it (before food earlier, after food later).
+      helpText: 'When do you usually have ${const {'morning': 'breakfast', 'afternoon': 'lunch', 'night': 'dinner'}[tip.slot] ?? 'this meal'}?',
       initialTime: TimeOfDay(hour: int.tryParse(p.first) ?? 7, minute: int.tryParse(p.last) ?? 30),
     );
     if (picked == null || !mounted) return;

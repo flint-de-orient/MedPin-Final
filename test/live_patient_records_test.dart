@@ -209,7 +209,7 @@ void main() {
     expect(find.text('In cart · 3 strips'), findsOneWidget);
     expect(find.text('Check with your doctor'), findsOneWidget);
     expect(find.text('Glimepiride: Sulfa drugs allergy · sulfonylurea'), findsOneWidget);
-    expect(find.text('Morning 7:30 AM · Night 8:30 PM'), findsOneWidget);
+    expect(find.text('Breakfast 7:30 AM · Dinner 8:30 PM'), findsOneWidget);
     expect(find.text('1 · last placed · 9 Oct'), findsOneWidget);
 
     await _tap(t, find.text('Taken').at(1)); // morning: Myo-inositol, Glimepiride, Metformin

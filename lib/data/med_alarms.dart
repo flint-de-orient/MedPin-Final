@@ -9,7 +9,8 @@ import 'push.dart';
 import 'session.dart';
 
 /// Medicine alarms rung by the phone itself (work offline, survive reboots):
-/// one alarm per dose for the next 7 days, from GET /api/patient/doses.
+/// one alarm per dose time (medicines due together share it) for the next 7
+/// days, plus a reminder 30 min later while any is still not taken, from GET /api/patient/doses.
 /// Re-synced when the patient signs in, opens the app, marks a dose, or
 /// changes medicines / reminder times. Switching "Medicine reminders" off in
 /// Profile removes them.
@@ -61,7 +62,10 @@ class MedAlarms with WidgetsBindingObserver {
       if (!on) return clear();
       final now = DateTime.now();
       final days = [for (var i = 0; i < 7; i++) now.add(Duration(days: i))];
-      final wanted = <int, (DateTime, String, String)>{};
+      // Medicines due at the same minute ring as one alarm listing them; a second,
+      // gentler one 30 min later only while any of them is still not marked taken
+      // (marking a dose re-syncs, so it disappears as soon as they're taken).
+      final groups = <DateTime, List<Map<String, dynamic>>>{};
       for (final d in days) {
         final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
         final r = await Api.I.get('/api/patient/doses', query: {'date': key}) as Map;
@@ -69,12 +73,24 @@ class MedAlarms with WidgetsBindingObserver {
           final m = (dose as Map).cast<String, dynamic>();
           if (m['status'] != 'due') continue;
           final at = DateTime.tryParse('${m['at']}')?.toLocal();
-          if (at == null || at.isBefore(now)) continue;
-          final med = (m['medicine'] as Map?)?.cast<String, dynamic>() ?? const {};
-          final name = [med['name'], med['strength']].where((x) => x != null && '$x'.isNotEmpty).join(' ');
-          final food = const {'before_food': 'before food', 'after_food': 'after food', 'with_food': 'with food', 'empty_stomach': 'on an empty stomach'}[med['foodRelation']];
-          final slot = const {'morning': 'Morning', 'afternoon': 'Afternoon', 'night': 'Night'}[m['slot']];
-          wanted[idFor('${m['id']}')] = (at, 'Time for ${name.isEmpty ? 'your medicine' : name}', [if (slot != null) '$slot dose', if (food != null) food].join(' · '));
+          if (at == null || at.add(const Duration(minutes: 30)).isBefore(now)) continue;
+          groups.putIfAbsent(DateTime(at.year, at.month, at.day, at.hour, at.minute), () => []).add(m);
+        }
+      }
+      final wanted = <int, (DateTime, String, String)>{};
+      for (final g in groups.entries) {
+        final names = [
+          for (final m in g.value)
+            [(m['medicine'] as Map?)?['name'], (m['medicine'] as Map?)?['strength']].where((x) => x != null && '$x'.isNotEmpty).join(' '),
+        ].where((s) => s.isNotEmpty).toList();
+        final how = {for (final m in g.value) _how(m)}.whereType<String>().join(' / ');
+        final title = names.length <= 1 ? 'Time for ${names.isEmpty ? 'your medicine' : names.first}' : 'Time for ${names.length} medicines';
+        final body = [if (names.length > 1) names.join(', '), if (how.isNotEmpty) how].join(' · ');
+        final stamp = g.key.millisecondsSinceEpoch;
+        if (g.key.isAfter(now)) wanted[idFor('t$stamp')] = (g.key, title, body);
+        final again = g.key.add(const Duration(minutes: 30));
+        if (again.isAfter(now)) {
+          wanted[idFor('f$stamp')] = (again, names.length <= 1 ? 'Still to take: ${names.isEmpty ? 'your medicine' : names.first}' : 'Still to take: ${names.length} medicines', 'Tap to mark them taken${body.isEmpty ? '' : ' · $body'}');
         }
       }
       final existing = (await LocalNotes.I.scheduledIds()).where(_isAlarm).toSet();
@@ -89,6 +105,19 @@ class MedAlarms with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Medicine alarms not synced: $e');
     }
+  }
+
+  /// "after breakfast", "before dinner", "on an empty stomach", "at bedtime".
+  static String? _how(Map<String, dynamic> dose) {
+    final meal = const {'morning': 'breakfast', 'afternoon': 'lunch', 'night': 'dinner'}[dose['slot']] ?? 'food';
+    return switch ((dose['medicine'] as Map?)?['foodRelation']) {
+      'before_food' => 'before $meal',
+      'after_food' => 'after $meal',
+      'with_food' => 'with $meal',
+      'empty_stomach' => 'on an empty stomach',
+      'bedtime' => 'at bedtime',
+      _ => null,
+    };
   }
 
   /// Removes every medicine alarm (sign-out, reminders switched off).

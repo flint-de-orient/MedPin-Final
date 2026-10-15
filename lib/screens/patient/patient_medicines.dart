@@ -253,7 +253,7 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
     final d = data!;
     switch (i) {
       case 0:
-        final saved = await openSheet<bool>(context, (_) => _ReminderSheet(times: _medsData.obj('reminderTimes'), slots: _usedSlots));
+        final saved = await openSheet<bool>(context, (_) => _ReminderSheet(times: _medsData.obj('reminderTimes'), slots: _usedSlots, bedAt: _medsData.str('bedAt', '22:30'), bedtime: _courses.any((c) => c.str('foodRelation') == 'bedtime')));
         if (saved == true && mounted) reload(quiet: true);
       case 1:
         await openSheet<void>(context, (_) => _OrdersSheet(orders: d.list('orders')));
@@ -281,7 +281,7 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
     final lastAt = last == null ? null : F.date(last['createdAt']);
     final past = _medsData.numOr('pastCount').toInt();
     return [
-      ('Reminder times', [for (final s in slots) '${_slotNames[s]} ${p3Clock(times.str(s, const {'morning': '07:30', 'afternoon': '13:30', 'night': '20:30'}[s]!))}'].join(' · '), ''),
+      ('Meal times', [for (final s in slots) '${const {'morning': 'Breakfast', 'afternoon': 'Lunch', 'night': 'Dinner'}[s]} ${p3Clock(times.str(s, const {'morning': '08:00', 'afternoon': '13:30', 'night': '20:30'}[s]!))}'].join(' · '), ''),
       ('Orders', last == null ? 'No orders yet' : '${orders.length} · last ${last.str('status').replaceAll('_', ' ')}${lastAt != null ? ' · ${F.dayMonth(lastAt)}' : ''}', ''),
       ('Past medicines', past == 0 ? 'None yet' : '$past completed ${past == 1 ? 'course' : 'courses'}', ''),
       ('Share medicine list', 'PDF for a new doctor or pharmacy', ''),
@@ -1252,18 +1252,23 @@ class _MedicineSheetState extends State<_MedicineSheet> {
 }
 
 /// Reminder times for the dose slots in use. PATCH /api/patient/me.
+/// Meal times (breakfast / lunch / dinner) and bedtime: each dose rings around
+/// its meal by how it's taken (before food 30 min before, after food 15 min after…).
 class _ReminderSheet extends StatefulWidget {
   final Map<String, dynamic> times;
   final List<String> slots;
-  const _ReminderSheet({required this.times, required this.slots});
+  final String bedAt;
+  final bool bedtime;
+  const _ReminderSheet({required this.times, required this.slots, this.bedAt = '22:30', this.bedtime = false});
 
   @override
   State<_ReminderSheet> createState() => _ReminderSheetState();
 }
 
 class _ReminderSheetState extends State<_ReminderSheet> {
-  static const _defaults = {'morning': '07:30', 'afternoon': '13:30', 'night': '20:30'};
-  late final Map<String, String> _t = {for (final s in _defaults.keys) s: widget.times.str(s, _defaults[s]!)};
+  static const _defaults = {'morning': '08:00', 'afternoon': '13:30', 'night': '20:30'};
+  static const _meals = {'morning': 'Breakfast', 'afternoon': 'Lunch', 'night': 'Dinner', 'bed': 'Bedtime'};
+  late final Map<String, String> _t = {for (final s in _defaults.keys) s: widget.times.str(s, _defaults[s]!), 'bed': widget.bedAt};
   final _busy = ValueNotifier(false);
 
   @override
@@ -1283,25 +1288,29 @@ class _ReminderSheetState extends State<_ReminderSheet> {
   }
 
   Future<void> _save() async {
-    final ok = await runAction(context, () => Api.I.patch('/api/patient/me', {'settings': {'reminderTimes': _t}}), busy: _busy);
+    final meals = {for (final s in _defaults.keys) s: _t[s]};
+    final ok = await runAction(context, () => Api.I.patch('/api/patient/me', {'settings': {'reminderTimes': meals, 'bedAt': _t['bed']}}), busy: _busy);
     if (ok == null || !mounted) return;
-    toast(context, 'Reminder times saved');
+    toast(context, 'Meal times saved · reminders follow them');
     Navigator.of(context).pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
-    final slots = widget.slots.isEmpty ? _defaults.keys.toList() : widget.slots;
+    final slots = [...(widget.slots.isEmpty ? _defaults.keys.toList() : widget.slots), if (widget.bedtime) 'bed'];
     return MpSheet(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Gap(20),
-          const P2SheetHeader(title: 'Reminder times', subtitle: 'We remind you to take your medicines at these times.'),
+          const P2SheetHeader(
+            title: 'Meal times',
+            subtitle: 'Reminders follow your meals: before food 30 min before, after food 15 min after, with food at the meal.',
+          ),
           const Gap(12),
           for (var i = 0; i < slots.length; i++)
             P3Row(
-              p3Cap(slots[i]),
+              _meals[slots[i]]!,
               p3Clock(_t[slots[i]]!),
               first: i == 0,
               onTap: () => _pick(slots[i]),

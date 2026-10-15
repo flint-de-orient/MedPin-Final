@@ -408,8 +408,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
           const Gap(16),
           _pad(_today(context)),
           const Gap(16),
-          _pad(_dailyLog(context)),
-          const Gap(16),
+          // Only when someone on the care team uses a meal log (a dietician, or "daily log" access).
+          if (data == null || data!['dailyLog'] != false) ...[
+            _pad(_dailyLog(context)),
+            const Gap(16),
+          ],
           _pad(_health(context)),
           if (data == null || _ai != null) ...[
             const Gap(16),
