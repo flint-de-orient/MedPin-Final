@@ -935,10 +935,13 @@ class _MedCard extends StatelessWidget {
               ],
             ),
           )),
-          const Gap(14),
+          const Gap(16),
+          const MpDivider(),
+          const Gap(16),
           Row(
             children: [
               Expanded(
+                flex: 5,
                 child: P2Box(
                   onTap: onStock ?? () => p2Missing(context, 'Updating stock'),
                   height: 48,
@@ -946,12 +949,20 @@ class _MedCard extends StatelessWidget {
                   color: MP.white,
                   border: MP.lineStrong,
                   alignment: Alignment.center,
-                  child: Text('Update stock', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, w: w700)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Ico(I.pill, size: 16, color: MP.ink),
+                      const Gap(8),
+                      Flexible(child: Text('Update stock', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, w: w700))),
+                    ],
+                  ),
                 ),
               ),
-              const Gap(8),
+              const Gap(12),
               Expanded(
-                flex: 2,
+                flex: 6,
                 child: P2Box(
                   onTap: onCart,
                   height: 48,
