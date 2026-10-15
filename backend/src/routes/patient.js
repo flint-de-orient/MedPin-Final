@@ -1111,7 +1111,12 @@ r.get('/records', async (req, res) => {
   }
   const all = await M.MedicalRecord.aggregate([{ $match: { patientId: req.patient._id, deletedAt: null } }, { $group: { _id: '$kind', n: { $sum: 1 } } }]);
   const counts = Object.fromEntries(all.map((x) => [x._id, x.n]));
-  res.json({ counts: { all: Object.values(counts).reduce((a, b) => a + b, 0), ...counts }, items: items.map((x) => ({ ...x.toJSON(), files: x.files.map(storage.withUrl) })) });
+  res.json({
+    counts: { all: Object.values(counts).reduce((a, b) => a + b, 0), ...counts },
+    items: items.map((x) => ({ ...x.toJSON(), files: x.files.map(storage.withUrl) })),
+    // Tests the doctor asked for, what each checks, how to prepare, and whether a result came in.
+    advisedTests: await require('../services/advisedtests').advisedTests(req.patient).catch((err) => { console.warn('[advised tests]', err.message); return []; }),
+  });
 });
 
 r.get('/records/:id', async (req, res) => {
@@ -1130,7 +1135,9 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
   for (const f of req.files) files.push(await storage.save(f.buffer, { folder: 'records', name: f.originalname, mimeType: f.mimetype }));
   const sharedWith = list(req.body.shareWith).filter(isId).map((userId) => ({ userId }));
   const record = await M.MedicalRecord.create({
-    patientId: req.patient._id, kind, title: req.body.title || (kind === 'prescription' ? 'Prescription' : 'Test report'),
+    patientId: req.patient._id, kind, title: req.body.title || (kind === 'test_result' && list(req.body.forTests).length ? list(req.body.forTests).join(', ') : kind === 'prescription' ? 'Prescription' : 'Test report'),
+    // The tests the doctor asked for that this report answers (Records → "Tests your doctor asked for").
+    forTests: kind === 'test_result' ? list(req.body.forTests).map((s) => String(s).trim()).filter(Boolean).slice(0, 20) : undefined,
     recordDate: req.body.recordDate ? T.parseDay(req.body.recordDate) : new Date(), origin: 'shared_by_patient', sourceName: req.body.sourceName || 'uploaded by you',
     uploadSource: E.UPLOAD_SOURCES.includes(req.body.uploadSource) ? req.body.uploadSource : undefined, files, sharedWith,
     status: kind === 'test_result' ? 'processing' : 'ready', uploadedBy: req.user._id, flagLabel: 'New', flagTone: 'new',
@@ -1177,14 +1184,18 @@ r.post('/records/:id/split', async (req, res) => {
   // "Share all N tests with" on Records-Review (else keep who the upload was shared with).
   const sharedWith = req.body.shareWith !== undefined ? list(req.body.shareWith).filter(isId).map((userId) => ({ userId })) : parent.sharedWith;
   const created = [];
+  const { lookup } = require('../services/advisedtests');
   for (const t of tests) {
+    // The doctor's tests the upload was for: each saved test keeps the ones it is (all, when it's the only one).
+    const name = t.testName || t.test_name;
+    const forTests = tests.length === 1 ? parent.forTests : (parent.forTests || []).filter((x) => lookup(x) && lookup(x)?.key === lookup(name)?.key);
     const values = (t.values || []).map((v) => ({
       analyte: v.analyte, value: Number.isFinite(parseFloat(v.value)) ? parseFloat(v.value) : undefined, valueText: Number.isFinite(parseFloat(v.value)) ? undefined : v.value,
       unit: v.unit, refText: v.refText || v.ref_text, refLow: v.refLow, refHigh: v.refHigh, flag: E.RESULT_FLAGS.includes(v.flag) ? v.flag : 'normal',
     }));
     const abnormal = values.filter((v) => v.flag !== 'normal').length;
     const rec = await M.MedicalRecord.create({
-      patientId: req.patient._id, kind: 'test_result', title: t.testName || t.test_name, recordDate: collectedAt, origin: 'shared_by_patient', sourceName: labName,
+      patientId: req.patient._id, kind: 'test_result', title: name, forTests, recordDate: collectedAt, origin: 'shared_by_patient', sourceName: labName,
       files: parent.files, pageFrom: t.pageFrom ?? t.page_from, pageTo: t.pageTo ?? t.page_to, batchId: parent._id, aiSummary: t.summary,
       flagLabel: abnormal ? `${abnormal} ${values.some((v) => v.flag === 'low') && !values.some((v) => v.flag === 'high') ? 'low' : 'high'}` : 'Normal', flagTone: abnormal ? 'high' : 'ok',
       sharedWith, uploadedBy: req.user._id,

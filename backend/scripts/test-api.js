@@ -631,6 +631,16 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
   });
 
   await step('records: upload, split into tests, share; trends', async () => {
+    // The doctor's HbA1c is a test to do, with what it checks and how to prepare; a report for it marks it done.
+    const before = ok(await ctx.pat('GET', '/api/patient/records')).advisedTests.find((t) => /hba1c/i.test(t.name));
+    assert.ok(before, 'the prescribed test is listed');
+    assert.equal(before.status, 'todo');
+    assert.match(before.prep, /fasting/i);
+    const forIt = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'a1c.pdf', 'application/pdf', { kind: 'test_result', forTests: before.name }) }), 201);
+    assert.equal(forIt.record.title, before.name);
+    const after = ok(await ctx.pat('GET', '/api/patient/records')).advisedTests.find((t) => t.name === before.name);
+    assert.equal(after.status, 'done');
+    assert.equal(String(after.result.recordId), String(forIt.record.id));
     const up = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'report.pdf', 'application/pdf', { kind: 'test_result', sourceName: 'Suraksha Diagnostics', shareWith: ctx.doctorUserId }) }), 201);
     const split = ok(await ctx.pat('POST', `/api/patient/records/${up.record.id}/split`, {
       collectedAt: '2026-09-30',

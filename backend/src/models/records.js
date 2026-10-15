@@ -15,6 +15,7 @@ const medicalRecordSchema = new Schema(
     patientId: ref('Patient', true),
     kind: enumOf(E.RECORD_KINDS, { required: true }),
     title: { type: String, required: true }, // "Lipid profile"
+    forTests: [String], // the advised tests this report is for ("HbA1c", "Lipid profile")
     recordDate: { type: Date, required: true }, // collected / issued on
     origin: enumOf(E.RECORD_ORIGINS, { required: true }),
     sourceName: String, // "SRL Diagnostics", "Dr. Arjun Sen", "uploaded by you"

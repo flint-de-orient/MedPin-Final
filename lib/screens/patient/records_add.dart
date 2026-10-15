@@ -36,6 +36,11 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
   List<P3Doctor> _liveDoctors = const [];
   Set<String> _shareWith = {};
 
+  /// Test result: the tests the doctor asked for that are still to do, and
+  /// which of them this report is for (sent as forTests; links the result).
+  List<Map<String, dynamic>> _advised = const [];
+  Set<String> _forTests = {};
+
   static const _sources = [(I.camera, 'Take photo'), (I.image, 'Gallery'), (I.fileText, 'PDF file')];
   static const _sourceKeys = ['camera', 'gallery', 'pdf'];
 
@@ -57,6 +62,7 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     final kind = _args['kind'];
     if (kind == 'prescription') _kind = 0;
     if (kind == 'test_result') _kind = 1;
+    if (_args['forTest'] is String) _forTests = {_args['forTest'] as String};
   }
 
   /// Staff uploading for a patient (no care-team picker then).
@@ -68,6 +74,15 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     final pre = _args['doctorId'] as String?;
     final name = _args['doctorName'] as String?;
     final doctors = await p3LoadDoctors();
+    try {
+      final recs = await Api.I.get('/api/patient/records');
+      _advised = [
+        for (final t in (recs is Map ? recs.cast<String, dynamic>().list('advisedTests') : const <Map<String, dynamic>>[]))
+          if (t.str('status') != 'done' || _forTests.contains(t.str('name'))) t,
+      ];
+    } on ApiException catch (_) {
+      _advised = const [];
+    }
     // Opened from a doctor's page ("Share"): that doctor is ticked even when
     // they aren't in the care team yet.
     if (pre != null && !doctors.any((d) => d.id == pre)) doctors.insert(0, P3Doctor(pre, name ?? 'This doctor', ''));
@@ -117,6 +132,7 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
           'kind': kind,
           'uploadSource': source,
           if (_args['title'] != null) 'title': '${_args['title']}',
+          if (kind == 'test_result' && _forTests.isNotEmpty) 'forTests': _forTests.join(','),
           if (_args['appointmentId'] != null) 'appointmentId': '${_args['appointmentId']}',
           if (patientId == null && _shareWith.isNotEmpty) 'shareWith': _shareWith.join(','),
         },
@@ -170,6 +186,28 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
               onChanged: (i) => setState(() => _kind = i),
             ),
             const Gap(20),
+
+            // Which of the doctor's tests is this report for?
+            if (_kind == 1 && _advised.isNotEmpty) ...[
+              Text('Which test is this for?', style: tx(14, w: w600)),
+              const Gap(8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final t in _advised)
+                    MpChip(
+                      t.str('name'),
+                      selected: _forTests.contains(t.str('name')),
+                      tonal: true,
+                      onTap: () => setState(() => _forTests.contains(t.str('name')) ? _forTests.remove(t.str('name')) : _forTests.add(t.str('name'))),
+                    ),
+                ],
+              ),
+              const Gap(6),
+              Text('Pick all the tests in this report. We match it to what your doctor asked for.', style: tx(13, c: MP.ink3, h: 1.4)),
+              const Gap(20),
+            ],
 
             // Take photo · Gallery · PDF file
             Row(

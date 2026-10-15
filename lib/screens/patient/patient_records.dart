@@ -177,6 +177,25 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> with LiveDa
     await openSheet<void>(context, (_) => _RecordSheet(record: x));
   }
 
+  /// "Upload result" on an advised test: Add record, set to that test and shared with the doctor who asked.
+  Future<void> _uploadFor(Map<String, dynamic> t) async {
+    await Nav.go(context, 'Records-Add', args: {
+      'kind': 'test_result',
+      'forTest': t.str('name'),
+      if (t.str('doctorId').isNotEmpty) 'doctorId': t.str('doctorId'),
+      if (t.str('doctorName').isNotEmpty) 'doctorName': t.str('doctorName'),
+    });
+    if (mounted) reload(quiet: true);
+  }
+
+  /// "View result": the report that answered it.
+  void _openResult(Map<String, dynamic> t) {
+    final id = t.obj('result').str('recordId');
+    final hit = data?.list('items').where((x) => x.str('id') == id).toList() ?? const [];
+    if (hit.isEmpty) return toast(context, 'The report is no longer in your records');
+    _view(_fromApi(hit.first));
+  }
+
   Future<void> _download(_Rec r) async {
     final x = r.raw;
     if (x == null) {
@@ -209,6 +228,8 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> with LiveDa
         if (m.$2.any(_shows)) (m.$1, m.$2.where(_shows).toList()),
     ];
     final placeholder = livePlaceholder();
+    // Tests the doctor asked for (on All and Tests): to do first, then the ones with a result.
+    final advised = live && _filter != 1 ? data!.list('advisedTests') : const <Map<String, dynamic>>[];
 
     return MpPage(
         nav: const PatientNav(current: 3),
@@ -258,7 +279,13 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> with LiveDa
             // main: padding 20 20 184 (112 of it is the nav room MpPage adds).
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 72),
-              child:
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (advised.isNotEmpty && _query.trim().isEmpty) ...[
+                    _AdvisedTests(items: advised, onUpload: _uploadFor, onResult: _openResult),
+                    const Gap(20),
+                  ],
                   months.isEmpty
                       ? Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24),
@@ -271,6 +298,8 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> with LiveDa
                       : VGap(gap: 20, children: [
                         for (final m in months) _MonthSection(title: m.$1, items: m.$2, onView: _view, onDownload: _download),
                       ]),
+                ],
+              ),
             ),
           ],
         ),
@@ -299,6 +328,103 @@ class _FilterChip extends StatelessWidget {
       children: [Text(label, style: tx(14, w: w600, c: selected ? MP.white : MP.ink2))],
     ),
   );
+}
+
+/// "Tests your doctor asked for": each test from the prescriptions, what it
+/// checks, how to get ready, and whether its result is in.
+class _AdvisedTests extends StatelessWidget {
+  final List<Map<String, dynamic>> items;
+  final ValueChanged<Map<String, dynamic>> onUpload;
+  final ValueChanged<Map<String, dynamic>> onResult;
+  const _AdvisedTests({required this.items, required this.onUpload, required this.onResult});
+
+  @override
+  Widget build(BuildContext context) {
+    final todo = items.where((t) => t.str('status') != 'done').length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            children: [
+              Expanded(child: Text('TESTS YOUR DOCTOR ASKED FOR', style: tx(12, w: w700, c: MP.ink3, em: 0.06))),
+              Text(todo == 0 ? 'All done' : '$todo to do', style: tx(12, w: w700, c: todo == 0 ? MP.green : MP.amber)),
+            ],
+          ),
+        ),
+        const Gap(8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: MPDeco.card(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [for (var i = 0; i < items.length; i++) _advised(items[i], first: i == 0)],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _advised(Map<String, dynamic> t, {required bool first}) {
+    final done = t.str('status') == 'done';
+    final asked = F.date(t['askedAt']);
+    final bringBy = F.date(t['bringBy']);
+    final resultAt = F.date(t.obj('result')['date']);
+    final meta = [
+      if (t.str('doctorName').isNotEmpty) p2ShortName(t.str('doctorName')),
+      if (asked != null) 'asked ${F.dayMonth(asked)}',
+      if (done && resultAt != null) 'result ${F.dayMonth(resultAt)}' else if (bringBy != null) 'bring by ${F.dayMonth(bringBy)}',
+    ].join(' · ');
+    final tone = done ? _ok : _high;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: first ? null : const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: Text(t.str('name'), style: tx(17, w: w700))),
+              const Gap(8),
+              P2Pill(done ? (t.obj('result').str('flagLabel').isEmpty ? 'Uploaded' : t.obj('result').str('flagLabel')) : 'To do', bg: tone.$1, fg: tone.$2),
+            ],
+          ),
+          if (meta.isNotEmpty) ...[const Gap(2), Text(meta, style: tx(13, c: MP.ink2))],
+          if (t.str('checks').isNotEmpty || t.str('forWhat').isNotEmpty) ...[
+            const Gap(8),
+            Text(
+              [if (t.str('checks').isNotEmpty) t.str('checks'), if (t.str('forWhat').isNotEmpty) 'for ${t.str('forWhat')}'].join(' — '),
+              style: tx(14, h: 1.5),
+            ),
+          ],
+          if (!done && t.str('prep').isNotEmpty) ...[
+            const Gap(8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(padding: EdgeInsets.only(top: 3), child: Ico(I.clock, size: 16, color: MP.primary, stroke: 2)),
+                const Gap(8),
+                Expanded(child: Text(t.str('prep'), style: tx(14, h: 1.5, c: MP.ink2))),
+              ],
+            ),
+          ],
+          const Gap(12),
+          P2Box(
+            onTap: () => done ? onResult(t) : onUpload(t),
+            label: done ? 'View ${t.str('name')} result' : 'Upload ${t.str('name')} result',
+            height: 44,
+            radius: 12,
+            color: done ? MP.white : MP.primarySoft,
+            border: done ? MP.lineStrong : null,
+            alignment: Alignment.center,
+            child: Text(done ? 'View result' : 'Upload result', style: tx(14, w: w700, c: MP.primary)),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _MonthSection extends StatelessWidget {
