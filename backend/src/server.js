@@ -10,6 +10,9 @@ async function start() {
   const app = createApp();
   const server = app.listen(env.port, () => {
     console.log(`MedPin API on http://localhost:${env.port}  (db ${env.mongo.dbName}, ${env.nodeEnv})`);
+    // Push notifications: on, or exactly what's missing (names only, never values).
+    const push = require('./services/push').fcmStatus();
+    console.log(push.on ? `[push] FCM on (project ${push.projectId})` : `[push] FCM off — ${push.problems.join('; ')}`);
   });
   // Reminders and summaries (JOBS=off to run an API-only process).
   const jobs = require('./services/jobs');

@@ -2,3 +2,7 @@ node_modules/
 .env
 *.log
 uploads/
+
+# Firebase service-account keys (FCM_SERVICE_ACCOUNT_FILE)
+*firebase-adminsdk*.json
+service-account*.json

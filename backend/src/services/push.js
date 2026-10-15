@@ -2,6 +2,24 @@
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 
+/**
+ * Is push sending set up? { on, problems[] } — names of what's missing or
+ * malformed, never the values. Logged once at startup (server.js) and by
+ * `npm run check:push`.
+ */
+function fcmStatus() {
+  const f = env.fcm || {};
+  const problems = [];
+  if (f.fileError) problems.push(f.fileError);
+  if (!f.projectId) problems.push('FCM_PROJECT_ID is empty');
+  if (!f.clientEmail) problems.push('FCM_CLIENT_EMAIL is empty');
+  if (!f.privateKey) problems.push('FCM_PRIVATE_KEY is empty');
+  else if (!/-----BEGIN PRIVATE KEY-----[\s\S]+-----END PRIVATE KEY-----/.test(f.privateKey)) {
+    problems.push('FCM_PRIVATE_KEY is cut short — put it on one line in double quotes with \\n for line breaks, or use FCM_SERVICE_ACCOUNT_FILE');
+  }
+  return { on: problems.length === 0, projectId: f.projectId || null, problems };
+}
+
 let fcmToken = { value: null, exp: 0 };
 async function fcmAccessToken() {
   if (fcmToken.value && fcmToken.exp > Date.now() + 60000) return fcmToken.value;
@@ -34,7 +52,7 @@ async function fcmAccessToken() {
  */
 async function sendPush(tokens, { title, body, data, urgent }) {
   if (!tokens.length) return;
-  if (!env.fcm.projectId || !env.fcm.privateKey) {
+  if (!fcmStatus().on) {
     if (title) console.log(`[push:dev] ${tokens.length} device(s): ${title}`);
     return;
   }
@@ -91,4 +109,4 @@ async function sendWhatsApp(phone, text, { template, params } = {}) {
   if (!res.ok) console.warn(`[whatsapp] send failed: ${res.status}`);
 }
 
-module.exports = { sendPush, sendWhatsApp };
+module.exports = { sendPush, sendWhatsApp, fcmStatus, fcmAccessToken };

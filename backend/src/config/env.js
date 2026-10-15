@@ -1,12 +1,48 @@
+const fs = require('fs');
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env'), quiet: true });
+const dotenv = require('dotenv');
+
+const ROOT = path.join(__dirname, '..', '..');
+const ENV_FILE = path.join(ROOT, '.env');
+dotenv.config({ path: ENV_FILE, quiet: true });
+// dotenv never replaces a variable the process already has — even an empty one
+// (pm2 / systemd / a shell that sourced an older .env). An empty value there
+// must not hide the one now in .env, so .env is read again for those.
+const fileValues = (() => {
+  try {
+    return dotenv.parse(fs.readFileSync(ENV_FILE));
+  } catch {
+    return {};
+  }
+})();
 
 // Empty values in .env fall back to local-development defaults, so the
 // backend runs against a local MongoDB before any keys are added.
 const v = (key, fallback = '') => {
-  const value = process.env[key];
+  let value = process.env[key];
+  if (value === '' && fileValues[key]) value = fileValues[key];
   return value === undefined || value === '' ? fallback : value;
 };
+
+/**
+ * Push (FCM) credentials: FCM_PROJECT_ID / FCM_CLIENT_EMAIL / FCM_PRIVATE_KEY,
+ * or FCM_SERVICE_ACCOUNT_FILE — the path (from the backend folder) of the
+ * service-account JSON from Firebase, which fills any of the three left unset.
+ */
+function fcmConfig() {
+  const out = { projectId: v('FCM_PROJECT_ID'), clientEmail: v('FCM_CLIENT_EMAIL'), privateKey: v('FCM_PRIVATE_KEY').replace(/\\n/g, '\n'), file: v('FCM_SERVICE_ACCOUNT_FILE') };
+  if (out.file) {
+    try {
+      const sa = JSON.parse(fs.readFileSync(path.resolve(ROOT, out.file), 'utf8'));
+      out.projectId ||= sa.project_id || '';
+      out.clientEmail ||= sa.client_email || '';
+      out.privateKey ||= sa.private_key || '';
+    } catch (err) {
+      out.fileError = err.code === 'ENOENT' ? 'FCM_SERVICE_ACCOUNT_FILE not found' : 'FCM_SERVICE_ACCOUNT_FILE is not a valid service-account JSON';
+    }
+  }
+  return out;
+}
 
 // Fail closed: anything other than an explicit development/test setting is production.
 const nodeEnv = v('NODE_ENV', 'production');
@@ -61,11 +97,7 @@ const env = {
     templates: (() => { try { return JSON.parse(v('WHATSAPP_TEMPLATES', '{}')); } catch { return {}; } })(),
     templateLanguage: v('WHATSAPP_TEMPLATE_LANG', 'en'),
   },
-  fcm: {
-    projectId: v('FCM_PROJECT_ID'),
-    clientEmail: v('FCM_CLIENT_EMAIL'),
-    privateKey: v('FCM_PRIVATE_KEY').replace(/\\n/g, '\n'),
-  },
+  fcm: fcmConfig(),
   smtp: {
     host: v('SMTP_HOST'),
     port: Number(v('SMTP_PORT', '587')),
