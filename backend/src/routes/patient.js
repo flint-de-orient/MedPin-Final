@@ -50,7 +50,23 @@ const meView = (p, user) => ({
   appLock: user.appLock,
 });
 
-r.get('/me', async (req, res) => res.json(meView(req.patient, req.user)));
+r.get('/me', async (req, res) => {
+  const p = req.patient;
+  // Height / weight not on the profile yet: the newest reading fills them in.
+  if (p.weightKg == null || p.heightCm == null) {
+    const [w, h] = await Promise.all([
+      p.weightKg == null ? M.Vitals.findOne({ patientId: p._id, weightKg: { $ne: null } }).sort({ recordedAt: -1 }) : null,
+      p.heightCm == null ? M.Vitals.findOne({ patientId: p._id, heightCm: { $ne: null } }).sort({ recordedAt: -1 }) : null,
+    ]);
+    if (w || h) {
+      if (w) p.weightKg = w.weightKg;
+      if (h) p.heightCm = h.heightCm;
+      p.bodyMeasuredAt = p.bodyMeasuredAt || (w || h).recordedAt;
+      await p.save();
+    }
+  }
+  res.json(meView(p, req.user));
+});
 
 r.patch('/me', async (req, res) => {
   const p = req.patient;
@@ -59,6 +75,8 @@ r.patch('/me', async (req, res) => {
   if (body.heightCm != null) body.heightCm = Math.min(250, Math.max(50, Number(body.heightCm)));
   if (body.weightKg != null) body.weightKg = Math.min(400, Math.max(2, Number(body.weightKg)));
   if (body.ageYears != null) p.ageRecordedAt = new Date();
+  // A new weight / height from the profile is also a reading (Home → What you track shows it).
+  const bodyChanged = (body.weightKg != null && body.weightKg !== p.weightKg) || (body.heightCm != null && body.heightCm !== p.heightCm);
   if (body.emergencyContact && !body.emergencyContact.name) body.emergencyContact = { name: undefined, phone: undefined };
   Object.assign(p, body);
   // Daily goals the patient sets (Daily log → Goals).
@@ -94,7 +112,14 @@ r.patch('/me', async (req, res) => {
   if (req.body.allergies) p.allergies = req.body.allergies.map((a) => (typeof a === 'string' ? { allergen: a } : a));
   const here = require('../lib/geo').pointFrom(req.body.lat, req.body.lng);
   if (here) p.geo = here;
+  if (bodyChanged) p.bodyMeasuredAt = new Date();
   await p.save();
+  if (bodyChanged) {
+    await M.Vitals.create({
+      patientId: p._id, recordedBy: req.user._id, recordedByRole: 'patient', source: 'home', recordedAt: p.bodyMeasuredAt,
+      ...(body.weightKg != null ? { weightKg: body.weightKg } : {}), ...(body.heightCm != null ? { heightCm: body.heightCm } : {}),
+    });
+  }
   const userBody = pick(req.body, ['language', 'appLock']);
   if (Object.keys(userBody).length || body.name) {
     Object.assign(req.user, userBody, body.name ? { name: body.name } : {});
@@ -434,7 +459,9 @@ r.get('/doctors/:doctorId', async (req, res) => {
     care.adherence(req.patient, 30),
     access?.practiceId ? M.Conversation.findOne({ patientId: req.patient._id, practiceId: access.practiceId, type: 'care' }) : null,
   ]);
-  const fromDoctor = convo ? await M.Message.findOne({ conversationId: convo._id, senderId: prof.userId, deletedForEveryoneAt: null }).sort({ createdAt: -1 }) : null;
+  const fromDoctor = convo ? await M.Message.findOne({ conversationId: convo._id, senderId: prof.userId, deletedForEveryoneAt: null, hiddenFor: { $ne: req.user._id } }).sort({ createdAt: -1 }) : null;
+  // The chat's newest message still there (deleted ones and ones hidden for me skipped), from either side.
+  const latestMsg = convo ? await M.Message.findOne({ conversationId: convo._id, deletedForEveryoneAt: null, hiddenFor: { $ne: req.user._id }, senderType: { $ne: 'system' } }).sort({ createdAt: -1 }).populate('senderId', 'name') : null;
   const rxFiles = new Map((await M.Prescription.find({ _id: { $in: records.map((x) => x.prescriptionId).filter(Boolean) } }, 'file')).map((x) => [String(x._id), x.file?.key]));
   const lastFileUrl = (x) => storage.signedUrl(x.files?.[0]?.key || rxFiles.get(String(x.prescriptionId)));
   res.json({
@@ -460,7 +487,57 @@ r.get('/doctors/:doctorId', async (req, res) => {
       id: convo._id,
       unread: convo.participants.find((p) => String(p.userId) === String(req.user._id))?.unreadCount || 0,
       latestFromDoctor: fromDoctor && { text: fromDoctor.text, kind: fromDoctor.kind, at: fromDoctor.createdAt },
+      latest: latestMsg && {
+        text: latestMsg.text, kind: latestMsg.kind, at: latestMsg.createdAt,
+        from: String(latestMsg.senderId?._id || latestMsg.senderId) === String(req.user._id) ? 'you' : latestMsg.senderType === 'ai' ? 'ai' : String(latestMsg.senderId?._id) === String(prof.userId) ? 'doctor' : 'clinic',
+        name: latestMsg.senderId?.name || null,
+      },
     },
+  });
+});
+
+// Booking sheet (Find doctor → Request visit): where the doctor sees patients,
+// the coming days at the chosen place with how many times are free on each, and
+// the free times of the chosen day. ?locationId= &date=YYYY-MM-DD (both optional).
+r.get('/doctors/:doctorId/booking', async (req, res) => {
+  if (!isId(req.params.doctorId)) throw notFound('Doctor');
+  const dls = await M.DoctorLocation.find({ doctorId: req.params.doctorId, status: 'active' }).populate('locationId', 'name shortName address area geo status');
+  const origin = originOf(req);
+  const mine = await M.CareTeamAccess.exists({ patientId: req.patient._id, userId: req.params.doctorId, accessLevel: { $ne: 'not_shared' } });
+  const places = [];
+  for (const dl of dls) {
+    if (!dl.locationId || dl.locationId.status === 'inactive') continue;
+    const { fee } = await S.feeFor(dl, { visitType: mine ? 'follow_up' : 'new', mode: 'in_clinic', patientId: req.patient._id });
+    places.push({
+      dl, locationId: String(dl.locationId._id), name: dl.locationId.name, area: dl.locationId.area || null, address: dl.locationId.address || null,
+      km: haversineKm(origin, dl.locationId.geo?.coordinates), fee, online: dl.schedule?.onlineBooking !== false,
+      // Today plus the doctor's booking window (as visit-requests allows).
+      windowDays: Math.min(dl.schedule?.bookingWindowDays || 7, 30) + 1,
+    });
+  }
+  if (!places.length) throw notFound('Doctor');
+  // The asked place; else the nearest that takes online bookings.
+  const byKm = [...places].sort((a, b) => (a.km ?? 1e9) - (b.km ?? 1e9));
+  const place = places.find((p) => p.locationId === String(req.query.locationId)) || byKm.find((p) => p.online) || byKm[0];
+  const today = T.dayStart();
+  const days = [];
+  if (place.online) {
+    for (let i = 0; i < place.windowDays; i += 1) {
+      const day = T.addDays(today, i);
+      const out = await S.slotsFor({ doctorId: req.params.doctorId, locationId: place.locationId, day });
+      const free = out.slots.filter((s) => s.available && !s.walkIn);
+      days.push({ date: T.dayKey(day), free: free.length, reason: out.open ? (free.length ? null : 'full') : out.reason, slots: free.map((s) => ({ startAt: s.startAt, time: s.time })) });
+    }
+  }
+  // The asked day; else the first with a free time.
+  const day = days.find((d) => d.date === req.query.date) || days.find((d) => d.free > 0) || days[0] || null;
+  res.json({
+    places: places.map(({ dl, ...p }) => p),
+    locationId: place.locationId,
+    online: place.online,
+    days: days.map(({ slots, ...d }) => d),
+    date: day?.date || null,
+    slots: day?.slots || [],
   });
 });
 

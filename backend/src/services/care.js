@@ -1,7 +1,7 @@
 // Alerts, care conversations and medicine adherence.
 const M = require('../models');
 const T = require('../lib/time');
-const { notify, practiceStaff, clinicians } = require('./notify');
+const { notify, practiceStaff, clinicians, signal } = require('./notify');
 
 // ── Alerts ────────────────────────────────────────────────
 
@@ -83,16 +83,36 @@ function shortName(name) {
 }
 
 /** Saves a message, updates the thread preview and unread counts, and notifies. */
+/** The thread's preview line ("Dr. Sen: hello") for a message. */
+function previewOf(msg, senderName) {
+  return {
+    text: msg.text || (msg.kind === 'voice' ? 'Voice message' : msg.kind === 'record' ? 'Shared a record' : 'Attachment'),
+    senderType: msg.senderType,
+    senderId: msg.senderId?._id || msg.senderId,
+    senderLabel: SENDER_LABEL[msg.senderType] || shortName(senderName) || 'Clinic',
+    at: msg.createdAt,
+  };
+}
+
+/**
+ * After a message is deleted for everyone: the thread's preview becomes the
+ * newest message still there, and people who hadn't read it lose its unread
+ * count. Everyone in the thread is told, so open chats update at once.
+ */
+async function messageDeleted(convo, msg) {
+  const latest = await M.Message.findOne({ conversationId: convo._id, deletedForEveryoneAt: null }).sort({ createdAt: -1 }).populate('senderId', 'name');
+  convo.lastMessage = latest ? previewOf(latest, latest.senderId?.name) : undefined;
+  for (const p of convo.participants) {
+    if (String(p.userId) !== String(msg.senderId) && p.unreadCount > 0 && (!p.lastReadAt || p.lastReadAt < msg.createdAt)) p.unreadCount -= 1;
+  }
+  await convo.save();
+  await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
+}
+
 async function postMessage(convo, { sender, senderType, text, kind = 'text', ...rest }) {
   const msg = await M.Message.create({ conversationId: convo._id, senderId: sender?._id, senderType, text, kind, ...rest });
   const senderId = sender ? String(sender._id) : null;
-  convo.lastMessage = {
-    text: text || (kind === 'voice' ? 'Voice message' : kind === 'record' ? 'Shared a record' : 'Attachment'),
-    senderType,
-    senderId: sender?._id,
-    senderLabel: SENDER_LABEL[senderType] || shortName(sender?.name) || 'Clinic',
-    at: msg.createdAt,
-  };
+  convo.lastMessage = previewOf(msg, sender?.name);
   for (const p of convo.participants) {
     if (String(p.userId) !== senderId) p.unreadCount = (p.unreadCount || 0) + 1;
   }
@@ -124,6 +144,9 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', ...
   if (toPatient.length) {
     await notify(toPatient, { ...base, title: `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-DoctorChat', params: { conversationId: convo._id } });
   }
+  // Everyone else in the thread (staff who weren't notified, the sender's other phone): refresh now.
+  const told = new Set([...toPatient, ...toStaff].map(String));
+  await signal(convo.participants.map((p) => p.userId).filter((id) => !told.has(String(id))), { type: 'chat_changed', conversationId: convo._id });
   if (senderType === 'patient') await awayReply(convo).catch(() => {});
   return msg;
 }
@@ -283,4 +306,4 @@ async function adherence(patient, days = 30, acc) {
   };
 }
 
-module.exports = { doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, markRead, ensureDoses, adherence, effectiveStatus };
+module.exports = { doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };

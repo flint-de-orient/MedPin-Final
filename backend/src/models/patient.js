@@ -42,6 +42,8 @@ const patientSchema = new Schema(
     bloodGroup: enumOf(E.BLOOD_GROUPS),
     heightCm: { type: Number, min: 50, max: 250 },
     weightKg: { type: Number, min: 2, max: 400 },
+    // When height / weight were last measured (a reading or the patient's edit): newer wins.
+    bodyMeasuredAt: Date,
     conditions: [conditionSchema],
     allergies: [allergySchema],
     emergencyContact: { name: String, phone: phone() },

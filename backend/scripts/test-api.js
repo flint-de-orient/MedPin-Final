@@ -17,6 +17,9 @@ env.ai.provider = 'off';
 Object.assign(env.razorpay, { keyId: undefined, keySecret: undefined, webhookSecret: undefined, payoutAccountNumber: undefined });
 // Never send real email from tests.
 env.smtp.host = undefined;
+// Never push to real phones from tests.
+env.fcm.projectId = '';
+env.fcm.privateKey = '';
 // The area name for "near …" answers from a fixed table, never the internet.
 require('../src/services/places').reverse = async (lat) => (lat > 22.6 ? { area: 'New Town', city: 'Kolkata' } : { area: 'Salt Lake', city: 'Kolkata' });
 // IFSC lookups answer from a fixed table, never the internet.
@@ -422,6 +425,16 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const me = ok(await ctx.pat('GET', '/api/patient/me'));
     assert.equal(me.bmi, 27.4);
     ok(await ctx.pat('PATCH', '/api/patient/me', { bloodGroup: 'B+', emergencyContact: { name: 'Rohit Sharma', phone: '9830012345' }, language: 'hi' }));
+    // Weight from the profile becomes a reading; a newer reading updates the profile.
+    ok(await ctx.pat('PATCH', '/api/patient/me', { weightKg: 71 }));
+    const pid = (await M.Patient.findOne({ userId: (await M.User.findOne({ phone: ctx.patientPhone || { $exists: true }, name: { $exists: true } }))?._id }))?._id;
+    const meNow = ok(await ctx.pat('GET', '/api/patient/me'));
+    assert.equal(meNow.weightKg ?? meNow.patient?.weightKg, 71);
+    const patientId = meNow.id || meNow._id || meNow.patient?.id || pid;
+    assert.ok(await M.Vitals.exists({ patientId, weightKg: 71 }), 'the profile weight is a reading too');
+    await M.Vitals.create({ patientId, weightKg: 70.5, recordedAt: new Date(Date.now() + 1000), source: 'clinic' });
+    const meAfter = ok(await ctx.pat('GET', '/api/patient/me'));
+    assert.equal(meAfter.weightKg ?? meAfter.patient?.weightKg, 70.5, 'a newer reading updates the profile');
     assert.equal((await ctx.pat('GET', '/api/practice')).status, 403, 'patients cannot use staff endpoints');
   });
 
@@ -546,6 +559,18 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await ctx.desk('POST', `/api/conversations/${ctx.convoId}/read`));
     const reply = ok(await ctx.doc('POST', `/api/conversations/${ctx.convoId}/messages`, { text: 'After food, please.' }), 201);
     ok(await ctx.doc('POST', `/api/conversations/${ctx.convoId}/pin`, { messageId: reply.message.id }));
+    // Quick replies follow the latest message: a sugar question gets a sugar answer.
+    const ask = ok(await ctx.doc('POST', `/api/conversations/${ctx.convoId}/messages`, { text: 'Can you share your fasting sugar today?' }), 201);
+    const seenByPatient = ok(await ctx.pat('GET', `/api/conversations/${ctx.convoId}/messages`));
+    assert.ok(seenByPatient.suggestions.length >= 1 && seenByPatient.suggestions.length <= 3);
+    assert.ok(/sugar/i.test(seenByPatient.suggestions[0].label), 'the first quick reply answers the question');
+    assert.equal(ok(await ctx.doc('GET', `/api/conversations/${ctx.convoId}/messages`)).suggestions, undefined, 'only the patient gets quick replies');
+    // Deleting it: the doctor's card and the thread preview go back to the message before.
+    ok(await ctx.doc('DELETE', `/api/conversations/${ctx.convoId}/messages/${ask.message.id}`));
+    const card = ok(await ctx.pat('GET', `/api/patient/doctors/${ctx.doctorUserId}`)).conversation;
+    assert.equal(card.latest.text, 'After food, please.');
+    assert.equal(card.latest.from, 'doctor');
+    assert.equal((await M.Conversation.findById(ctx.convoId)).lastMessage.text, 'After food, please.');
     const urgent = ok(await ctx.pat('POST', '/api/patient/urgent', { doctorId: ctx.doctorUserId, text: 'Chest tightness, hard to breathe.' }), 201);
     assert.equal(urgent.call, '108');
     const em = ok(await ctx.doc('GET', '/api/alerts?severity=emergency'));
@@ -571,6 +596,16 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(farDetail.km, far.items[0].km, 'detail measures from the same place');
     const detail = ok(await ctx.pat('GET', `/api/patient/doctors/${ctx.doctorUserId}`));
     assert.ok(detail.lastVisit);
+    // Booking sheet: places, days with free times, and the chosen day's times.
+    const book = ok(await ctx.pat('GET', `/api/patient/doctors/${ctx.doctorUserId}/booking`));
+    assert.ok(book.places.length >= 1 && book.locationId);
+    assert.ok(book.days.length >= 2, 'today plus the booking window');
+    const freeDay = book.days.find((d) => d.free > 0);
+    if (freeDay) {
+      const day = ok(await ctx.pat('GET', `/api/patient/doctors/${ctx.doctorUserId}/booking?locationId=${book.locationId}&date=${freeDay.date}`));
+      assert.equal(day.date, freeDay.date);
+      assert.equal(day.slots.length, freeDay.free, 'the day lists its free times');
+    }
     const req = ok(await ctx.pat('POST', '/api/patient/visit-requests', { doctorId: ctx.doctorUserId, visitType: 'follow_up', preferredTime: 'Thu or Fri, after 5 PM' }), 201);
     const pending = ok(await ctx.desk('GET', '/api/appointment-requests'));
     assert.ok(pending.some((x) => x.id === req.request.id));

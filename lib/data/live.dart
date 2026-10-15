@@ -67,6 +67,8 @@ mixin LiveData<W extends StatefulWidget> on State<W> {
   Timer? _changeDebounce;
   /// Set for a few seconds after each load (no second load straight after).
   Timer? _justLoaded;
+  /// A change came in during that guard: load once it ends (a new chat message isn't lost).
+  bool _changeWaiting = false;
   _LiveWatch? _watch;
   bool _subscribed = false;
 
@@ -82,8 +84,11 @@ mixin LiveData<W extends StatefulWidget> on State<W> {
   void _quiet({bool onlyInFront = true}) {
     if (!mounted || !isLive || loading) return;
     if (onlyInFront && !_inFront) return;
-    // Not again within a few seconds of the last load.
-    if (_justLoaded?.isActive ?? false) return;
+    // Not again within a few seconds of the last load (a change is kept for when it ends).
+    if (_justLoaded?.isActive ?? false) {
+      if (!onlyInFront) _changeWaiting = true;
+      return;
+    }
     reload(quiet: true);
   }
 
@@ -144,7 +149,11 @@ mixin LiveData<W extends StatefulWidget> on State<W> {
       final res = await fetch();
       if (!mounted) return;
       _justLoaded?.cancel();
-      _justLoaded = Timer(const Duration(seconds: 3), () {});
+      _justLoaded = Timer(const Duration(seconds: 3), () {
+        if (!_changeWaiting) return;
+        _changeWaiting = false;
+        _quiet(onlyInFront: false);
+      });
       setState(() {
         data = res is Map ? res.cast<String, dynamic>() : {'items': res};
         loadedAt = DateTime.now();

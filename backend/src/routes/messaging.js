@@ -6,7 +6,8 @@ const T = require('../lib/time');
 const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
 const { badRequest, notFound, forbidden, conflict, escapeRegex, paging, isId } = require('../lib/http');
 const storage = require('../services/storage');
-const { careConversation, ensureParticipant, postMessage, markRead } = require('../services/care');
+const { careConversation, ensureParticipant, postMessage, messageDeleted, markRead } = require('../services/care');
+const { patientSuggestions } = require('../services/chatsuggest');
 const assistant = require('../services/assistant');
 
 const { uploader } = require('../lib/uploads');
@@ -65,6 +66,10 @@ threads.get('/:id/messages', async (req, res) => {
   const patient = convo.patientId ? await M.Patient.findById(convo.patientId, 'name userId') : null;
   const lastSeen = patient?.userId ? convo.participants.find((p) => String(p.userId) === String(patient.userId))?.lastReadAt : null;
   const patientIsOnlyPatient = Boolean(patient?.userId) && !(convo.practiceId && (await M.Member.exists({ userId: patient.userId, practiceId: convo.practiceId, status: 'active' })));
+  // The thread's own patient gets quick replies picked from the latest message and their day.
+  const suggestions = patient?.userId && String(patient.userId) === String(req.user._id) && !req.query.before
+    ? await patientSuggestions(convo, msgs).catch(() => [])
+    : undefined;
   const nextVisit = convo.patientId ? await M.Appointment.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting'] } }).sort({ startAt: 1 }) : null;
   // Shared records show as cards ("HbA1c · 7.4%, shared report · 30 Sep").
   const recIds = msgs.filter((m) => m.recordId).map((m) => m.recordId);
@@ -81,6 +86,7 @@ threads.get('/:id/messages', async (req, res) => {
       nextVisit: nextVisit && { startAt: nextVisit.startAt, token: String(nextVisit.tokenNo).padStart(2, '0') },
     },
     pinned: pinned && !pinned.deletedForEveryoneAt ? messageView(pinned, req.user._id) : null,
+    suggestions,
     items: msgs.map((m) => {
       const v = { ...messageView(m, req.user._id), record: recordOf(m) };
       // Older messages the thread's patient sent while listed with another role: shown as theirs.
@@ -176,6 +182,7 @@ threads.delete('/:id/messages/:messageId', async (req, res) => {
   if (String(msg.senderId) !== String(req.user._id)) throw forbidden('You can only delete your own messages');
   msg.deletedForEveryoneAt = new Date();
   await msg.save();
+  await messageDeleted(convo, msg);
   res.json({ ok: true });
 });
 

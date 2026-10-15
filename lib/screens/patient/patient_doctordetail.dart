@@ -293,7 +293,7 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
                 gap: 16,
                 children: [
                   if (data == null || _next != null) _nextVisit(),
-                  if (data == null || _convo.obj('latestFromDoctor').isNotEmpty) _latestMessage(),
+                  if (data == null || _latest.isNotEmpty) _latestMessage(),
                   if (data == null || _d.list('medicines').isNotEmpty || _advice.isNotEmpty) _yourPlan(),
                   if (data == null || _last != null) _lastVisit(),
                   if (data == null || _d.list('records').isNotEmpty) _documents(),
@@ -550,8 +550,18 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
     ),
   ));
 
+  /// The chat's newest message still there (from either side); older servers send only the doctor's.
+  Map<String, dynamic> get _latest => _convo.obj('latest').isNotEmpty ? _convo.obj('latest') : _convo.obj('latestFromDoctor');
+
+  String get _latestFrom => switch (_latest.str('from', 'doctor')) {
+        'you' => 'You',
+        'ai' => 'MedPin AI',
+        'clinic' => _latest.str('name').isEmpty ? 'Clinic' : p2ShortName(_latest.str('name')),
+        _ => _short,
+      };
+
   Widget _latestMessage() {
-    final m = _convo.obj('latestFromDoctor');
+    final m = _latest;
     final at = F.date(m['at']);
     final time = data == null ? '9:14 AM' : (at == null ? '' : F.askedAt(at));
     final text = data == null
@@ -587,13 +597,13 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
             TextSpan(
               style: tx(15, h: 1.5),
               children: [
-                TextSpan(text: '$_short:', style: tx(15, w: w700, h: 1.5)),
+                TextSpan(text: '${data == null ? _short : _latestFrom}:', style: tx(15, w: w700, h: 1.5)),
                 TextSpan(text: text),
               ],
             ),
           ),
           const Gap(8),
-          Text('Reply', style: tx(14, w: w700, c: MP.primary)),
+          Text(_latest.str('from') == 'you' ? 'Open chat' : 'Reply', style: tx(14, w: w700, c: MP.primary)),
         ],
       ),
     );

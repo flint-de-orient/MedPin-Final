@@ -28,10 +28,14 @@ async function fcmAccessToken() {
   return fcmToken.value;
 }
 
+/**
+ * A notification (title + body), or — without a title — a silent data message
+ * the app handles itself (e.g. "chat changed": an open chat refreshes at once).
+ */
 async function sendPush(tokens, { title, body, data, urgent }) {
   if (!tokens.length) return;
   if (!env.fcm.projectId || !env.fcm.privateKey) {
-    console.log(`[push:dev] ${tokens.length} device(s): ${title}`);
+    if (title) console.log(`[push:dev] ${tokens.length} device(s): ${title}`);
     return;
   }
   const access = await fcmAccessToken();
@@ -41,11 +45,13 @@ async function sendPush(tokens, { title, body, data, urgent }) {
         method: 'POST',
         headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
         body: JSON.stringify({
-          message: {
-            token, notification: { title, body }, data: data || {},
-            android: { priority: 'high', notification: { channel_id: urgent ? 'medpin_urgent' : 'medpin_general', sound: 'default' } },
-            apns: { payload: { aps: { sound: 'default' } } },
-          },
+          message: title
+            ? {
+              token, notification: { title, body }, data: data || {},
+              android: { priority: 'high', notification: { channel_id: urgent ? 'medpin_urgent' : 'medpin_general', sound: 'default' } },
+              apns: { payload: { aps: { sound: 'default' } } },
+            }
+            : { token, data: data || {}, android: { priority: 'high' }, apns: { headers: { 'apns-priority': '5', 'apns-push-type': 'background' }, payload: { aps: { 'content-available': 1 } } } },
         }),
       }).then(async (res) => {
         // A token the phone no longer uses: forget it so it isn't retried forever.

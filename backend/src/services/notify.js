@@ -97,4 +97,19 @@ async function clinicians(practiceId, patientId, { doctorId, roles = ['doctor'] 
   return ids.size ? [...ids] : [...memberIds];
 }
 
-module.exports = { notify, practiceStaff, clinicians };
+/**
+ * Silent "something changed" to these people's phones (no notification shown):
+ * an open chat refreshes at once instead of waiting for its next check.
+ */
+async function signal(userIds, data) {
+  const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
+  if (!ids.length) return;
+  try {
+    const tokens = await M.DeviceToken.find({ userId: { $in: ids } }).distinct('token');
+    await sendPush(tokens, { data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])) });
+  } catch (err) {
+    console.warn('[signal]', err.message);
+  }
+}
+
+module.exports = { notify, practiceStaff, clinicians, signal };

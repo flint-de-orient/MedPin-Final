@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart' hide Text;
 
+import '../../data/push.dart';
 import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
@@ -45,6 +46,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
   final _keys = <String, GlobalKey>{};
   bool _showReplies = true;
   String? _convId;
+  String? _readUpTo;
 
   // Sent instantly: the message shows at once ("Sending…"), the server
   // confirms it, and MedPin AI's reply arrives a moment later while
@@ -58,10 +60,12 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
   Map<String, dynamic> _doctor = const {};
 
   @override
-  Duration? get refreshEvery => const Duration(seconds: 20);
+  // New messages also arrive at once by a silent push (Push → LiveBus); this is the backup.
+  Duration? get refreshEvery => const Duration(seconds: 4);
 
   @override
   void dispose() {
+    if (Push.I.openChat == _convId) Push.I.openChat = null;
     _aiWait?.cancel();
     _scroll.dispose();
     _text.dispose();
@@ -93,8 +97,15 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       final c = await Api.I.post('/api/patient/conversations', {'doctorId': id}) as Map;
       _convId = '${c['id'] ?? c['_id']}';
     }
+    Push.I.openChat = _convId;
     final res = (await Api.I.get('/api/conversations/$_convId/messages') as Map).cast<String, dynamic>();
-    Api.I.post('/api/conversations/$_convId/read', const {}).catchError((_) => null);
+    // Read receipt only when something new came in (not on every check).
+    final items = res['items'] is List ? res['items'] as List : const [];
+    final newest = items.isEmpty ? null : '${(items.last as Map)['id'] ?? (items.last as Map)['_id']}';
+    if (newest != _readUpTo) {
+      _readUpTo = newest;
+      Api.I.post('/api/conversations/$_convId/read', const {}).catchError((_) => null);
+    }
     return res;
   }
 
@@ -295,17 +306,24 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       out.add(const Align(alignment: Alignment.centerLeft, child: _Typing()));
       out.add(_meta('MedPin AI is typing…'));
     }
-    if (_showReplies) {
+    // Quick replies from the server: picked from the latest message and today's readings,
+    // doses and visit (none while we're waiting on the clinic). Older servers: the fixed ones.
+    final live = data!['suggestions'];
+    final replies = live is List
+        ? [for (final s in live) if (s is Map) (label: '${s['label'] ?? ''}', text: '${s['text'] ?? s['label'] ?? ''}')]
+        : [if (_showReplies) for (final r in _replies) (label: r, text: r)];
+    if (replies.isNotEmpty && _outbox.isEmpty && !_aiTyping) {
       out.add(Padding(
         padding: const EdgeInsets.only(top: 8),
-        child: Wrap(spacing: 8, runSpacing: 8, children: [for (final r in _replies) _reply(r)]),
+        child: Wrap(spacing: 8, runSpacing: 8, children: [for (final r in replies) _reply(r.label, send: r.text)]),
       ));
     }
     return out;
   }
 
-  Widget _reply(String r) => P2Box(
-    onTap: () => _send(r),
+  Widget _reply(String r, {String? send}) => P2Box(
+    onTap: () => _send(send ?? r),
+    label: send == null || send == r ? null : 'Send: $send',
     height: 40,
     radius: 999,
     padding: const EdgeInsets.symmetric(horizontal: 14),

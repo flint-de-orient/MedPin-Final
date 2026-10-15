@@ -1522,6 +1522,17 @@ class _DoctorSheetState extends State<_DoctorSheet> {
   bool _loadingSlots = false;
   final _busy = ValueNotifier(false);
 
+  /// Live (GET /doctors/:id/booking): where the doctor sees patients, the coming
+  /// days there with how many times are free, and the chosen day's free times.
+  List<Map<String, dynamic>> _places = const [];
+  List<Map<String, dynamic>> _days = const [];
+  String? _locId;
+  String? _date;
+  bool _online = true;
+  bool _loadingTimes = false;
+
+  Map<String, dynamic> get _place => _places.firstWhere((p) => p.str('locationId') == _locId, orElse: () => const {});
+
   static List<String> _slotsFor(_Doc d) {
     final first = d.next.replaceAll(' · video', '');
     if (d.today) return [first, 'Tomorrow, 10:30 AM', 'Tomorrow, 6:00 PM'];
@@ -1531,13 +1542,131 @@ class _DoctorSheetState extends State<_DoctorSheet> {
   @override
   void initState() {
     super.initState();
-    if (_live && widget.doc.locationId != null) _loadSlots();
+    if (_live) _load(locationId: widget.doc.locationId);
   }
 
   @override
   void dispose() {
     _busy.dispose();
     super.dispose();
+  }
+
+  /// Loads the places, days and times; [locationId] / [date] pick what to show.
+  Future<void> _load({String? locationId, String? date}) async {
+    setState(() => date == null ? _loadingSlots = true : _loadingTimes = true);
+    final here = await Where.here(ask: false).timeout(const Duration(seconds: 2), onTimeout: () => null);
+    try {
+      final res = (await Api.I.get('/api/patient/doctors/${widget.doc.id}/booking', query: {
+        if (locationId != null) 'locationId': locationId,
+        if (date != null) 'date': date,
+        if (here != null) 'lat': '${here.lat}',
+        if (here != null) 'lng': '${here.lng}',
+      }) as Map)
+          .cast<String, dynamic>();
+      if (!mounted) return;
+      final labels = <String>[];
+      _startAt.clear();
+      for (final s in res.list('slots')) {
+        final at = F.date(s['startAt']);
+        if (at == null) continue;
+        final label = F.when(at);
+        _startAt[label] = s.str('startAt');
+        labels.add(label);
+      }
+      setState(() {
+        _places = res.list('places');
+        _days = res.list('days');
+        _locId = res.str('locationId');
+        _date = res['date'] as String?;
+        _online = res['online'] != false;
+        _slots = labels;
+        _slot = labels.isEmpty ? null : labels.first;
+        _loadingSlots = false;
+        _loadingTimes = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingSlots = false;
+        _loadingTimes = false;
+      });
+      // An older server without the booking call: the next three times, as before.
+      if (e.status == 404 && _places.isEmpty && widget.doc.locationId != null) return _loadSlots();
+      toast(context, e.message);
+    }
+  }
+
+  static const _wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  Widget _dayTile(Map<String, dynamic> d) {
+    final at = DateTime.tryParse(d.str('date'));
+    if (at == null) return const SizedBox.shrink();
+    final now = DateTime.now();
+    final free = d.numOr('free').toInt();
+    final on = d.str('date') == _date;
+    final top = F.sameDay(at, now) ? 'Today' : F.sameDay(at, now.add(const Duration(days: 1))) ? 'Tmrw' : _wd[at.weekday - 1];
+    final sub = free > 0 ? '$free free' : d.str('reason') == 'full' ? 'Full' : 'Closed';
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Opacity(
+        opacity: free > 0 ? 1 : 0.5,
+        child: P2Box(
+          onTap: free > 0 && !on ? () => _load(locationId: _locId, date: d.str('date')) : null,
+          label: '${F.dateLong(at)} · $sub',
+          width: 72,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          radius: 14,
+          color: on ? MP.primarySoft : MP.white,
+          border: on ? MP.primary : MP.lineStrong,
+          borderWidth: on ? 1.5 : 1,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(top, style: tx(12, w: w600, c: on ? MP.primary : MP.ink2)),
+              const Gap(2),
+              Text('${at.day}', style: tx(20, w: w700, c: on ? MP.primary : MP.ink, tab: true)),
+              Text(_monthShort(at), style: tx(11, c: on ? MP.primary : MP.ink3)),
+              const Gap(4),
+              Text(sub, maxLines: 1, overflow: TextOverflow.fade, softWrap: false, style: tx(11, w: w600, c: free > 0 ? MP.green : MP.ink3)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _monthShort(DateTime d) => const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.month - 1];
+
+  /// The chosen day's free times, by part of the day.
+  Widget _times() {
+    if (_loadingTimes) {
+      return const SizedBox(height: 44, child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: MP.primary))));
+    }
+    if (_slots.isEmpty) {
+      return Text('No free times on this day. Pick another day, or send a request and the clinic will suggest a time.', style: tx(14, c: MP.ink2, h: 1.45));
+    }
+    final groups = <String, List<String>>{};
+    for (final s in _slots) {
+      final h = F.date(_startAt[s])?.hour ?? 12;
+      groups.putIfAbsent(h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening', () => []).add(s);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final g in groups.entries) ...[
+          if (groups.length > 1) Padding(padding: const EdgeInsets.only(bottom: 6, top: 4), child: Text(g.key, style: tx(13, c: MP.ink3))),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final s in g.value)
+                MpChip(F.time(F.date(_startAt[s])!), selected: _slot == s, tonal: true, onTap: () => setState(() => _slot = s)),
+            ],
+          ),
+          const Gap(8),
+        ],
+      ],
+    );
   }
 
   Future<void> _loadSlots() async {
@@ -1579,7 +1708,7 @@ class _DoctorSheetState extends State<_DoctorSheet> {
       context,
       () => Api.I.post('/api/patient/visit-requests', {
         'doctorId': d.id,
-        if (d.locationId != null) 'locationId': d.locationId,
+        if ((_locId ?? d.locationId) != null) 'locationId': _locId ?? d.locationId,
         'visitType': d.mine ? 'follow_up' : 'new',
         'mode': 'in_clinic',
         if (slot != null) 'slot': _startAt[slot],
@@ -1659,26 +1788,57 @@ class _DoctorSheetState extends State<_DoctorSheet> {
             decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(16)),
             child: Column(
               children: [
-                MpKV('Clinic', where),
-                if (d.km != null) ...[
+                MpKV('Clinic', _place.isEmpty ? where : [_place.str('name'), _place.str('area')].where((x) => x.isNotEmpty).join(', ')),
+                if ((_place.isEmpty ? d.km : (_place['km'] as num?)?.toDouble()) case final km?) ...[
                   const MpDivider(),
-                  MpKV('Distance', d.km! < 0.05 ? 'Right here' : '${distanceLabel(d.km!)} from you'),
+                  MpKV('Distance', km < 0.05 ? 'Right here' : '${distanceLabel(km)} from you'),
                 ],
                 if (d.langs.isNotEmpty) ...[
                   const MpDivider(),
                   MpKV('Speaks', d.langs.join(', ')),
                 ],
                 const MpDivider(),
-                MpKV('Consult fee', d.feeText),
+                MpKV('Consult fee', _place['fee'] is num ? ((_place['fee'] as num) == 0 ? 'Free' : '₹${(_place['fee'] as num).toInt()}') : d.feeText),
                 const MpDivider(),
                 MpKV('Video visit', d.video ? 'Available' : 'Clinic visits only', vColor: d.video ? MP.green : MP.ink2),
               ],
             ),
           ),
+          if (_places.length > 1) ...[
+            const Gap(18),
+            Text('Where', style: tx(14, w: w600)),
+            const Gap(8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final p in _places)
+                  MpChip(
+                    [p.str('name'), if (p['km'] is num) distanceLabel((p['km'] as num).toDouble())].join(' · '),
+                    selected: p.str('locationId') == _locId,
+                    tonal: true,
+                    onTap: p.str('locationId') == _locId || _loadingSlots ? null : () => _load(locationId: p.str('locationId')),
+                  ),
+              ],
+            ),
+          ],
+          if (_live && _days.isNotEmpty && !_loadingSlots) ...[
+            const Gap(18),
+            Text('Pick a day', style: tx(14, w: w600)),
+            const Gap(8),
+            SizedBox(
+              height: 96,
+              child: ListView(scrollDirection: Axis.horizontal, children: [for (final d in _days) _dayTile(d)]),
+            ),
+          ],
           const Gap(18),
           Text('Pick a time', style: tx(14, w: w600)),
           const Gap(8),
-          if (_loadingSlots)
+          if (_live && !_online && !_loadingSlots)
+            Text('This clinic takes bookings by phone or at the desk. Send a request and they will suggest a time.', style: tx(14, c: MP.ink2, h: 1.45))
+          else if (_live && _days.isNotEmpty && !_loadingSlots)
+            _times()
+          else if (_loadingSlots)
             const SizedBox(
               height: 40,
               child: Align(

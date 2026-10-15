@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' hide Text;
 
+import '../../data/push.dart';
 import '../../data/api.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
@@ -71,7 +72,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
   final _busy = ValueNotifier(false);
 
   @override
-  Duration? get refreshEvery => const Duration(seconds: 12);
+  // New messages also arrive at once by a silent push (Push → LiveBus); this is the backup.
+  Duration? get refreshEvery => const Duration(seconds: 4);
 
   @override
   Future<Object?> fetch() async {
@@ -92,6 +94,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
         _convId = (items.firstWhere((x) => x['isUrgent'] == true, orElse: () => items.first))['id']?.toString();
       }
     }
+    Push.I.openChat = _convId;
     final res = ((await Api.I.get('/api/conversations/$_convId/messages')) as Map).cast<String, dynamic>();
     if (res.obj('conversation')['patient'] == null && _contacts == null) {
       _contacts = ((await Api.I.get('/api/inbox/contacts')) as Map).cast<String, dynamic>();
@@ -506,6 +509,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
 
   @override
   void dispose() {
+    if (Push.I.openChat == _convId) Push.I.openChat = null;
     // Replies that came in while the thread was open are read too.
     if (isLive && _readSent && _convId != null) Api.I.post('/api/conversations/$_convId/read', const {'pauseAi': false}).catchError((_) => null);
     _voice.dispose();

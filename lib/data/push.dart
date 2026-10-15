@@ -23,6 +23,10 @@ class Push {
 
   String? token;
   bool _listening = false;
+
+  /// The chat on screen now (its conversation id): its new messages show in
+  /// the chat itself, so no notification pops up for them.
+  String? openChat;
   Map<String, dynamic>? _pendingTap;
 
   bool get _supported => !kIsWeb && !AppMode.preview && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
@@ -78,8 +82,9 @@ class Push {
     NavCounts.refresh(force: true); // a new chat or alert changes the tab-bar badges
     LiveBus.changed(); // and whatever screen is open may now be out of date
     final n = msg.notification;
-    if (n == null) return;
+    if (n == null) return; // a silent "chat changed": the refresh above is all it needs
     final type = msg.data['type']?.toString() ?? '';
+    if (openChat != null && msg.data['conversationId']?.toString() == openChat) return;
     LocalNotes.I.show(title: n.title ?? 'MedPin', body: n.body, payload: msg.data, isUrgent: type.contains('urgent') || type.contains('emergency'));
   }
 

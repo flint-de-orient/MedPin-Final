@@ -371,7 +371,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
           final value = m == 'blood_pressure'
               ? '${last.numOr('value').round()}/${last.numOr('value2').round()}'
               : last.numOr('value').toStringAsFixed(last.numOr('value') % 1 == 0 ? 0 : 1);
-          final (note, color) = _noteFor(m, last);
+          final (status, color) = _noteFor(m, last);
+          // When it was measured: the time today, else the date.
+          final at = F.date(last['at']);
+          final stamp = at == null ? '' : (F.sameDay(at, DateTime.now()) ? F.time(at) : F.dayMonth(at));
+          final note = [status, stamp].where((s) => s.isNotEmpty).join(' · ');
           return _TrackTile(
             label: label,
             value: value,

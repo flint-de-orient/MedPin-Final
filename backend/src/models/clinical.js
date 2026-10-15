@@ -195,6 +195,22 @@ const vitalsSchema = new Schema(
   baseOptions,
 );
 vitalsSchema.index({ patientId: 1, recordedAt: -1 });
+// A weight / height reading (clinic, home, device) keeps the patient's profile up to
+// date, unless the profile was changed after the reading was taken.
+vitalsSchema.post('save', async function syncBody() {
+  if (this.weightKg == null && this.heightCm == null) return;
+  try {
+    const set = { bodyMeasuredAt: this.recordedAt };
+    if (this.weightKg != null) set.weightKg = this.weightKg;
+    if (this.heightCm != null) set.heightCm = this.heightCm;
+    await model('Patient').updateOne(
+      { _id: this.patientId, $or: [{ bodyMeasuredAt: null }, { bodyMeasuredAt: { $lte: this.recordedAt } }] },
+      { $set: set },
+    );
+  } catch (err) {
+    console.warn('[vitals → profile]', err.message);
+  }
+});
 
 // ── Medicines the patient is taking ───────────────────────
 
