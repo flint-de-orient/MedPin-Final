@@ -1291,9 +1291,78 @@ r.get('/records/:id', async (req, res) => {
  * is marked "New" in their list, and the morning summary counts them) — not a
  * push for every report.
  */
-async function notifyShared(patient, userIds, n, kind) {
+/**
+ * Reports shared with doctors. Like a clinic's results inbox: each doctor sees it in their
+ * notifications and the morning summary (a critical value raises an urgent alert — the only
+ * push). The doctor who asked for the test is told it's theirs ("sent the HbA1c report you
+ * asked for", with its flag); once all they asked for is in, the follow-up shows Reports in
+ * and the front desk is asked to book the report review (reportsComplete).
+ */
+async function notifyShared(patient, userIds, n, kind, records = []) {
   const what = kind === 'prescription' ? 'a prescription' : n === 1 ? 'a report' : `${n} reports`;
-  await notify(userIds, { type: 'record_shared', push: false, title: `${patient.name} shared ${what}`, screen: 'Patient-Profile', params: { patientId: patient._id } });
+  const plain = { type: 'record_shared', push: false, title: `${patient.name} shared ${what}`, screen: 'Patient-Profile', params: { patientId: patient._id } };
+  if (kind !== 'test_result' || !records.length) return notify(userIds, plain);
+  const AT = require('../services/advisedtests');
+  const advised = await AT.advisedTests(patient).catch(() => []);
+  const ids = new Set(records.map((r) => String(r._id)));
+  const flags = records.map((r) => r.flagLabel).filter((f) => f && f !== 'New' && f !== 'Normal');
+  for (const uid of userIds.map(String)) {
+    // Theirs: it counts for a test they asked for — or was uploaded for it and MedPin AI couldn't
+    // read it (the doctor checks it themselves).
+    const mine = advised.filter((x) => String(x.doctorId || '') === uid && (
+      (x.result && ids.has(String(x.result.recordId))) || (x.status === 'unchecked' && x.lastUpload && ids.has(String(x.lastUpload.recordId)))));
+    if (!mine.length) {
+      await notify([uid], plain);
+      continue;
+    }
+    const names = [...new Set(mine.map((x) => x.name))];
+    const label = names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2}` : names.join(' and ');
+    await notify([uid], {
+      ...plain, type: 'report_in',
+      title: `${patient.name} sent the ${label} report you asked for`,
+      body: flags.length ? flags.join(' · ') : undefined,
+    });
+  }
+  await reportsComplete(patient, userIds, advised).catch((err) => console.warn('[reports in]', err.message));
+}
+
+/**
+ * Everything a doctor asked this patient for is in: the follow-up shows "Reports in", and
+ * (with no visit booked with that doctor) the front desk is asked to book the report review —
+ * a push while the clinic is open — or, with no desk, the doctor sees "ready to review".
+ * Once per set of reports (the follow-up's status changes only once).
+ */
+async function reportsComplete(patient, userIds, advised) {
+  const AT = require('../services/advisedtests');
+  const list = advised || (await AT.advisedTests(patient));
+  const { deskFor, patientPlace } = require('../services/notify');
+  for (const uid of [...new Set(userIds.map(String))]) {
+    const theirs = list.filter((x) => String(x.doctorId || '') === uid);
+    if (!theirs.length || theirs.some((x) => !['done', 'unchecked'].includes(x.status))) continue;
+    const fu = await M.FollowUp.findOneAndUpdate(
+      { patientId: patient._id, doctorId: uid, status: { $in: ['not_booked', 'no_reply'] } },
+      { status: 'reports_in' },
+      { sort: { dueDate: 1 }, new: true },
+    );
+    if (!fu) continue; // no open follow-up (or already marked): nothing more to ask for
+    const upcoming = await M.Appointment.exists({ patientId: patient._id, doctorId: uid, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } });
+    if (upcoming) continue;
+    const place = await patientPlace(fu.practiceId, patient._id);
+    const desk = (await deskFor(fu.practiceId, { ...place, doctorId: uid })).map(String);
+    if (desk.length) {
+      // The desk books it: the notice opens Book appointment for this patient, as a report review.
+      const open = await require('../services/care').openNow(place?.locationId);
+      await notify(desk, {
+        type: 'reports_in', push: open, practiceId: fu.practiceId, title: `All of ${patient.name}'s reports are in — book a report review`,
+        screen: 'Staff-Book', params: { patientId: patient._id, doctorId: uid, visitType: 'report_review' },
+      });
+    } else {
+      await notify([uid], {
+        type: 'reports_in', push: false, practiceId: fu.practiceId, title: `All reports in from ${patient.name} — ready to review`,
+        screen: 'Doctor-FollowUps', params: { patientId: patient._id, followUpId: fu._id },
+      });
+    }
+  }
 }
 
 /** A critical lab value in a report shared with doctors: an urgent alert in each of their clinics. */
@@ -1423,11 +1492,14 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
   // Not shared yet: going to "Check your report" (shared when saved there), or it wasn't the
   // test it was uploaded for (shared only if the patient keeps it — POST …/share).
   const check = record.testCheck;
-  const held = record.status === 'processing' || Boolean(check && !check.auto && check.checked !== false && !check.found?.length);
+  // Shared now, even while it's still being split into tests: a patient who leaves "Check your
+  // report" half-way must not leave the doctor uninformed. Held only when it isn't the test it was
+  // uploaded for (shared if the patient keeps it — POST …/share).
+  const held = Boolean(check && !check.auto && check.checked !== false && !check.found?.length);
   if (chosen.length && !held) {
     record.sharedWith = chosen;
     await record.save();
-    await notifyShared(req.patient, chosen.map((s) => s.userId), 1, kind);
+    await notifyShared(req.patient, chosen.map((s) => s.userId), 1, kind, [record]);
   }
   // Uploaded as a test report but it's a prescription (or the other way round): the app offers to switch.
   if (kind === 'test_result' && extracted?.document_type === 'prescription' && !record.testCheck?.found?.length) detected = { kind: 'prescription', mismatch: true };
@@ -1508,7 +1580,9 @@ r.post('/records/:id/split', async (req, res) => {
   parent.deletedAt = new Date(); // replaced by the per-test records
   await parent.save();
   const fresh = sharedWith.filter((s) => !parent.sharedWith.some((p) => String(p.userId) === String(s.userId)));
-  if (fresh.length) await notifyShared(req.patient, fresh.map((s) => s.userId), created.length, 'test_result');
+  if (fresh.length) await notifyShared(req.patient, fresh.map((s) => s.userId), created.length, 'test_result', created);
+  // Already told when it was uploaded: the per-test records may complete what the doctor asked for.
+  else if (sharedWith.length) await reportsComplete(req.patient, sharedWith.map((s) => s.userId)).catch((err) => console.warn('[reports in]', err.message));
   // A critical value is the one thing that can't wait for the morning summary.
   const critical = created.filter((rec, i) => (tests[i].values || []).some((v) => v.flag === 'critical'));
   if (critical.length && sharedWith.length) await criticalAlert(req.patient, sharedWith.map((s) => s.userId), critical);
@@ -1523,7 +1597,7 @@ r.post('/records/:id/share', async (req, res) => {
   rec.sharedWith = ids.map((userId) => rec.sharedWith.find((s) => String(s.userId) === userId) || { userId });
   await rec.save();
   if (fresh.length) {
-    await notifyShared(req.patient, fresh, 1, rec.kind);
+    await notifyShared(req.patient, fresh, 1, rec.kind, [rec]);
   }
   res.json(rec);
 });

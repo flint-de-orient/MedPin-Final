@@ -510,4 +510,5 @@ async function adherence(patient, days = 30, acc) {
   };
 }
 
-module.exports = { chatNote, shortName, doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };
+module.exports = {
+  openNow, chatNote, shortName, doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };

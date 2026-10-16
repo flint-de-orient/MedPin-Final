@@ -729,6 +729,17 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       assert.deepEqual(held.heldShare, [String(ctx.doctorUserId)], 'held until the patient chooses');
       assert.equal((await M.MedicalRecord.findById(held.record.id)).sharedWith.length, 0);
 
+      // The right report for a test the doctor asked for: shared at once, and the doctor is told
+      // it's theirs ("… report you asked for"), in the bell — no buzz (only critical values push).
+      const asked = rx.tests[0];
+      assistant.extractLabReport = async () => ({ document_type: 'lab_report', lab_name: 'Suraksha', collected_on: '', tests: [{ test_name: asked, page_from: 1, page_to: 1, summary: '', values: [{ analyte: asked, value: '7.9', unit: '%', ref_text: '4-5.6', flag: 'high' }] }] });
+      const right = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'scan.pdf', 'application/pdf', { kind: 'test_result', forTests: asked, shareWith: ctx.doctorUserId }) }), 201);
+      assert.deepEqual(right.heldShare, [], 'not held: the doctor is told now, even if the patient leaves "Check your report"');
+      assert.equal((await M.MedicalRecord.findById(right.record.id)).sharedWith.length, 1);
+      const told = await M.Notification.findOne({ userId: ctx.doctorUserId, type: 'report_in' }).sort({ createdAt: -1 });
+      assert.ok(told && /report you asked for$/.test(told.title), `the doctor sees it's their test: ${told?.title}`);
+      assert.ok(!told.channels.includes('push'), 'in the bell, not a push');
+
       // A confirmed fasting sugar from a lab report becomes a reading (tiles, score, doctor's view)…
       assistant.extractLabReport = async () => null;
       const lab = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'fbs.pdf', 'application/pdf', { kind: 'test_result' }) }), 201);

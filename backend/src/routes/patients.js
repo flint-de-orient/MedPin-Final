@@ -494,8 +494,18 @@ r.post('/lab-results/:id/reviewed', need('labReview'), async (req, res) => {
   const result = await M.LabResult.findById(req.params.id);
   if (!result) throw notFound('Result');
   await patientInPractice(req, result.patientId);
+  const first = !result.reviewed?.at;
   result.reviewed = { by: req.user._id, at: new Date() };
   await result.save();
+  if (first) {
+    const patient = await M.Patient.findById(result.patientId, 'userId');
+    if (patient?.userId) {
+      await notify([patient.userId], {
+        type: 'lab_reviewed', practiceId: req.practiceId, title: result.testName ? `${req.user.name || 'Your doctor'} has seen your ${result.testName} report` : `${req.user.name || 'Your doctor'} has seen your test report`,
+        screen: 'Patient-Records', params: { filter: 'tests' },
+      }).catch(() => {});
+    }
+  }
   res.json(result);
 });
 
