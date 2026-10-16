@@ -642,11 +642,46 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const dueA1c = homeBefore.items.find((t) => t.name === before.name);
     assert.ok(dueA1c, 'a test to do is on Home');
     assert.equal(dueA1c.fasting, false, 'HbA1c needs no fasting');
-    const forIt = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'a1c.pdf', 'application/pdf', { kind: 'test_result', forTests: before.name }) }), 201);
-    assert.equal(forIt.record.title, before.name);
-    const after = ok(await ctx.pat('GET', '/api/patient/records')).advisedTests.find((t) => t.name === before.name);
-    assert.equal(after.status, 'done');
-    assert.equal(String(after.result.recordId), String(forIt.record.id));
+    // A report counts for a test only when its content shows that test — whatever the file is called.
+    // (MedPin AI is off in tests: the report reader is stubbed with what it would read.)
+    const assistant = require('../src/services/assistant');
+    const realRead = assistant.extractLabReport;
+    const uploadFor = async (name, file = 'report.pdf') => ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), file, 'application/pdf', { kind: 'test_result', forTests: before.name }) }), 201);
+    const statusNow = async () => ok(await ctx.pat('GET', '/api/patient/records')).advisedTests.find((t) => t.name === before.name);
+    try {
+      // A blood count uploaded as "HbA1c.pdf": not counted, and the app is told what the report really is.
+      assistant.extractLabReport = async () => ({ document_type: 'lab_report', lab_name: 'Suraksha', collected_on: '', tests: [{ test_name: 'Complete Blood Count', page_from: 1, page_to: 1, summary: '', values: [{ analyte: 'Haemoglobin', value: '13.1', unit: 'g/dL', ref_text: '13-17', flag: 'normal' }] }] });
+      const wrong = await uploadFor(before.name, 'HbA1c.pdf');
+      assert.deepEqual(wrong.testCheck.found, [], 'the file name proves nothing');
+      assert.deepEqual(wrong.testCheck.detected, ['Complete Blood Count']);
+      assert.equal(wrong.record.title, 'Complete Blood Count', 'named after what it contains');
+      let now = await statusNow();
+      assert.equal(now.status, 'wrong');
+      assert.deepEqual(now.lastUpload.detected, ['Complete Blood Count']);
+      assert.ok(ok(await ctx.pat('GET', '/api/patient/home')).pendingTests.items.some((t) => t.name === before.name && t.status === 'wrong'), 'still to do on Home');
+      // Too blurred to read.
+      assistant.extractLabReport = async () => ({ document_type: 'unreadable', lab_name: '', collected_on: '', tests: [] });
+      const blurred = await uploadFor(before.name);
+      assert.equal(blurred.testCheck.readable, false);
+      assert.equal((await statusNow()).status, 'unreadable');
+      assert.notEqual(blurred.record.status, 'processing', 'nothing to check: not left "To check"');
+      // MedPin AI unavailable: uploaded, not checked — the doctor will look; it leaves the Home card.
+      assistant.extractLabReport = realRead;
+      await uploadFor(before.name);
+      assert.equal((await statusNow()).status, 'unchecked');
+      // The real HbA1c report, under any file name: done.
+      assistant.extractLabReport = async () => ({ document_type: 'lab_report', lab_name: 'Suraksha', collected_on: '2026-10-15', tests: [{ test_name: 'Glycosylated Haemoglobin', page_from: 1, page_to: 1, summary: 'Average sugar is high.', values: [{ analyte: 'HbA1c', value: '7.9', unit: '%', ref_text: 'below 5.7', flag: 'high' }] }] });
+      const forIt = await uploadFor(before.name, 'IMG_2041.pdf');
+      assert.deepEqual(forIt.testCheck.found, [before.name]);
+      now = await statusNow();
+      assert.equal(now.status, 'done');
+      assert.equal(String(now.result.recordId), String(forIt.record.id));
+      // A report added from "Add record" (no test picked) counts for the tests it contains.
+      const auto = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'scan.pdf', 'application/pdf', { kind: 'test_result' }) }), 201);
+      assert.equal(auto.testCheck, null, 'every test is done: nothing to check it against');
+    } finally {
+      assistant.extractLabReport = realRead;
+    }
     const homeAfter = ok(await ctx.pat('GET', '/api/patient/home')).pendingTests;
     assert.equal(homeAfter.total, homeBefore.total - 1, 'an uploaded result leaves the Lab tests card');
     assert.ok(!homeAfter.items.some((t) => t.name === before.name));

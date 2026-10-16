@@ -253,7 +253,8 @@ r.get('/home', async (req, res) => {
   // "Lab tests" card: tests the doctor asked for with no result yet, soonest
   // "bring by" first (then the newest ask); Home shows a few, Records has them all.
   const dueTests = advised
-    .filter((t) => t.status === 'todo')
+    // A report uploaded for it that was the wrong test or couldn't be read is still to do.
+    .filter((t) => ['todo', 'wrong', 'unreadable'].includes(t.status))
     .sort((a, b) => (a.bringBy ? +a.bringBy : Infinity) - (b.bringBy ? +b.bringBy : Infinity) || b.askedAt - a.askedAt);
   // "Latest prescription": the newest one, issued in MedPin or uploaded by the patient.
   const upRx = await M.MedicalRecord.findOne({ patientId: p._id, kind: 'prescription', deletedAt: null, prescriptionId: null }).sort({ recordDate: -1 });
@@ -301,6 +302,7 @@ r.get('/home', async (req, res) => {
       items: dueTests.slice(0, 3).map((t) => ({
         name: t.name, checks: t.checks, prep: t.prep, fasting: /^fast/i.test(t.prep || ''),
         askedAt: t.askedAt, bringBy: t.bringBy, doctorName: t.doctorName, doctorId: t.doctorId, prescriptionId: t.prescriptionId,
+        status: t.status, lastUpload: t.lastUpload,
       })),
     },
     activityPlan: activity && {
@@ -1148,9 +1150,7 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
   for (const f of req.files) files.push(await storage.save(f.buffer, { folder: 'records', name: f.originalname, mimeType: f.mimetype }));
   const sharedWith = list(req.body.shareWith).filter(isId).map((userId) => ({ userId }));
   const record = await M.MedicalRecord.create({
-    patientId: req.patient._id, kind, title: req.body.title || (kind === 'test_result' && list(req.body.forTests).length ? list(req.body.forTests).join(', ') : kind === 'prescription' ? 'Prescription' : 'Test report'),
-    // The tests the doctor asked for that this report answers (Records → "Tests your doctor asked for").
-    forTests: kind === 'test_result' ? list(req.body.forTests).map((s) => String(s).trim()).filter(Boolean).slice(0, 20) : undefined,
+    patientId: req.patient._id, kind, title: req.body.title || (kind === 'prescription' ? 'Prescription' : 'Test report'),
     recordDate: req.body.recordDate ? T.parseDay(req.body.recordDate) : new Date(), origin: 'shared_by_patient', sourceName: req.body.sourceName || 'uploaded by you',
     uploadSource: E.UPLOAD_SOURCES.includes(req.body.uploadSource) ? req.body.uploadSource : undefined, files, sharedWith,
     status: kind === 'test_result' ? 'processing' : 'ready', uploadedBy: req.user._id, flagLabel: 'New', flagTone: 'new',
@@ -1166,13 +1166,35 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
   }
   if (kind === 'test_result') {
     extracted = await assistant.extractLabReport(req.files[0].buffer, req.files[0].mimetype).catch((err) => { console.warn('[extract]', err.message); return null; });
-    if (!extracted) { record.status = 'ready'; await record.save(); }
+    // Which of the doctor's tests the report really contains (its content, not the file name).
+    await applyTestCheck(req.patient, record, list(req.body.forTests).map((s) => String(s).trim()).filter(Boolean).slice(0, 1), extracted);
+    if (!extracted || !extracted.tests?.length) record.status = 'ready';
+    await record.save();
   }
   if (sharedWith.length) {
     await notify(sharedWith.map((s) => s.userId), { type: 'record_shared', title: `${req.patient.name} shared a ${kind === 'prescription' ? 'prescription' : 'report'}`, screen: 'Patient-Profile', params: { patientId: req.patient._id } });
   }
-  res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted, medicines: record.extractedMedicines || [] });
+  res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted, testCheck: record.testCheck || null, medicines: record.extractedMedicines || [] });
 });
+
+/**
+ * Checks an uploaded report's content against the doctor's tests: the one it
+ * was uploaded for (Upload on a test), or else every test still to do (Add
+ * record), so a report counts for what it really contains. Sets forTests to
+ * the tests found and testCheck to the whole result; names the record after
+ * the tests read from it.
+ */
+async function applyTestCheck(patient, record, asked, extracted) {
+  if (record.kind !== 'test_result') return;
+  const AT = require('../services/advisedtests');
+  const auto = !asked.length;
+  const names = auto ? (await AT.advisedTests(patient)).filter((x) => x.status !== 'done').map((x) => x.name) : asked;
+  if (!names.length && auto) return;
+  record.testCheck = AT.checkReport(names, extracted, { auto });
+  record.forTests = record.testCheck.found;
+  const read = record.testCheck.detected;
+  if (read.length && (!record.title || record.title === 'Test report')) record.title = read.length > 3 ? `${read.slice(0, 3).join(', ')} and ${read.length - 3} more` : read.join(', ');
+}
 
 // Records-Review reopened for a report still waiting to be checked: read it again.
 r.post('/records/:id/extract', async (req, res) => {
@@ -1182,8 +1204,11 @@ r.post('/records/:id/extract', async (req, res) => {
   if (rec.kind !== 'test_result' || !file?.key) throw badRequest('This record has no report to read', 'NOT_A_REPORT');
   const buffer = await storage.read(file.key).catch(() => null);
   const extracted = buffer ? await assistant.extractLabReport(buffer, file.mimeType || 'application/pdf').catch((err) => { console.warn('[extract]', err.message); return null; }) : null;
-  if (!extracted && rec.status === 'processing') { rec.status = 'ready'; await rec.save(); }
-  res.json({ record: { ...rec.toJSON(), files: rec.files.map(storage.withUrl) }, extracted });
+  // Read again: check it again against what it was uploaded for.
+  if (extracted) await applyTestCheck(req.patient, rec, rec.testCheck && !rec.testCheck.auto ? rec.testCheck.asked || [] : [], extracted);
+  if (!extracted && rec.status === 'processing') rec.status = 'ready';
+  await rec.save();
+  res.json({ record: { ...rec.toJSON(), files: rec.files.map(storage.withUrl) }, extracted, testCheck: rec.testCheck || null });
 });
 
 // Records-Review: save the tests the patient kept; each test becomes its own record.
@@ -1197,11 +1222,11 @@ r.post('/records/:id/split', async (req, res) => {
   // "Share all N tests with" on Records-Review (else keep who the upload was shared with).
   const sharedWith = req.body.shareWith !== undefined ? list(req.body.shareWith).filter(isId).map((userId) => ({ userId })) : parent.sharedWith;
   const created = [];
-  const { lookup } = require('../services/advisedtests');
+  const { inReport } = require('../services/advisedtests');
   for (const t of tests) {
-    // The doctor's tests the upload was for: each saved test keeps the ones it is (all, when it's the only one).
+    // The doctor's tests the upload was checked to contain: each saved test keeps the ones its own content shows.
     const name = t.testName || t.test_name;
-    const forTests = tests.length === 1 ? parent.forTests : (parent.forTests || []).filter((x) => lookup(x) && lookup(x)?.key === lookup(name)?.key);
+    const forTests = (parent.forTests || []).filter((x) => inReport(x, [name, ...(t.values || []).map((v) => v.analyte)]));
     const values = (t.values || []).map((v) => ({
       analyte: v.analyte, value: Number.isFinite(parseFloat(v.value)) ? parseFloat(v.value) : undefined, valueText: Number.isFinite(parseFloat(v.value)) ? undefined : v.value,
       unit: v.unit, refText: v.refText || v.ref_text, refLow: v.refLow, refHigh: v.refHigh, flag: E.RESULT_FLAGS.includes(v.flag) ? v.flag : 'normal',

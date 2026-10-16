@@ -742,6 +742,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
               children: [
                 Text(t.str('name'), style: tx(16, w: w600)),
                 if (sub.isNotEmpty) ...[const Gap(2), Text(sub, style: tx(13, c: MP.ink2))],
+                // The last upload for it didn't count: say why.
+                if (t.str('status') == 'wrong' || t.str('status') == 'unreadable') ...[
+                  const Gap(2),
+                  Text(t.str('status') == 'wrong' ? 'Last upload was a different report' : "Couldn't read the last upload", style: tx(13, w: w600, c: MP.amber)),
+                ],
               ],
             ),
           ),

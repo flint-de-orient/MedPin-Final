@@ -334,6 +334,8 @@ async function summarizeDay(practiceId, day) {
 const LAB_SCHEMA = {
   type: 'object',
   properties: {
+    // What the file is: the app tells the patient when it isn't the test report they meant to send.
+    document_type: { type: 'string', enum: ['lab_report', 'imaging_or_ecg', 'bp_or_sugar_log', 'eye_exam', 'prescription', 'other_medical', 'not_medical', 'unreadable'] },
     lab_name: { type: 'string' },
     collected_on: { type: 'string', description: 'YYYY-MM-DD or empty' },
     tests: {
@@ -366,7 +368,7 @@ const LAB_SCHEMA = {
       },
     },
   },
-  required: ['lab_name', 'collected_on', 'tests'],
+  required: ['document_type', 'lab_name', 'collected_on', 'tests'],
   additionalProperties: false,
 };
 
@@ -377,7 +379,10 @@ async function extractLabReport(buffer, mimeType) {
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') } }
     : { type: 'image', source: { type: 'base64', media_type: mimeType, data: buffer.toString('base64') } };
   const out = await ai.completeJson({
-    system: 'You read Indian laboratory reports. Extract every test panel with its values exactly as printed. Write each summary as one plain-language sentence for the patient. Use flag "normal" when no reference range is printed.',
+    system: 'You read Indian medical test reports: lab reports, ECG / X-ray / ultrasound / echo reports, eye (fundus) examinations, and home BP or sugar logs. '
+      + 'Extract every test, panel or examination with its values or findings exactly as printed (a BP log: one test "Home blood pressure log" with each reading as a value). '
+      + 'Use the test names printed on the report, not the file name. Write each summary as one plain-language sentence for the patient. Use flag "normal" when no reference range is printed. '
+      + 'Set document_type to what the file is; when it is a prescription, not a medical document, or too blurred / cut off to read, return no tests.',
     messages: [{ role: 'user', content: [block, { type: 'text', text: 'Extract the tests from this report.' }] }],
     schema: LAB_SCHEMA,
     effort: 'medium',

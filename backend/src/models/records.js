@@ -15,7 +15,10 @@ const medicalRecordSchema = new Schema(
     patientId: ref('Patient', true),
     kind: enumOf(E.RECORD_KINDS, { required: true }),
     title: { type: String, required: true }, // "Lipid profile"
-    forTests: [String], // the advised tests this report is for ("HbA1c", "Lipid profile")
+    forTests: [String], // the doctor's tests this report was checked to contain ("HbA1c", "Lipid profile")
+    // What its content showed against the tests it was uploaded for (services/advisedtests.js checkReport):
+    // { asked, found, missing, detected, readable, documentType, auto, at }.
+    testCheck: { type: Schema.Types.Mixed, default: undefined },
     recordDate: { type: Date, required: true }, // collected / issued on
     origin: enumOf(E.RECORD_ORIGINS, { required: true }),
     sourceName: String, // "SRL Diagnostics", "Dr. Arjun Sen", "uploaded by you"

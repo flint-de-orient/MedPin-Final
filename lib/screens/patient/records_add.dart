@@ -36,10 +36,10 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
   List<P3Doctor> _liveDoctors = const [];
   Set<String> _shareWith = {};
 
-  /// Test result: the tests the doctor asked for that are still to do, and
-  /// which of them this report is for (sent as forTests; links the result).
-  List<Map<String, dynamic>> _advised = const [];
-  Set<String> _forTests = {};
+  /// Opened from one of the doctor's tests (Upload on Home / Records): the
+  /// report is for that test only. The server reads the report and checks it
+  /// really is that test (its content, not the file name).
+  String? _forTest;
 
   static const _sources = [(I.camera, 'Take photo'), (I.image, 'Gallery'), (I.fileText, 'PDF file')];
   static const _sourceKeys = ['camera', 'gallery', 'pdf'];
@@ -62,7 +62,10 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     final kind = _args['kind'];
     if (kind == 'prescription') _kind = 0;
     if (kind == 'test_result') _kind = 1;
-    if (_args['forTest'] is String) _forTests = {_args['forTest'] as String};
+    if (_args['forTest'] is String && (_args['forTest'] as String).trim().isNotEmpty) {
+      _forTest = (_args['forTest'] as String).trim();
+      _kind = 1;
+    }
   }
 
   /// Staff uploading for a patient (no care-team picker then).
@@ -74,15 +77,6 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     final pre = _args['doctorId'] as String?;
     final name = _args['doctorName'] as String?;
     final doctors = await p3LoadDoctors();
-    try {
-      final recs = await Api.I.get('/api/patient/records');
-      _advised = [
-        for (final t in (recs is Map ? recs.cast<String, dynamic>().list('advisedTests') : const <Map<String, dynamic>>[]))
-          if (t.str('status') != 'done' || _forTests.contains(t.str('name'))) t,
-      ];
-    } on ApiException catch (_) {
-      _advised = const [];
-    }
     // Opened from a doctor's page ("Share"): that doctor is ticked even when
     // they aren't in the care team yet.
     if (pre != null && !doctors.any((d) => d.id == pre)) doctors.insert(0, P3Doctor(pre, name ?? 'This doctor', ''));
@@ -132,7 +126,7 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
           'kind': kind,
           'uploadSource': source,
           if (_args['title'] != null) 'title': '${_args['title']}',
-          if (kind == 'test_result' && _forTests.isNotEmpty) 'forTests': _forTests.join(','),
+          if (kind == 'test_result' && _forTest != null) 'forTests': _forTest!,
           if (_args['appointmentId'] != null) 'appointmentId': '${_args['appointmentId']}',
           if (patientId == null && _shareWith.isNotEmpty) 'shareWith': _shareWith.join(','),
         },
@@ -146,6 +140,9 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     final body = res is Map ? res.cast<String, dynamic>() : <String, dynamic>{};
     final extracted = body.obj('extracted');
     final recordId = body.obj('record').str('id', body.str('id', 'uploaded'));
+    // Uploaded for one test: was it really that test?
+    if (_forTest != null && patientId == null && !await _checked(body.obj('testCheck'), recordId)) return;
+    if (!mounted) return;
     if (patientId == null && extracted.list('tests').isNotEmpty) {
       // Check and save each test on Records-Review.
       final nav = Navigator.of(context);
@@ -163,6 +160,56 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     Navigator.of(context).pop(recordId);
   }
 
+  /// What the server found in a report uploaded for [_forTest]. The right
+  /// test: carry on. Another test, a prescription, or too blurred to read:
+  /// say so, and offer to upload the right report (this one is removed) or
+  /// keep it as a separate report. Returns false when the patient goes back
+  /// to pick another file.
+  Future<bool> _checked(Map<String, dynamic> check, String recordId) async {
+    final test = _forTest!;
+    if (check.isEmpty || check['checked'] == false) {
+      // MedPin couldn't read it automatically: it's with the doctor.
+      toast(context, "Report uploaded. We couldn't check it automatically — your doctor will look at it.");
+      return true;
+    }
+    String t(String s, [String a = '', String b = '']) => tr(context, s).replaceFirst('#1', a).replaceFirst('#2', b);
+    if ((check['found'] as List? ?? const []).isNotEmpty) {
+      toast(context, t('#1 report received', test));
+      return true;
+    }
+    final readable = check['readable'] == true;
+    final type = check.str('documentType');
+    final detected = [for (final d in (check['detected'] as List? ?? const [])) '$d'];
+    final askRight = t('Upload the #1 report from your lab. The file name doesn’t matter — we read what’s inside.', test);
+    final (title, body) = !readable && type != 'prescription' && type != 'not_medical'
+        ? (t("We couldn't read this report"), t('Make sure the whole page is in the photo, flat and in good light — or upload the PDF your lab sent.'))
+        : type == 'prescription'
+            ? (t('This is a prescription, not a test report'), askRight)
+            : type == 'not_medical' || detected.isEmpty
+                ? (t("This doesn't look like a test report"), askRight)
+                : (t('This isn’t the #1 report', test), '${t('We found #1 in it.', detected.join(', '))} $askRight');
+    final retry = await openSheet<bool>(
+      context,
+      (c) => MpSheet(
+        title: title,
+        subtitle: body,
+        child: VGap(
+          gap: 8,
+          children: [
+            MpButton(readable ? 'Upload the right report' : 'Try again', onTap: () => Navigator.pop(c, true)),
+            MpButton(readable ? 'Keep it as a separate report' : 'Keep it — my doctor will check', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, false)),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return false;
+    if (retry == false) return true; // kept: it stays in Records for what it is
+    // Try again (or closed the sheet): this file goes, the sheet stays open for the right one.
+    await Api.I.delete('/api/patient/records/$recordId').catchError((_) => null);
+    p3RecordsChanged.value++;
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return MpSheet(
@@ -177,37 +224,47 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
             ),
             const Gap(20),
 
-            // What are you adding?
-            Text('What are you adding?', style: tx(14, w: w600)),
-            const Gap(8),
-            P2Segmented(
-              options: const ['Prescription', 'Test result'],
-              index: _kind,
-              onChanged: (i) => setState(() => _kind = i),
-            ),
-            const Gap(20),
-
-            // Which of the doctor's tests is this report for?
-            if (_kind == 1 && _advised.isNotEmpty) ...[
-              Text('Which test is this for?', style: tx(14, w: w600)),
+            if (_forTest == null) ...[
+              // What are you adding?
+              Text('What are you adding?', style: tx(14, w: w600)),
               const Gap(8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final t in _advised)
-                    MpChip(
-                      t.str('name'),
-                      selected: _forTests.contains(t.str('name')),
-                      tonal: true,
-                      onTap: () => setState(() => _forTests.contains(t.str('name')) ? _forTests.remove(t.str('name')) : _forTests.add(t.str('name'))),
-                    ),
-                ],
+              P2Segmented(
+                options: const ['Prescription', 'Test result'],
+                index: _kind,
+                onChanged: (i) => setState(() => _kind = i),
               ),
-              const Gap(6),
-              Text('Pick all the tests in this report. We match it to what your doctor asked for.', style: tx(13, c: MP.ink3, h: 1.4)),
-              const Gap(20),
-            ],
+            ] else
+              // The doctor's test this report is for.
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(16)),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    MpIconTile(I.flask, size: 40, iconSize: 20, radius: 12, bg: MP.white, fg: MP.primary),
+                    const Gap(12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('REPORT FOR', style: tx(12, w: w700, c: MP.ink3, em: 0.06)),
+                          const Gap(2),
+                          Text(_forTest!, style: tx(16, w: w700)),
+                          const Gap(4),
+                          Text(
+                            [
+                              if (_args['doctorName'] is String) tr(context, 'Asked by #1.').replaceFirst('#1', '${_args['doctorName']}'),
+                              tr(context, 'We read the report to check it’s this test — the file name doesn’t matter.'),
+                            ].join(' '),
+                            style: tx(13, c: MP.ink2, h: 1.4),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const Gap(20),
 
             // Take photo · Gallery · PDF file
             Row(

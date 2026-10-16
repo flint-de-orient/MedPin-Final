@@ -9,6 +9,7 @@ import 'common_p3.dart';
 import '../../data/rx_pdf.dart';
 import '../../data/downloads.dart';
 import '../../widgets/i18n.dart';
+import '../../widgets/file_view.dart';
 
 /// Design: Patient-Records.dc.html — "Patient · Health records".
 class PatientRecordsScreen extends StatefulWidget {
@@ -201,7 +202,7 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> with LiveDa
 
   /// "View result": the report that answered it.
   void _openResult(Map<String, dynamic> t) {
-    final id = t.obj('result').str('recordId');
+    final id = t.obj('result').str('recordId', t.obj('lastUpload').str('recordId'));
     final hit = data?.list('items').where((x) => x.str('id') == id).toList() ?? const [];
     if (hit.isEmpty) return toast(context, 'The report is no longer in your records');
     _view(_fromApi(hit.first));
@@ -351,7 +352,8 @@ class _AdvisedTests extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final todo = items.where((t) => t.str('status') != 'done').length;
+    // Still to do: not uploaded, or the upload was another test / couldn't be read.
+    final todo = items.where((t) => const {'todo', 'wrong', 'unreadable'}.contains(t.str('status'))).length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -370,24 +372,48 @@ class _AdvisedTests extends StatelessWidget {
           decoration: MPDeco.card(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [for (var i = 0; i < items.length; i++) _advised(items[i], first: i == 0)],
+            children: [for (var i = 0; i < items.length; i++) _advised(context, items[i], first: i == 0)],
           ),
         ),
       ],
     );
   }
 
-  Widget _advised(Map<String, dynamic> t, {required bool first}) {
-    final done = t.str('status') == 'done';
+  Widget _advised(BuildContext context, Map<String, dynamic> t, {required bool first}) {
+    final status = t.str('status', 'todo');
+    final done = status == 'done';
+    // Uploaded (checked, or waiting for the doctor because it couldn't be checked automatically).
+    final uploaded = done || status == 'unchecked';
     final asked = F.date(t['askedAt']);
     final bringBy = F.date(t['bringBy']);
-    final resultAt = F.date(t.obj('result')['date']);
+    final resultAt = F.date(t.obj('result')['date']) ?? F.date(t.obj('lastUpload')['date']);
+    final tried = F.date(t.obj('lastUpload')['date']);
     final meta = [
       if (t.str('doctorName').isNotEmpty) p2ShortName(t.str('doctorName')),
       if (asked != null) 'asked ${F.dayMonth(asked)}',
-      if (done && resultAt != null) 'result ${F.dayMonth(resultAt)}' else if (bringBy != null) 'bring by ${F.dayMonth(bringBy)}',
+      if (uploaded && resultAt != null) 'result ${F.dayMonth(resultAt)}' else if (bringBy != null) 'bring by ${F.dayMonth(bringBy)}',
     ].join(' · ');
-    final tone = done ? _ok : _high;
+    final flag = t.obj('result').str('flagLabel');
+    final (pill, tone) = switch (status) {
+      'done' => (flag.isEmpty || flag == 'New' ? 'Received' : flag, flag.contains('high') || flag.contains('low') ? _high : _ok),
+      'unchecked' => ('Uploaded', _new),
+      'wrong' => ('Wrong report', _high),
+      'unreadable' => ("Couldn't read", _high),
+      _ => ('To do', _high),
+    };
+    // Why the last upload didn't count, in plain words.
+    final detected = [for (final d in (t.obj('lastUpload')['detected'] as List? ?? const [])) '$d'];
+    final day = tried == null ? '' : F.dayMonth(tried);
+    final note = switch (status) {
+      'wrong' => t.obj('lastUpload').str('documentType') == 'prescription'
+          ? tr(context, 'The file you uploaded on #1 is a prescription, not this test.').replaceFirst('#1', day)
+          : detected.isEmpty
+              ? tr(context, "The file you uploaded on #1 isn't this test.").replaceFirst('#1', day)
+              : tr(context, 'The report you uploaded on #1 is #2, not this test.').replaceFirst('#1', day).replaceFirst('#2', detected.join(', ')),
+      'unreadable' => tr(context, "We couldn't read the report you uploaded on #1. Try a clearer photo or the lab's PDF.").replaceFirst('#1', day),
+      'unchecked' => tr(context, "We couldn't check it automatically — your doctor will look at it."),
+      _ => '',
+    };
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 16),
       decoration: first ? null : const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
@@ -399,7 +425,7 @@ class _AdvisedTests extends StatelessWidget {
             children: [
               Expanded(child: Text(t.str('name'), style: tx(17, w: w700))),
               const Gap(8),
-              P2Pill(done ? (t.obj('result').str('flagLabel').isEmpty ? 'Uploaded' : t.obj('result').str('flagLabel')) : 'To do', bg: tone.$1, fg: tone.$2),
+              P2Pill(pill, bg: tone.$1, fg: tone.$2),
             ],
           ),
           if (meta.isNotEmpty) ...[const Gap(2), Text(meta, style: tx(13, c: MP.ink2))],
@@ -410,7 +436,18 @@ class _AdvisedTests extends StatelessWidget {
               style: tx(14, h: 1.5),
             ),
           ],
-          if (!done && t.str('prep').isNotEmpty) ...[
+          if (note.isNotEmpty) ...[
+            const Gap(8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(padding: const EdgeInsets.only(top: 3), child: Ico(uploaded ? I.fileText : I.alert, size: 16, color: uploaded ? MP.primary : MP.amber, stroke: 2)),
+                const Gap(8),
+                Expanded(child: Text(note, style: tx(14, h: 1.5, c: uploaded ? MP.ink2 : MP.amber))),
+              ],
+            ),
+          ],
+          if (!uploaded && t.str('prep').isNotEmpty) ...[
             const Gap(8),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -423,14 +460,17 @@ class _AdvisedTests extends StatelessWidget {
           ],
           const Gap(12),
           P2Box(
-            onTap: () => done ? onResult(t) : onUpload(t),
-            label: done ? 'View ${t.str('name')} result' : 'Upload ${t.str('name')} result',
+            onTap: () => uploaded ? onResult(t) : onUpload(t),
+            label: uploaded ? 'View ${t.str('name')} result' : 'Upload ${t.str('name')} result',
             height: 44,
             radius: 12,
-            color: done ? MP.white : MP.primarySoft,
-            border: done ? MP.lineStrong : null,
+            color: uploaded ? MP.white : MP.primarySoft,
+            border: uploaded ? MP.lineStrong : null,
             alignment: Alignment.center,
-            child: Text(done ? 'View result' : 'Upload result', style: tx(14, w: w700, c: MP.primary)),
+            child: Text(
+              uploaded ? 'View result' : status == 'wrong' ? 'Upload the right report' : status == 'unreadable' ? 'Upload a clearer copy' : 'Upload result',
+              style: tx(14, w: w700, c: MP.primary),
+            ),
           ),
         ],
       ),
@@ -659,6 +699,8 @@ class _RecordSheetState extends State<_RecordSheet> with LiveData {
     final values = [for (final res in r.list('results')) ...res.list('values')];
     final meds = r.obj('prescription').list('items');
     final url = _fileUrl;
+    final files = r.list('files');
+    final file = files.isEmpty ? null : ReportFile.fromApi(files.first);
 
     return MpSheet(
       child: Column(
@@ -666,6 +708,39 @@ class _RecordSheetState extends State<_RecordSheet> with LiveData {
         children: [
           const Gap(20),
           P2SheetHeader(title: r.str('title', 'Record'), subtitle: meta),
+          if (file != null) ...[
+            const Gap(16),
+            // The report itself: its first page; tap to read every page.
+            P2Box(
+              onTap: () => openFileView(context, file, title: r.str('title', 'Report')),
+              label: 'View ${r.str('title', 'the report')}',
+              padding: const EdgeInsets.all(12),
+              radius: 16,
+              color: MP.bg,
+              child: Row(
+                children: [
+                  FilePreview(file: file, width: 64, height: 86, title: r.str('title', 'Report')),
+                  const Gap(14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${files.length} ${files.length == 1 ? 'FILE' : 'FILES'} · ${file.isPdf ? 'PDF' : file.isImage ? 'PHOTO' : 'FILE'}',
+                          style: tx(12, w: w700, c: MP.ink2, em: 0.06),
+                        ),
+                        const Gap(4),
+                        Text(file.name.isEmpty ? r.str('title', 'Report') : file.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: tx(15, w: w600)),
+                        const Gap(6),
+                        Text('View report', style: tx(14, w: w700, c: MP.primary)),
+                      ],
+                    ),
+                  ),
+                  const Ico(I.chevronRight, size: 18, color: MP.ink3),
+                ],
+              ),
+            ),
+          ],
           if (r.str('aiSummary').isNotEmpty) ...[
             const Gap(16),
             Row(
@@ -698,11 +773,14 @@ class _RecordSheetState extends State<_RecordSheet> with LiveData {
           const Gap(20),
           if (url != null) ...[
             MpButton(
-              'Open file',
+              file != null ? 'Download' : 'Open file',
               icon: I.download,
-              onTap: () => r['prescriptionId'] != null && r.list('files').isEmpty
+              kind: file != null ? MpBtn.secondary : MpBtn.primary,
+              onTap: () => r['prescriptionId'] != null && files.isEmpty
                   ? RxPdf.view(context, r.str('prescriptionId'), patient: true)
-                  : p3Open(context, url, what: r.str('title', 'the file')),
+                  : file != null
+                      ? Downloads.save(context, url, name: file.name.isEmpty ? r.str('title', 'Report') : file.name)
+                      : p3Open(context, url, what: r.str('title', 'the file')),
             ),
             const Gap(20),
           ],

@@ -7,6 +7,7 @@ import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
 import '../../widgets/i18n.dart';
+import '../../widgets/file_view.dart';
 
 /// Design: Records-Review.dc.html — "Records · check and save (multi-test file)".
 ///
@@ -441,8 +442,11 @@ class _FileCard extends StatelessWidget {
   final String lab;
   final String collected;
   final String preview;
+  /// Live: the uploaded file, drawn as its first page (tap to read it all).
+  final ReportFile? file;
   const _FileCard({required this.onRetake})
-    : files = '1 FILE · 6 PAGES',
+    : file = null,
+      files = '1 FILE · 6 PAGES',
       pages = '6',
       lab = 'Suraksha Diagnostics',
       collected = 'Collected 30 Sep 2026',
@@ -460,6 +464,7 @@ class _FileCard extends StatelessWidget {
     final source = record.str('sourceName');
     return _FileCard._(
       onRetake: onRetake,
+      file: record.list('files').isEmpty ? null : ReportFile.fromApi(record.list('files').first),
       files: '$n ${n == 1 ? 'FILE' : 'FILES'}${pages > 0 ? ' · $pages ${pages == 1 ? 'PAGE' : 'PAGES'}' : ''}',
       pages: '$pages',
       lab: extracted.str('lab_name', source == 'uploaded by you' || source.isEmpty ? 'Your report' : source),
@@ -468,7 +473,7 @@ class _FileCard extends StatelessWidget {
     );
   }
 
-  const _FileCard._({required this.onRetake, required this.files, required this.pages, required this.lab, required this.collected, required this.preview});
+  const _FileCard._({required this.onRetake, required this.file, required this.files, required this.pages, required this.lab, required this.collected, required this.preview});
 
   static Widget _bar(double height, double width, Color color) => FractionallySizedBox(
     widthFactor: width,
@@ -507,30 +512,32 @@ class _FileCard extends StatelessWidget {
                   Positioned(
                     left: 0,
                     top: 0,
-                    child: Container(
-                      width: 70,
-                      height: 94,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: MP.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: MP.line),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _bar(6, 0.6, MP.lineStrong),
-                          const Gap(5),
-                          _bar(4, 1, MP.line),
-                          const Gap(5),
-                          _bar(4, 1, MP.line),
-                          const Gap(5),
-                          _bar(4, 0.8, MP.line),
-                          const Gap(5),
-                          _bar(4, 1, MP.line),
-                        ],
-                      ),
-                    ),
+                    child: file != null
+                        ? FilePreview(file: file, width: 70, height: 94, title: lab)
+                        : Container(
+                            width: 70,
+                            height: 94,
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: MP.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: MP.line),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _bar(6, 0.6, MP.lineStrong),
+                                const Gap(5),
+                                _bar(4, 1, MP.line),
+                                const Gap(5),
+                                _bar(4, 1, MP.line),
+                                const Gap(5),
+                                _bar(4, 0.8, MP.line),
+                                const Gap(5),
+                                _bar(4, 1, MP.line),
+                              ],
+                            ),
+                          ),
                   ),
                 ],
               ),
