@@ -245,10 +245,16 @@ r.get('/home', async (req, res) => {
   const unread = await M.Conversation.aggregate([{ $match: { patientId: p._id } }, { $unwind: '$participants' }, { $match: { 'participants.userId': req.user._id } }, { $group: { _id: null, n: { $sum: '$participants.unreadCount' } } }]);
 
   // Cards further down the home screen.
-  const [rx, lab] = await Promise.all([
+  const [rx, lab, advised] = await Promise.all([
     M.Prescription.findOne({ patientId: p._id }).sort({ issuedAt: -1 }),
     M.LabResult.findOne({ patientId: p._id }).sort({ collectedAt: -1 }),
+    require('../services/advisedtests').advisedTests(p).catch((err) => { console.warn('[advised tests]', err.message); return []; }),
   ]);
+  // "Lab tests" card: tests the doctor asked for with no result yet, soonest
+  // "bring by" first (then the newest ask); Home shows a few, Records has them all.
+  const dueTests = advised
+    .filter((t) => t.status === 'todo')
+    .sort((a, b) => (a.bringBy ? +a.bringBy : Infinity) - (b.bringBy ? +b.bringBy : Infinity) || b.askedAt - a.askedAt);
   // "Latest prescription": the newest one, issued in MedPin or uploaded by the patient.
   const upRx = await M.MedicalRecord.findOne({ patientId: p._id, kind: 'prescription', deletedAt: null, prescriptionId: null }).sort({ recordDate: -1 });
   const useUpload = upRx && (!rx || upRx.recordDate > rx.issuedAt);
@@ -289,6 +295,13 @@ r.get('/home', async (req, res) => {
       id: lab._id, recordId: lab.recordId, testName: lab.testName, collectedAt: lab.collectedAt, abnormalCount: lab.abnormalCount,
       abnormal: lab.values.filter((v) => v.flag !== 'normal').map((v) => v.analyte),
       abnormalDirection: lab.values.some((v) => v.flag === 'high' || v.flag === 'critical') ? 'high' : 'low',
+    },
+    pendingTests: {
+      total: dueTests.length,
+      items: dueTests.slice(0, 3).map((t) => ({
+        name: t.name, checks: t.checks, prep: t.prep, fasting: /^fast/i.test(t.prep || ''),
+        askedAt: t.askedAt, bringBy: t.bringBy, doctorName: t.doctorName, doctorId: t.doctorId, prescriptionId: t.prescriptionId,
+      })),
     },
     activityPlan: activity && {
       id: activity._id, name: activity.name, durationMin: activity.durationMin, plannedTime: activity.plannedTime, daysPerWeek: activity.daysPerWeek,

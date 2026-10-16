@@ -442,6 +442,11 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
           const Gap(16),
           _pad(_today(context)),
           const Gap(16),
+          // Tests the doctor asked for that still need a result (hidden when none).
+          if (_dueTests.isNotEmpty) ...[
+            _pad(_labTests(context)),
+            const Gap(16),
+          ],
           // The patient's own log (meals by choice, exercise, steps), shared with whom they pick.
           _pad(_dailyLog(context)),
           const Gap(16),
@@ -650,6 +655,98 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
           ),
           const Gap(12),
           trailing,
+        ],
+      ),
+    );
+  }
+
+  // ── Lab tests ─────────────────────────────────────────────────────────────
+  // Tests the doctor asked for that have no result yet (soonest first). Home
+  // shows the first few; View all opens Records on its Tests filter.
+
+  static const _sampleTests = [
+    {'name': 'HbA1c', 'doctorName': 'Dr. Arjun Sen', 'bringBy': '2026-10-28', 'fasting': false},
+    {'name': 'Fasting lipid profile', 'doctorName': 'Dr. Arjun Sen', 'bringBy': '2026-10-28', 'fasting': true},
+    {'name': 'Vitamin D', 'doctorName': 'Dr. Rina Mitra', 'fasting': false},
+  ];
+
+  List<Map<String, dynamic>> get _dueTests => data == null ? _sampleTests : data!.obj('pendingTests').list('items');
+  int get _dueTotal => data == null ? 5 : data!.obj('pendingTests').numOr('total').toInt();
+
+  void _allTests(BuildContext context) => Nav.tab(context, 'Patient-Records', args: const {'filter': 'tests'});
+
+  /// Upload: Add record set to that test and shared with the doctor who asked;
+  /// once saved it is in Records and drops off this card.
+  Future<void> _uploadTest(BuildContext context, Map<String, dynamic> t) async {
+    if (!isLive) {
+      Nav.go(context, 'Records-Add');
+      return;
+    }
+    await Nav.go(context, 'Records-Add', args: {
+      'kind': 'test_result',
+      'forTest': t.str('name'),
+      if (t.str('doctorId').isNotEmpty) 'doctorId': t.str('doctorId'),
+      if (t.str('doctorName').isNotEmpty) 'doctorName': t.str('doctorName'),
+    });
+    if (mounted) reload(quiet: true);
+  }
+
+  static String _shortDoctor(String name) {
+    final t = name.trim();
+    if (RegExp(r'^Dr\.?\s', caseSensitive: false).hasMatch(t)) return 'Dr. ${t.split(RegExp(r'\s+')).last}';
+    return t.split(RegExp(r'\s+')).first;
+  }
+
+  Widget _labTests(BuildContext context) {
+    final tests = _dueTests;
+    final total = _dueTotal;
+    return _card(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                total > tests.length ? _cardHeading('Lab tests', 'View all', () => _allTests(context)) : _cardTitle('Lab tests'),
+                const Gap(2),
+                Text('$total to do', style: tx(14, c: MP.ink2, tab: true)),
+              ],
+            ),
+          ),
+          for (var i = 0; i < tests.length; i++) _testRow(context, tests[i], first: i == 0),
+        ],
+      ),
+    );
+  }
+
+  Widget _testRow(BuildContext context, Map<String, dynamic> t, {required bool first}) {
+    final bringBy = F.date(t['bringBy']);
+    final sub = [
+      if (t.str('doctorName').isNotEmpty) _shortDoctor(t.str('doctorName')),
+      if (bringBy != null) tr(context, 'Bring by #1').replaceFirst('#1', F.dayMonth(bringBy)),
+      if (t['fasting'] == true) tr(context, 'Fasting needed'),
+    ].join(' · ');
+    return _ListRow(
+      first: first,
+      onTap: () => _allTests(context),
+      child: Row(
+        children: [
+          MpIconTile(I.flask, size: 40, iconSize: 20, radius: 12, bg: MP.fill, fg: MP.ink2),
+          const Gap(12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(t.str('name'), style: tx(16, w: w600)),
+                if (sub.isNotEmpty) ...[const Gap(2), Text(sub, style: tx(13, c: MP.ink2))],
+              ],
+            ),
+          ),
+          const Gap(12),
+          P1SoftButton('Upload', onTap: () => _uploadTest(context, t)),
         ],
       ),
     );

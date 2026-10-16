@@ -130,6 +130,17 @@ class _PatientRecordsScreenState extends State<PatientRecordsScreen> with LiveDa
     p3Listen(p3RecordsChanged, () => reload(quiet: true));
   }
 
+  /// Args {filter: 'tests'} (Home's "Lab tests" → View all): open on Tests.
+  bool _filterArgRead = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_filterArgRead) return;
+    _filterArgRead = true;
+    if (Nav.args<Map>(context)?['filter'] == 'tests') _filter = 2;
+  }
+
   static _Rec _fromApi(Map<String, dynamic> x) {
     final at = F.date(x['recordDate']);
     final pending = x.str('status') == 'processing' && x.str('kind') == 'test_result';

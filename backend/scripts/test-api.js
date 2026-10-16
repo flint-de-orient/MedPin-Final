@@ -636,11 +636,20 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(before, 'the prescribed test is listed');
     assert.equal(before.status, 'todo');
     assert.match(before.prep, /fasting/i);
+    // Home's "Lab tests" card lists it (at most 3, with the full count) until a result is in.
+    const homeBefore = ok(await ctx.pat('GET', '/api/patient/home')).pendingTests;
+    assert.ok(homeBefore.items.length <= 3 && homeBefore.total >= homeBefore.items.length);
+    const dueA1c = homeBefore.items.find((t) => t.name === before.name);
+    assert.ok(dueA1c, 'a test to do is on Home');
+    assert.equal(dueA1c.fasting, false, 'HbA1c needs no fasting');
     const forIt = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'a1c.pdf', 'application/pdf', { kind: 'test_result', forTests: before.name }) }), 201);
     assert.equal(forIt.record.title, before.name);
     const after = ok(await ctx.pat('GET', '/api/patient/records')).advisedTests.find((t) => t.name === before.name);
     assert.equal(after.status, 'done');
     assert.equal(String(after.result.recordId), String(forIt.record.id));
+    const homeAfter = ok(await ctx.pat('GET', '/api/patient/home')).pendingTests;
+    assert.equal(homeAfter.total, homeBefore.total - 1, 'an uploaded result leaves the Lab tests card');
+    assert.ok(!homeAfter.items.some((t) => t.name === before.name));
     const up = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'report.pdf', 'application/pdf', { kind: 'test_result', sourceName: 'Suraksha Diagnostics', shareWith: ctx.doctorUserId }) }), 201);
     const split = ok(await ctx.pat('POST', `/api/patient/records/${up.record.id}/split`, {
       collectedAt: '2026-09-30',

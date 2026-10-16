@@ -74,7 +74,8 @@ class Nav {
   }
 
   /// Replaces the current screen (used by bottom-nav tabs), no transition.
-  static void tab(BuildContext context, String stem) {
+  /// [args] is read on the tab with [Nav.args] (e.g. which filter to open on).
+  static void tab(BuildContext context, String stem, {Object? args}) {
     final s = spec(stem);
     if (s == null) {
       toast(context, 'This section is not in the design yet');
@@ -82,7 +83,7 @@ class Nav {
     }
     if (ModalRoute.of(context)?.settings.name == stem) return;
     Navigator.of(context).pushReplacement(PageRouteBuilder(
-      settings: RouteSettings(name: stem),
+      settings: RouteSettings(name: stem, arguments: args),
       transitionDuration: Duration.zero,
       reverseTransitionDuration: Duration.zero,
       pageBuilder: (c, _, __) => s.builder(c),
