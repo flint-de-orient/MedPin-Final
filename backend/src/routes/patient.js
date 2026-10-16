@@ -491,7 +491,8 @@ async function doctorCards(req, profiles, origin) {
     }
     out.push({
       doctorId: prof.userId, name: prof.displayName, initials: prof.displayName.replace(/^Dr\.?\s*/i, '').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
-      photo: storage.withUrl(prof.photo), headline: prof.headline, specialtyKeys: prof.specialtyKeys, degrees: prof.degreesSummary,
+      photo: storage.withUrl(prof.photo), photoUrl: prof.photo?.key ? storage.stableUrl(prof.photo.key) : null,
+      headline: prof.headline, specialtyKeys: prof.specialtyKeys, degrees: prof.degreesSummary,
       years: prof.practisingSince ? new Date().getFullYear() - prof.practisingSince : null, languages: prof.languagesSpoken,
       // "Video visit" only when the doctor offers video and has a video consultation service.
       gender: prof.gender, video: Boolean(prof.offersVideo && places.some((d) => d.services.some((s) => s.mode === 'video'))),
@@ -660,7 +661,12 @@ r.get('/doctors/:doctorId/slots', async (req, res) => {
     }
     return res.json({ open: found.length > 0, slots: found });
   }
-  const out = await S.slotsFor({ doctorId: req.params.doctorId, locationId: req.query.locationId, day: T.parseDay(req.query.date) });
+  // One day: closed online, or beyond the days open ahead, shows no times (the booking rules).
+  const dlr = await M.DoctorLocation.findOne({ doctorId: req.params.doctorId, locationId: req.query.locationId, status: 'active' }, 'schedule');
+  if (dlr?.schedule?.onlineBooking === false) return res.json({ open: false, reason: 'online_booking_off', slots: [] });
+  const day = T.parseDay(req.query.date);
+  if (day >= T.addDays(T.dayStart(), (dlr?.schedule?.bookingWindowDays || 7) + 1)) return res.json({ open: false, reason: 'beyond_booking_window', slots: [] });
+  const out = await S.slotsFor({ doctorId: req.params.doctorId, locationId: req.query.locationId, day });
   res.json({ ...out, slots: out.slots.filter((s) => !s.walkIn) });
 });
 
@@ -687,6 +693,7 @@ r.get('/my-doctors', async (req, res) => {
     out.push({
       specialty: spec?.label || null, practiceId: c.practiceId?._id, area: place?.locationId?.area || place?.locationId?.shortName || null, locationId: place?.locationId?._id || null,
       doctorId: c.userId._id, name: prof?.displayName || c.userId.name, role: c.role, headline: prof?.headline, clinic: c.practiceId?.name,
+      photoUrl: (await require('../services/photos').doctorPhotos([c.userId._id])).get(String(c.userId._id)) || null,
       ...(await require('../services/presence').presenceOf(c.userId._id)), nextVisit: next && { id: next._id, startAt: next.startAt, token: String(next.tokenNo).padStart(2, '0') },
       lastSeenAt: last?.completedAt, followUpDue: fu?.dueDate, medicines: meds, adherencePct: docAdh?.pct ?? null, adherenceCount: adhCount(docAdh),
       conversationId: convo?._id, unread: convo?.participants.find((p) => String(p.userId) === String(req.user._id))?.unreadCount || 0,
@@ -759,8 +766,10 @@ const myAppointment = async (req) => {
 r.post('/appointments/:id/pay-at-clinic', async (req, res) => {
   const a = await myAppointment(req);
   if (a.feeStatus !== 'pending') throw conflict(a.feeStatus === 'paid' ? 'This visit is already paid' : 'Nothing to pay for this visit', 'NOT_PENDING');
+  const before = a.payAt;
   a.payAt = 'clinic';
   await a.save();
+  if (before !== 'clinic') await care.chatNote(a, `You'll pay ₹${a.fee} at the clinic for this visit. You can still pay online any time before.`, 'pay_at_clinic');
   res.json({ ok: true, payAt: a.payAt, fee: a.fee, feeStatus: a.feeStatus });
 });
 
@@ -807,6 +816,14 @@ r.post('/appointments/:id/cancel', async (req, res) => {
 
 r.post('/appointments/:id/reschedule', async (req, res) => {
   const a = await myAppointment(req);
+  // The doctor's booking rules apply to moving a visit too: online booking on,
+  // not later than the cancel/reschedule cut-off, and within the days open ahead.
+  const dl = await M.DoctorLocation.findOne({ doctorId: a.doctorId, locationId: a.locationId, status: 'active' }, 'schedule');
+  if (dl?.schedule?.onlineBooking === false) throw conflict('This clinic changes visits by phone. Please call the clinic.', 'ONLINE_BOOKING_OFF');
+  const cutoff = (dl?.schedule?.cancelCutoffHours || 2) * 3600e3;
+  if (a.startAt - Date.now() < cutoff) throw conflict(`Visits can be moved up to ${dl?.schedule?.cancelCutoffHours || 2} hours before. Please call the clinic.`, 'TOO_LATE');
+  const lastDay = T.addDays(T.dayStart(), (dl?.schedule?.bookingWindowDays || 7) + 1);
+  if (new Date(req.body.startAt) >= lastDay) throw badRequest(`You can book up to ${dl?.schedule?.bookingWindowDays || 7} days ahead`, 'OUTSIDE_BOOKING_WINDOW');
   const next = await S.reschedule(a, req.body.startAt, req.user._id);
   // The desk (or, without one, the doctor) sees the visit moved.
   const { deskOrDoctors } = require('../services/notify');

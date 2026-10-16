@@ -39,18 +39,9 @@ const List<_Conv> _rows = [
   ('DB', 'Debasish Bose', 'Sun', 0, 'Dr. Sen', 'Please repeat HbA1c before your next visit.', 'Check-in due'),
 ];
 
-/// Front-desk tabs with the unread count on Patients (as in this design).
-FloatingNav _nav(int? badge) => FloatingNav(
-  items: [
-    const NavItem('Today', I.calendar, 'Staff-Today'),
-    NavItem('Patients', I.users, 'Staff-Patients', badge: badge),
-    const NavItem('Profile', I.user, 'Staff-Profile'),
-  ],
-  current: 1,
-  fontSize: 12,
-  gap: 4,
-  badgeTop: 4,
-);
+/// Front-desk tabs with the unread count on Patients (as in this design);
+/// StaffNav adds Payments for the desk and the assistant's tabs.
+Widget _nav(int? badge) => StaffNav(current: 1, patientsBadge: badge);
 
 /// Live data: GET /api/inbox?type=all (care + nutrition chats, unread counts,
 /// pending enrolments) and the notification count, refreshed every 30 s.

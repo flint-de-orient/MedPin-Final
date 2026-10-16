@@ -17,12 +17,16 @@ import '../../widgets/i18n.dart';
 /// a MedPin account (+91 98765 43210) opens 'Add-Patient-Existing'.
 /// Puts a patient into today's queue as a walk-in (POST /api/appointments/walk-in).
 /// With several doctors here, the desk picks one. Returns the token number.
-Future<int?> addWalkIn(BuildContext context, String patientId, {String? doctorId, String? locationId}) async {
+/// [reason] is the complaint typed at the desk; it becomes the visit's reason
+/// so the doctor's queue shows why they came.
+Future<int?> addWalkIn(BuildContext context, String patientId, {String? doctorId, String? locationId, String? reason}) async {
+  final why = reason?.trim() ?? '';
   try {
     final a = await Api.I.post('/api/appointments/walk-in', {
       'patientId': patientId,
       if (doctorId != null) 'doctorId': doctorId,
       if (locationId != null) 'locationId': locationId,
+      if (why.isNotEmpty) 'reason': why,
     }) as Map;
     return (a['tokenNo'] as num?)?.toInt();
   } on ApiException catch (e) {
@@ -64,7 +68,7 @@ Future<int?> addWalkIn(BuildContext context, String patientId, {String? doctorId
         ),
       );
       if (pick == null || !context.mounted) return null;
-      return addWalkIn(context, patientId, doctorId: '${pick['doctorId']}', locationId: '${pick['locationId']}');
+      return addWalkIn(context, patientId, doctorId: '${pick['doctorId']}', locationId: '${pick['locationId']}', reason: why);
     }
     toast(context, e.message);
     return null;
@@ -388,7 +392,7 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
         final p = look['patient'];
         if (look['linked'] == true && p is Map) {
           if (_walkIn) {
-            final token = await addWalkIn(context, '${p['id']}');
+            final token = await addWalkIn(context, '${p['id']}', reason: _complaint.text);
             if (token == null || !mounted) return;
             toast(context, '${p['name']} added to today\'s queue · token ${'$token'.padLeft(2, '0')}');
             Nav.back(context);
@@ -490,7 +494,7 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
       if (!mounted) return;
       final id = '${(p as Map)['id']}';
       if (_walkIn) {
-        final token = await addWalkIn(context, id);
+        final token = await addWalkIn(context, id, reason: complaint);
         if (!mounted) return;
         toast(context, token == null ? 'Patient added. Add them to the queue from Appointments.' : 'Patient added to today\'s queue · token ${'$token'.padLeft(2, '0')}');
         Nav.back(context);

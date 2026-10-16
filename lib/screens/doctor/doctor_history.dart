@@ -27,9 +27,21 @@ class _Appt {
   /// Live: the appointment and patient ids (null in the design preview).
   final String? id;
   final String? patientId;
-  const _Appt(this.name, this.status, this.when, this.where, this.action, [this.id, this.patientId]);
 
-  Map<String, String>? get args => patientId == null ? null : {'patientId': patientId!, if (id != null) 'appointmentId': id!};
+  /// Live: the visit's prescription, so "Prescription" opens that one.
+  final String? prescriptionId;
+
+  /// Live: a consultation issued without an appointment (its id is not an appointment's).
+  final bool consult;
+  const _Appt(this.name, this.status, this.when, this.where, this.action, [this.id, this.patientId, this.prescriptionId, this.consult = false]);
+
+  Map<String, String>? get args => patientId == null
+      ? null
+      : {
+          'patientId': patientId!,
+          if (id != null && !consult) 'appointmentId': id!,
+          if (prescriptionId != null) 'prescriptionId': prescriptionId!,
+        };
 }
 
 class _Day {
@@ -54,18 +66,24 @@ String _clock(DateTime d) {
   return '$h:${d.minute.toString().padLeft(2, '0')} ${d.hour < 12 ? 'AM' : 'PM'}';
 }
 
-/// One past appointment from GET /api/history.
+/// One past visit from GET /api/history: an appointment, or a consultation
+/// issued straight from the patient (kind 'consultation', always completed).
 _Appt _liveAppt(Map<String, dynamic> a) {
   final p = a.obj('patient');
   final at = F.date(a['startAt']);
+  final consult = a['kind'] == 'consultation';
   final status = _pastStatuses[a['status']] ?? d2Role(a['status']);
-  final type = switch (a['visitType']) { 'follow_up' => 'Follow-up', 'new' => 'New', 'report_review' => 'Report review', _ => d2Role(a['visitType']) };
+  final type = consult
+      ? 'Consultation'
+      : switch (a['visitType']) { 'follow_up' => 'Follow-up', 'new' => 'New', 'report_review' => 'Report review', _ => d2Role(a['visitType']) };
   final conds = p['conditions'] as List? ?? const [];
+  // What it was about: the visit's diagnosis, else the patient's main condition.
+  final about = a.str('diagnosis').isNotEmpty ? a.str('diagnosis') : (conds.isNotEmpty ? '${conds.first}' : '');
   final when = [
     if (at != null) _clock(at),
     d2AgeSex(p),
     type,
-    if (a['mode'] == 'video') 'video' else if (conds.isNotEmpty) '${conds.first}',
+    if (a['mode'] == 'video') 'video' else about,
   ].where((s) => s.isNotEmpty).join(' · ');
   final practice = '${Session.I.activeMembership?['practiceName'] ?? ''}'.replaceFirst(RegExp(r'\s+Clinic$'), '');
   final place = [practice, a.obj('location').str('name')].where((s) => s.isNotEmpty).join(' · ');
@@ -78,7 +96,8 @@ _Appt _liveAppt(Map<String, dynamic> a) {
     _ => [place, if (mins != null && mins > 0) '$mins min'].where((s) => s.isNotEmpty).join(' · '),
   };
   final action = switch (a['status']) { 'completed' => 'Prescription', 'missed' => 'Reschedule', 'cancelled' => 'Book again', _ => 'View' };
-  return _Appt(p.str('name'), status, when, where, action, a.str('id'), p.str('id', a.str('patientId')));
+  final rx = a.str('prescriptionId');
+  return _Appt(p.str('name'), status, when, where, action, a.str('id'), p.str('id', a.str('patientId')), rx.isEmpty ? null : rx, consult);
 }
 
 const _today = _Day('Today, 1 Oct', '2 done so far', [

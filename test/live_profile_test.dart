@@ -54,6 +54,8 @@ dynamic _getResponse(Uri u) {
   if (p == '/api/me') return _fx('me');
   if (p == '/api/doctor/locations') return _fx('doctor_locations');
   if (p == '/api/doctor/leaves') return _fx('leaves');
+  // Leave and the clinics' holidays (Profile-Schedule, Leave and holidays).
+  if (p == '/api/doctor/time-off') return {'leaves': _fx('leaves'), 'holidays': const [], 'canAddHoliday': true, 'locations': const []};
   if (p == '/api/members') return _fx('members');
   if (p == '/api/billing') return _fx('billing');
   if (p == '/api/practice') return _fx('practice');

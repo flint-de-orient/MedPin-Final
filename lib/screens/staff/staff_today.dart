@@ -9,6 +9,7 @@ import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
 import '../../widgets/i18n.dart';
 import '../../widgets/fee_actions.dart';
+import '../../widgets/visit_status.dart';
 
 /// Design: Staff-Today.dc.html — "Today" (front desk).
 class StaffTodayScreen extends StatefulWidget {
@@ -24,7 +25,7 @@ const _lh = 1.4;
 
 /// Status pill colours (bg, fg).
 const _statusColors = <String, (Color, Color)>{
-  'In consult': (MP.primarySoft, MP.primary),
+  'With doctor': (MP.primarySoft, MP.primary),
   'Waiting': (MP.amberSoft, MP.amber),
   'Upcoming': (MP.fill, MP.ink2),
   'Done': (MP.greenSoft, MP.green),
@@ -36,7 +37,7 @@ const _statusLabels = {
   'booked': 'Upcoming',
   'confirmed': 'Upcoming',
   'waiting': 'Waiting',
-  'in_consultation': 'In consult',
+  'in_consultation': 'With doctor',
   'completed': 'Done',
   'missed': 'Missed',
 };
@@ -52,7 +53,7 @@ const _requests = [
 /// (time, name, status, doctor)
 const _appts = [
   ('8:30', 'Amit Pal', 'Done', 'Dr. Sen'),
-  ('9:00', 'Priya Sharma', 'In consult', 'Dr. Sen'),
+  ('9:00', 'Priya Sharma', 'With doctor', 'Dr. Sen'),
   ('9:30', 'Rahul Das', 'Waiting', 'Dr. Sen'),
   ('10:00', 'Aisha Khan', 'Waiting', 'Dr. Sen'),
   ('10:30', 'Sujit Mondal', 'Upcoming', 'Dr. Sen'),
@@ -366,14 +367,28 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                         const Gap(4),
                         Row(
                           children: [
+                            // Tap the status to change it: arrived, with doctor, done, missed, cancel.
                             Flexible(
-                              child: Container(
-                                height: 22,
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [Flexible(child: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(12, w: w600, c: fg, h: 1)))],
+                              child: Tap(
+                                onTap: appt == null
+                                    ? null
+                                    : () async {
+                                        if (await changeVisitStatus(context, appointmentId: appt.str('id'), status: appt.str('status'), patientName: a.$2) && mounted) {
+                                          reload(quiet: true);
+                                        }
+                                      },
+                                radius: 999,
+                                child: Container(
+                                  height: 22,
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(child: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(12, w: w600, c: fg, h: 1))),
+                                      if (appt != null) ...[const Gap(3), Ico(I.chevronDown, size: 12, color: fg, stroke: 2.2)],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),

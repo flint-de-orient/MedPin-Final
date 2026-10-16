@@ -30,9 +30,10 @@ class _Chat {
   /// Colleague / staff chats use a rounded-square grey avatar.
   final bool team;
 
-  /// Live: the conversation id.
+  /// Live: the conversation id, and the patient's profile photo.
   final String? id;
-  const _Chat(this.ini, this.name, this.role, this.msg, this.time, this.unread, [this.team = false, this.id]);
+  final String? photo;
+  const _Chat(this.ini, this.name, this.role, this.msg, this.time, this.unread, [this.team = false, this.id, this.photo]);
 
   Map<String, String>? get args => id == null ? null : {'conversationId': id!};
 
@@ -146,6 +147,7 @@ class _DoctorMessagesScreenState extends State<DoctorMessagesScreen> with LiveDa
       n > 0 ? '$n' : '',
       false,
       c.str('id'),
+      p.str('photo').isEmpty ? null : p.str('photo'),
     );
   }
 
@@ -396,6 +398,7 @@ class _ChatRow extends StatelessWidget {
                 radius: c.team ? 14 : null,
                 bg: c.team ? MP.fill : MP.primarySoft,
                 fg: c.team ? MP.ink2 : MP.primary,
+                photo: c.photo,
               ),
             ),
             const Gap(12),

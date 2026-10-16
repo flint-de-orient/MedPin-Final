@@ -5,6 +5,7 @@ import '../../data/config.dart';
 import '../../data/firebase_phone.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
+import 'auth_patient_address.dart';
 
 /// Sign in and Register share one phone check: text a code, then Auth-OTP.
 
@@ -57,6 +58,8 @@ Future<String?> finishSignIn(Map<String, dynamic> body) async {
   try {
     await Api.I.post('/api/patient/register', signup);
     await Session.I.reloadAccount();
+    // New profile: the optional "Your address" step opens over the home.
+    openAddressStepAfterSignUp();
     return null;
   } on ApiException catch (e) {
     // Signed in but no profile yet: Auth-Patient-Setup asks again.

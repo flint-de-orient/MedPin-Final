@@ -106,7 +106,12 @@ r.get('/patients', async (req, res) => {
     { $group: { _id: '$params.patientId', n: { $sum: 1 } } },
   ]);
   const newReports = new Map(unseen.map((u) => [String(u._id), u.n]));
-  const rows = patients.map((p) => listRow(p, { lastVisitAt: lv.get(String(p._id)) || null, branch: branch.get(String(p._id)), newReports: newReports.get(String(p._id)) || 0 }));
+  // Their profile photo (set in the patient app), for the avatar.
+  const photos = await require('../services/photos').photosFor(patients.map((p) => p.userId));
+  const rows = patients.map((p) => listRow(p, {
+    lastVisitAt: lv.get(String(p._id)) || null, branch: branch.get(String(p._id)), newReports: newReports.get(String(p._id)) || 0,
+    photo: p.userId ? photos.get(String(p.userId)) || null : null,
+  }));
   if (req.query.sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name));
   else rows.sort((a, b) => new Date(b.lastVisitAt || 0) - new Date(a.lastVisitAt || 0));
   res.json({

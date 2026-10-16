@@ -8,7 +8,9 @@ import 'common_d9.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: People.dc.html — "People".
-/// Live data: GET /api/members (+ GET /api/locations for short names).
+/// Live data: GET /api/members (+ GET /api/locations for short names). Each
+/// row opens People-Member; rows the viewer may change show "Edit access"
+/// (not your own row, and only owners change an owner).
 class PeopleScreen extends StatefulWidget {
   const PeopleScreen({super.key});
 
@@ -60,15 +62,21 @@ class _PeopleScreenState extends State<PeopleScreen> with LiveData {
                   final locs = m['allLocations'] == true
                       ? 'All locations'
                       : m.list('locations').map((l) => short[l.str('id')] ?? l.str('name')).join(', ');
-                  final meta = [m.obj('department').str('name'), locs.isEmpty ? 'No locations' : locs]
-                      .where((x) => x.isNotEmpty)
-                      .join(' · ');
+                  // Department only where the role has one; an assistant also shows whom they assist.
+                  final hasDept = const {'doctor', 'doctor_assistant', 'dietician'}.contains(m['role']);
+                  final assists = [for (final d in m.list('assists')) d.str('name')].where((x) => x.isNotEmpty).join(', ');
+                  final meta = [
+                    if (hasDept) m.obj('department').str('name'),
+                    if (assists.isNotEmpty) 'Assists $assists',
+                    locs.isEmpty ? 'No locations' : locs,
+                  ].where((x) => x.isNotEmpty).join(' · ');
                   final name = m.str('name', D9Fmt.phone(m.str('phone')));
+                  final me = m.str('id') == data!.obj('members').str('meId');
                   return (
                     name,
                     F.initials(name),
                     meta,
-                    m['isOwner'] == true ? 'Owner' : (suspended ? 'Suspended' : null),
+                    me ? (m['isOwner'] == true ? 'Owner · You' : 'You') : (m['isOwner'] == true ? 'Owner' : (suspended ? 'Suspended' : null)),
                     suspended,
                     m['id'] as String?,
                   );
@@ -76,6 +84,12 @@ class _PeopleScreenState extends State<PeopleScreen> with LiveData {
             ],
           ),
     ];
+  }
+
+  /// Member ids whose access the viewer may change (design preview: all but the owner).
+  Set<String?> get _editable {
+    if (data == null) return {for (final g in _groups) for (final p in g.$2) if (p.$4 != 'Owner') p.$1};
+    return {for (final m in data!.obj('members').list('items')) if (m['canEdit'] == true) m['id'] as String?};
   }
 
   Future<void> _open(String stem, [Object? args]) async {
@@ -99,7 +113,10 @@ class _PeopleScreenState extends State<PeopleScreen> with LiveData {
           _SeatBanner(_seatLine),
           D9Card(
             gap: 20,
-            children: [for (final g in _liveGroups) _Group(g.$1, g.$2, onOpen: (id) => _open('People-Member', {'memberId': id}))],
+            children: [
+              for (final g in _liveGroups)
+                _Group(g.$1, g.$2, editable: _editable, keyOf: (p) => data == null ? p.$1 : p.$6, onOpen: (id) => _open('People-Member', {'memberId': id})),
+            ],
           ),
           MpButton('Add someone', icon: I.plus, iconStroke: 1.75, onTap: addSomeone),
         ],
@@ -161,7 +178,9 @@ class _Group extends StatelessWidget {
   final String label;
   final List<_Person> people;
   final ValueChanged<String?> onOpen;
-  const _Group(this.label, this.people, {required this.onOpen});
+  final Set<String?> editable;
+  final String? Function(_Person p) keyOf;
+  const _Group(this.label, this.people, {required this.onOpen, required this.editable, required this.keyOf});
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +188,8 @@ class _Group extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         D9Label(label, h: 1.35, padding: const EdgeInsets.only(bottom: 4)),
-        for (var i = 0; i < people.length; i++) _PersonRow(people[i], first: i == 0, onTap: () => onOpen(people[i].$6)),
+        for (var i = 0; i < people.length; i++)
+          _PersonRow(people[i], first: i == 0, editable: editable.contains(keyOf(people[i])), onTap: () => onOpen(people[i].$6)),
       ],
     );
   }
@@ -179,12 +199,15 @@ class _PersonRow extends StatelessWidget {
   final _Person p;
   final bool first;
   final VoidCallback onTap;
-  const _PersonRow(this.p, {required this.first, required this.onTap});
+
+  /// Shows "Edit access" (the viewer may change this member's access).
+  final bool editable;
+  const _PersonRow(this.p, {required this.first, required this.onTap, this.editable = false});
 
   @override
   Widget build(BuildContext context) {
     final (name, initials, meta, pill, suspended, _) = p;
-    final owner = pill == 'Owner';
+    final owner = pill == 'Owner' || pill == 'Owner · You' || pill == 'You';
     return D9Row(
       border: !first,
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -226,6 +249,8 @@ class _PersonRow extends StatelessWidget {
                 ),
                 const Gap(2),
                 Text(meta, style: tx(14, c: MP.ink2, h: 1.45), maxLines: 1, overflow: TextOverflow.ellipsis),
+                // Under the details, not beside them: narrow phones and long names keep their room.
+                if (editable) ...[const Gap(4), D9Link('Edit access', size: 13, onTap: onTap)],
               ],
             ),
           ),

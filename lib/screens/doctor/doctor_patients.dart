@@ -28,7 +28,10 @@ class _Patient {
 
   /// Which branch they go to: "Salt Lake" or "Salt Lake · last at New Town".
   final String? branch;
-  const _Patient(this.name, this.meta, this.cond, this.last, [this.flag, this.flagColor = MP.ink2, this.id, this.branch]);
+
+  /// Their profile photo (set in the patient app).
+  final String? photo;
+  const _Patient(this.name, this.meta, this.cond, this.last, [this.flag, this.flagColor = MP.ink2, this.id, this.branch, this.photo]);
 
   String get initials {
     final s = name.split(' ').where((w) => w.isNotEmpty).map((w) => w[0]).join();
@@ -158,6 +161,7 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> with LiveDa
             f?.$2 ?? MP.ink2,
             p.str('id'),
             _branches.length > 1 ? _branchOf(p) : null,
+            p.str('photo').isEmpty ? null : p.str('photo'),
           );
           }(),
       ];
@@ -317,7 +321,7 @@ class _PatientCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              MpAvatar(p.initials, size: 44, fontSize: 15),
+              MpAvatar(p.initials, size: 44, fontSize: 15, photo: p.photo),
               const Gap(12),
               Expanded(
                 child: Column(

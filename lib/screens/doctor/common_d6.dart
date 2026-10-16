@@ -304,7 +304,7 @@ class D6ProfileHero extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  MpAvatar(r?.initials ?? 'PS', size: 72, fontSize: 24),
+                  MpAvatar(r?.initials ?? 'PS', size: 72, fontSize: 24, photo: r?.photo),
                   if (risk != null) D6Pill(risk.$1, bg: risk.$2, fg: risk.$3),
                 ],
               ),
@@ -771,7 +771,7 @@ class _TabsIdentity extends StatelessWidget {
         children: [
           Row(
             children: [
-              MpAvatar(r?.initials ?? 'PS', size: 56, fontSize: 19),
+              MpAvatar(r?.initials ?? 'PS', size: 56, fontSize: 19, photo: r?.photo),
               const Gap(14),
               Expanded(
                 child: Column(
@@ -1093,6 +1093,9 @@ class D6Rec {
   String get name => p.str('name');
   String get first => F.firstName(name);
   String get initials => F.initials(name);
+
+  /// The patient's profile photo (set in their app), or null.
+  String? get photo => p.str('photo').isEmpty ? null : p.str('photo');
   String get phone => p.str('phone');
   String get phoneText => d6Phone(phone);
   String get gender => switch (p['gender']) { 'female' => 'Female', 'male' => 'Male', 'other' => 'Other', _ => '' };

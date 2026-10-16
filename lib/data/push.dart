@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:isolate';
+import 'dart:ui' show DartPluginRegistrant, IsolateNameServer;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -8,6 +11,7 @@ import '../core/nav.dart';
 import 'api.dart';
 import 'nav_counts.dart';
 import 'config.dart';
+import 'device_sync.dart';
 import 'live.dart';
 import 'local_notes.dart';
 import 'med_alarms.dart';
@@ -31,6 +35,31 @@ class Push {
   Map<String, dynamic>? _pendingTap;
 
   bool get _supported => !kIsWeb && !AppMode.preview && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
+
+  /// Phones only (Firebase Messaging has no background handler elsewhere).
+  static bool get backgroundSupported => !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
+
+  /// In the app itself (main isolate): silent pushes that arrive while it is in
+  /// the background hand their work here ([pushBackground]), so it runs with
+  /// the app's own session — a second copy refreshing the sign-in token
+  /// would leave the app holding a spent one.
+  void listenForBackgroundWork() {
+    if (!backgroundSupported) return;
+    final port = ReceivePort();
+    IsolateNameServer.removePortNameMapping(_appPortName);
+    IsolateNameServer.registerPortWithName(port.sendPort, _appPortName);
+    port.listen((msg) async {
+      if (msg is! List || msg.length != 2 || msg[1] is! SendPort) return;
+      final reply = msg[1] as SendPort;
+      reply.send('got');
+      try {
+        await _backgroundWork('${msg[0]}');
+      } catch (e) {
+        debugPrint('Background push: $e');
+      }
+      reply.send('done');
+    });
+  }
 
   /// After sign-in (or a restored session): permission, token, listeners.
   Future<void> start() async {
@@ -94,6 +123,10 @@ class Push {
     LiveBus.changed(); // and whatever screen is open may now be out of date
     // Medicines or visits changed (a new prescription, a visit booked): re-schedule the phone's alarms.
     if (msg.data['type'] == 'reminders_changed') MedAlarms.I.sync();
+    // My role / locations / access changed (Profile → People): menus and permissions follow at once.
+    if (msg.data['type'] == 'membership_changed' || msg.data['type'] == 'member_access_changed') Session.I.reloadAccount().catchError((_) {});
+    // The server's periodic nudge: send the watch / phone readings now.
+    if (msg.data['type'] == 'device_sync' && Session.I.landing == 'Main') DeviceSync.sync(null);
     final n = msg.notification;
     if (n == null) return; // a silent "chat changed": the refresh above is all it needs
     final type = msg.data['type']?.toString() ?? '';
@@ -134,4 +167,88 @@ class Push {
     } catch (_) {}
     token = null;
   }
+}
+
+const _appPortName = 'medpin.push.app';
+
+/// Silent pushes that do work in the background (nothing is shown).
+const _backgroundTypes = {'device_sync', 'reminders_changed'};
+
+/// The work itself, for a signed-in patient only: watch / phone readings up
+/// (DeviceSync keeps its 30-minute limit) or the medicine alarms re-scheduled.
+Future<void> _backgroundWork(String type) async {
+  if (!_backgroundTypes.contains(type) || !Session.I.signedIn || Session.I.landing != 'Main') return;
+  if (type == 'device_sync') {
+    await DeviceSync.sync(null);
+  } else {
+    MedAlarms.I.sync();
+    // MedAlarms runs on its own timer; stay alive while it re-schedules.
+    await Future<void>.delayed(const Duration(seconds: 10));
+  }
+}
+
+/// Firebase Messaging's background handler (registered in main.dart): a data
+/// message while the app is in the background or closed. No UI and no
+/// BuildContext here — it may run in its own isolate with no screens.
+@pragma('vm:entry-point')
+Future<void> pushBackground(RemoteMessage msg) async {
+  final type = msg.data['type']?.toString() ?? '';
+  if (!_backgroundTypes.contains(type)) return; // notifications are shown by the system
+  try {
+    // The app is still in memory: it does the work with its session.
+    if (await _handToApp(type)) return;
+    DartPluginRegistrant.ensureInitialized();
+    if (!await _restoreSaved()) return; // not signed in: nothing to do
+    if (Session.I.landing != 'Main') return; // patients only
+    if (Firebase.apps.isEmpty) await Firebase.initializeApp();
+    // MedAlarms tells the server what this phone rings (needs this phone's token).
+    Push.I.token ??= await FirebaseMessaging.instance.getToken().timeout(const Duration(seconds: 10), onTimeout: () => null);
+    await _backgroundWork(type);
+  } catch (e) {
+    debugPrint('Background push $type: $e');
+  }
+}
+
+/// Asks the app (if it is running) to do [type]. False when nobody answered:
+/// no app, or a name left behind by one that has closed.
+Future<bool> _handToApp(String type) async {
+  final app = IsolateNameServer.lookupPortByName(_appPortName);
+  if (app == null) return false;
+  final reply = ReceivePort();
+  final got = Completer<void>();
+  final done = Completer<void>();
+  reply.listen((m) {
+    if (m == 'got' && !got.isCompleted) got.complete();
+    if (m == 'done' && !done.isCompleted) done.complete();
+  });
+  try {
+    app.send([type, reply.sendPort]);
+    await got.future.timeout(const Duration(seconds: 5));
+    // Keep this handler (and so the phone's wake-up) alive until the app is done.
+    await done.future.timeout(const Duration(seconds: 25), onTimeout: () {});
+    return true;
+  } on TimeoutException {
+    return false;
+  } finally {
+    reply.close();
+  }
+}
+
+/// The saved sign-in, read as it is (no server check, so a passing error
+/// can't sign the patient out from the background). Read afresh every time:
+/// this isolate can outlive an app run that has since rotated the tokens.
+/// Expired tokens refresh through Api as usual and are saved for the app.
+Future<bool> _restoreSaved() async {
+  final s = Session.I;
+  Map<String, dynamic>? data;
+  try {
+    final raw = await s.store.read();
+    if (raw != null) data = jsonDecode(raw) as Map<String, dynamic>;
+  } catch (_) {
+    data = null;
+  }
+  s.accessToken = data?['accessToken'] as String?;
+  s.refreshToken = data?['refreshToken'] as String?;
+  s.account = (data?['account'] as Map?)?.cast<String, dynamic>();
+  return s.signedIn;
 }

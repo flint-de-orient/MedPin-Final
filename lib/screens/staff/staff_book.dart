@@ -331,7 +331,7 @@ class _StaffBookScreenState extends State<StaffBookScreen> {
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       child: Row(
         children: [
-          MpAvatar(F.initials(p.str('name', 'P')), size: 44, fontSize: 15),
+          MpAvatar(F.initials(p.str('name', 'P')), size: 44, fontSize: 15, photo: p.str('photo').isEmpty ? null : p.str('photo')),
           const Gap(12),
           Expanded(
             child: Column(
@@ -472,7 +472,7 @@ class _PatientRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            MpAvatar(F.initials(p.str('name', 'P')), size: 44, fontSize: 15),
+            MpAvatar(F.initials(p.str('name', 'P')), size: 44, fontSize: 15, photo: p.str('photo').isEmpty ? null : p.str('photo')),
             const Gap(12),
             Expanded(
               child: Column(

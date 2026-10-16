@@ -38,7 +38,7 @@ class _AuthPatientSetupScreenState extends State<AuthPatientSetupScreen> {
     if (_name.text.trim().length < 2) return toast(context, 'Enter your full name');
     if (age == null || age < 0 || age > 120) return toast(context, 'Enter your age in years');
     if (!_agree) return toast(context, 'Please agree to the Terms of Use and Privacy Policy');
-    if (AppMode.preview) return Nav.reset(context, 'Main');
+    if (AppMode.preview) return Nav.reset(context, 'Auth-Patient-Address');
     if (_busy) return;
     setState(() => _busy = true);
     try {
@@ -49,7 +49,8 @@ class _AuthPatientSetupScreenState extends State<AuthPatientSetupScreen> {
         'termsAccepted': true,
       });
       await Session.I.reloadAccount();
-      if (mounted) Nav.reset(context, Session.I.landing);
+      // Then the optional address step (skippable) before the patient home.
+      if (mounted) Nav.reset(context, Session.I.landing == 'Main' ? 'Auth-Patient-Address' : Session.I.landing);
     } on ApiException catch (e) {
       if (mounted) toast(context, e.message);
     } finally {

@@ -7,6 +7,7 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
+import 'profile_leave.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Profile-Schedule.dc.html — "Profile · schedules and slots".
@@ -60,13 +61,15 @@ class _ProfileScheduleScreenState extends State<ProfileScheduleScreen> with Live
 
   static const _weekdays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
-  /// GET /api/doctor/locations (week sessions + slot rules) and /api/doctor/leaves.
+  /// GET /api/doctor/locations (week sessions + slot rules) and
+  /// /api/doctor/time-off (leave and the clinics' holidays).
   @override
   Future<Object?> fetch() async {
     final args = Nav.args<Map>(context) ?? const {};
-    final r = await Future.wait([Api.I.get('/api/doctor/locations'), Api.I.get('/api/doctor/leaves')]);
+    final r = await Future.wait([Api.I.get('/api/doctor/locations'), Api.I.get('/api/doctor/time-off')]);
     _liveLocs = null;
-    return {'locations': r[0], 'leaves': r[1], 'selected': args['locationId']};
+    final off = (r[1] as Map).cast<String, dynamic>();
+    return {'locations': r[0], 'leaves': off['leaves'], 'holidays': off['holidays'], 'selected': args['locationId']};
   }
 
   List<_Loc>? _liveLocs;
@@ -78,8 +81,8 @@ class _ProfileScheduleScreenState extends State<ProfileScheduleScreen> with Live
     if (_liveLocs != null) return _liveLocs!;
     final out = <_Loc>[];
     for (final dl in d.list('locations')) {
-      if (dl['status'] == 'ended') continue;
       final loc = dl.obj('locationId');
+      if (dl['status'] == 'ended' || loc['status'] == 'inactive') continue;
       final s = dl.obj('schedule');
       final week = List.generate(7, (_) => <(int, int)>[]);
       for (final day in s.list('week')) {
@@ -111,64 +114,39 @@ class _ProfileScheduleScreenState extends State<ProfileScheduleScreen> with Live
     return 'one location';
   }
 
-  /// (reason, detail, status, id) for current and planned leave.
+  /// (reason, detail, status, id) for current and planned leave; clinic
+  /// holidays come last with status 'holiday' (changed in Leave and holidays).
   List<(String, String, String, String?)> get _leave {
     final d = data;
     if (d == null) return [for (final (n, x) in _sampleLeave) (n, x, 'planned', null)];
+    String dates(Map<String, dynamic> l) =>
+        d4DateRange(F.date(l['startDate']) ?? DateTime.now(), F.date(l['endDate']) ?? F.date(l['startDate']) ?? DateTime.now());
     return [
       for (final l in d.list('leaves'))
         if (l['status'] != 'past')
           (
             l.str('reason', 'Leave'),
-            [
-              d4DateRange(F.date(l['startDate']) ?? DateTime.now(), F.date(l['endDate']) ?? F.date(l['startDate']) ?? DateTime.now()),
-              _locationName(l['locationId'] as String?),
-              switch (l.numOr('affectedPatients').toInt()) {
-                0 => 'no patients booked',
-                1 => '1 patient will be told',
-                final n => '$n patients will be told',
-              },
-            ].join(' · '),
+            [dates(l), l.str('locationName', _locationName(l['locationId'] as String?)), timeOffPatients(l.numOr('affectedPatients').toInt())].join(' · '),
             l.str('status', 'planned'),
             l.str('id'),
           ),
+      for (final h in d.list('holidays')) (h.str('reason', 'Closed all day'), [dates(h), h.str('locationName', 'Clinic')].join(' · '), 'holiday', null),
     ];
   }
 
   Future<void> _reloadLeaves() async {
-    final leaves = await runAction(context, () => Api.I.get('/api/doctor/leaves'));
-    if (leaves == null || !mounted || data == null) return;
-    setState(() => data!['leaves'] = leaves);
+    final off = await runAction(context, () => Api.I.get('/api/doctor/time-off'));
+    if (off is! Map || !mounted || data == null) return;
+    setState(() {
+      data!['leaves'] = off['leaves'];
+      data!['holidays'] = off['holidays'];
+    });
   }
 
-  static const _months = {'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6, 'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12};
-
-  /// "12 – 14 Nov", "30 Oct – 2 Nov", "12 Nov", "12 Nov 2026" → start/end
-  /// days; the next such dates when no year is given.
-  static (DateTime, DateTime)? _parseDates(String text, {DateTime? now}) {
-    final t = text.trim().toLowerCase().replaceAll(RegExp(r'\s*(–|—|-|\bto\b)\s*'), '|');
-    final parts = t.split('|');
-    if (parts.isEmpty || parts.length > 2) return null;
-    final re = RegExp(r'^(\d{1,2})(?:\s+([a-z]{3})[a-z]*)?(?:\s+(\d{4}))?$');
-    final ms = [for (final p in parts) re.firstMatch(p.trim())];
-    if (ms.any((m) => m == null)) return null;
-    final end = ms.last!, start = ms.first!;
-    final endMonth = _months[end.group(2) ?? ''];
-    if (endMonth == null) return null;
-    final startMonth = start.group(2) == null ? endMonth : _months[start.group(2)!];
-    if (startMonth == null) return null;
-    final n = now ?? DateTime.now();
-    final today = DateTime(n.year, n.month, n.day);
-    var year = int.tryParse(end.group(3) ?? '') ?? n.year;
-    DateTime mk(int y, int m, String d) => DateTime(y, m, int.parse(d));
-    var e = mk(year, endMonth, end.group(1)!);
-    if (end.group(3) == null && e.isBefore(today)) e = mk(++year, endMonth, end.group(1)!);
-    var s = mk(int.tryParse(start.group(3) ?? '') ?? (startMonth > endMonth ? year - 1 : year), startMonth, start.group(1)!);
-    if (s.month != startMonth || e.month != endMonth || s.isAfter(e)) return null;
-    return (s, e);
+  Future<void> _openTimeOff() async {
+    await openTimeOff(context);
+    if (mounted && isLive) _reloadLeaves();
   }
-
-  static String _ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   Map<String, Object?> _scheduleBody(_Loc l) => {
     'week': [
@@ -342,32 +320,22 @@ class _ProfileScheduleScreenState extends State<ProfileScheduleScreen> with Live
     });
   }
 
+  /// Reason, first / last day from date pickers, and where (all or one location).
   Future<void> _addLeave() async {
-    final r = await d4FormSheet(
-      context,
-      title: 'Add leave',
-      fields: const [
-        D4FormField('Reason', hint: 'e.g. Medical conference'),
-        D4FormField('Dates', hint: 'e.g. 12 – 14 Nov'),
-      ],
-      confirm: 'Add leave',
-    );
-    if (r == null || r.length < 2 || r[0].isEmpty || !mounted) return;
+    final r = await pickTimeOff(context, holiday: false, locations: [for (final l in _locs) (l.id ?? '', l.name)]);
+    if (r == null || !mounted) return;
     if (!isLive) {
-      setState(() => _sampleLeave.add((r[0], '${r[1].isEmpty ? 'Dates not set' : r[1]} · all locations')));
+      setState(() => _sampleLeave.add((r['reason'] ?? 'Leave', 'all locations')));
       return;
     }
-    final dates = _parseDates(r[1]);
-    if (dates == null) {
-      toast(context, 'Enter dates like 12 – 14 Nov');
-      return;
-    }
-    final ok = await runAction(
-      context,
-      () => Api.I.post('/api/doctor/leaves', {'reason': r[0], 'startDate': _ymd(dates.$1), 'endDate': _ymd(dates.$2)}),
-    );
-    if (ok == null || !mounted) return;
-    toast(context, 'Leave added · ${d4DateRange(dates.$1, dates.$2)}');
+    final ok = await runAction(context, () => Api.I.post('/api/doctor/leaves', r));
+    if (ok is! Map || !mounted) return;
+    final s = F.date(r['startDate']), e = F.date(r['endDate']);
+    final told = (ok['patientsTold'] as num?)?.toInt() ?? 0;
+    toast(context, [
+      s == null ? 'Leave added' : 'Leave added · ${d4DateRange(s, e ?? s)}',
+      if (told > 0) told == 1 ? '1 patient told' : '$told patients told',
+    ].join(' · '));
     _reloadLeaves();
   }
 
@@ -618,12 +586,17 @@ class _ProfileScheduleScreenState extends State<ProfileScheduleScreen> with Live
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             // Live: tap a leave to cancel it (DELETE /api/doctor/leaves/:id).
-            onTap: id == null || id.isEmpty ? null : () => _cancelLeave(id, name),
+            // A clinic holiday opens Leave and holidays (owners remove it there).
+            onTap: status == 'holiday' ? _openTimeOff : (id == null || id.isEmpty ? null : () => _cancelLeave(id, name)),
             child: Row(
               children: [
                 Expanded(child: D4TitleSub(name, detail)),
                 const SizedBox(width: 12),
-                status == 'active' ? const D4Pill.green('On leave') : const D4Pill.blue('Planned'),
+                switch (status) {
+                  'holiday' => const D4Pill.amber('Clinic holiday'),
+                  'active' => const D4Pill.green('On leave'),
+                  _ => const D4Pill.blue('Planned'),
+                },
               ],
             ),
           ),

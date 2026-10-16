@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' hide Text;
 
+import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
@@ -32,7 +33,14 @@ class _PpSummaryScreenState extends State<PpSummaryScreen> with LiveData {
         if (rec == null || _Vitals.live(rec).isNotEmpty) const _Vitals(),
         if (rec == null || _FastingSugar.live(rec).isNotEmpty) const _FastingSugar(),
         if (rec != null && !_AiSummary.shown(rec) && _Vitals.live(rec).isEmpty)
-          Text('No readings or test results yet', style: tx(14, c: MP.ink2)),
+          Row(
+            children: [
+              Expanded(child: Text('No readings or test results yet', style: tx(14, c: MP.ink2))),
+              const Gap(12),
+              // With nothing on record the Vitals card is hidden; its Record action stays here.
+              Builder(builder: (c) => D6Link('Record vitals', onTap: () => _Vitals.record(c))),
+            ],
+          ),
       ],
     );
   }
@@ -208,6 +216,19 @@ class _AiSummary extends StatelessWidget {
 class _Vitals extends StatelessWidget {
   const _Vitals();
 
+  /// "Record": a vitals sheet saved with POST /api/patients/:id/vitals, then
+  /// the summary reloads with the new readings.
+  static Future<void> record(BuildContext context) async {
+    final scope = D6Scope.maybeOf(context);
+    final id = scope?.rec?.id;
+    if (!isLive || id == null) {
+      d6Go(context, 'Consult-Vitals');
+      return;
+    }
+    final saved = await openSheet<bool>(context, (_) => _RecordVitalsSheet(patientId: id));
+    if (saved == true) await scope?.onChanged?.call();
+  }
+
   /// label, value, unit, band, band colour.
   static const _vitals = [
     ('Blood pressure', '128/82', 'mmHg', 'Normal', MP.green),
@@ -303,7 +324,10 @@ class _Vitals extends StatelessWidget {
               const Gap(12),
               Padding(
                 padding: const EdgeInsets.only(top: 3),
-                child: D6Link('Record', onTap: () => d6Go(context, 'Consult-Vitals')),
+                // Record = enter today's vitals only. Consult-Vitals is step 1 of a
+                // consultation (it starts one and goes on to Diagnosis), which is
+                // what "Start consultation" is for.
+                child: D6Link('Record', onTap: () => record(context)),
               ),
             ],
           ),
@@ -412,6 +436,101 @@ class _FastingSugar extends StatelessWidget {
             label: label,
             image: true,
             child: D6Chart(svg, width: 310, height: 140),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Record vitals" from the Summary tab: today's clinic readings for the
+/// patient, without starting a consultation.
+class _RecordVitalsSheet extends StatefulWidget {
+  final String patientId;
+  const _RecordVitalsSheet({required this.patientId});
+
+  @override
+  State<_RecordVitalsSheet> createState() => _RecordVitalsSheetState();
+}
+
+class _RecordVitalsSheetState extends State<_RecordVitalsSheet> {
+  /// API field, label, unit.
+  static const _fields = [
+    ('bpSystolic', 'BP systolic', 'mmHg'),
+    ('bpDiastolic', 'BP diastolic', 'mmHg'),
+    ('pulse', 'Pulse', 'bpm'),
+    ('spo2', 'SpO₂', '%'),
+    ('temperatureF', 'Temperature', '°F'),
+    ('weightKg', 'Weight', 'kg'),
+    ('heightCm', 'Height', 'cm'),
+    ('bloodSugar', 'Fasting sugar', 'mg/dL'),
+  ];
+
+  final _ctrls = {for (final f in _fields) f.$1: TextEditingController()};
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    for (final c in _ctrls.values) {
+      c.dispose();
+    }
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final body = <String, Object>{};
+    for (final f in _fields) {
+      final n = num.tryParse(_ctrls[f.$1]!.text.trim().replaceAll(',', '.'));
+      if (n != null) body[f.$1] = n;
+    }
+    if (body.isEmpty) {
+      toast(context, 'Enter at least one vital');
+      return;
+    }
+    // Both halves of the BP, or neither (one alone reads as a wrong value).
+    if (body.containsKey('bpSystolic') != body.containsKey('bpDiastolic')) {
+      toast(context, 'Enter the blood pressure like 120/80');
+      return;
+    }
+    if (body.containsKey('bloodSugar')) body['sugarType'] = 'fasting';
+    final res = await runAction(context, () => Api.I.post('/api/patients/${widget.patientId}/vitals', body), busy: _busy);
+    if (res == null || !mounted) return;
+    toast(context, 'Vitals saved');
+    Navigator.pop(context, true);
+  }
+
+  Widget _field((String, String, String) f) => MpInput(
+        label: f.$2,
+        unit: f.$3,
+        controller: _ctrls[f.$1],
+        tab: true,
+        keyboard: const TextInputType.numberWithOptions(decimal: true),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return MpSheet(
+      title: 'Record vitals',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < _fields.length; i += 2) ...[
+            if (i > 0) const Gap(12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _field(_fields[i])),
+                const Gap(12),
+                Expanded(child: _field(_fields[i + 1])),
+              ],
+            ),
+          ],
+          const Gap(20),
+          ValueListenableBuilder<bool>(
+            valueListenable: _busy,
+            builder: (_, busy, _) => MpButton(busy ? 'Saving…' : 'Save', onTap: busy ? null : _save),
           ),
         ],
       ),

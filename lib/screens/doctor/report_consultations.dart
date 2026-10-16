@@ -123,7 +123,9 @@ class _ReportConsultationsScreenState extends State<ReportConsultationsScreen> w
     final at = F.date(a['startAt']);
     final type = a.str('visitType');
     final fee = a.numOr('fee');
-    final free = fee == 0 || a['feeStatus'] == 'free';
+    // A consult started straight from the patient has no visit, so no fee on record ("–", not "Free").
+    final noFee = a['fee'] == null;
+    final free = !noFee && (fee == 0 || a['feeStatus'] == 'free');
     final dx = [for (final d in (a['diagnoses'] as List? ?? const [])) '$d'];
     final detail = [
       if (at != null) F.time(at),
@@ -143,7 +145,7 @@ class _ReportConsultationsScreenState extends State<ReportConsultationsScreen> w
         : free
         ? (type == 'report_review' ? 'Free review' : 'Free visit', D3Tone.grey)
         : (null, D3Tone.blue);
-    return _Visit(p.str('name', 'Patient'), free ? 'Free' : d3Rupees(fee.round()), detail, meta, badge.$1, badge.$2);
+    return _Visit(p.str('name', 'Patient'), noFee ? '–' : free ? 'Free' : d3Rupees(fee.round()), detail, meta, badge.$1, badge.$2);
   }
 
   /// Live rows grouped by IST day, newest first.

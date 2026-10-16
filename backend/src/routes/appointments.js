@@ -27,6 +27,8 @@ const view = (a) => {
     waitingMin: a.status === 'waiting' && a.arrivedAt ? Math.round((Date.now() - a.arrivedAt) / 60000) : null,
     // The fee: its payment (to collect at the desk, or paid and how) — see withPayments().
     payment: a._payment || null,
+    // The patient's profile photo (see withPayments, which fills it).
+    patientPhoto: a._photo || null,
   };
 };
 
@@ -36,13 +38,15 @@ async function withPayments(appts) {
   const pays = ids.length ? await M.Payment.find({ appointmentId: { $in: ids }, status: { $in: ['pending', 'paid', 'refunded'] } }).sort({ createdAt: -1 }) : [];
   const by = new Map();
   for (const p of pays) if (!by.has(String(p.appointmentId))) by.set(String(p.appointmentId), p);
+  const photos = await require('../services/photos').photosFor(appts.map((a) => a.patientId?.userId));
   for (const a of appts) {
+    if (a.patientId?.userId) a._photo = photos.get(String(a.patientId.userId)) || null;
     const p = by.get(String(a._id));
     a._payment = p ? { id: p._id, status: p.status, method: p.method || null, amount: p.amount, paidAt: p.paidAt || null, refundDue: Boolean(p.refundDue) } : null;
   }
   return appts;
 }
-const populate = (q) => q.populate('patientId', 'name gender ageYears ageRecordedAt dateOfBirth phone conditions createdAt').populate('doctorId', 'name').populate('locationId', 'name shortName');
+const populate = (q) => q.populate('patientId', 'name gender ageYears ageRecordedAt dateOfBirth phone conditions createdAt userId').populate('doctorId', 'name').populate('locationId', 'name shortName');
 
 // Today / Upcoming / Past, or a single date.
 r.get('/appointments', async (req, res) => {
@@ -98,6 +102,16 @@ r.post('/appointments', async (req, res) => {
     startAt, visitType, mode, reason, walkIn: Boolean(walkIn), channel: 'desk', bookedBy: req.user._id, requestId,
     confirmed: confirmed === true,
   });
+  // A doctor booking a follow-up visit ("Schedule a follow-up") with nothing
+  // advised yet: it is kept as a booked follow-up, so Follow-ups lists it and
+  // the visit closes it when it happens.
+  if (visitType === 'follow_up' && req.member.role === 'doctor' && String(appt.doctorId) === String(req.user._id)
+    && !(await M.FollowUp.exists({ appointmentId: appt._id }))) {
+    await M.FollowUp.create({
+      practiceId: req.practiceId, patientId: appt.patientId, doctorId: appt.doctorId, locationId: appt.locationId,
+      dueDate: appt.date, status: 'booked', appointmentId: appt._id, adviceText: reason || undefined,
+    });
+  }
   res.status(201).json(view(await populate(M.Appointment.findById(appt._id))));
 });
 
@@ -122,9 +136,11 @@ r.post('/appointments/walk-in', async (req, res) => {
   if (await M.Appointment.exists({ patientId, doctorId: dl.doctorId._id, date: T.dayStart(), status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } })) {
     throw conflict("This patient is already in today's list for this doctor", 'ALREADY_TODAY');
   }
+  // The complaint typed at the desk is the visit's reason (the queue row shows it).
+  const reason = typeof req.body.reason === 'string' ? req.body.reason.trim().slice(0, 500) || undefined : undefined;
   const appt = await S.book({
     practiceId: req.practiceId, locationId: dl.locationId._id, doctorId: dl.doctorId._id, patientId,
-    startAt: new Date(), visitType: req.body.visitType || 'new', mode: 'in_clinic', reason: req.body.reason, walkIn: true, channel: 'desk', bookedBy: req.user._id,
+    startAt: new Date(), visitType: req.body.visitType || 'new', mode: 'in_clinic', reason, walkIn: true, channel: 'desk', bookedBy: req.user._id,
   });
   // The doctor sees a new patient waiting (unless they added them themselves).
   if (String(dl.doctorId._id) !== String(req.user._id)) {
@@ -139,7 +155,12 @@ r.post('/appointments/:id/status', async (req, res) => {
   const appt = await S.getAppointment(req.params.id, req.practiceId);
   const to = req.body.status;
   if (!E.APPOINTMENT_STATUSES.includes(to) || ['cancelled', 'rescheduled'].includes(to)) throw badRequest('Use /cancel or /reschedule for those');
-  if (to === 'in_consultation' && req.member.role !== 'doctor') throw conflict('Only a doctor can start the consultation', 'ROLE_REQUIRED');
+  // "With the doctor": the doctor, or the desk / assistant sending the patient in.
+  if (to === 'in_consultation' && !['doctor', 'front_desk', 'doctor_assistant', 'practice_manager'].includes(req.member.role)) {
+    throw conflict('Only the doctor or the desk can send the patient in', 'ROLE_REQUIRED');
+  }
+  // Undo a check-in: only while still waiting (not after the doctor saw them).
+  if (to === 'booked' && appt.status !== 'waiting') throw conflict('Only a check-in can be undone', 'BAD_TRANSITION');
   await S.transition(appt, to, { by: req.user._id });
   res.json(view(await populate(M.Appointment.findById(appt._id))));
 });
@@ -148,13 +169,22 @@ r.post('/appointments/:id/reschedule', async (req, res) => {
   const appt = await S.getAppointment(req.params.id, req.practiceId);
   const loc = /^[0-9a-f]{24}$/i.test(String(req.body.locationId || '')) ? req.body.locationId : undefined;
   if (loc && !(await M.Location.exists({ _id: loc, practiceId: req.practiceId }))) throw badRequest("Choose one of this clinic's branches");
+  // Moving a follow-up visit books it again (S.book), which would also mark the
+  // patient's next still-unbooked follow-up as booked: those stay as they were.
+  const open = await M.FollowUp.find({ practiceId: req.practiceId, patientId: appt.patientId, status: { $in: ['not_booked', 'no_reply'] } }, 'status');
   const next = await S.reschedule(appt, req.body.startAt, req.user._id, loc);
+  for (const fu of open) {
+    await M.FollowUp.updateOne({ _id: fu._id, appointmentId: next._id, status: 'booked' }, { $set: { status: fu.status }, $unset: { appointmentId: 1 } });
+  }
   res.json(view(await populate(M.Appointment.findById(next._id))));
 });
 
 r.post('/appointments/:id/cancel', async (req, res) => {
   const appt = await S.getAppointment(req.params.id, req.practiceId);
   await S.transition(appt, 'cancelled', { by: req.user._id, cancelledBy: req.member.role === 'doctor' ? 'doctor' : 'desk', reason: req.body.reason });
+  // The follow-up this visit was for is due again (Follow-ups shows Book, not a dead View).
+  await M.FollowUp.updateMany({ appointmentId: appt._id, status: 'booked' }, { $set: { status: 'not_booked' }, $unset: { appointmentId: 1 } });
+  await M.FollowUp.updateMany({ appointmentId: appt._id, status: 'reports_in' }, { $unset: { appointmentId: 1 } });
   res.json(view(appt));
 });
 
@@ -303,28 +333,95 @@ r.get('/staff/today', async (req, res) => {
 });
 
 // Doctor-History: month summary + list.
+// A consultation issued straight from a patient (Consult-Pick / the profile, no
+// appointment) is a visit too: it is listed and counted as completed, so the
+// doctor's history is not empty when they never booked a slot.
+const ISSUED = ['issued', 'sent'];
+const consultView = (c) => {
+  const p = c.patientId && c.patientId.name ? c.patientId : null;
+  const rx = c.prescriptionId && c.prescriptionId._id ? c.prescriptionId : null;
+  const at = c.completedAt || c.startedAt;
+  return {
+    id: c._id,
+    kind: 'consultation',
+    consultationId: c._id,
+    status: 'completed',
+    startAt: at,
+    date: T.dayStart(at),
+    visitType: null,
+    mode: 'in_clinic',
+    walkIn: false,
+    consultStartedAt: c.startedAt,
+    completedAt: c.completedAt || null,
+    reason: c.chiefComplaint || null,
+    diagnosis: (c.diagnoses || []).map((d) => d.name).filter(Boolean).join(', ') || rx?.diagnosisSummary || null,
+    prescriptionId: rx ? rx._id : c.prescriptionId || null,
+    rxNumber: rx?.rxNumber ?? null,
+    patient: p ? { id: p._id, name: p.name, age: T.ageFrom(p), gender: p.gender, phone: p.phone, conditions: (p.conditions || []).map((x) => x.name) } : undefined,
+    patientId: p ? p._id : c.patientId,
+    doctor: c.doctorId?.name ? { id: c.doctorId._id, name: c.doctorId.name } : undefined,
+    doctorId: c.doctorId?._id || c.doctorId,
+    location: c.locationId?.name ? { id: c.locationId._id, name: c.locationId.shortName || c.locationId.name } : undefined,
+    locationId: c.locationId?._id || c.locationId,
+  };
+};
+
 r.get('/history', async (req, res) => {
   const period = req.query.period || 'this_month';
   const now = new Date();
   const from = req.query.from ? T.parseDay(req.query.from) : period === 'last_3_months' ? T.addDays(T.dayStart(), -90) : period === 'this_year' ? new Date(`${now.getFullYear()}-01-01T00:00:00+05:30`) : new Date(`${T.dayKey(now).slice(0, 7)}-01T00:00:00+05:30`);
   const to = req.query.to ? T.addDays(T.parseDay(req.query.to), 1) : T.addDays(T.dayStart(), 1);
   const q = { practiceId: req.practiceId, date: { $gte: from, $lt: to } };
-  if (req.member.role === 'doctor' && req.query.all !== 'true') q.doctorId = req.user._id;
-  if (req.query.status) q.status = { $in: list(req.query.status) };
+  const mineOnly = req.member.role === 'doctor' && req.query.all !== 'true';
+  if (mineOnly) q.doctorId = req.user._id;
+  const statuses = req.query.status ? list(req.query.status) : null;
+  if (statuses) q.status = { $in: statuses };
+  const cq = {
+    practiceId: req.practiceId, appointmentId: null, status: { $in: ISSUED }, startedAt: { $gte: from, $lt: to },
+    ...(mineOnly ? { doctorId: req.user._id } : {}),
+  };
+  const withConsults = !statuses || statuses.includes('completed');
   const { limit, skip } = paging(req.query, 200);
-  const [items, totals] = await Promise.all([
-    populate(M.Appointment.find(q).sort({ startAt: -1 }).skip(skip).limit(limit)),
+  // Both lists are newest first; take enough of each to fill this page after merging.
+  const upTo = skip + limit;
+  const [appts, totals, consults, consultCount] = await Promise.all([
+    populate(M.Appointment.find(q).sort({ startAt: -1 }).limit(upTo)),
     M.Appointment.aggregate([{ $match: { ...q, status: { $exists: true } } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+    withConsults
+      ? populate(M.Consultation.find(cq).sort({ startedAt: -1 }).limit(upTo)).populate('prescriptionId', 'rxNumber diagnosisSummary')
+      : [],
+    // Counted like the appointment totals above (whatever status filter is set).
+    M.Consultation.countDocuments(cq),
   ]);
+  // A completed appointment's own prescription, so "Prescription" opens it.
+  const apptIds = appts.filter((a) => a.status === 'completed').map((a) => a._id);
+  const linked = apptIds.length
+    ? await M.Consultation.find({ appointmentId: { $in: apptIds }, status: { $in: ISSUED } }, 'appointmentId prescriptionId diagnoses').sort({ startedAt: -1 })
+    : [];
+  const byAppt = new Map();
+  for (const c of linked) if (!byAppt.has(String(c.appointmentId))) byAppt.set(String(c.appointmentId), c);
+  const rows = [
+    ...appts.map((a) => {
+      const c = byAppt.get(String(a._id));
+      const v = view(a);
+      return c ? { ...v, consultationId: c._id, prescriptionId: c.prescriptionId || null, diagnosis: (c.diagnoses || []).map((d) => d.name).filter(Boolean).join(', ') || null } : v;
+    }),
+    ...consults.map(consultView),
+  ].sort((a, b) => new Date(b.startAt) - new Date(a.startAt)).slice(skip, upTo);
   const by = Object.fromEntries(totals.map((t) => [t._id, t.n]));
-  res.json({ from, to, summary: { completed: by.completed || 0, missed: by.missed || 0, cancelled: by.cancelled || 0, total: Object.values(by).reduce((a, b) => a + b, 0) }, items: items.map(view) });
+  const completed = (by.completed || 0) + consultCount;
+  res.json({
+    from, to,
+    summary: { completed, missed: by.missed || 0, cancelled: by.cancelled || 0, total: Object.values(by).reduce((a, b) => a + b, 0) + consultCount },
+    items: rows,
+  });
 });
 
 // ── Payments (Report-Fees pending list, Mark as paid, payment link) ──
 r.get('/payments', async (req, res) => {
   const q = { practiceId: req.practiceId };
   if (req.query.status) q.status = req.query.status;
-  const items = await M.Payment.find(q).sort({ createdAt: -1 }).limit(200).populate('patientId', 'name phone').populate('locationId', 'name shortName').populate('appointmentId', 'startAt mode status');
+  const items = await M.Payment.find(q).sort({ createdAt: -1 }).limit(200).populate('patientId', 'name phone').populate('locationId', 'name shortName').populate('appointmentId', 'startAt mode status payAt');
   res.json(items);
 });
 

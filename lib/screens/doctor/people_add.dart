@@ -5,12 +5,18 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'add_patient.dart' show PatientOtpSheet;
 import 'common_d9.dart';
+import 'people_access.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: People-Add.dc.html — "People · add".
-/// Live data: GET /api/departments, /api/locations. "Add to team" verifies
-/// the phone (POST /api/members/phone-otp, code entered in a sheet) and then
-/// POST /api/members with the code.
+/// Live data: GET /api/members/options (active locations, the doctors at each
+/// with their departments, all departments). The form follows the role:
+/// doctors add qualifications, registration and their department; a doctor's
+/// assistant picks the doctor(s) they assist, and their department comes from
+/// those doctors; a dietician's from the doctors at their locations; front
+/// desk, lab roles and practice managers have no department. "Add to team"
+/// verifies the phone (POST /api/members/phone-otp, code entered in a sheet)
+/// and then POST /api/members with the code.
 class PeopleAddScreen extends StatefulWidget {
   const PeopleAddScreen({super.key});
 
@@ -23,18 +29,10 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
   @override
   bool get autoRefresh => false;
 
-  static const _sampleDepartments = [
-    'Endocrinology',
-    'Diabetology',
-    'Cardiology',
-    'General medicine',
-    'Gynaecology',
-    'Nephrology',
-  ];
-
   String _role = 'Doctor';
-  String _department = 'Endocrinology';
+  String? _department;
   List<bool> _locations = [true, false];
+  final _assists = <String>{};
 
   late final _name = TextEditingController(text: isLive ? '' : 'Dr. Ananya Basu');
   late final _phone = TextEditingController(text: isLive ? '' : '+91 98300 45127')..addListener(_phoneEdited);
@@ -61,21 +59,51 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
 
   @override
   Future<Object?> fetch() async {
-    final r = await Future.wait([Api.I.get('/api/departments'), Api.I.get('/api/locations')]);
-    final deps = r[0] as List? ?? const [];
-    final locs = ((r[1] as Map)['items'] as List? ?? const []);
-    if (deps.isNotEmpty && data == null) _department = '${(deps.first as Map)['name']}';
-    if (_locations.length != locs.length) _locations = [for (var i = 0; i < locs.length; i++) i == 0];
-    return {'departments': deps, 'locations': r[1]};
+    final r = (await Api.I.get('/api/members/options') as Map).cast<String, dynamic>();
+    final n = r.list('locations').length;
+    // One location: it's ticked; several: the first, changed below.
+    if (_locations.length != n) _locations = [for (var i = 0; i < n; i++) i == 0];
+    return r;
   }
 
-  List<Map<String, dynamic>> get _departmentItems => [
-    for (final d in (data!['departments'] as List? ?? const [])) (d as Map).cast<String, dynamic>(),
-  ];
-  List<Map<String, dynamic>> get _locationItems => data!.obj('locations').list('items');
+  TeamOptions get _options => TeamOptions(data);
 
-  List<String> get _departments => data == null ? _sampleDepartments : [for (final d in _departmentItems) d.str('name')];
-  List<String> get _locationNames => data == null ? D9Locations.names : [for (final l in _locationItems) l.str('name')];
+  List<(String, String)> get _locationItems => _options.locations;
+
+  Set<String> get _chosenLocations => {
+    for (var i = 0; i < _locationItems.length && i < _locations.length; i++)
+      if (_locations[i]) _locationItems[i].$1,
+  };
+
+  bool get _allLocations => _locations.isNotEmpty && _locations.every((v) => v);
+
+  /// Doctors an assistant can work for: those at the chosen locations.
+  List<({String id, String name, Set<String> locationIds, List<String> departments})> get _assistable =>
+      _options.doctorsAt(_chosenLocations);
+
+  List<String> get _departments => _options.departmentsFor(_role, _chosenLocations, assists: _assists);
+
+  /// The department shown: the one picked if still offered, else the first
+  /// (the chosen doctor's department for an assistant).
+  String? get _departmentValue {
+    final opts = _departments;
+    if (opts.isEmpty) return null;
+    return opts.contains(_department) ? _department : opts.first;
+  }
+
+  void _setRole(String r) => setState(() {
+    _role = r;
+    _department = null; // the new role's own default
+    // A practice manager runs every location.
+    if (r == 'Practice manager') _locations = [for (final _ in _locations) true];
+  });
+
+  void _toggleLocation(int i) => setState(() {
+    _locations[i] = !_locations[i];
+    // An assistant can only assist doctors who work where they do.
+    final ids = {for (final d in _assistable) d.id};
+    _assists.removeWhere((id) => !ids.contains(id));
+  });
 
   @override
   void dispose() {
@@ -88,6 +116,11 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
   }
 
   Future<void> _submit() async {
+    final ids = _chosenLocations.toList();
+    if (ids.isEmpty) return toast(context, 'Choose at least one location');
+    if (_role == "Doctor's assistant" && _assists.isEmpty && _options.doctors.isNotEmpty) {
+      return toast(context, 'Choose the doctor they assist');
+    }
     if (!isLive) {
       toast(context, 'Added to team');
       Nav.back(context);
@@ -119,19 +152,17 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
       });
     }
 
-    final locs = _locationItems;
-    final ids = [
-      for (var i = 0; i < locs.length && i < _locations.length; i++)
-        if (_locations[i]) locs[i].str('id'),
-    ];
     final doctor = _role == 'Doctor';
+    final dep = _departmentValue;
     final body = <String, Object?>{
       'role': D9Roles.key(_role),
       'name': name,
       'phone': phone,
-      'departmentId': _departmentItems.where((d) => d.str('name') == _department).map((d) => d['id']).firstOrNull,
+      // Made for the practice if it's a doctor's specialty not yet a department here.
+      if (dep != null && dep != TeamOptions.noDepartment) 'departmentName': dep,
       'locationIds': ids,
-      'allLocations': locs.isNotEmpty && ids.length == locs.length,
+      'allLocations': _allLocations,
+      if (_role == "Doctor's assistant") 'assistsDoctorIds': _assists.toList(),
       if (doctor && _qualifications.text.trim().isNotEmpty) 'qualifications': _qualifications.text.trim(),
       if (doctor && _registration.text.trim().isNotEmpty) 'registrationNo': _registration.text.trim(),
       'otpCode': _otpCode,
@@ -152,6 +183,8 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
   @override
   Widget build(BuildContext context) {
     final placeholder = livePlaceholder();
+    final dep = placeholder == null ? _departmentValue : null;
+    final assistable = placeholder == null ? _assistable : const <({String id, String name, Set<String> locationIds, List<String> departments})>[];
     return MpPage(
       header: const MpHeader('Add someone'),
       body: placeholder ?? VGap(
@@ -171,7 +204,7 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
                     MpHitSlop(child: Semantics(
                       inMutuallyExclusiveGroup: true,
                       checked: r == _role,
-                      child: _RoleChip(r, selected: r == _role, onTap: () => setState(() => _role = r)),
+                      child: _RoleChip(r, selected: r == _role, onTap: () => _setRole(r)),
                     )),
                 ],
               ),
@@ -228,16 +261,6 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
               ],
             ),
 
-          D9Labeled(
-            'Department',
-            child: D9Select(
-              title: 'Department',
-              value: _department,
-              options: _departments,
-              onChanged: (v) => setState(() => _department = v),
-            ),
-          ),
-
           // Locations
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -245,11 +268,54 @@ class _PeopleAddScreenState extends State<PeopleAddScreen> with LiveData {
               const D9FieldLabel('Locations', bottom: 8),
               D9Locations(
                 value: _locations,
-                labels: _locationNames,
-                onToggle: (i) => setState(() => _locations[i] = !_locations[i]),
+                labels: [for (final l in _locationItems) l.$2],
+                onToggle: _toggleLocation,
               ),
+              if (_role == 'Practice manager') ...[
+                const Gap(8),
+                Text('A practice manager usually looks after every location.', style: tx(13, c: MP.ink3, h: 1.4)),
+              ],
             ],
           ),
+
+          // Doctor's assistant: who they work for (doctors at the chosen locations).
+          if (_role == "Doctor's assistant")
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const D9FieldLabel('Assists', bottom: 4),
+                Text('The doctor or doctors they work for', style: tx(13, c: MP.ink3, h: 1.4)),
+                const Gap(8),
+                if (assistable.isEmpty)
+                  Text('No doctors practise at the chosen locations yet.', style: tx(14, c: MP.ink2, h: 1.4))
+                else
+                  D9Locations(
+                    value: [for (final d in assistable) _assists.contains(d.id)],
+                    labels: [
+                      for (final d in assistable) d.departments.isEmpty ? d.name : '${d.name} · ${d.departments.join(', ')}',
+                    ],
+                    onToggle: (i) => setState(() {
+                      final id = assistable[i].id;
+                      if (!_assists.remove(id)) _assists.add(id);
+                      _department = null; // follows the doctor(s) they assist
+                    }),
+                  ),
+              ],
+            ),
+
+          // Department: only for roles where it means something.
+          if (dep != null)
+            D9Labeled(
+              'Department',
+              child: D9Select(
+                title: 'Department',
+                value: dep,
+                options: _departments,
+                onChanged: (v) => setState(() => _department = v),
+              ),
+            ),
+          if (dep == null && _role == 'Dietician')
+            Text('No doctors practise at the chosen locations yet, so there is no department to choose.', style: tx(13, c: MP.ink3, h: 1.4)),
 
           // Permissions info
           Container(

@@ -22,9 +22,10 @@ class _P {
   final String phone;
   final String meta;
 
-  /// Live: the patient's id.
+  /// Live: the patient's id and profile photo.
   final String? id;
-  const _P(this.name, this.phone, this.meta, [this.id]);
+  final String? photo;
+  const _P(this.name, this.phone, this.meta, [this.id, this.photo]);
 
   String get initials {
     final s = name.split(' ').where((w) => w.isNotEmpty).map((w) => w[0]).join();
@@ -142,6 +143,7 @@ class _DoctorPatientsSearchScreenState extends State<DoctorPatientsSearchScreen>
             if (p['lastVisitAt'] != null) 'seen ${d2LastSeen(p['lastVisitAt']).toLowerCase()}',
           ].where((s) => s.isNotEmpty).join(' · '),
           p.str('id'),
+          p.str('photo').isEmpty ? null : p.str('photo'),
         ),
     ];
   }
@@ -268,7 +270,7 @@ class _DoctorPatientsSearchScreenState extends State<DoctorPatientsSearchScreen>
         children: [
           Row(
             children: [
-              MpAvatar(p.initials, size: 44, fontSize: 15),
+              MpAvatar(p.initials, size: 44, fontSize: 15, photo: p.photo),
               const Gap(12),
               Expanded(
                 child: Column(

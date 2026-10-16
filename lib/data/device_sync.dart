@@ -11,7 +11,9 @@ import 'session.dart';
 
 /// Watch / ring / phone readings through Health Connect (Android) or Apple
 /// Health (iPhone): daily steps, heart rate, SpO₂, blood pressure, sugar and
-/// weight from the last 7 days go to POST /api/patient/device-sync.
+/// weight from the last 7 days go to POST /api/patient/device-sync — when the
+/// app opens or comes back, and in the background on the server's silent
+/// 'device_sync' push (data/push.dart; quiet: [sync] with no context).
 class DeviceSync {
   DeviceSync._();
   static final _health = Health();
@@ -105,12 +107,28 @@ class DeviceSync {
         if (context.mounted) toast(context, 'Allow MedPin to read your health data to sync');
         return false;
       }
+      if (ok) await _allowBackground();
       if (!context.mounted) return false;
       return sync(context, force: true);
     } catch (e) {
       debugPrint('device sync: $e');
       if (context.mounted) toast(context, "Couldn't connect to your phone's health data");
       return false;
+    }
+  }
+
+  /// Readings also go up while MedPin is closed (the server's silent
+  /// 'device_sync' push, data/push.dart): Android 14+ asks for that separately.
+  /// Needs READ_HEALTH_DATA_IN_BACKGROUND in the manifest; without it Health
+  /// Connect just says no and syncing still happens when the app is open.
+  static Future<void> _allowBackground() async {
+    if (!Platform.isAndroid) return;
+    try {
+      if (await _health.isHealthDataInBackgroundAvailable() && !await _health.isHealthDataInBackgroundAuthorized()) {
+        await _health.requestHealthDataInBackgroundAuthorization();
+      }
+    } catch (e) {
+      debugPrint('device sync background: $e');
     }
   }
 

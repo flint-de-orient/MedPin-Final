@@ -9,6 +9,8 @@ import '../../data/photo.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
+import 'profile_booking.dart';
+import 'profile_leave.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Doctor-MyProfile.dc.html — "Doctor · My profile (settings hub)".
@@ -194,6 +196,28 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
 
   void _go(String stem, [Object? args]) => Nav.go(context, stem, args: args);
 
+  /// Leave and holidays sheet (with [add]: straight to Add leave); the hub's
+  /// leave line and next free slot follow.
+  Future<void> _timeOff({bool add = false}) async {
+    await openTimeOff(context, add: add);
+    if (mounted && isLive) reload(quiet: true);
+  }
+
+  Future<void> _bookingRules() async {
+    await openBookingRules(context, locationId: _firstLocationId);
+    if (mounted && isLive) reload(quiet: true);
+  }
+
+  /// "Online · 7 days ahead · cancel up to 2 hrs before" for the first location.
+  String get _rulesLine {
+    if (data == null || _activeLocations.isEmpty) return 'How far ahead, cancellations, walk-ins';
+    final s = _activeLocations.first.obj('schedule');
+    final ahead = s.numOr('bookingWindowDays', 7).toInt();
+    final cut = s.numOr('cancelCutoffHours', 2).toInt();
+    final head = s['onlineBooking'] == false ? 'Online booking off' : (s['requireApproval'] == true ? 'Online · you approve' : 'Online');
+    return '$head · ${d4Plural(ahead, 'day')} ahead · cancel up to ${cut == 1 ? '1 hr' : '$cut hrs'} before';
+  }
+
   /// Rows whose editor is not part of the design yet.
   /// Like [_open], with screen args.
   Future<void> _openWith(String stem, Object args) async {
@@ -338,13 +362,13 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
               sub: _servicesLine,
               onTap: () => _go('Profile-Location', _firstLocationId == null ? null : {'locationId': _firstLocationId}),
             ),
-            _SettingRow('Leave and holidays', sub: _leaveLine, onTap: () => _go('Profile-Schedule')),
+            _SettingRow('Leave and holidays', sub: _leaveLine, onTap: _timeOff),
           ]),
           _Group('Patients and care', [
             _SettingRow(
               'Booking rules',
-              sub: 'How far ahead, cancellations, walk-ins',
-              onTap: () => _go('Profile-Schedule'),
+              sub: _rulesLine,
+              onTap: _bookingRules,
             ),
             _SettingRow(
               'Follow-up reminders',
@@ -536,7 +560,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
             ),
           ),
           const SizedBox(width: 12),
-          D4TextLink('Take leave', onTap: () => _go('Profile-Schedule')),
+          D4TextLink('Take leave', onTap: () => _timeOff(add: true)),
         ],
       ),
     );

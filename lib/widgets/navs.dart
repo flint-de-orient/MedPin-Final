@@ -6,6 +6,7 @@ import '../core/tokens.dart';
 import 'i18n.dart';
 import '../data/config.dart';
 import '../data/nav_counts.dart';
+import '../data/session.dart';
 
 class NavItem {
   final String label;
@@ -153,6 +154,8 @@ class ClinicianNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (AppMode.preview) return FloatingNav(items: items, current: current, fontSize: 12, gap: 4, badgeTop: 4);
+    // Assistants also run the desk day (queue, check-in, fees): their own tabs.
+    if (_isAssistant) return AssistantNav(stem: items[current].stem);
     NavCounts.refresh();
     return ValueListenableBuilder(
       valueListenable: NavCounts.counts,
@@ -166,17 +169,66 @@ class ClinicianNav extends StatelessWidget {
   }
 }
 
-/// Front desk: Today · Patients · Profile.
+/// Front desk: Today · Patients · Payments · Profile (Payments only with the
+/// 'fees' permission, so lab staff keep Today · Patients · Profile).
 class StaffNav extends StatelessWidget {
   final int current;
-  const StaffNav({super.key, required this.current});
+
+  /// The active tab by screen, for tabs not in [items] (e.g. 'Staff-Payments').
+  final String? stem;
+
+  /// Unread chats on Patients (Staff-Patients shows it).
+  final int? patientsBadge;
+  const StaffNav({super.key, this.current = 0, this.stem, this.patientsBadge});
   static const items = [
     NavItem('Today', I.calendar, 'Staff-Today'),
     NavItem('Patients', I.users, 'Staff-Patients'),
     NavItem('Profile', I.user, 'Staff-Profile'),
   ];
+  static const payments = NavItem('Payments', I.wallet, 'Staff-Payments');
+
   @override
-  Widget build(BuildContext context) => FloatingNav(items: items, current: current, fontSize: 12, gap: 4, badgeTop: 4);
+  Widget build(BuildContext context) {
+    final active = stem ?? items[current].stem;
+    if (!AppMode.preview && _isAssistant) return AssistantNav(stem: active);
+    final tabs = [
+      items[0],
+      NavItem('Patients', I.users, 'Staff-Patients', badge: patientsBadge),
+      if (!AppMode.preview && Session.I.can('fees')) payments,
+      items[2],
+    ];
+    return FloatingNav(items: tabs, current: tabs.indexWhere((t) => t.stem == active), fontSize: 12, gap: 4, badgeTop: 4);
+  }
+}
+
+bool get _isAssistant => Session.I.role == 'doctor_assistant';
+
+/// Doctor's assistant: Home · Today · Care · Payments · Profile — the clinician
+/// home plus the desk day (queue, check-in, fees), which assistants run in a
+/// clinic without a front desk. Doctors and dieticians keep [ClinicianNav].
+class AssistantNav extends StatelessWidget {
+  /// The screen showing ('Staff-Profile' lights Profile; others light nothing).
+  final String stem;
+  const AssistantNav({super.key, required this.stem});
+
+  @override
+  Widget build(BuildContext context) {
+    NavCounts.refresh();
+    return ValueListenableBuilder(
+      valueListenable: NavCounts.counts,
+      builder: (_, c, _) {
+        final tabs = [
+          ClinicianNav.items[0],
+          StaffNav.items[0],
+          NavItem('Care', I.heart, 'Care', badge: c.care > 0 ? c.care : null),
+          if (Session.I.can('fees')) StaffNav.payments,
+          ClinicianNav.items[3],
+        ];
+        final at = stem == 'Staff-Profile' ? 'Profile' : stem;
+        return FloatingNav(items: tabs, current: tabs.indexWhere((t) => t.stem == at));
+      },
+    );
+  }
 }
 
 /// Patient app: Home · Doctor · Medicines · Records · Profile.

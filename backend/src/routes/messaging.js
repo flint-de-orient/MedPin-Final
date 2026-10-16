@@ -82,7 +82,10 @@ threads.get('/:id/messages', async (req, res) => {
     conversation: {
       ...convo.toJSON(),
       aiPaused: Boolean(convo.aiPausedAt && convo.aiPausedAt > T.addMinutes(new Date(), -10)),
-      patient: patient && { id: patient._id, name: patient.name, lastSeenAt: lastSeen },
+      patient: patient && {
+        id: patient._id, name: patient.name, lastSeenAt: lastSeen,
+        photo: patient.userId ? (await require('../services/photos').photosFor([patient.userId])).get(String(patient.userId)) || null : null,
+      },
       nextVisit: nextVisit && { startAt: nextVisit.startAt, token: String(nextVisit.tokenNo).padStart(2, '0') },
     },
     pinned: pinned && !pinned.deletedForEveryoneAt ? messageView(pinned, req.user._id) : null,
@@ -195,12 +198,17 @@ inbox.get('/', async (req, res) => {
   const q = type === 'direct'
     ? { type: 'direct', 'participants.userId': req.user._id }
     : { practiceId: req.practiceId, type: { $in: type === 'all' ? ['care', 'nutrition'] : [type] } };
-  const convos = await M.Conversation.find(q).sort({ 'lastMessage.at': -1 }).limit(300).populate('patientId', 'name gender ageYears ageRecordedAt phone conditions');
+  const convos = await M.Conversation.find(q).sort({ 'lastMessage.at': -1 }).limit(300).populate('patientId', 'name gender ageYears ageRecordedAt phone conditions userId');
+  // Patients' profile photos for the avatars.
+  const photos = await require('../services/photos').photosFor(convos.map((c) => c.patientId?.userId));
   const mine = (c) => c.participants.find((p) => String(p.userId) === String(req.user._id));
   let rows = convos.map((c) => ({
     id: c._id, type: c.type, isUrgent: c.isUrgent, triage: c.triage, lastMessage: c.lastMessage,
     unread: mine(c)?.unreadCount || 0,
-    patient: c.patientId && { id: c.patientId._id, name: c.patientId.name, age: T.ageFrom(c.patientId), gender: c.patientId.gender, conditions: c.patientId.conditions.map((x) => x.name) },
+    patient: c.patientId && {
+      id: c.patientId._id, name: c.patientId.name, age: T.ageFrom(c.patientId), gender: c.patientId.gender, conditions: c.patientId.conditions.map((x) => x.name),
+      photo: c.patientId.userId ? photos.get(String(c.patientId.userId)) || null : null,
+    },
     participants: c.participants.map((p) => ({ userId: p.userId, role: p.role })),
   }));
   if (req.query.q) {
@@ -236,18 +244,52 @@ inbox.post('/', async (req, res) => {
   return res.status(201).json(convo);
 });
 
-// People to start a chat with.
+// People to start a chat with. Patients: everyone linked to this clinic
+// (registered here, or who found the doctor in the patient app and booked or
+// wrote), most recently active first — not only this week's appointments, so
+// a doctor who consulted without a booking still finds their patients.
 inbox.get('/contacts', async (req, res) => {
   const q = String(req.query.q || '').trim();
   const re = q ? new RegExp(escapeRegex(q), 'i') : null;
   const digits = q.replace(/\D/g, '');
-  const team = await M.Member.find({ practiceId: req.practiceId, status: 'active', userId: { $ne: req.user._id } }).populate('userId', 'name phone').populate('departmentId', 'name');
-  const recentAppts = await M.Appointment.find({ practiceId: req.practiceId, date: { $gte: T.addDays(T.dayStart(), -7) } }).sort({ startAt: -1 }).limit(50).populate('patientId', 'name phone gender ageYears ageRecordedAt');
-  const patients = [...new Map(recentAppts.filter((a) => a.patientId).map((a) => [String(a.patientId._id), { patient: a.patientId, status: a.status }])).values()];
   const match = (name, phone) => !q || re.test(name || '') || (digits.length >= 3 && String(phone || '').includes(digits));
+  const team = await M.Member.find({ practiceId: req.practiceId, status: 'active', userId: { $ne: req.user._id } }).populate('userId', 'name phone').populate('departmentId', 'name');
+  const linked = await M.PatientEnrolment.find({ practiceId: req.practiceId, status: 'linked' }).distinct('patientId');
+  const pq = { _id: { $in: linked } };
+  if (q) {
+    const or = [{ name: re }];
+    if (digits.length >= 3) or.push({ phone: new RegExp(escapeRegex(digits.replace(/^91(?=\d{10}$)/, ''))) });
+    pq.$or = or;
+  }
+  const pts = await M.Patient.find(pq, 'name phone gender ageYears ageRecordedAt dateOfBirth').limit(1000);
+  const ids = pts.map((p) => p._id);
+  // Last activity here: a visit, a consultation or a chat message.
+  const now = new Date();
+  const [appts, consults, convos, week] = await Promise.all([
+    M.Appointment.aggregate([{ $match: { practiceId: req.practiceId, patientId: { $in: ids }, startAt: { $lte: now } } }, { $group: { _id: '$patientId', at: { $max: '$startAt' } } }]),
+    M.Consultation.aggregate([{ $match: { practiceId: req.practiceId, patientId: { $in: ids } } }, { $group: { _id: '$patientId', at: { $max: '$startedAt' } } }]),
+    M.Conversation.find({ practiceId: req.practiceId, patientId: { $in: ids }, 'lastMessage.at': { $ne: null } }, 'patientId lastMessage.at'),
+    M.Appointment.find({ practiceId: req.practiceId, patientId: { $in: ids }, date: { $gte: T.addDays(T.dayStart(), -7) } }, 'patientId status startAt').sort({ startAt: -1 }),
+  ]);
+  const last = new Map();
+  const seen = (id, at) => {
+    if (!at) return;
+    const k = String(id);
+    if (!last.has(k) || last.get(k) < at) last.set(k, at);
+  };
+  for (const a of appts) seen(a._id, a.at);
+  for (const c of consults) seen(c._id, c.at);
+  for (const c of convos) seen(c.patientId, c.lastMessage?.at);
+  // This week's visit status ("in queue", "seen recently") for the row.
+  const status = new Map();
+  for (const a of week) if (!status.has(String(a.patientId))) status.set(String(a.patientId), a.status);
+  const rows = pts
+    .map((p) => ({ p, at: last.get(String(p._id)) || null }))
+    .sort((a, b) => (b.at ? b.at.getTime() : 0) - (a.at ? a.at.getTime() : 0) || String(a.p.name || '').localeCompare(String(b.p.name || '')))
+    .slice(0, 200);
   res.json({
-    patients: patients.filter((p) => match(p.patient.name, p.patient.phone)).map((p) => ({ id: p.patient._id, name: p.patient.name, phone: p.patient.phone, age: T.ageFrom(p.patient), gender: p.patient.gender, today: p.status })),
-    team: team.filter((m) => match(m.userId.name, m.userId.phone)).map((m) => ({ userId: m.userId._id, name: m.userId.name, role: m.role, department: m.departmentId?.name })),
+    patients: rows.map(({ p, at }) => ({ id: p._id, name: p.name, phone: p.phone, age: T.ageFrom(p), gender: p.gender, today: status.get(String(p._id)) || null, lastActiveAt: at })),
+    team: team.filter((m) => m.userId && match(m.userId.name, m.userId.phone)).map((m) => ({ userId: m.userId._id, name: m.userId.name, role: m.role, department: m.departmentId?.name })),
   });
 });
 

@@ -96,11 +96,22 @@ async function feeFor(dl, { visitType, mode, patientId }) {
 }
 
 /** Books an appointment (front desk, doctor, or patient request assignment). */
+/** "Mon, 19 Oct · 11:30 AM with Dr. Arjun Sen at City Care — Salt Lake · token 01" for chat notes. */
+async function visitLine(appt) {
+  const [doctor, loc] = await Promise.all([M.User.findById(appt.doctorId, 'name'), M.Location.findById(appt.locationId, 'name shortName')]);
+  const d = new Date(appt.startAt.getTime() + T.IST_MS);
+  const day = `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]}, ${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]}`;
+  return `${day} · ${T.fmtTime(T.minuteOfDay(appt.startAt))}${doctor ? ` with ${doctor.name}` : ''}${loc ? ` at ${loc.name}` : ''}${appt.tokenNo ? ` · token ${String(appt.tokenNo).padStart(2, '0')}` : ''}`;
+}
+
+const note = (...args) => require('./care').chatNote(...args);
+
 async function book(input) {
   const {
     practiceId, locationId, doctorId, patientId, visitType = 'follow_up', mode = 'in_clinic', reason,
     channel = 'desk', bookedBy, requestId, walkIn = false,
     confirmed = false, // the front desk agreed the time with the patient
+    chat = true, // a "Visit booked" note in the patient's chat (a reschedule writes its own)
   } = input;
   const startAt = walkIn ? new Date(input.startAt || Date.now()) : new Date(input.startAt);
   if (Number.isNaN(startAt.getTime())) throw badRequest('Choose a time first', 'TIME_REQUIRED');
@@ -145,13 +156,20 @@ async function book(input) {
       screen: 'Patient-DoctorDetail', params: { appointmentId: appt._id }, whatsapp: true,
     });
   }
+  if (chat && !walkIn) {
+    const feeText = fee > 0 ? ` Fee ₹${fee} — pay online in the app or at the clinic.` : '';
+    await note({ practiceId, patientId }, `${confirmed ? 'Visit confirmed' : 'Visit booked'}: ${await visitLine(appt)}.${feeText}`, confirmed ? 'visit_confirmed' : 'visit_booked');
+  }
   return appt;
 }
 
+// Physical visits: booked → arrived (waiting) → with the doctor → done. "Done" can
+// follow arrival directly (a paper prescription, a quick review); a check-in made
+// by mistake goes back to booked; someone who left before being seen is "missed".
 const TRANSITIONS = {
   booked: ['confirmed', 'waiting', 'missed', 'cancelled'],
   confirmed: ['waiting', 'missed', 'cancelled'],
-  waiting: ['in_consultation', 'missed', 'cancelled'],
+  waiting: ['in_consultation', 'completed', 'missed', 'cancelled', 'booked'],
   in_consultation: ['completed', 'waiting'],
   completed: [],
   missed: ['waiting'],
@@ -168,6 +186,7 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
   appt.status = to;
   if (to === 'confirmed') appt.confirmedAt = now;
   if (to === 'waiting') { appt.arrivedAt = appt.arrivedAt || now; appt.checkedInBy = by; }
+  if (to === 'booked') { appt.arrivedAt = undefined; appt.checkedInBy = undefined; } // check-in undone
   if (to === 'in_consultation') appt.consultStartedAt = appt.consultStartedAt || now;
   if (to === 'missed') appt.missedAt = now;
   if (to === 'completed') appt.completedAt = now;
@@ -181,6 +200,13 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
     if (appt.feeStatus === 'pending') appt.feeStatus = 'waived';
   }
   await appt.save();
+  if (to === 'confirmed') await note(appt, `Visit confirmed: ${await visitLine(appt)}.`, 'visit_confirmed');
+  if (to === 'missed') await note(appt, `We missed you at your visit (${await visitLine(appt)}). Book a new time from your doctor's page whenever you're ready.`, 'visit_missed');
+  if (to === 'cancelled') {
+    await M.FollowUp.updateMany({ appointmentId: appt._id, status: 'booked' }, { status: 'not_booked', $unset: { appointmentId: 1 } });
+    const by = appt.cancelledBy === 'patient' ? 'You cancelled' : 'The clinic cancelled';
+    await note(appt, `${by} your visit (${await visitLine(appt)})${appt.cancelReason ? ` — ${appt.cancelReason}` : ''}.`, 'visit_cancelled');
+  }
   if (to === 'cancelled' && appt.feeStatus === 'paid') {
     const { refundFee } = require('./payments');
     for (const p of await M.Payment.find({ appointmentId: appt._id, status: 'paid' })) {
@@ -240,7 +266,7 @@ async function reschedule(appt, startAt, by, locationId) {
   const moved = locationId && String(locationId) !== String(appt.locationId);
   const next = await book({
     practiceId: appt.practiceId, locationId: moved ? locationId : appt.locationId, doctorId: appt.doctorId, patientId: appt.patientId,
-    startAt, visitType: appt.visitType, mode: appt.mode, reason: appt.reason, channel: appt.channel, bookedBy: by,
+    startAt, visitType: appt.visitType, mode: appt.mode, reason: appt.reason, channel: appt.channel, bookedBy: by, chat: false,
   });
   appt.status = 'rescheduled';
   appt.rescheduledToId = next._id;
@@ -269,6 +295,7 @@ async function reschedule(appt, startAt, by, locationId) {
     }
   }
   await M.FollowUp.updateMany({ appointmentId: appt._id }, { appointmentId: next._id });
+  await note(next, `Visit moved to ${await visitLine(next)}${next.feeStatus === 'paid' ? '. Your payment moves with it.' : '.'}`, 'visit_rescheduled');
   return next;
 }
 

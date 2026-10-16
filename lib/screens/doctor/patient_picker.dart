@@ -116,7 +116,7 @@ class _PatientPickerState extends State<_PatientPicker> {
                                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
                                 child: Row(
                                   children: [
-                                    MpAvatar(_initials(p.str('name')), size: 40, fontSize: 14),
+                                    MpAvatar(_initials(p.str('name')), size: 40, fontSize: 14, photo: p.str('photo').isEmpty ? null : p.str('photo')),
                                     const Gap(12),
                                     Expanded(
                                       child: Column(

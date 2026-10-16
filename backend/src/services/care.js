@@ -95,6 +95,29 @@ function previewOf(msg, senderName) {
 }
 
 /**
+ * A note from the clinic in the patient's chat (shown as a system line): the
+ * visit booked / confirmed / moved / cancelled, the fee paid or refunded — so
+ * the chat is the patient's full record of what happened. The notification for
+ * the same event is sent separately, so this doesn't notify again; open chats
+ * refresh at once.
+ */
+async function chatNote({ practiceId, patientId }, text, event) {
+  if (!practiceId || !patientId || !text) return null;
+  try {
+    const convo = await careConversation(patientId, practiceId);
+    const msg = await M.Message.create({ conversationId: convo._id, senderType: 'system', kind: 'text', text, meta: { event } });
+    convo.lastMessage = previewOf(msg, null);
+    for (const p of convo.participants) if (p.role === 'patient') p.unreadCount = (p.unreadCount || 0) + 1;
+    await convo.save();
+    await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
+    return msg;
+  } catch (err) {
+    console.warn('[chat note]', err.message);
+    return null;
+  }
+}
+
+/**
  * After a message is deleted for everyone: the thread's preview becomes the
  * newest message still there, and people who hadn't read it lose its unread
  * count. Everyone in the thread is told, so open chats update at once.
@@ -140,6 +163,11 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', ...
   const base = { type: rest.isUrgent ? 'urgent_message' : 'message', practiceId: convo.practiceId, body: (text || '').slice(0, 120) };
   if (toStaff.length) {
     await notify(toStaff, { ...base, title: rest.isUrgent ? `Urgent message from ${convo.lastMessage.senderLabel}` : `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-Thread', params: { conversationId: convo._id } });
+    if (rest.isUrgent) {
+      const { deskOrDoctors } = require('./notify');
+      const desk = (await deskOrDoctors(convo.practiceId)).map(String).filter((id) => !toStaff.map(String).includes(id));
+      if (desk.length) await notify(desk, { ...base, title: `Urgent message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-Thread', params: { conversationId: convo._id } });
+    }
   }
   if (toPatient.length) {
     await notify(toPatient, { ...base, title: `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-DoctorChat', params: { conversationId: convo._id } });
@@ -327,4 +355,4 @@ async function adherence(patient, days = 30, acc) {
   };
 }
 
-module.exports = { doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };
+module.exports = { chatNote, doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };

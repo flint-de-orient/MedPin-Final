@@ -74,6 +74,11 @@ async function feeReceipt(p) {
       screen: 'Patient-DoctorDetail', params: { doctorId: a.doctorId?._id || a.doctorId },
     });
   }
+  await require('./care').chatNote(
+    { practiceId: a.practiceId, patientId: a.patientId?._id || a.patientId },
+    `Payment received: ₹${p.amount} ${p.method === 'online' ? 'online' : `at the clinic (${p.method === 'cash' ? 'cash' : p.method === 'upi' ? 'UPI' : p.method})`} · reference ${p.razorpayPaymentId || String(p._id).slice(-6)}.`,
+    'fee_paid',
+  );
   const staff = await deskOrDoctors(a.practiceId, { locationId: a.locationId, doctorId: a.doctorId?._id || a.doctorId });
   await notify([...new Set([...staff.map(String), String(a.doctorId?._id || a.doctorId)])], {
     type: 'fee_paid', push: false, practiceId: a.practiceId, title: `${a.patientId?.name || 'Patient'} paid ₹${p.amount} ${how}`, screen: 'Appointments',
@@ -152,6 +157,13 @@ async function refundFee(payment, { by, handedBack = false } = {}) {
   await payment.save();
   if (payment.appointmentId) await M.Appointment.updateOne({ _id: payment.appointmentId }, { feeStatus: 'refunded' });
   const a = payment.appointmentId ? await M.Appointment.findById(payment.appointmentId).populate('patientId', 'userId') : null;
+  if (a) {
+    await require('./care').chatNote(
+      { practiceId: a.practiceId, patientId: a.patientId?._id || a.patientId },
+      payment.method === 'online' ? `Refund: ₹${payment.amount} is on its way back to how you paid (usually 5–7 working days).` : `Refund: ₹${payment.amount} handed back at the clinic.`,
+      'fee_refunded',
+    );
+  }
   if (a?.patientId?.userId) {
     await require('./notify').notify([a.patientId.userId], {
       type: 'fee_refunded', practiceId: a.practiceId, title: `₹${payment.amount} refunded`,

@@ -3,13 +3,15 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
 import 'common_d3.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Report-Fees.dc.html — "Report · Fees and collections".
 /// Live data: GET /api/reports/fees (+ /api/locations, /api/payments for
-/// names and patient ids); actions POST /api/payments/:id/mark-paid, /link.
+/// names and patient ids); actions POST /api/payments/:id/mark-paid, /link,
+/// and /refund on fees to give back.
 class ReportFeesScreen extends StatefulWidget {
   const ReportFeesScreen({super.key});
 
@@ -47,6 +49,7 @@ const _collected = 156800;
 class _ReportFeesScreenState extends State<ReportFeesScreen> with LiveData, D3FilterState {
   final _paid = <int>{};
   bool _more = false;
+  bool _moreCollected = false;
   final _busy = ValueNotifier(false);
 
   @override
@@ -112,6 +115,34 @@ class _ReportFeesScreenState extends State<ReportFeesScreen> with LiveData, D3Fi
     reload(quiet: true);
   }
 
+  /// "Refund": handed back at the desk, or an online refund tried again
+  /// (POST /api/payments/:id/refund, through the shared fee sheet).
+  Future<void> _refund(Map<String, dynamic> p) async {
+    final fee = VisitFee(
+      paymentId: p['id'] as String?,
+      amount: p.numOr('amount').round(),
+      status: 'paid',
+      method: p['method'] as String?,
+      refundDue: true,
+    );
+    if (await handBackFee(context, fee) && mounted) reload(quiet: true);
+  }
+
+  /// "16 Oct, 9:11 AM"
+  static String _at(Object? v) {
+    final t = F.date(v);
+    return t == null ? '' : '${F.dayMonth(t)}, ${F.time(t)}';
+  }
+
+  /// "Visit 16 Oct · in clinic"
+  String _visitLine(Map<String, dynamic> p) {
+    final day = d3Day(p['visitDate']);
+    return [
+      if (day != null) '${tr(context, 'Visit')} ${F.dayMonth(day)}',
+      if (p['mode'] != null) d3Mode(p.str('mode')).toLowerCase(),
+    ].join(' · ');
+  }
+
   String _locationLabel(String key) {
     for (final l in data!.list('locations')) {
       if (l['shortName'] == key || l['name'] == key) return d3LocationName(l);
@@ -149,7 +180,91 @@ class _ReportFeesScreenState extends State<ReportFeesScreen> with LiveData, D3Fi
         if (visible.isNotEmpty) D3ListCard(children: [for (final p in visible) _liveRow(p)]),
         if (!_more && pending.length > _shown)
           D3ShowMore('Show ${pending.length - _shown} more', onTap: () => setState(() => _more = true)),
+        ..._collectedSection(d.list('collectedList')),
+        ..._refundSection(d.list('refundsDue'), d.list('refunded')),
       ],
+    );
+  }
+
+  /// Each fee collected in the period: who paid, how and when, where, for which visit.
+  List<Widget> _collectedSection(List<Map<String, dynamic>> paid) {
+    if (paid.isEmpty) return const [];
+    final shown = _moreCollected ? paid : paid.take(_shown).toList();
+    return [
+      D3SectionHead('Collected', trailing: d3Plural(paid.length, 'payment')),
+      D3ListCard(children: [for (final p in shown) _collectedRow(p)]),
+      if (!_moreCollected && paid.length > _shown)
+        D3ShowMore('Show ${paid.length - _shown} more', onTap: () => setState(() => _moreCollected = true)),
+    ];
+  }
+
+  Widget _collectedRow(Map<String, dynamic> p) {
+    final detail = [
+      if (p['method'] != null) d3Method(p.str('method')),
+      if (_at(p['paidAt']).isNotEmpty) '${tr(context, 'Paid')} ${_at(p['paidAt'])}',
+      p.str('location'),
+    ].where((s) => s.isNotEmpty).join(' · ');
+    final visit = _visitLine(p);
+    return D3RegisterRow(
+      name: p.str('patient', 'Patient'),
+      trailing: D3Amount(d3Rupees(p.numOr('amount').round())),
+      detail: detail,
+      footer: visit.isEmpty && p['refundDue'] != true
+          ? null
+          : Row(
+            children: [
+              Expanded(child: Text(visit, style: tx(13, c: MP.ink3))),
+              if (p['refundDue'] == true) ...[const SizedBox(width: 8), const D3Badge('Refund due', tone: D3Tone.red)],
+            ],
+          ),
+      onTap: () => Nav.go(context, 'PP-Summary', args: {if (p['patientId'] != null) 'patientId': p['patientId']}),
+    );
+  }
+
+  /// Money to give back (a cancelled visit paid at the desk, or an online
+  /// refund that didn't go through), then fees refunded in the period.
+  List<Widget> _refundSection(List<Map<String, dynamic>> due, List<Map<String, dynamic>> done) {
+    if (due.isEmpty && done.isEmpty) return const [];
+    final owed = due.fold<num>(0, (s, p) => s + p.numOr('amount'));
+    final back = done.fold<num>(0, (s, p) => s + p.numOr('amount'));
+    return [
+      D3SectionHead(
+        'Refunds',
+        trailing: due.isNotEmpty
+            ? '${d3Rupees(owed.round())} ${tr(context, 'to hand back')}'
+            : '${d3Rupees(back.round())} ${tr(context, 'refunded')}',
+      ),
+      D3ListCard(children: [for (final p in due) _refundRow(p, due: true), for (final p in done) _refundRow(p, due: false)]),
+    ];
+  }
+
+  Widget _refundRow(Map<String, dynamic> p, {required bool due}) {
+    final online = p['method'] == 'online';
+    final when = due ? _at(p['paidAt']) : _at(p['refundedAt']);
+    final detail = [
+      if (p['method'] != null) d3Method(p.str('method')),
+      if (when.isNotEmpty) '${tr(context, due ? 'Paid' : 'Refunded')} $when',
+      p.str('location'),
+    ].where((s) => s.isNotEmpty).join(' · ');
+    final visit = _visitLine(p);
+    return D3RegisterRow(
+      name: p.str('patient', 'Patient'),
+      trailing: D3Amount(d3Rupees(p.numOr('amount').round())),
+      detail: detail,
+      footer: Row(
+        children: [
+          Expanded(
+            child: due
+                ? D3LinkRow([(online ? 'Retry refund' : 'Refund', () => _refund(p))])
+                : Text(visit, style: tx(13, c: MP.ink3)),
+          ),
+          const SizedBox(width: 8),
+          due
+              ? D3Badge(online ? 'Online refund failed' : 'To hand back', tone: D3Tone.amber)
+              : const D3Badge('Refunded', tone: D3Tone.grey),
+        ],
+      ),
+      onTap: () => Nav.go(context, 'PP-Summary', args: {if (p['patientId'] != null) 'patientId': p['patientId']}),
     );
   }
 
@@ -164,10 +279,18 @@ class _ReportFeesScreenState extends State<ReportFeesScreen> with LiveData, D3Fi
       name: p.str('patient', 'Patient'),
       trailing: D3Amount(d3Rupees(p.numOr('amount').round())),
       detail: detail,
-      footer: D3LinkRow([
-        ('Send payment link', () => _sendLink(p)),
-        ('Mark as paid', () => _markPaidLive(p)),
-      ]),
+      footer: Row(
+        children: [
+          Expanded(
+            child: D3LinkRow([
+              ('Send payment link', () => _sendLink(p)),
+              ('Mark as paid', () => _markPaidLive(p)),
+            ]),
+          ),
+          // The patient chose to pay at the clinic: the desk collects it.
+          if (p['payAt'] == 'clinic') ...[const SizedBox(width: 8), const D3Badge('Pay at clinic', tone: D3Tone.amber)],
+        ],
+      ),
       onTap: () => Nav.go(context, 'PP-Summary', args: {if (p['patientId'] != null) 'patientId': p['patientId']}),
     );
   }

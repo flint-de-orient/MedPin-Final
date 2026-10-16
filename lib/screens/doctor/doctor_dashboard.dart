@@ -45,6 +45,14 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
   String get _name => data?.str('greetingName') ?? 'Dr. Arjun Sen';
   int get _unread => data == null ? 3 : data!.numOr('unreadNotifications').toInt();
 
+  /// Red bell dot only while an emergency / urgent clinical alert is open;
+  /// plain unread notifications get the primary (blue) dot.
+  bool get _urgentOpen {
+    final d = data;
+    if (d == null) return true;
+    return d.list('alerts').any((a) => a['severity'] == 'emergency' || a['severity'] == 'urgent');
+  }
+
   String get _dateLine {
     final d = data;
     if (d == null) return 'Thu, 1 Oct 2026 · City Care, Salt Lake';
@@ -137,7 +145,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                       borderColor: MP.line,
                       onTap: () => Nav.go(context, 'Notifications'),
                     ),
-                    if (_unread > 0) Positioned(
+                    if (_unread > 0 || _urgentOpen) Positioned(
                       top: 10,
                       right: 11,
                       child: IgnorePointer(
@@ -145,7 +153,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                           width: 12,
                           height: 12,
                           decoration: BoxDecoration(
-                            color: MP.red,
+                            color: _urgentOpen ? MP.red : MP.primary,
                             shape: BoxShape.circle,
                             border: Border.all(color: MP.white, width: 2),
                           ),

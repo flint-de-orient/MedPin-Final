@@ -4,6 +4,7 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
+import '../../widgets/file_view.dart';
 import '../../widgets/i18n.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
@@ -12,8 +13,11 @@ import 'signature_gate.dart';
 /// Doctor · Prescription letterhead and signature (from My profile).
 /// Live data: GET /api/doctor/profile (signature), GET /api/doctor/locations
 /// (each clinic's letterhead); POST /api/doctor/profile/signature.
-/// The letterhead itself (logo, tagline, printed name) is set per clinic in
-/// Clinic-Editor by the owner.
+/// The letterhead itself (logo, printed name, clinic name / address / phone)
+/// is set per clinic in Clinic-Editor by the owner; the doctor's lines
+/// (qualifications, headline, registration) come from Professional details.
+/// "Preview" draws the real prescription PDF with it
+/// (GET /api/doctor/letterhead/preview?locationId=).
 class ProfileSignatureScreen extends StatefulWidget {
   const ProfileSignatureScreen({super.key});
 
@@ -34,6 +38,7 @@ class _ProfileSignatureScreenState extends State<ProfileSignatureScreen> with Li
   @override
   void dispose() {
     _busy.dispose();
+    _previewing.dispose();
     super.dispose();
   }
 
@@ -121,18 +126,91 @@ class _ProfileSignatureScreenState extends State<ProfileSignatureScreen> with Li
     );
   }
 
-  /// The clinics this doctor practises at: (location id, name, letterhead set?).
-  List<(String, String, bool)> get _clinics {
-    if (data == null) return const [('', 'City Care Clinic — Salt Lake', true)];
+  /// The clinics this doctor practises at: (location id, name, letterhead set?, location).
+  List<(String, String, bool, Map<String, dynamic>)> get _clinics {
+    if (data == null) return const [('', 'City Care Clinic — Salt Lake', true, {})];
     return [
       for (final dl in data!.list('locations'))
-        if (dl['locationId'] is Map)
+        if (dl['locationId'] is Map && dl['status'] != 'ended' && dl.obj('locationId')['status'] != 'inactive')
           () {
             final l = dl.obj('locationId');
             final lh = l.obj('letterhead');
-            return (l.str('id', l.str('_id')), l.str('name', 'Clinic'), lh.isNotEmpty && (lh['logo'] != null || lh.str('tagline').isNotEmpty));
+            final set = lh['logo'] != null || lh.str('doctorNamePrinted').isNotEmpty;
+            return (l.str('id', l.str('_id')), l.str('name', 'Clinic'), set, l);
           }(),
     ];
+  }
+
+  /// What the prescription prints at [loc], by the same rules as the PDF
+  /// (services/rxpdf.js): the clinic's printed name wins over yours; your
+  /// registration wins over the clinic's fallback number.
+  ({String name, String quals, String headline, String reg, String clinic, String address, String phone, bool logo}) _prints(Map<String, dynamic> loc) {
+    final lh = loc.obj('letterhead');
+    final p = data == null ? const <String, dynamic>{} : _p;
+    final quals = [for (final q in p.list('qualifications')) q.str('name')].where((s) => s.isNotEmpty).join(', ');
+    final r = p.obj('registration');
+    final council = r.str('council', r.str('councilShort'));
+    return (
+      name: lh.str('doctorNamePrinted').isNotEmpty ? lh.str('doctorNamePrinted') : _name,
+      quals: quals.isNotEmpty ? quals : p.str('degreesSummary', lh.str('tagline')),
+      headline: p.str('headline'),
+      reg: r.str('number').isNotEmpty
+          ? 'Reg. No. ${r.str('number')}${council.isEmpty ? '' : ' · $council'}'
+          : (lh.str('registrationNo').isEmpty ? '' : 'Reg. No. ${lh.str('registrationNo')}'),
+      clinic: loc.str('name'),
+      address: [
+        loc.str('address'),
+        [loc.str('area'), loc.str('city')].where((s) => s.isNotEmpty).join(', '),
+        loc.str('pincode'),
+      ].where((s) => s.isNotEmpty).join(', '),
+      phone: loc.str('phone', loc.str('patientPhone')),
+      logo: lh['logo'] != null,
+    );
+  }
+
+  final _previewing = ValueNotifier<String?>(null);
+
+  /// The real prescription PDF for a sample patient, with this clinic's letterhead.
+  Future<void> _preview(String locationId) async {
+    if (!isLive) return toast(context, 'Preparing the preview…');
+    if (_previewing.value != null) return;
+    _previewing.value = locationId;
+    try {
+      final r = await Api.I.get('/api/doctor/letterhead/preview', query: {if (locationId.isNotEmpty) 'locationId': locationId});
+      final f = ReportFile.fromApi(r);
+      if (!mounted) return;
+      if (f == null) return toast(context, 'No file to open');
+      await openFileView(context, f, title: 'Letterhead preview');
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message);
+    } finally {
+      _previewing.value = null;
+    }
+  }
+
+  Widget _printed(Map<String, dynamic> loc) {
+    final x = data == null
+        ? (name: 'Dr. Arjun Sen', quals: 'MBBS, MD (Medicine)', headline: 'Diabetologist · Internal medicine', reg: 'Reg. No. 64213 · WBMC', clinic: 'City Care Clinic — Salt Lake', address: 'DD-24, Sector 1, Salt Lake, Kolkata 700064', phone: '033 4012 5678', logo: true)
+        : _prints(loc);
+    final missing = [if (!x.logo) 'logo', if (x.reg.isEmpty) 'registration number', if (x.phone.isEmpty) 'clinic phone'];
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: MP.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: MP.line)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(x.name, style: tx(15, w: w700, c: MP.primary)),
+          if (x.quals.isNotEmpty) Text(x.quals, style: tx(13, c: MP.ink2)),
+          if (x.headline.isNotEmpty) Text(x.headline, style: tx(13, c: MP.ink2)),
+          if (x.reg.isNotEmpty) Text(x.reg, style: tx(13, w: w600)),
+          const Gap(8),
+          Text(x.clinic, style: tx(13, w: w700)),
+          if (x.address.isNotEmpty) Text(x.address, style: tx(13, c: MP.ink2)),
+          if (x.phone.isNotEmpty) Text('Ph. ${x.phone}', style: tx(13, c: MP.ink2, tab: true)),
+          if (missing.isNotEmpty) ...[const Gap(8), Text('Not on the letterhead yet: ${F.joinAnd(missing)}', style: tx(12, c: MP.amber))],
+        ],
+      ),
+    );
   }
 
   Future<void> _upload() async {
@@ -215,8 +293,8 @@ class _ProfileSignatureScreenState extends State<ProfileSignatureScreen> with Li
               D4Card(
                 children: [
                   const D4CardTitle('Letterhead'),
-                  const D4Note('Logo, clinic name, tagline and the name printed at the top. Each clinic has its own.'),
-                  for (final c in _clinics)
+                  const D4Note('What prints at the top of your prescriptions. Each clinic has its own logo, name, address and phone; your qualifications and registration come from Professional details.'),
+                  for (final c in _clinics) ...[
                     Tap(
                       onTap: () => _openClinic(c.$1),
                       radius: 12,
@@ -229,6 +307,20 @@ class _ProfileSignatureScreenState extends State<ProfileSignatureScreen> with Li
                         ],
                       ),
                     ),
+                    _printed(c.$4),
+                    Wrap(
+                      spacing: 20,
+                      runSpacing: 8,
+                      children: [
+                        ValueListenableBuilder<String?>(
+                          valueListenable: _previewing,
+                          builder: (_, busy, _) => D4TextLink(busy == c.$1 ? 'Preparing…' : 'Preview prescription', onTap: () => _preview(c.$1)),
+                        ),
+                        D4TextLink(Session.I.isOwner || !isLive ? 'Edit clinic letterhead' : 'View clinic letterhead', onTap: () => _openClinic(c.$1)),
+                        D4TextLink('Your details', onTap: () => Nav.go(context, 'Profile-Professional')),
+                      ],
+                    ),
+                  ],
                   if (_clinics.isEmpty) const D4Note('Add a clinic first.'),
                 ],
               ),

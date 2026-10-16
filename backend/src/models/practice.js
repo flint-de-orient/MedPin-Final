@@ -83,6 +83,7 @@ const locationClosureSchema = new Schema(
     reason: { type: String, default: 'Closed all day' },
     allDay: { type: Boolean, default: true },
     createdBy: ref('User'),
+    patientsTold: Number, // booked patients told to choose another day
   },
   baseOptions,
 );
@@ -107,8 +108,12 @@ const memberSchema = new Schema(
     locationIds: [{ type: Schema.Types.ObjectId, ref: 'Location' }],
     allLocations: { type: Boolean, default: false },
     isOwner: { type: Boolean, default: false },
-    status: enumOf(E.MEMBER_STATUSES, { default: 'active' }),
+    // 'removed': taken off the team (People → Remove); kept so their history still has a name.
+    status: enumOf([...E.MEMBER_STATUSES, 'removed'], { default: 'active' }),
     suspendedAt: Date,
+    removedAt: Date,
+    // Doctor's assistant: the doctor(s) they work for (People-Add / People-Member).
+    assistsDoctorIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     joinedAt: { type: Date, default: Date.now },
     // Doctor-only fields on People-Add
     qualifications: String, // "MBBS, DNB (Endocrinology)"

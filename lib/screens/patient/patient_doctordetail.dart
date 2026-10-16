@@ -349,7 +349,7 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
           Row(
             children: [
               // 14px dot + 3px ring (content-box) at right 2 / bottom 2.
-              P2AvatarDot(F.initials(_name), size: 72, fontSize: 24, dot: dot, dotSize: 20, dotBorder: 3, inset: 2),
+              P2AvatarDot(F.initials(_name), size: 72, fontSize: 24, dot: dot, dotSize: 20, dotBorder: 3, inset: 2, photo: _d.str('photoUrl').isEmpty ? null : _d.str('photoUrl')),
               const Gap(16),
               Expanded(
                 child: Column(

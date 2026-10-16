@@ -25,5 +25,11 @@
   "editRecords": true,
   "chats": true,
   "prescribe": true
- }
+ },
+ "assists": [],
+ "canEdit": true,
+ "canChangeRole": true,
+ "canSuspend": true,
+ "canRemove": true,
+ "lockReason": null
 }

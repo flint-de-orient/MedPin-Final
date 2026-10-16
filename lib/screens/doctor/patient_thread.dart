@@ -686,7 +686,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
               radius: 12,
               child: Row(
                 children: [
-                  if (!waiting) MpAvatar(live ? F.initials(name) : 'PS', size: 40, fontSize: 14),
+                  if (!waiting) MpAvatar(live ? F.initials(name) : 'PS', size: 40, fontSize: 14, photo: live && _patient.str('photo').isNotEmpty ? _patient.str('photo') : null),
                   const Gap(12),
                   Expanded(
                     child: Column(

@@ -169,9 +169,22 @@ async function buildRows(req, job) {
     const q = { practiceId: req.practiceId, date: { $gte: from, $lt: to } };
     if (job.filters?.statuses?.length) q.status = { $in: job.filters.statuses };
     const appts = await M.Appointment.find(q).sort({ startAt: 1 }).populate('patientId', 'name phone').populate('doctorId', 'name').populate('locationId', 'name').lean();
+    // Consultations started straight from a patient (no appointment) are visits too.
+    const wantCompleted = !job.filters?.statuses?.length || job.filters.statuses.includes('completed');
+    const direct = wantCompleted
+      ? await M.Consultation.find({ practiceId: req.practiceId, appointmentId: null, status: { $in: ['issued', 'sent'] }, updatedAt: { $gte: from, $lt: to } })
+        .populate('patientId', 'name phone').populate('doctorId', 'name').lean()
+      : [];
+    const rows = [
+      ...appts.map((a) => ({ at: a.startAt, row: [T.dayKey(a.startAt), T.fmtTime(T.minuteOfDay(a.startAt)), a.tokenNo, a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.doctorId?.name, a.locationId?.name, a.visitType, a.mode, a.status, a.fee] })),
+      ...direct.map((c) => {
+        const at = c.issuedAt || c.completedAt || c.updatedAt;
+        return { at, row: [T.dayKey(at), T.fmtTime(T.minuteOfDay(at)), '', c.patientId?.name, ...(job.includeMobiles ? [mobile(c.patientId)] : []), c.doctorId?.name, '', 'consultation', 'in_clinic', 'completed', ''] };
+      }),
+    ].sort((a, b) => new Date(a.at) - new Date(b.at));
     sets.appointments = {
       header: ['Date', 'Time', 'Token', 'Patient', ...(job.includeMobiles ? ['Mobile'] : []), 'Doctor', 'Location', 'Type', 'Mode', 'Status', 'Fee'],
-      rows: appts.map((a) => [T.dayKey(a.startAt), T.fmtTime(T.minuteOfDay(a.startAt)), a.tokenNo, a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.doctorId?.name, a.locationId?.name, a.visitType, a.mode, a.status, a.fee]),
+      rows: rows.map((r) => r.row),
     };
   }
   if (job.kind === 'report') {
@@ -233,12 +246,18 @@ async function buildRows(req, job) {
         rows: appts.sort((a, b) => a.startAt - b.startAt).map((a) => [day(a.date), T.fmtTime(T.minuteOfDay(a.startAt)), a.tokenNo, a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.locationId?.name, a.visitType, a.mode, a.status, a.fee, a.feeStatus]),
       };
     } else {
-      const appts = await visits(req, from, to, f);
-      const consults = await M.Consultation.find({ appointmentId: { $in: appts.map((a) => a._id) } }, 'appointmentId diagnoses').lean();
-      const dx = new Map(consults.map((c) => [String(c.appointmentId), c.diagnoses.map((d) => d.name).join('; ')]));
+      // Every visit seen: completed appointments and consultations without one (as on Reports).
+      const appts = await require('./reports').seenVisits(req, from, to, f);
+      const consults = await M.Consultation.find({ $or: [{ appointmentId: { $in: appts.filter((a) => !a.viaConsult).map((a) => a._id) } }, { _id: { $in: appts.filter((a) => a.viaConsult).map((a) => a._id) } }] }, 'appointmentId diagnoses').lean();
+      const dx = new Map();
+      for (const c of consults) {
+        const names = c.diagnoses.map((d) => d.name).join('; ');
+        dx.set(String(c._id), names);
+        if (c.appointmentId) dx.set(String(c.appointmentId), names);
+      }
       sets.consultations = {
         header: ['Date', 'Patient', ...mob, 'Age', 'Type', 'Mode', 'Location', 'Diagnosis', 'Fee', 'Fee status'],
-        rows: appts.sort((a, b) => a.date - b.date).map((a) => [day(a.date), a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.age ?? '', a.visitType, a.mode, a.locationId?.name, dx.get(String(a._id)) || '', a.fee, a.feeStatus]),
+        rows: appts.sort((a, b) => new Date(a.date) - new Date(b.date)).map((a) => [day(a.date), a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.age ?? '', a.visitType, a.mode, a.locationId?.name, dx.get(String(a._id)) || '', a.fee ?? '', a.feeStatus || '']),
       };
     }
   }

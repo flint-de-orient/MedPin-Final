@@ -11,8 +11,11 @@ const { sendEmail } = require('./email');
  *   report: a doctor with thousands of patients sees it marked on the patient and
  *   in the morning summary, not as a buzz each time).
  */
+/** A user id from an id or a populated user. */
+const idOf = (x) => String(x?._id || x);
+
 async function notify(userIds, n) {
-  const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
+  const ids = [...new Set((userIds || []).filter(Boolean).map(idOf))];
   if (!ids.length) return [];
   const channels = ['in_app', ...(n.push === false ? [] : ['push']), ...(n.whatsapp ? ['whatsapp'] : [])];
   const docs = await M.Notification.insertMany(
@@ -38,10 +41,12 @@ async function notify(userIds, n) {
     const urgentFor = (id) => isUrgent && urgentThrough.get(id) !== false;
     const typeOn = (p) => {
       const t = p?.types || {};
-      if (/appointment|request|visit/.test(n.type)) return t.appointments !== false;
+      // Emergencies and urgent alerts always come through (Chat settings → urgent alerts).
+      if (/emergency|urgent/.test(n.type)) return true;
+      if (/appointment|request|visit|queue|doctor_leave|clinic_closed|reschedul|fee_paid|refund/.test(n.type)) return t.appointments !== false;
       if (/message/.test(n.type)) return t.messages !== false;
-      if (/lab|record|prescription/.test(n.type)) return t.labResults !== false;
-      if (/follow_up/.test(n.type)) return t.followUps !== false;
+      if (/lab|record|prescription|alert_watch/.test(n.type)) return t.labResults !== false;
+      if (/follow_up|morning_summary/.test(n.type)) return t.followUps !== false;
       return true;
     };
     const quiet = (p, id) => {
@@ -67,7 +72,8 @@ async function notify(userIds, n) {
       await Promise.allSettled(users.map((u) => sendWhatsApp(u.phone, `${n.title}${n.body ? ` — ${n.body}` : ''}`, { template: n.type, params: n.waParams })));
     }
     // Email copy for staff who switched it on (Profile → Notifications → Email).
-    const emailIds = ids.filter((id) => prefs.get(id)?.email === true && typeOn(prefs.get(id)) && !quiet(prefs.get(id), id));
+    // In-app-only notices (push: false, e.g. a shared report) don't go by email either.
+    const emailIds = n.push === false ? [] : ids.filter((id) => prefs.get(id)?.email === true && typeOn(prefs.get(id)) && !quiet(prefs.get(id), id));
     if (emailIds.length) {
       const users = await M.User.find({ _id: { $in: emailIds }, email: { $exists: true, $ne: '' } }, 'email');
       await Promise.allSettled(users.map((u) => sendEmail({ to: u.email, subject: `MedPin: ${n.title}`, text: `${n.title}${n.body ? `\n\n${n.body}` : ''}` })));
@@ -105,7 +111,7 @@ async function clinicians(practiceId, patientId, { doctorId, roles = ['doctor'] 
  * an open chat refreshes at once instead of waiting for its next check.
  */
 async function signal(userIds, data) {
-  const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
+  const ids = [...new Set((userIds || []).filter(Boolean).map(idOf))];
   if (!ids.length) return;
   try {
     const tokens = await M.DeviceToken.find({ userId: { $in: ids } }).distinct('token');
@@ -124,7 +130,7 @@ async function signal(userIds, data) {
 const DESK_ROLES = ['front_desk', 'practice_manager', 'doctor_assistant'];
 
 async function deskOrDoctors(practiceId, { locationId, doctorId } = {}) {
-  const desk = await practiceStaff(practiceId, { roles: DESK_ROLES, locationId });
+  const desk = await deskFor(practiceId, { locationId, doctorId });
   if (desk.length) return desk;
   if (doctorId) return [doctorId];
   return practiceStaff(practiceId, { roles: ['doctor'], locationId });
@@ -132,7 +138,16 @@ async function deskOrDoctors(practiceId, { locationId, doctorId } = {}) {
 
 /** Does this clinic (location) have someone at the front desk? */
 async function hasDesk(practiceId, locationId) {
-  return (await practiceStaff(practiceId, { roles: DESK_ROLES, locationId })).length > 0;
+  return (await deskFor(practiceId, { locationId })).length > 0;
+}
+
+/** The front desk / managers at that location, and the assistants of [doctorId] there. */
+async function deskFor(practiceId, { locationId, doctorId } = {}) {
+  const members = await M.Member.find({ practiceId, status: 'active', role: { $in: DESK_ROLES } }, 'userId role locationIds allLocations assistsDoctorIds');
+  return members
+    .filter((m) => !locationId || m.allLocations || (m.locationIds || []).some((l) => String(l) === String(locationId)))
+    .filter((m) => m.role !== 'doctor_assistant' || !doctorId || !(m.assistsDoctorIds || []).length || m.assistsDoctorIds.some((d) => String(d) === String(doctorId)))
+    .map((m) => m.userId);
 }
 
 module.exports = { notify, practiceStaff, clinicians, signal, deskOrDoctors, hasDesk, DESK_ROLES };

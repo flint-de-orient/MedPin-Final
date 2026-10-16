@@ -271,6 +271,21 @@ async function morningSummary(now) {
  * it, so it's switched off for them once (they can turn it on in Profile).
  * Doctors and staff keep theirs: their phones hold many patients' records.
  */
+/**
+ * Watches and rings: every 4 hours, patients whose phone synced Health Connect
+ * before (and not in the last 3 hours) get a silent push; the app syncs in the
+ * background (lib/data/push.dart pushBackground), so readings arrive without
+ * the app being opened.
+ */
+async function deviceSyncNudge(now) {
+  const slot = Math.floor(T.minuteOfDay(now) / 240); // 4-hour windows
+  await once(`devicesync:${T.dayKey(now)}:${slot}`, async () => {
+    const before = new Date(now.getTime() - 3 * 3600e3);
+    const ids = await M.Patient.find({ userId: { $ne: null }, 'deviceSync.at': { $ne: null, $lt: before } }).limit(5000).distinct('userId');
+    if (ids.length) await require('./notify').signal(ids, { type: 'device_sync' });
+  });
+}
+
 let appLockChecked = false;
 async function appLockOffForPatients() {
   if (appLockChecked) return;
@@ -327,7 +342,7 @@ async function tick() {
   const since = last;
   last = now;
   for (const [name, job] of [
-    ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)], ['morning', () => morningSummary(now)], ['appLock', () => appLockOffForPatients()],
+    ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)], ['morning', () => morningSummary(now)], ['appLock', () => appLockOffForPatients()], ['deviceSync', () => deviceSyncNudge(now)],
     ['followUps', () => followUpReminders(now)], ['lowStock', () => lowStock(now)], ['dailyLog', () => dailyLogReminders(now)], ['digest', () => dailyDigest(now)],
     ['scores', () => healthScores(now)], ['noShows', () => noShows(now)],
     ['payouts', () => payouts(now)],

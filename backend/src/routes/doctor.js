@@ -4,7 +4,7 @@ const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
 const { requireAuth, staff } = require('../middleware/auth');
-const { pick, badRequest, notFound, conflict, unprocessable } = require('../lib/http');
+const { pick, badRequest, notFound, conflict, unprocessable, isId } = require('../lib/http');
 const storage = require('../services/storage');
 const { slotsFor, nextFreeSlot } = require('../services/scheduling');
 
@@ -101,10 +101,20 @@ r.patch('/doctor/profile', async (req, res) => {
   for (const k of ['chatSettings', 'notificationPrefs']) {
     if (body[k]) body[k] = { ...(p[k]?.toObject?.() || {}), ...body[k] };
   }
-  // Morning summary time: HH:MM, else unchanged.
-  if (body.notificationPrefs?.digestAt !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.notificationPrefs.digestAt))) {
+  // Times are HH:MM (IST); anything else keeps the saved time, since notify.js,
+  // presence.js and the away reply all compare clock times with them.
+  const hhmm = (v) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v));
+  if (body.notificationPrefs?.digestAt !== undefined && !hhmm(body.notificationPrefs.digestAt)) {
     body.notificationPrefs.digestAt = p.notificationPrefs?.digestAt || '08:00';
   }
+  for (const [k, sub, defaults] of [['notificationPrefs', 'quietHours', { from: '22:00', to: '07:00' }], ['chatSettings', 'replyHours', { from: '09:00', to: '20:00' }]]) {
+    const v = body[k]?.[sub];
+    if (!v) continue;
+    const saved = p[k]?.[sub] || {};
+    body[k][sub] = { ...(saved.toObject?.() || saved), ...v };
+    for (const t of ['from', 'to']) if (!hhmm(body[k][sub][t])) body[k][sub][t] = saved[t] || defaults[t];
+  }
+  if (body.chatSettings?.awayMessage !== undefined) body.chatSettings.awayMessage = String(body.chatSettings.awayMessage || '').trim().slice(0, 300);
   Object.assign(p, body);
   // New payout details: set up where RazorpayX sends the money (needs the full account number now).
   if (body.payout) {
@@ -239,7 +249,10 @@ r.put('/doctor/locations/:locationId', async (req, res) => {
   if (body.services) dl.services = body.services;
   if (body.schedule) {
     const s = { ...dl.schedule?.toObject?.(), ...body.schedule };
-    const slots = s.week?.[0]?.sessions?.[0] ? Math.floor((s.week[0].sessions[0].endMin - s.week[0].sessions[0].startMin) / ((s.slotLengthMin || 15) + (s.breakBetweenMin || 0))) : null;
+    // Walk-in places are kept per session: no more than the longest session has slots.
+    const step = (s.slotLengthMin || 15) + (s.breakBetweenMin || 0);
+    const lengths = (s.week || []).flatMap((d) => (d.sessions || []).map((x) => x.endMin - x.startMin)).filter((n) => n > 0);
+    const slots = lengths.length ? Math.max(...lengths.map((n) => (n < (s.slotLengthMin || 15) ? 0 : Math.floor((n - (s.slotLengthMin || 15)) / step) + 1))) : null;
     if (slots != null && s.walkInPlaces > slots) s.walkInPlaces = slots;
     dl.schedule = s;
   }
@@ -286,47 +299,136 @@ r.get('/doctors', async (req, res) => {
   })));
 });
 
-// ── Leave ──
-r.get('/doctor/leaves', async (req, res) => {
-  const leaves = await M.DoctorLeave.find({ doctorId: req.user._id, cancelledAt: null }).sort({ startDate: 1 });
+// ── Leave and clinic holidays ──
+const leaveStatus = (l, now = new Date()) => (l.startDate > now ? 'planned' : l.endDate >= T.dayStart(now) ? 'active' : 'past');
+
+/** The doctor's active locations (where they have a schedule and the clinic is open). */
+async function myLocations(userId) {
+  const dls = await M.DoctorLocation.find({ doctorId: userId, status: 'active' }).populate('locationId', 'name shortName status');
+  return dls.map((d) => d.locationId).filter((l) => l && l.status === 'active');
+}
+
+/** Leave rows with how many booked patients they touch ("14 patients will be told"). */
+async function leaveRows(userId, { upcomingOnly = false } = {}) {
+  const q = { doctorId: userId, cancelledAt: null, ...(upcomingOnly ? { endDate: { $gte: T.dayStart() } } : {}) };
+  const leaves = await M.DoctorLeave.find(q).sort({ startDate: 1 });
+  const locs = await M.Location.find({ _id: { $in: leaves.map((l) => l.locationId).filter(Boolean) } }, 'name shortName');
+  const names = new Map(locs.map((l) => [String(l._id), l.shortName || l.name]));
   const out = [];
   for (const l of leaves) {
     const affected = await M.Appointment.countDocuments({
-      doctorId: req.user._id, startAt: { $gte: l.startDate, $lt: T.addDays(l.endDate, 1) }, status: { $in: ['booked', 'confirmed'] },
+      doctorId: userId, startAt: { $gte: l.startDate, $lt: T.addDays(l.endDate, 1) }, status: { $in: ['booked', 'confirmed'] },
       ...(l.locationId ? { locationId: l.locationId } : {}),
     });
-    const now = new Date();
-    out.push({ ...l.toJSON(), affectedPatients: affected, status: l.startDate > now ? 'planned' : l.endDate >= T.dayStart(now) ? 'active' : 'past' });
+    out.push({ ...l.toJSON(), locationName: l.locationId ? names.get(String(l.locationId)) || null : null, affectedPatients: affected, status: leaveStatus(l) });
   }
-  res.json(out);
+  return out;
+}
+
+r.get('/doctor/leaves', async (req, res) => res.json(await leaveRows(req.user._id)));
+
+/**
+ * Profile → Leave and holidays: the doctor's current and planned leave, and
+ * the holidays (closures) of the clinics they practise at. Owners and practice
+ * managers can add a clinic holiday (POST /api/locations/:id/closures).
+ */
+r.get('/doctor/time-off', async (req, res) => {
+  const locs = await myLocations(req.user._id);
+  const [leaves, closures] = await Promise.all([
+    leaveRows(req.user._id, { upcomingOnly: true }),
+    M.LocationClosure.find({ locationId: { $in: locs.map((l) => l._id) }, endDate: { $gte: T.dayStart() } }).sort({ startDate: 1 }),
+  ]);
+  const names = new Map(locs.map((l) => [String(l._id), l.shortName || l.name]));
+  const holidays = [];
+  for (const c of closures) {
+    const affected = await M.Appointment.countDocuments({
+      doctorId: req.user._id, locationId: c.locationId, startAt: { $gte: c.startDate, $lt: T.addDays(c.endDate, 1) }, status: { $in: ['booked', 'confirmed'] },
+    });
+    holidays.push({ ...c.toJSON(), locationName: names.get(String(c.locationId)) || null, affectedPatients: affected, status: leaveStatus(c) });
+  }
+  const manager = Boolean(req.member?.isOwner || req.member?.role === 'practice_manager');
+  res.json({ leaves, holidays, canAddHoliday: manager, locations: locs.map((l) => ({ id: l._id, name: l.shortName || l.name })) });
 });
 
 r.post('/doctor/leaves', async (req, res) => {
-  if (!req.body.reason) throw badRequest('Enter a reason');
+  const reason = String(req.body.reason || '').trim();
+  if (!reason) throw badRequest('Enter a reason', 'REASON_REQUIRED');
+  if (!req.body.startDate) throw badRequest('Choose the dates', 'DATE_REQUIRED');
   const startDate = T.parseDay(req.body.startDate);
   const endDate = T.parseDay(req.body.endDate || req.body.startDate);
   if (endDate < startDate) throw badRequest('End date is before the start date');
-  const leave = await M.DoctorLeave.create({ doctorId: req.user._id, locationId: req.body.locationId || null, reason: req.body.reason, startDate, endDate });
+  if (endDate < T.dayStart()) throw badRequest('Choose today or a later date', 'DATE_PAST');
+  // One location (of the doctor's own) or all of them.
+  let locationId = null;
+  if (req.body.locationId) {
+    const mine = await myLocations(req.user._id);
+    const loc = mine.find((l) => String(l._id) === String(req.body.locationId));
+    if (!loc) throw badRequest('Choose one of your locations', 'BAD_LOCATION');
+    locationId = loc._id;
+  }
+  const overlap = await M.DoctorLeave.exists({
+    doctorId: req.user._id, cancelledAt: null, startDate: { $lte: endDate }, endDate: { $gte: startDate },
+    ...(locationId ? { $or: [{ locationId: null }, { locationId }] } : {}),
+  });
+  if (overlap) throw conflict('You already have leave on some of these days', 'LEAVE_OVERLAP');
+  const leave = await M.DoctorLeave.create({ doctorId: req.user._id, locationId, reason, startDate, endDate });
   // Patients already booked in those days are told to pick another time.
   const q = { doctorId: req.user._id, startAt: { $gte: startDate, $lt: T.addDays(endDate, 1) }, status: { $in: ['booked', 'confirmed'] } };
   if (leave.locationId) q.locationId = leave.locationId;
   const affected = await M.Appointment.find(q).populate('patientId', 'userId name');
-  const { notify, practiceStaff } = require('../services/notify');
+  const { notify } = require('../services/notify');
   const who = req.user.name || 'Your doctor';
   await notify(affected.map((a) => a.patientId?.userId).filter(Boolean), {
     type: 'doctor_leave', practiceId: req.practiceId, title: `${who} is on leave`,
     body: `${T.dayKey(startDate)}${+endDate !== +startDate ? ` to ${T.dayKey(endDate)}` : ''}. Please choose another time for your visit.`, screen: 'Patient-Doctors', whatsapp: true,
   });
   if (affected.length) {
-    const desk = await require('../services/notify').deskOrDoctors(req.practiceId, { doctorId: req.user._id });
+    const desk = await require('../services/notify').deskOrDoctors(req.practiceId, { doctorId: req.user._id, ...(leave.locationId ? { locationId: leave.locationId } : {}) });
     await notify(desk, { type: 'doctor_leave', practiceId: req.practiceId, title: `${affected.length} visit${affected.length === 1 ? '' : 's'} to move`, body: `${who} is on leave ${T.dayKey(startDate)}${+endDate !== +startDate ? `–${T.dayKey(endDate)}` : ''}`, screen: 'Appointments' });
   }
+  leave.patientsNotifiedAt = affected.length ? new Date() : undefined;
+  await leave.save();
   res.status(201).json({ ...leave.toJSON(), patientsTold: affected.length });
 });
 
+// Cancel a leave: bookings open again for those days.
 r.delete('/doctor/leaves/:id', async (req, res) => {
-  await M.DoctorLeave.updateOne({ _id: req.params.id, doctorId: req.user._id }, { cancelledAt: new Date() });
+  if (!isId(req.params.id)) throw notFound('Leave');
+  const r1 = await M.DoctorLeave.updateOne({ _id: req.params.id, doctorId: req.user._id, cancelledAt: null }, { cancelledAt: new Date() });
+  if (!r1.matchedCount) throw notFound('Leave');
   res.json({ ok: true });
+});
+
+// ── Prescription letterhead preview ──
+// The real prescription PDF (services/rxpdf.js) for a sample patient, drawn with
+// this location's letterhead (logo, printed name, registration fallback), the
+// clinic's name / address / phone / hours and the doctor's own details and
+// signature — exactly what an issued prescription from there prints. Watermarked
+// PREVIEW · NOT ISSUED and never numbered or stored on a patient.
+r.get('/doctor/letterhead/preview', async (req, res) => {
+  const wanted = req.query.locationId && isId(String(req.query.locationId)) ? { locationId: req.query.locationId } : {};
+  const dl = await M.DoctorLocation.findOne({ doctorId: req.user._id, practiceId: req.practiceId, status: 'active', ...wanted }).sort({ createdAt: 1 });
+  const location = dl ? await M.Location.findById(dl.locationId) : wanted.locationId ? await M.Location.findOne({ _id: wanted.locationId, practiceId: req.practiceId }) : null;
+  if (!location) throw notFound('Location');
+  const [doctor, practice] = await Promise.all([profileOf(req.user._id), M.Practice.findById(req.practiceId, 'logo name')]);
+  const image = async (file) => (file?.key ? storage.read(file.key).catch(() => null) : null);
+  const [signature, logo] = await Promise.all([image(doctor.signature), image(location.letterhead?.logo || practice?.logo)]);
+  const today = T.dayStart();
+  const rx = {
+    _id: null, rxNumber: null, kind: 'digital', doctorName: doctor.displayName || req.user.name, issuedAt: new Date(),
+    validUntil: T.addDays(today, 30), followUpDate: T.addDays(today, 14), diagnosisSummary: 'Type 2 diabetes mellitus',
+    items: [
+      { name: 'Metformin', strength: '500 mg', form: 'tablet', frequency: 'daily', dose: { morning: 1, afternoon: 0, night: 1 }, foodRelation: 'after_food', duration: { value: 30, unit: 'days' }, quantity: 60, change: 'continued' },
+      { name: 'Atorvastatin', strength: '10 mg', form: 'tablet', frequency: 'daily', dose: { morning: 0, afternoon: 0, night: 1 }, foodRelation: 'after_food', duration: { value: 30, unit: 'days' }, quantity: 30, change: 'new' },
+    ],
+    tests: ['HbA1c', 'Lipid profile'], advice: 'Walk for 30 minutes every day.\nCut down on sugar and fried food.',
+  };
+  const patient = { name: 'Sample patient', gender: 'female', ageYears: 52 };
+  const { buffer, pages } = await require('../services/rxpdf').renderPrescription({
+    rx, patient, doctor, location, vitals: null, complaint: 'Follow-up visit', signature, logo, practiceName: practice?.name, mode: 'in_clinic', preview: true,
+  });
+  const file = await storage.save(buffer, { folder: 'previews', name: `Letterhead preview · ${location.shortName || location.name}.pdf`.replace(/[\/:*?"<>|]/g, ''), mimeType: 'application/pdf', pages });
+  res.json(storage.withUrl(file));
 });
 
 // Queue-Select "Don't ask again today"

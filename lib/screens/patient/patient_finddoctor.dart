@@ -53,8 +53,6 @@ const _icTooth =
     '<path d="M7 3c-2.5 0-4 2-4 4.5 0 3 1.5 4.5 2 7 .5 2.5 1 6.5 2.5 6.5S9 18 10 16c.5-1 1.5-1 2-1s1.5 0 2 1c1 2 1 5 2.5 5s2-4 2.5-6.5c.5-2.5 2-4 2-7C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3Z"/>';
 const _icEar =
     '<path d="M6 8.5a6.5 6.5 0 1 1 13 0c0 6-6 6-6 10a3.5 3.5 0 1 1-7 0"/><path d="M15 8.5a2.5 2.5 0 0 0-5 0v1a2 2 0 1 1 0 4"/>';
-const _icVideo =
-    '<path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/>';
 const _icGlobe = '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>';
 
 const _specs = [
@@ -692,7 +690,8 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
   _Intent? _intent;
   bool _thinking = false;
   String? _specKey;
-  bool _fToday = false, _fVideo = false, _fFemale = false, _fBengali = false, _fNear = false;
+  // MedPin books clinic visits only: no video filter.
+  bool _fToday = false, _fFemale = false, _fBengali = false, _fNear = false;
   bool _soonest = false;
 
   static const _examples = [
@@ -771,7 +770,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
     _clearAi();
     setState(() {
       _specKey = null;
-      _fToday = _fVideo = _fFemale = _fBengali = _fNear = false;
+      _fToday = _fFemale = _fBengali = _fNear = false;
     });
   }
 
@@ -783,7 +782,6 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
     }
     if (i.lang != null && d.langs.contains(i.lang)) s += 8;
     if (i.female && d.female) s += 8;
-    if (i.video && d.video) s += 6;
     if (i.today && d.today) s += 6;
     if (i.area != null && d.area == i.area) s += 6;
     if (d.mine) s += 2;
@@ -804,19 +802,17 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
           docs.where((d) {
             if (i.lang != null && !d.langs.contains(i.lang)) return false;
             if (i.female && !d.female) return false;
-            if (i.video && !d.video) return false;
             if (i.today && !d.today) return false;
             return true;
           }).toList();
       if (strict.isNotEmpty) {
         docs = strict;
-      } else if (i.lang != null || i.female || i.video || i.today) {
+      } else if (i.lang != null || i.female || i.today) {
         relaxed = true;
       }
     }
     if (_specKey != null) docs = docs.where((d) => d.spec == _specKey).toList();
     if (_fToday) docs = docs.where((d) => d.today).toList();
-    if (_fVideo) docs = docs.where((d) => d.video).toList();
     if (_fFemale) docs = docs.where((d) => d.female).toList();
     if (_fBengali) docs = docs.where((d) => d.langs.contains('Bengali')).toList();
     if (_fNear) docs = docs.where((d) => d.km != null && d.km! <= 3).toList();
@@ -890,7 +886,6 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
               gap: 8,
               children: [
                 _filter('Available today', _fToday, (v) => _fToday = v),
-                _filter('Video visit', _fVideo, (v) => _fVideo = v),
                 _filter('Female doctor', _fFemale, (v) => _fFemale = v),
                 _filter('Speaks Bengali', _fBengali, (v) => _fBengali = v),
                 _filter('Within 3 km', _fNear, (v) => _fNear = v),
@@ -1080,7 +1075,6 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
     final wishes = <String>[
       if (i.lang != null) 'Speaks ${i.lang}',
       if (i.female) 'Female doctor',
-      if (i.video) 'Video visit',
       if (i.today) 'Available today',
       if (i.area != null) 'Near ${i.area}',
     ];
@@ -1440,7 +1434,6 @@ class _DoctorCard extends StatelessWidget {
             runSpacing: 6,
             children: [
               if (d.km != null) _InfoPill(I.pin, distanceLabel(d.km!)),
-              if (d.video) const _InfoPill(_icVideo, 'Video visit'),
               if (d.langs.isNotEmpty) _InfoPill(_icGlobe, d.langs.join(' · ')),
             ],
           ),

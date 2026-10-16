@@ -88,7 +88,8 @@ class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> with Li
           ),
       ];
 
-  /// Opens the care thread ({patientId}) or a direct thread ({userId}).
+  /// Opens the care thread ({patientId}; POST /api/inbox creates it the first
+  /// time) or a direct thread ({userId}) — never another screen.
   Future<void> _start(BuildContext context, Map<String, dynamic> body) async {
     final res = await runAction(context, () => Api.I.post('/api/inbox', body), busy: _busy);
     if (res is! Map || !context.mounted) return;
@@ -175,7 +176,8 @@ class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> with Li
                     if (isLive && data == null) livePlaceholder() ?? const SizedBox.shrink(),
                     if (patients.isNotEmpty)
                       _Group(
-                        title: 'Patients seen recently',
+                        // Live: every patient linked to the clinic, most recently active first.
+                        title: live ? 'Patients' : 'Patients seen recently',
                         people: patients,
                         team: false,
                         onTap: (i) => live

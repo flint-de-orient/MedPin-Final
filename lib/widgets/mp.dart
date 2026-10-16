@@ -50,10 +50,16 @@ class MpPage extends StatelessWidget {
     final navSpace = nav != null ? 112.0 + safeBottom : 0.0;
     Widget content = Padding(padding: padding, child: body);
     if (scroll) {
+      // Pull down to refresh: the screen that loads this page's data reloads it.
+      final owner = MpRefreshable.of(context);
       content = SingleChildScrollView(
         padding: EdgeInsets.only(bottom: navSpace),
+        physics: owner == null ? null : const AlwaysScrollableScrollPhysics(),
         child: content,
       );
+      if (owner != null) {
+        content = RefreshIndicator(color: MP.primary, onRefresh: owner.pageRefresh, child: content);
+      }
     }
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
@@ -80,6 +86,27 @@ class MpPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A screen whose data can be loaded again (LiveData screens): [MpPage] adds
+/// pull-to-refresh for it.
+abstract interface class MpRefreshable {
+  Future<void> pageRefresh();
+
+  /// The nearest screen above [context] that can refresh, if any (and it's live).
+  static MpRefreshable? of(BuildContext context) {
+    MpRefreshable? found;
+    context.visitAncestorElements((e) {
+      if (e is StatefulElement && e.state is MpRefreshable) {
+        found = e.state as MpRefreshable;
+        return false;
+      }
+      return true;
+    });
+    return found != null && (found as MpRefreshable).canRefresh ? found : null;
+  }
+
+  bool get canRefresh;
 }
 
 /// The 64px top bar: back button (44×44) + title (20/700) + trailing actions.

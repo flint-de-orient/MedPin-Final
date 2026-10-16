@@ -116,7 +116,7 @@ class _Fu {
       id: m.str('id'),
       patientId: p.str('id', m.str('patientId')),
       locationId: m['locationId'] is Map ? m.obj('locationId').str('id', m.obj('locationId').str('_id')) : m['locationId'] as String?,
-      appointmentId: appt.isEmpty ? (m['appointmentId'] is String ? m['appointmentId'] as String : null) : appt.str('id'),
+      appointmentId: appt.isEmpty ? (m['appointmentId'] is String ? m['appointmentId'] as String : null) : appt.str('id', appt.str('_id')),
       phone: phone,
       reminders: m.numOr('remindersSent').toInt(),
     );
@@ -343,14 +343,45 @@ class _DoctorFollowupsScreenState extends State<DoctorFollowupsScreen> with Live
         if (ok == null || !mounted) return;
         toast(context, 'Reminder sent to ${r.name}');
         reload(quiet: true);
-      default: // Book, View
-        await Nav.go(context, 'Appointments-Manage', args: {
-          'patientId': r.patientId,
-          'followUpId': r.id,
-          if (r.locationId != null && r.locationId!.isNotEmpty) 'locationId': r.locationId,
-          if (r.appointmentId != null) 'appointmentId': r.appointmentId,
-        });
+      case 'View':
+        await _viewVisit(r);
+      default: // Book
+        await _book(r);
+    }
+  }
+
+  /// "Book" on a row that has no visit yet: the manage sheet in book mode
+  /// (free slots, POST /api/appointments as a follow-up visit).
+  Future<void> _book(_Fu r) async {
+    await Nav.go(context, 'Appointments-Manage', args: {
+      'patientId': r.patientId,
+      'followUpId': r.id,
+      'visitType': 'follow_up',
+      if (r.locationId != null && r.locationId!.isNotEmpty) 'locationId': r.locationId,
+    });
+    if (mounted) reload(quiet: true);
+  }
+
+  /// "View" on a booked row: the booked visit with Reschedule (a new free slot)
+  /// and Cancel appointment. The visit is checked first, so a stale booking
+  /// (cancelled or missed since) books a new one instead of failing.
+  Future<void> _viewVisit(_Fu r) async {
+    final id = r.appointmentId;
+    if (id == null || id.isEmpty) return _book(r);
+    final a = await runAction(context, () => Api.I.get('/api/appointments/$id'), busy: _busy);
+    if (a is! Map || !mounted) return;
+    switch (a['status']) {
+      case 'booked' || 'confirmed':
+        await Nav.go(context, 'Appointments-Manage', args: {'appointmentId': id});
         if (mounted) reload(quiet: true);
+      case 'waiting' || 'in_consultation':
+        // Already here today: nothing to move; their profile has the visit.
+        toast(context, "This visit is in today's queue");
+        _openPatient(r);
+      case 'completed':
+        _openPatient(r);
+      default: // cancelled / missed / rescheduled away: book again
+        await _book(r);
     }
   }
 

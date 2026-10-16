@@ -1,3 +1,4 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -22,6 +23,16 @@ void main() {
       .init(); // SMS sign-in on Android; ready long before the Login screen
   // Push notifications start once someone is signed in (restored or new).
   Session.I.deviceToken = () => Push.I.token;
+  // Silent pushes while the app is in the background or closed (watch sync,
+  // medicine alarms changed): data/push.dart pushBackground, no UI.
+  if (Push.backgroundSupported) {
+    try {
+      FirebaseMessaging.onBackgroundMessage(pushBackground);
+    } catch (e) {
+      debugPrint('Background push not available: $e');
+    }
+    Push.I.listenForBackgroundWork();
+  }
   Api.I.onMedicinesChanged = MedAlarms.I.sync;
   Api.I.onDataChanged = LiveBus.changed;
   Api.I.onCountsChanged = () => NavCounts.refresh(force: true);

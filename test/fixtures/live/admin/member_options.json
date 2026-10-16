@@ -1,0 +1,53 @@
+{
+ "locations": [
+  {
+   "id": "6ac8bbcee42c9f0836e98563",
+   "name": "City Care Clinic — Salt Lake",
+   "shortName": "Salt Lake"
+  },
+  {
+   "id": "6ac8bbd08adea6a429a73189",
+   "name": "City Care — New Town",
+   "shortName": "New Town"
+  }
+ ],
+ "doctors": [
+  {
+   "userId": "6ac8bbcee42c9f0836e9855b",
+   "name": "Dr. Arjun Sen",
+   "locationIds": [
+    "6ac8bbcee42c9f0836e98563",
+    "6ac8bbd08adea6a429a73189"
+   ],
+   "departments": [
+    "Diabetology"
+   ]
+  },
+  {
+   "userId": "6ac8bbd08adea6a429a73197",
+   "name": "Dr. Rina Mitra",
+   "locationIds": [
+    "6ac8bbcee42c9f0836e98563"
+   ],
+   "departments": [
+    "Cardiology"
+   ]
+  }
+ ],
+ "departments": [
+  "Cardiology",
+  "Dentistry",
+  "Dermatology",
+  "Diabetology",
+  "Endocrinology",
+  "ENT",
+  "Gastroenterology",
+  "General medicine",
+  "Gynaecology",
+  "Nephrology",
+  "Ophthalmology",
+  "Orthopaedics",
+  "Paediatrics",
+  "Psychiatry"
+ ]
+}

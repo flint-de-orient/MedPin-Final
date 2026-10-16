@@ -96,4 +96,15 @@ const withUrl = (file) => {
   return { ...plain, url: signedUrl(file.key) };
 };
 
-module.exports = { save, putAt, read, signedUrl, verifySignature, withUrl, useS3 };
+/**
+ * A link for a profile photo that stays the same all day (valid 1–2 days), so
+ * phones cache the picture instead of downloading it on every refresh.
+ */
+function stableUrl(key) {
+  if (!key) return null;
+  const day = 86400;
+  const exp = (Math.floor(Date.now() / 1000 / day) + 2) * day;
+  return `${publicBase()}/files/${key}?exp=${exp}&sig=${signature(key, exp)}`;
+}
+
+module.exports = { save, putAt, read, signedUrl, stableUrl, verifySignature, withUrl, useS3 };

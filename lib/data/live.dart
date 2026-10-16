@@ -47,7 +47,15 @@ class _LiveWatch extends RouteAware with WidgetsBindingObserver {
 ///
 /// In preview (launcher, gallery, tests) nothing is fetched and the screen
 /// keeps its design sample data. Live, [data] is filled from [fetch].
-mixin LiveData<W extends StatefulWidget> on State<W> {
+mixin LiveData<W extends StatefulWidget> on State<W> implements MpRefreshable {
+  /// Pull-to-refresh on this screen's page (MpPage): loads it again, keeping what's shown meanwhile.
+  @override
+  Future<void> pageRefresh() => reload(quiet: true);
+
+  /// Only screens with real data (not the design preview).
+  @override
+  bool get canRefresh => isLive;
+
   Map<String, dynamic>? data;
   ApiException? loadError;
   bool loading = false;

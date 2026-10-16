@@ -10,6 +10,7 @@ import 'common_d1.dart';
 import 'queue_select.dart';
 import '../../widgets/i18n.dart';
 import '../../widgets/fee_actions.dart';
+import '../../widgets/visit_status.dart';
 import '../../data/session.dart';
 
 /// Design: Queue-List.dc.html — "Patient queue".
@@ -244,7 +245,7 @@ const _groups = [
 const _dashed = '<circle cx="12" cy="12" r="9" stroke-dasharray="3 3" stroke-linecap="butt" stroke-linejoin="miter"/>';
 
 (String, Color, Color) _status(_Kind k) => switch (k) {
-  _Kind.consult => ('In consultation', MP.primarySoft, MP.primary),
+  _Kind.consult => ('With doctor', MP.primarySoft, MP.primary),
   _Kind.waiting => ('Waiting', MP.amberSoft, MP.amber),
   _Kind.booked => ('Not arrived', MP.fill, MP.ink2),
   _Kind.done => ('Completed', MP.greenSoft, MP.green),
@@ -412,6 +413,17 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
           if (await handBackFee(context, fee) && mounted) reload(quiet: true);
         }),
     ];
+  }
+
+  Future<void> _changeStatus(_Q r) async {
+    final status = switch (r.kind) {
+      _Kind.consult => 'in_consultation',
+      _Kind.waiting => 'waiting',
+      _Kind.done => 'completed',
+      _Kind.missed => 'missed',
+      _Kind.booked => 'booked',
+    };
+    if (await changeVisitStatus(context, appointmentId: r.id!, status: status, patientName: r.name) && mounted) reload(quiet: true);
   }
 
   Future<void> _checkIn(_Q r) async {
@@ -749,7 +761,12 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
                   ),
                 ),
                 const Gap(12),
-                D1Pill(s.$1, bg: s.$2, fg: s.$3, height: 24, padding: 10),
+                // Tap the status to change it (arrived, with doctor, done, missed…).
+                Tap(
+                  onTap: r.id == null ? null : () => _changeStatus(r),
+                  radius: 12,
+                  child: D1Pill(s.$1, bg: s.$2, fg: s.$3, height: 24, padding: 10),
+                ),
               ],
             ),
             const Gap(12),

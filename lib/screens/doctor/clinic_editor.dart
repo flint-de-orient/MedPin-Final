@@ -8,8 +8,10 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../widgets/clinic_map.dart';
+import '../../widgets/file_view.dart';
 import '../../widgets/mp.dart';
 import 'common_d7.dart';
+import 'profile_leave.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Clinic-Editor.dc.html — "Location editor" (Edit location).
@@ -48,10 +50,10 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
   /// Live: the location being edited (null = adding a new one).
   String? _locationId;
 
-  /// Closure ids, parallel to [_closures] (live); dates picked for a new
-  /// location are posted after it is created.
+  /// Closure ids, parallel to [_closures] (live); closures added to a new
+  /// location ({reason, startDate, endDate}) are posted after it is created.
   final _closureIds = <String?>[];
-  final _pendingClosures = <DateTime>[];
+  final _pendingClosures = <Map<String, String?>>[];
 
   /// Opening / closing minute per day (live).
   final _mins = [for (var i = 0; i < 7; i++) (540, 1200)];
@@ -65,6 +67,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
       c.dispose();
     }
     _busy.dispose();
+    _previewing.dispose();
     super.dispose();
   }
 
@@ -248,12 +251,8 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
       final ok = await runAction(context, busy: _busy, () async {
         if (_locationId != null) return Api.I.patch('/api/locations/$_locationId', body);
         final created = (await Api.I.post('/api/locations', body) as Map).cast<String, dynamic>();
-        for (final day in _pendingClosures) {
-          await Api.I.post('/api/locations/${created.str('id')}/closures', {
-            'startDate': d7Key(day),
-            'endDate': d7Key(day),
-            'reason': 'Closed all day',
-          });
+        for (final c in _pendingClosures) {
+          await Api.I.post('/api/locations/${created.str('id')}/closures', {'startDate': c['startDate'], 'endDate': c['endDate'], 'reason': c['reason']});
         }
         return created;
       });
@@ -279,35 +278,26 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     });
   }
 
+  /// Reason and first / last day (Leave and holidays' form). Patients already
+  /// booked on those days are told by the server.
   Future<void> _addClosure() async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final d = await showDatePicker(
-      context: context,
-      initialDate: isLive ? today : DateTime(2026, 10, 1),
-      firstDate: isLive ? today : DateTime(2026, 9, 29),
-      lastDate: isLive ? DateTime(today.year + 2, 12, 31) : DateTime(2027, 12, 31),
-      helpText: 'Closed on',
-    );
-    if (d == null || !mounted) return;
+    final r = await pickTimeOff(context, holiday: true, locations: const []);
+    if (r == null || !mounted) return;
     if (isLive && _locationId != null) {
       final ok = await runAction(
         context,
-        () => Api.I.post('/api/locations/$_locationId/closures', {
-          'startDate': d7Key(d),
-          'endDate': d7Key(d),
-          'reason': 'Closed all day',
-        }),
+        () => Api.I.post('/api/locations/$_locationId/closures', {'startDate': r['startDate'], 'endDate': r['endDate'], 'reason': r['reason']}),
         busy: _busy,
       );
-      if (ok == null || !mounted) return;
-      toast(context, 'Closure added');
+      if (ok is! Map || !mounted) return;
+      final told = (ok['patientsTold'] as num?)?.toInt() ?? 0;
+      toast(context, told == 0 ? 'Closure added' : 'Closure added · ${told == 1 ? '1 patient told' : '$told patients told'}');
       reload(quiet: true);
       return;
     }
-    if (isLive) _pendingClosures.add(d);
+    if (isLive) _pendingClosures.add(r);
     setState(() {
-      _closures.add((d7Date(d), 'Closed all day'));
+      _closures.add((_closureLabel({'startDate': r['startDate'], 'endDate': r['endDate']}), r['reason'] ?? 'Closed all day'));
       _closureIds.add(null);
     });
   }
@@ -332,6 +322,28 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
 
   bool get _inactive => data?.str('status') == 'inactive';
 
+  /// Doctors with hours here (a printed name would go on all their prescriptions).
+  int get _doctorsHere => data == null ? 2 : data!.list('doctors').length;
+
+  final _previewing = ValueNotifier(false);
+
+  /// The real prescription PDF with this location's saved letterhead (sample patient).
+  Future<void> _preview() async {
+    if (_previewing.value || _locationId == null) return;
+    _previewing.value = true;
+    try {
+      final r = await Api.I.get('/api/doctor/letterhead/preview', query: {'locationId': _locationId});
+      final f = ReportFile.fromApi(r);
+      if (!mounted) return;
+      if (f == null) return toast(context, 'No file to open');
+      await openFileView(context, f, title: 'Letterhead preview');
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message);
+    } finally {
+      _previewing.value = false;
+    }
+  }
+
   Future<void> _deactivate() async {
     if (!isLive) {
       toast(context, 'Location deactivated · history kept');
@@ -354,7 +366,8 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
       Nav.back(context);
     } on ApiException catch (e) {
       if (!mounted) return;
-      if (e.code == 'HAS_UPCOMING') {
+      // Upcoming bookings, or team members who work only here (they'd be suspended).
+      if (e.code == 'HAS_UPCOMING' || e.code == 'MEMBERS_ONLY_HERE') {
         setState(() => _confirmDeactivate = true);
         toast(context, '${e.message}. Tap again to deactivate.');
       } else {
@@ -463,12 +476,24 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
         gap: 16,
         children: [
           const D7Title('Letterhead', sub: 'Printed on prescriptions from this location', subHeight: null),
-          D7Labeled('Tagline', child: D7Field(controller: _tagline)),
+          D7Labeled(
+            'Tagline',
+            help: 'Printed under the doctor’s name only when they have no qualifications on file',
+            child: D7Field(controller: _tagline),
+          ),
           D7Labeled(
             'Doctor name as printed',
-            child: D7Field(controller: _printedName, ellipsis: true),
+            help: _doctorsHere > 1
+                ? 'Printed on every doctor’s prescriptions here. Leave empty to print each doctor’s own name.'
+                : 'Leave empty to print the doctor’s profile name',
+            helpColor: _doctorsHere > 1 && _printedName.text.trim().isNotEmpty ? MP.amber : null,
+            child: D7Field(controller: _printedName, ellipsis: true, onChanged: (_) => setState(() {})),
           ),
-          D7Labeled('Registration number', child: D7Field(controller: _regNo, tab: true)),
+          D7Labeled(
+            'Registration number',
+            help: 'Printed only for a doctor with no registration number in their profile',
+            child: D7Field(controller: _regNo, tab: true),
+          ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -533,6 +558,17 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                 ],
               ),
               const SizedBox(height: 12),
+              if (isLive && _locationId != null) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _previewing,
+                    builder: (_, busy, _) => D7Btn(busy ? 'Preparing…' : 'Preview prescription', padding: EdgeInsets.zero, onTap: busy ? null : _preview),
+                  ),
+                ),
+                Text('Shows the saved letterhead. Save first to see changes.', style: tx(13, c: MP.ink3)),
+                const SizedBox(height: 12),
+              ],
               if (data == null || _logo['url'] != null) Semantics(
                 liveRegion: true,
                 child: Container(

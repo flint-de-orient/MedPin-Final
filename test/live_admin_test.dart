@@ -66,6 +66,7 @@ void _serve([Map<String, (int, Object?)> answers = const {}]) {
       final name = switch (p) {
         '/api/billing' => req.url.queryParameters['invoices'] == '50' ? 'billing_all' : 'billing',
         '/api/members' => 'members',
+        '/api/members/options' => 'member_options',
         '/api/members/$_rinaId' => 'member',
         '/api/departments' => 'departments',
         '/api/locations' => 'locations',
@@ -199,7 +200,9 @@ void main() {
     expect(find.text('Dr. Rina Mitra'), findsOneWidget);
     expect(find.text('Cardiology · Salt Lake'), findsOneWidget);
     expect(find.text('Endocrinology · All locations'), findsWidgets);
-    expect(find.text('Owner'), findsOneWidget);
+    // Your own row is marked and has no "Edit access"; others do.
+    expect(find.text('Owner · You'), findsOneWidget);
+    expect(find.text('Edit access'), findsWidgets);
     expect(find.text('Test admin'), findsOneWidget);
     expect(find.text('Suspended'), findsOneWidget);
     await _tap(t, find.text('Dr. Rina Mitra'));
@@ -224,7 +227,7 @@ void main() {
     final body = _body(_last('PATCH', '/api/members/$_rinaId'));
     expect(body, {
       'role': 'doctor',
-      'departmentId': '6ac8bbcebfcb2f5a9d64d518',
+      'departmentName': 'Cardiology',
       'locationIds': ['6ac8bbcee42c9f0836e98563'],
       'allLocations': false,
       'suspended': true,
@@ -243,9 +246,19 @@ void main() {
             : (201, {'id': 'new', 'name': 'Test admin two'}),
       });
       await _pump(t, const PeopleAddScreen());
-      expect(find.text('Cardiology'), findsOneWidget); // first department
+      // A new doctor's department starts unset (any department can be chosen).
+      expect(find.text('Department'), findsOneWidget);
+      expect(find.text('None'), findsOneWidget);
       expect(find.text('City Care Clinic — Salt Lake'), findsOneWidget);
+      // An assistant picks the doctor(s) at their locations; the department follows them.
+      await _tap(t, find.text("Doctor's assistant"));
+      expect(find.text('Assists'), findsOneWidget);
+      expect(find.text('Dr. Rina Mitra · Cardiology'), findsOneWidget);
+      await _tap(t, find.text('Dr. Rina Mitra · Cardiology'));
+      expect(find.text('Cardiology'), findsOneWidget);
       await _tap(t, find.text('Front desk'));
+      // Front desk: no department.
+      expect(find.text('Department'), findsNothing);
       await t.enterText(find.byType(TextField).at(0), 'Test admin two');
       await t.enterText(find.byType(TextField).at(1), '98111 00002');
       await t.pump();
@@ -259,7 +272,6 @@ void main() {
         'role': 'front_desk',
         'name': 'Test admin two',
         'phone': '9811100002',
-        'departmentId': '6ac8bbcebfcb2f5a9d64d518',
         'locationIds': ['6ac8bbcee42c9f0836e98563'],
         'allLocations': false,
         'otpCode': '123456',

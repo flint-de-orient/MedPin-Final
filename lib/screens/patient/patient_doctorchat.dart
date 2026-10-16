@@ -485,7 +485,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
               children: [
                 MpIconButton(I.back, label: 'Back', onTap: () => Nav.back(context)),
                 const Gap(8),
-                MpAvatar(F.initials(_name), size: 40, fontSize: 14),
+                MpAvatar(F.initials(_name), size: 40, fontSize: 14, photo: _doctor.str('photoUrl').isEmpty ? null : _doctor.str('photoUrl')),
                 const Gap(8),
                 Expanded(
                   child: MpHitSlop(child: GestureDetector(

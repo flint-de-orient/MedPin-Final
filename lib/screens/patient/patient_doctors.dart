@@ -135,6 +135,7 @@ class _PatientDoctorsScreenState extends State<PatientDoctorsScreen> with LiveDa
       at != null && F.sameDay(at, DateTime.now()),
       doctorId: d.str('doctorId'),
       conversationId: convo.isEmpty ? null : convo,
+      photo: d.str('photoUrl').isEmpty ? null : d.str('photoUrl'),
     );
   }
 
@@ -215,7 +216,11 @@ class _Doc {
     this.raised, {
     this.doctorId,
     this.conversationId,
+    this.photo,
   });
+
+  /// The doctor's profile photo, when they set one.
+  final String? photo;
 }
 
 class _DoctorCard extends StatelessWidget {
@@ -266,7 +271,7 @@ class _DoctorCard extends StatelessWidget {
               child: Row(
                 children: [
                   // 12px dot + 2px ring (content-box) at right 1 / bottom 1.
-                  P2AvatarDot(d.initials, size: 56, fontSize: 18, dot: d.dot, dotSize: 16, dotBorder: 2, inset: 1),
+                  P2AvatarDot(d.initials, size: 56, fontSize: 18, dot: d.dot, dotSize: 16, dotBorder: 2, inset: 1, photo: d.photo),
                   const Gap(14),
                   Expanded(
                     child: Column(

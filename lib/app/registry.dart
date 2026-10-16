@@ -5,6 +5,7 @@ import '../screens/auth/auth_login.dart';
 import '../screens/auth/auth_otp.dart';
 import '../screens/auth/auth_clinic_setup.dart';
 import '../screens/auth/auth_patient_register.dart';
+import '../screens/auth/auth_patient_address.dart';
 import '../screens/auth/auth_patient_setup.dart';
 import '../screens/auth/auth_register.dart';
 import '../screens/auth/auth_welcome.dart';
@@ -93,6 +94,7 @@ import '../screens/doctor/lab_report.dart';
 import '../screens/doctor/notifications.dart';
 import '../screens/doctor/knowledge_options.dart';
 import '../screens/staff/staff_book.dart';
+import '../screens/staff/staff_payments.dart';
 import '../screens/staff/staff_today.dart';
 import '../screens/staff/staff_patients.dart';
 import '../screens/staff/staff_profile.dart';
@@ -127,6 +129,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Auth-Clinic-Setup': ScreenSpec(stem: 'Auth-Clinic-Setup', title: 'Start your clinic', group: 'Sign in', panel: 'doctor', builder: (_) => const AuthClinicSetupScreen()),
   'Auth-Patient-Register': ScreenSpec(stem: 'Auth-Patient-Register', title: 'Register · patient', group: 'Sign in', panel: 'patient', builder: (_) => const AuthPatientRegisterScreen()),
   'Auth-Patient-Setup': ScreenSpec(stem: 'Auth-Patient-Setup', title: 'Patient sign-up', group: 'Sign in', panel: 'patient', builder: (_) => const AuthPatientSetupScreen()),
+  'Auth-Patient-Address': ScreenSpec(stem: 'Auth-Patient-Address', title: 'Patient sign-up · address', group: 'Sign in', panel: 'patient', builder: (_) => const AuthPatientAddressScreen()),
   'Legal': ScreenSpec(stem: 'Legal', title: 'Terms of Use · Privacy Policy', group: 'Sign in', panel: 'doctor', builder: (_) => const LegalScreen()),
   'Doctor-Home': ScreenSpec(stem: 'Doctor-Home', title: 'Home', group: 'Clinician · tabs', panel: 'doctor', builder: (_) => const DoctorHomeScreen()),
   'Care': ScreenSpec(stem: 'Care', title: 'Care', group: 'Clinician · tabs', panel: 'doctor', builder: (_) => const CareScreen()),
@@ -216,6 +219,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Staff-Today': ScreenSpec(stem: 'Staff-Today', title: 'Today', group: 'Front desk', panel: 'staff', builder: (_) => const StaffTodayScreen()),
   'Staff-Patients': ScreenSpec(stem: 'Staff-Patients', title: 'Patients', group: 'Front desk', panel: 'staff', builder: (_) => const StaffPatientsScreen()),
   'Staff-Profile': ScreenSpec(stem: 'Staff-Profile', title: 'Profile', group: 'Front desk', panel: 'staff', builder: (_) => const StaffProfileScreen()),
+  'Staff-Payments': ScreenSpec(stem: 'Staff-Payments', title: 'Payments', group: 'Front desk', panel: 'staff', builder: (_) => const StaffPaymentsScreen()),
   'Main': ScreenSpec(stem: 'Main', title: 'Patient · Home', group: 'Patient app', panel: 'patient', builder: (_) => const PatientHomeScreen()),
   'Patient-AskAI': ScreenSpec(stem: 'Patient-AskAI', title: 'Patient · Ask MedPin AI', group: 'Patient app', panel: 'patient', builder: (_) => const PatientAskaiSheet(), sheet: true, parent: 'Main'),
   'Patient-Adherence': ScreenSpec(stem: 'Patient-Adherence', title: 'Patient · adherence by doctor', group: 'Patient app', panel: 'patient', builder: (_) => const PatientAdherenceSheet(), sheet: true, parent: 'Main'),

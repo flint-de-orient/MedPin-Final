@@ -27,7 +27,13 @@
     "editRecords": true,
     "chats": true,
     "prescribe": true
-   }
+   },
+   "assists": [],
+   "canEdit": false,
+   "canChangeRole": false,
+   "canSuspend": false,
+   "canRemove": false,
+   "lockReason": "You can't change your own access. Another owner can."
   },
   {
    "id": "6ac8bbcee42c9f0836e9856a",
@@ -54,7 +60,13 @@
     "editRecords": false,
     "chats": true,
     "prescribe": false
-   }
+   },
+   "assists": [],
+   "canEdit": true,
+   "canChangeRole": true,
+   "canSuspend": true,
+   "canRemove": true,
+   "lockReason": null
   },
   {
    "id": "6ac8bbd08adea6a429a731a5",
@@ -83,7 +95,13 @@
     "editRecords": true,
     "chats": true,
     "prescribe": true
-   }
+   },
+   "assists": [],
+   "canEdit": true,
+   "canChangeRole": true,
+   "canSuspend": true,
+   "canRemove": true,
+   "lockReason": null
   },
   {
    "id": "6ac8bbd08adea6a429a731a6",
@@ -105,7 +123,13 @@
     "editRecords": true,
     "chats": true,
     "prescribe": false
-   }
+   },
+   "assists": [],
+   "canEdit": true,
+   "canChangeRole": true,
+   "canSuspend": true,
+   "canRemove": true,
+   "lockReason": null
   },
   {
    "id": "6ac8bbd08adea6a429a731a7",
@@ -132,7 +156,13 @@
     "editRecords": true,
     "chats": true,
     "prescribe": false
-   }
+   },
+   "assists": [],
+   "canEdit": true,
+   "canChangeRole": true,
+   "canSuspend": true,
+   "canRemove": true,
+   "lockReason": null
   },
   {
    "id": "6ac8c1f7cffb1607da7da7ac",
@@ -154,7 +184,14 @@
     "editRecords": false,
     "chats": true,
     "prescribe": false
-   }
+   },
+   "assists": [],
+   "canEdit": true,
+   "canChangeRole": true,
+   "canSuspend": true,
+   "canRemove": true,
+   "lockReason": null
   }
- ]
+ ],
+ "meId": "6ac8bbcee42c9f0836e98569"
 }

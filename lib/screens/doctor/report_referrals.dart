@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/voice.dart';
 import '../../widgets/mp.dart';
 import 'common_d3.dart';
 import 'patient_picker.dart';
@@ -319,6 +322,10 @@ class _ReportReferralsScreenState extends State<ReportReferralsScreen> with Live
 }
 
 /// Add a referral: sent to another doctor, or received from one.
+/// "Referred to / by" finds doctors on MedPin at any clinic as you type
+/// (GET /api/reports/referral-doctors); Specialty and Reason offer tap-chips
+/// from GET /api/reports/referral-suggestions (the chosen patient's abnormal
+/// labs, out-of-range readings, diagnoses and conditions). All stay typeable.
 class _AddReferralSheet extends StatefulWidget {
   final String direction;
   const _AddReferralSheet({required this.direction});
@@ -336,8 +343,27 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
   final _reason = TextEditingController();
   bool _saving = false;
 
+  // Doctors on MedPin matching "Referred to / by"; the one picked and the text it filled
+  // (typing over it makes it a free-text name again).
+  Timer? _whoTimer;
+  List<Map<String, dynamic>> _doctors = const [];
+  String? _doctorId;
+  String? _doctorLabel;
+
+  // Suggestions: specialties (always) and reasons from the chosen patient's record.
+  List<String> _specialties = const [];
+  List<Map<String, dynamic>> _reasons = const [];
+  static const _specialtyChips = 10;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSuggestions();
+  }
+
   @override
   void dispose() {
+    _whoTimer?.cancel();
     for (final c in [_patient, _who, _specialty, _reason]) {
       c.dispose();
     }
@@ -350,7 +376,9 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
     setState(() {
       _patientId = id;
       _patient.text = 'Patient chosen';
+      _reasons = const [];
     });
+    _loadSuggestions();
     try {
       final p = await Api.I.get('/api/patients/$id');
       final name = p is Map ? ((p['patient'] is Map ? p['patient']['name'] : null) ?? p['name']) : null;
@@ -358,6 +386,96 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
     } on ApiException {
       // The id is enough to save.
     }
+  }
+
+  Future<void> _loadSuggestions() async {
+    final id = _patientId;
+    try {
+      final r = await Api.I.get('/api/reports/referral-suggestions', query: {if (id != null) 'patientId': id});
+      // A reply for a patient no longer chosen is dropped.
+      if (!mounted || id != _patientId || r is! Map) return;
+      setState(() {
+        _specialties = [for (final s in (r['specialties'] as List? ?? const [])) '$s'];
+        _reasons = [
+          for (final x in (r['reasons'] as List? ?? const []))
+            if (x is Map && '${x['text'] ?? ''}'.trim().isNotEmpty) x.cast<String, dynamic>(),
+        ];
+      });
+    } catch (_) {
+      // Offline: no chips, the fields are still typeable.
+    }
+  }
+
+  void _onWho(String text) {
+    _whoTimer?.cancel();
+    final q = text.trim();
+    setState(() {
+      if (_doctorId != null && q != _doctorLabel) {
+        _doctorId = null;
+        _doctorLabel = null;
+      }
+      if (q.length < 2) _doctors = const [];
+    });
+    if (q.length < 2 || _doctorId != null) return;
+    _whoTimer = Timer(const Duration(milliseconds: 300), () => _searchDoctors(q));
+  }
+
+  Future<void> _searchDoctors(String q) async {
+    try {
+      final r = await Api.I.get('/api/reports/referral-doctors', query: {'q': q});
+      // A reply for older text (they kept typing) is dropped.
+      if (!mounted || _who.text.trim() != q || r is! Map) return;
+      setState(() => _doctors = [
+        for (final x in (r['items'] as List? ?? const []))
+          if (x is Map && '${x['name'] ?? ''}'.trim().isNotEmpty) x.cast<String, dynamic>(),
+      ].take(5).toList());
+    } catch (_) {
+      // Offline: just no suggestions; any name can still be typed.
+      if (mounted && _doctors.isNotEmpty) setState(() => _doctors = const []);
+    }
+  }
+
+  /// A MedPin doctor: their name and clinic, and their specialty.
+  void _pickDoctor(Map<String, dynamic> d) {
+    _whoTimer?.cancel();
+    final label = [d.str('name'), d.str('clinic')].where((s) => s.trim().isNotEmpty).join(' · ');
+    final spec = d.str('specialty');
+    setState(() {
+      _who.text = label;
+      _who.selection = TextSelection.collapsed(offset: label.length);
+      _doctorId = d.str('id');
+      _doctorLabel = label;
+      _doctors = const [];
+      if (spec.isNotEmpty) _specialty.text = spec;
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  List<String> get _reasonParts => [for (final p in _reason.text.split(',')) if (p.trim().isNotEmpty) p.trim()];
+  bool _hasReason(String text) => _reasonParts.any((p) => p.toLowerCase() == text.toLowerCase());
+
+  /// A reason chip adds its text to Reason (tap again to take it out); its
+  /// specialty fills Specialty when that is still empty.
+  void _toggleReason(Map<String, dynamic> x) {
+    final text = x.str('text').trim();
+    final had = _hasReason(text);
+    final parts = had ? _reasonParts.where((p) => p.toLowerCase() != text.toLowerCase()).toList() : [..._reasonParts, text];
+    setState(() {
+      _reason.text = parts.join(', ');
+      _reason.selection = TextSelection.collapsed(offset: _reason.text.length);
+      final spec = x.str('specialty');
+      if (!had && spec.isNotEmpty && _specialty.text.trim().isEmpty) _specialty.text = spec;
+    });
+  }
+
+  void _pickSpecialty(String s) => setState(() {
+    _specialty.text = s;
+    _specialty.selection = TextSelection.collapsed(offset: s.length);
+  });
+
+  Future<void> _speakReason() async {
+    final said = await dictateInto(context, _reason, title: 'Reason for referral');
+    if (said != null && mounted) setState(() {});
   }
 
   Future<void> _save() async {
@@ -370,6 +488,8 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
         'patientId': _patientId,
         'direction': _dir,
         'counterpartName': _who.text.trim(),
+        // The other doctor is on MedPin.
+        if (_doctorId != null) 'counterpartUserId': _doctorId,
         if (_specialty.text.trim().isNotEmpty) 'specialty': _specialty.text.trim(),
         if (_reason.text.trim().isNotEmpty) 'reason': _reason.text.trim(),
       }),
@@ -379,9 +499,66 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
     if (r != null) Navigator.pop(context, true);
   }
 
+  /// Tap-chips under a field (long suggestions are shortened to fit a line).
+  Widget _chips(List<(String, bool, VoidCallback)> items) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      for (final (label, selected, onTap) in items)
+        MpChip(
+          label.length > 38 ? '${label.substring(0, 37)}…' : label,
+          selected: selected,
+          tonal: true,
+          height: 34,
+          fontSize: 13,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          onTap: onTap,
+        ),
+    ],
+  );
+
+  Widget _doctorHits() => Container(
+    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+    decoration: BoxDecoration(color: MP.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: MP.line)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final d in _doctors)
+          Tap(
+            onTap: () => _pickDoctor(d),
+            radius: 10,
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(padding: EdgeInsets.only(top: 2), child: Ico(I.stethoscope, size: 16, color: MP.ink3)),
+                const Gap(8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(d.str('name'), maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, w: w600, h: 1.35)),
+                      if ([d.str('specialty'), d.str('clinic')].any((s) => s.isNotEmpty))
+                        Text(
+                          [d.str('specialty'), d.str('clinic')].where((s) => s.isNotEmpty).join(' · '),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: tx(13, c: MP.ink2, h: 1.35),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final sent = _dir == 'sent';
+    final spec = _specialty.text.trim().toLowerCase();
     return MpSheet(
       title: 'Add a referral',
       subtitle: 'It shows here and in the downloaded report.',
@@ -406,13 +583,79 @@ class _AddReferralSheetState extends State<_AddReferralSheet> {
               onTap: _pick,
               trailing: const Padding(padding: EdgeInsets.only(right: 12), child: Ico(I.chevronRight, size: 18, color: MP.ink3)),
             ),
-            MpInput(label: sent ? 'Referred to' : 'Referred by', controller: _who, hint: 'e.g. Dr. Sourav Lahiri or AMRI Hospital'),
-            MpInput(label: 'Specialty', controller: _specialty, hint: 'e.g. Cardiology'),
-            MpInput(label: 'Reason', controller: _reason, hint: 'e.g. Rising creatinine'),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MpInput(
+                  label: sent ? 'Referred to' : 'Referred by',
+                  controller: _who,
+                  hint: 'Search doctors on MedPin, or type a name',
+                  onChanged: _onWho,
+                ),
+                if (_doctors.isNotEmpty) ...[const Gap(8), _doctorHits()],
+                if (_doctorId != null) ...[
+                  const Gap(8),
+                  Row(
+                    children: [
+                      const Ico(I.check, size: 16, color: MP.green, stroke: 2.25),
+                      const Gap(6),
+                      Expanded(child: Text('On MedPin', style: tx(13, c: MP.ink3))),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MpInput(label: 'Specialty', controller: _specialty, hint: 'e.g. Cardiology', onChanged: (_) => setState(() {})),
+                if (_specialties.isNotEmpty) ...[
+                  const Gap(10),
+                  _chips([
+                    for (final s in _specialties.take(_specialtyChips)) (s, s.toLowerCase() == spec, () => _pickSpecialty(s)),
+                  ]),
+                ],
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MpInput(
+                  label: 'Reason',
+                  controller: _reason,
+                  hint: 'e.g. Rising creatinine',
+                  maxLines: 2,
+                  height: 80,
+                  onChanged: (_) => setState(() {}),
+                  trailing: _MicButton(label: 'Speak the reason', onTap: _speakReason),
+                ),
+                if (_reasons.isNotEmpty) ...[
+                  const Gap(10),
+                  Text("From the patient's record", style: tx(13, c: MP.ink3)),
+                  const Gap(8),
+                  _chips([
+                    for (final x in _reasons) (x.str('text'), _hasReason(x.str('text').trim()), () => _toggleReason(x)),
+                  ]),
+                ],
+              ],
+            ),
             MpButton(_saving ? 'Saving…' : 'Save', onTap: _saving ? null : _save),
           ],
         ),
       ),
     );
   }
+}
+
+/// Mic in the top-right of the Reason field (as on Add patient's address).
+class _MicButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _MicButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(0, 6, 6, 6),
+    child: MpIconButton(I.mic, label: label, iconSize: 20, color: MP.primary, background: MP.primarySoft, onTap: onTap),
+  );
 }

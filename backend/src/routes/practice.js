@@ -4,7 +4,7 @@ const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
 const { requireAuth, staff, ownerOnly, ownPractice } = require('../middleware/auth');
-const { pick, badRequest, notFound, conflict, normalizePhone } = require('../lib/http');
+const { pick, badRequest, notFound, conflict, forbidden, normalizePhone, isId, escapeRegex } = require('../lib/http');
 const storage = require('../services/storage');
 const { issueOtp, checkOtp } = require('./auth');
 
@@ -25,7 +25,11 @@ r.get('/practice', async (req, res) => {
   ]);
   const hasMap = await M.Location.exists({ practiceId: req.practiceId, status: 'active', googleMapsUrl: { $nin: [null, ''] } });
   const hasClosures = await M.LocationClosure.exists({ locationId: { $in: await M.Location.find({ practiceId: req.practiceId }).distinct('_id') }, endDate: { $gte: new Date() } });
-  const hasLetterhead = await M.Location.exists({ practiceId: req.practiceId, 'letterhead.doctorNamePrinted': { $nin: [null, ''] } });
+  // The doctor's name always prints; a letterhead is "set" once a clinic has its logo (or a printed name).
+  const hasLetterhead = await M.Location.exists({
+    practiceId: req.practiceId,
+    $or: [{ 'letterhead.logo.key': { $nin: [null, ''] } }, { 'letterhead.doctorNamePrinted': { $nin: [null, ''] } }],
+  });
   const readiness = [
     { key: 'signature', label: 'Add your digital signature', blocking: true, done: Boolean(doctorProfile?.signature?.key) },
     { key: 'map', label: 'Add a map link', blocking: false, done: Boolean(hasMap) },
@@ -211,13 +215,29 @@ r.post('/locations/:id/logo', ownerOnly, upload.single('file'), async (req, res)
 r.post('/locations/:id/deactivate', ownerOnly, async (req, res) => {
   const loc = await ownLocation(req);
   const upcoming = await M.Appointment.countDocuments({ locationId: loc._id, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } });
-  if (upcoming && !req.body.confirm) {
-    throw conflict(`${upcoming} patients have upcoming bookings here`, 'HAS_UPCOMING', { upcoming });
+  // Team members who work only here would be left with no location: they are
+  // suspended (owners get every location). Both warnings come in one 409, so one
+  // second tap (confirm) has seen everything.
+  const here = await M.Member.find({ practiceId: req.practiceId, status: { $ne: 'removed' }, allLocations: { $ne: true }, locationIds: loc._id }).populate('userId', 'name');
+  const stranded = here.filter((m) => m.locationIds.every((id) => String(id) === String(loc._id)));
+  const toSuspend = stranded.filter((m) => !m.isOwner && m.status === 'active');
+  if ((upcoming || toSuspend.length) && !req.body.confirm) {
+    const names = toSuspend.map((m) => m.userId?.name || 'A team member');
+    const parts = [
+      upcoming && `${upcoming} patients have upcoming bookings here`,
+      names.length && `${names.join(', ')} ${names.length === 1 ? 'works' : 'work'} only here and will be suspended`,
+    ].filter(Boolean);
+    throw conflict(parts.join('. '), upcoming ? 'HAS_UPCOMING' : 'MEMBERS_ONLY_HERE', { upcoming, members: names });
   }
   loc.status = 'inactive';
   loc.deactivatedAt = new Date();
   await loc.save();
-  res.json(loc);
+  await M.Member.updateMany({ practiceId: req.practiceId, locationIds: loc._id }, { $pull: { locationIds: loc._id } });
+  for (const m of stranded) {
+    if (m.isOwner) await M.Member.updateOne({ _id: m._id }, { allLocations: true });
+    else if (m.status === 'active') await setSuspended(m._id, true);
+  }
+  res.json({ ...loc.toJSON(), suspendedMembers: toSuspend.length });
 });
 
 r.post('/locations/:id/activate', ownerOnly, async (req, res) => {
@@ -230,11 +250,31 @@ r.post('/locations/:id/activate', ownerOnly, async (req, res) => {
 
 r.post('/locations/:id/closures', ownerOnly, async (req, res) => {
   const loc = await ownLocation(req);
+  if (!req.body.startDate) throw badRequest('Choose the date', 'DATE_REQUIRED');
   const startDate = T.parseDay(req.body.startDate);
   const endDate = T.parseDay(req.body.endDate || req.body.startDate);
   if (endDate < startDate) throw badRequest('End date is before the start date');
-  const closure = await M.LocationClosure.create({ locationId: loc._id, startDate, endDate, reason: req.body.reason || 'Closed all day', createdBy: req.user._id });
-  res.status(201).json(closure);
+  if (endDate < T.dayStart()) throw badRequest('Choose today or a later date', 'DATE_PAST');
+  const reason = String(req.body.reason || '').trim() || 'Closed all day';
+  const closure = await M.LocationClosure.create({ locationId: loc._id, startDate, endDate, reason, createdBy: req.user._id });
+  // Patients already booked on those days are told, like a doctor's leave; the desk moves the visits.
+  const affected = await M.Appointment.find({
+    locationId: loc._id, startAt: { $gte: startDate, $lt: T.addDays(endDate, 1) }, status: { $in: ['booked', 'confirmed'] },
+  }).populate('patientId', 'userId');
+  const { notify, deskOrDoctors } = require('../services/notify');
+  const where = loc.shortName || loc.name;
+  const days = `${T.dayKey(startDate)}${+endDate !== +startDate ? ` to ${T.dayKey(endDate)}` : ''}`;
+  await notify(affected.map((a) => a.patientId?.userId).filter(Boolean), {
+    type: 'clinic_closed', practiceId: req.practiceId, title: `${where} is closed`,
+    body: `${days} · ${reason}. Please choose another time for your visit.`, screen: 'Patient-Doctors', whatsapp: true,
+  });
+  if (affected.length) {
+    const desk = await deskOrDoctors(req.practiceId, { locationId: loc._id });
+    await notify(desk, { type: 'clinic_closed', practiceId: req.practiceId, title: `${affected.length} visit${affected.length === 1 ? '' : 's'} to move`, body: `${where} is closed ${days}`, screen: 'Appointments' });
+  }
+  closure.patientsTold = affected.length;
+  await closure.save();
+  res.status(201).json({ ...closure.toJSON(), patientsTold: affected.length });
 });
 
 r.delete('/locations/:id/closures/:closureId', ownerOnly, async (req, res) => {
@@ -271,13 +311,53 @@ r.patch('/departments/:id', ownerOnly, async (req, res) => {
 });
 
 // ── Team ──
-const memberView = (m) => ({
-  id: m._id, userId: m.userId?._id || m.userId, name: m.userId?.name, phone: m.userId?.phone || m.phone, role: m.role,
-  department: m.departmentId ? { id: m.departmentId._id, name: m.departmentId.name } : null,
-  locations: (m.locationIds || []).map((l) => ({ id: l._id, name: l.name })), allLocations: m.allLocations,
-  isOwner: m.isOwner, status: m.status, joinedAt: m.joinedAt, qualifications: m.qualifications, registrationNo: m.registrationNo,
-  permissions: M.ROLE_PERMISSIONS[m.role],
-});
+// Roles where a department means something (the doctor's own specialty, or the
+// doctors an assistant / dietician works with). Others get none.
+const DEPARTMENT_ROLES = ['doctor', 'doctor_assistant', 'dietician'];
+// Find-doctor specialty → the department it is in a clinic.
+const SPECIALTY_DEPARTMENT = {
+  gp: 'General medicine', diabetes: 'Diabetology', heart: 'Cardiology', women: 'Gynaecology', child: 'Paediatrics', skin: 'Dermatology',
+  bones: 'Orthopaedics', mind: 'Psychiatry', stomach: 'Gastroenterology', eye: 'Ophthalmology', teeth: 'Dentistry', ent: 'ENT',
+};
+const ROLE_LABEL = {
+  doctor: 'Doctor', front_desk: 'Front desk', doctor_assistant: "Doctor's assistant", dietician: 'Dietician',
+  lab_manager: 'Lab manager', lab_technician: 'Lab technician', practice_manager: 'Practice manager',
+};
+const MEMBER_POPULATE = [
+  { path: 'userId', select: 'name phone' }, { path: 'departmentId', select: 'name' }, { path: 'locationIds', select: 'name status' }, { path: 'assistsDoctorIds', select: 'name' },
+];
+
+const activeOwners = (practiceId) => M.Member.countDocuments({ practiceId, isOwner: true, status: 'active' });
+
+/**
+ * Why the caller can't change this member's access (null = they can): your own
+ * access, an owner's access (only owners change owners), a removed member.
+ */
+function lockFor(req, m) {
+  if (m.status === 'removed') return { code: 'MEMBER_REMOVED', reason: 'Removed from the team. Add them again to give access.' };
+  if (String(m.userId?._id || m.userId) === String(req.user._id)) return { code: 'SELF_ACCESS', reason: "You can't change your own access. Another owner can." };
+  if (m.isOwner && !req.member.isOwner) return { code: 'OWNER_REQUIRED', reason: "Only an owner can change an owner's access." };
+  return null;
+}
+
+const memberView = (m, req, owners) => {
+  const lock = req ? lockFor(req, m) : null;
+  const lastOwner = m.isOwner && m.status === 'active' && owners <= 1;
+  return {
+    id: m._id, userId: m.userId?._id || m.userId, name: m.userId?.name, phone: m.userId?.phone || m.phone, role: m.role,
+    department: m.departmentId ? { id: m.departmentId._id, name: m.departmentId.name } : null,
+    locations: (m.locationIds || []).filter((l) => l.status !== 'inactive').map((l) => ({ id: l._id, name: l.name })), allLocations: m.allLocations,
+    assists: (m.assistsDoctorIds || []).map((d) => ({ userId: d._id || d, name: d.name })),
+    isOwner: m.isOwner, status: m.status, joinedAt: m.joinedAt, suspendedAt: m.suspendedAt, qualifications: m.qualifications, registrationNo: m.registrationNo,
+    permissions: M.ROLE_PERMISSIONS[m.role],
+    // What the caller may do with this member (People-Member hides the rest, with the reason).
+    canEdit: !lock,
+    canChangeRole: !lock && !m.isOwner,
+    canSuspend: !lock && !lastOwner,
+    canRemove: !lock && !lastOwner,
+    lockReason: lock?.reason || (lastOwner ? 'The practice needs at least one owner.' : null),
+  };
+};
 
 async function seats(practiceId) {
   const sub = await M.Subscription.findOne({ practiceId });
@@ -286,66 +366,244 @@ async function seats(practiceId) {
   return { used, limit: plan?.seats ?? null, plan: plan?.name };
 }
 
+/**
+ * What the Add / Edit forms offer: the active locations, the doctors who
+ * practise at each (DoctorLocation) with the departments they practise in,
+ * and every department name. A doctor's departments: their specialisations
+ * that are departments here, else their Find-doctor specialty, else the
+ * department on their membership.
+ */
+async function teamOptions(practiceId) {
+  const [locations, doctors, deps] = await Promise.all([
+    M.Location.find({ practiceId, status: 'active' }, 'name shortName').sort({ name: 1 }),
+    M.Member.find({ practiceId, role: 'doctor', status: 'active' }).populate('userId', 'name').populate('departmentId', 'name'),
+    M.Department.find({ $or: [{ practiceId }, { practiceId: null }] }, 'name').sort({ name: 1 }),
+  ]);
+  const ids = doctors.map((d) => d.userId?._id).filter(Boolean);
+  const [profiles, dls] = await Promise.all([
+    M.DoctorProfile.find({ userId: { $in: ids } }, 'userId displayName specialtyKeys specialisations'),
+    M.DoctorLocation.find({ practiceId, doctorId: { $in: ids }, status: 'active' }, 'doctorId locationId'),
+  ]);
+  const known = new Map(deps.map((d) => [d.name.toLowerCase(), d.name]));
+  const active = new Set(locations.map((l) => String(l._id)));
+  const departmentsOf = (m, prof) => {
+    const fromTags = (prof?.specialisations || []).map((s) => known.get(String(s).trim().toLowerCase())).filter(Boolean);
+    if (fromTags.length) return [...new Set(fromTags)];
+    const fromKeys = (prof?.specialtyKeys || []).map((k) => SPECIALTY_DEPARTMENT[k]).filter(Boolean);
+    if (fromKeys.length) return [...new Set(fromKeys)];
+    return m.departmentId?.name ? [m.departmentId.name] : [];
+  };
+  return {
+    locations: locations.map((l) => ({ id: l._id, name: l.name, shortName: l.shortName })),
+    doctors: doctors.filter((m) => m.userId).map((m) => {
+      const prof = profiles.find((p) => String(p.userId) === String(m.userId._id));
+      const at = dls.filter((d) => String(d.doctorId) === String(m.userId._id)).map((d) => String(d.locationId)).filter((id) => active.has(id));
+      // No schedule anywhere yet: where their membership says they work.
+      const where = at.length ? at : m.allLocations ? [...active] : (m.locationIds || []).map(String).filter((id) => active.has(id));
+      return { userId: m.userId._id, name: prof?.displayName || m.userId.name, locationIds: where, departments: departmentsOf(m, prof) };
+    }),
+    departments: [...new Set([...deps.map((d) => d.name), ...Object.values(SPECIALTY_DEPARTMENT)])].sort((a, b) => a.localeCompare(b)),
+  };
+}
+
+/** Department id from departmentId or a department name (made for the practice when new). */
+async function departmentFor(req, body) {
+  if (body.departmentId) {
+    if (!isId(String(body.departmentId))) throw badRequest('Choose a department', 'BAD_DEPARTMENT');
+    const dep = await M.Department.findOne({ _id: body.departmentId, $or: [{ practiceId: req.practiceId }, { practiceId: null }] });
+    if (!dep) throw badRequest('Choose a department', 'BAD_DEPARTMENT');
+    return dep._id;
+  }
+  const name = String(body.departmentName || '').trim();
+  if (!name) return null;
+  const same = { $regex: `^${escapeRegex(name)}$`, $options: 'i' };
+  const dep = (await M.Department.findOne({ practiceId: req.practiceId, name: same })) || (await M.Department.findOne({ practiceId: null, name: same }))
+    || (await M.Department.create({ practiceId: req.practiceId, name }));
+  return dep._id;
+}
+
+/**
+ * Checks and normalises who-works-where for a role: locations of this
+ * practice that are active (at least one unless all locations); for a doctor's
+ * assistant, the active doctor(s) they assist.
+ */
+async function accessFor(req, role, body, current = {}) {
+  const allLocations = body.allLocations !== undefined ? Boolean(body.allLocations) : Boolean(current.allLocations);
+  const wanted = body.locationIds !== undefined ? body.locationIds : (current.locationIds || []);
+  const ids = [...new Set((Array.isArray(wanted) ? wanted : []).map(String))];
+  if (ids.some((id) => !isId(id))) throw badRequest('Choose locations of this practice', 'BAD_LOCATION');
+  const found = await M.Location.find({ _id: { $in: ids }, practiceId: req.practiceId, status: 'active' }, '_id');
+  if (found.length !== ids.length && body.locationIds !== undefined) throw badRequest('Choose active locations of this practice', 'BAD_LOCATION');
+  const locationIds = found.map((l) => l._id);
+  if (!allLocations && !locationIds.length) throw badRequest('Choose at least one location', 'LOCATION_REQUIRED');
+  let assistsDoctorIds = [];
+  if (role === 'doctor_assistant') {
+    const want = body.assistsDoctorIds !== undefined ? body.assistsDoctorIds : (current.assistsDoctorIds || []);
+    const dIds = [...new Set((Array.isArray(want) ? want : []).map(String))].filter(isId);
+    const docs = await M.Member.find({ practiceId: req.practiceId, role: 'doctor', status: 'active', userId: { $in: dIds } }, 'userId');
+    if (docs.length !== dIds.length) throw badRequest('Choose doctors of this practice', 'BAD_DOCTOR');
+    const anyDoctor = await M.Member.exists({ practiceId: req.practiceId, role: 'doctor', status: 'active' });
+    if (!docs.length && anyDoctor) throw badRequest('Choose the doctor they assist', 'DOCTOR_REQUIRED');
+    assistsDoctorIds = docs.map((d) => d.userId);
+  }
+  return { allLocations, locationIds, assistsDoctorIds };
+}
+
+/** Suspends / reactivates a member; suspended members lose access at once. */
+async function setSuspended(memberId, suspended) {
+  const m = await M.Member.findById(memberId);
+  if (!m) return;
+  m.status = suspended ? 'suspended' : 'active';
+  m.suspendedAt = suspended ? new Date() : undefined;
+  await m.save();
+  if (suspended) await signOutUnlessMember(m);
+}
+
+/** Ends the person's sessions when this was their last active membership (a patient account stays usable elsewhere). */
+async function signOutUnlessMember(m) {
+  if (await M.Member.exists({ userId: m.userId, status: 'active', _id: { $ne: m._id } })) return;
+  await M.AuthSession.updateMany({ userId: m.userId, revokedAt: null }, { revokedAt: new Date() });
+}
+
+/** Tells the member their access changed (server checks use the new access from the next request). */
+async function tellAccessChanged(m, title) {
+  const { notify, signal } = require('../services/notify');
+  const names = m.allLocations ? [] : await M.Location.find({ _id: { $in: (m.locationIds || []).map((l) => l._id || l) } }).distinct('name');
+  const where = m.allLocations ? 'All locations' : names.join(', ');
+  await notify([m.userId], { type: 'member_access_changed', practiceId: m.practiceId, title, body: [ROLE_LABEL[m.role] || m.role, where].filter(Boolean).join(' · ') }).catch(() => {});
+  await signal([m.userId], { type: 'membership_changed', practiceId: m.practiceId });
+}
+
 r.get('/members', async (req, res) => {
-  const members = await M.Member.find({ practiceId: req.practiceId }).populate('userId', 'name phone').populate('departmentId', 'name').populate('locationIds', 'name');
-  res.json({ seats: await seats(req.practiceId), items: members.map(memberView) });
+  const [members, owners] = await Promise.all([
+    M.Member.find({ practiceId: req.practiceId, status: { $ne: 'removed' } }).populate(MEMBER_POPULATE),
+    activeOwners(req.practiceId),
+  ]);
+  res.json({ seats: await seats(req.practiceId), items: members.map((m) => memberView(m, req, owners)), meId: req.member._id });
 });
 
+r.get('/members/options', async (req, res) => res.json(await teamOptions(req.practiceId)));
+
 r.get('/members/:id', async (req, res) => {
-  const m = await M.Member.findOne({ _id: req.params.id, practiceId: req.practiceId }).populate('userId', 'name phone').populate('departmentId', 'name').populate('locationIds', 'name');
+  if (!isId(req.params.id)) throw notFound('Member');
+  const m = await M.Member.findOne({ _id: req.params.id, practiceId: req.practiceId }).populate(MEMBER_POPULATE);
   if (!m) throw notFound('Member');
-  res.json(memberView(m));
+  res.json(memberView(m, req, await activeOwners(req.practiceId)));
 });
+
+/** An active or suspended member with this phone: no new code is sent for them. */
+async function existingMember(practiceId, phone) {
+  const user = await M.User.findOne({ phone }, '_id');
+  return user ? M.Member.findOne({ practiceId, userId: user._id, status: { $ne: 'removed' } }) : null;
+}
+const alreadyOnTeam = (m) => (m.status === 'suspended'
+  ? conflict('This person is on the team but suspended. Reactivate them from People.', 'MEMBER_SUSPENDED')
+  : conflict('This person is already on the team', 'ALREADY_MEMBER'));
 
 // People-Add: verify the new member's phone first.
 r.post('/members/phone-otp', ownerOnly, async (req, res) => {
-  res.json(await issueOtp(normalizePhone(req.body.phone), 'verify_member_phone'));
+  const phone = normalizePhone(req.body.phone);
+  const m = await existingMember(req.practiceId, phone);
+  if (m) throw alreadyOnTeam(m);
+  res.json(await issueOtp(phone, 'verify_member_phone'));
 });
 
 r.post('/members', ownerOnly, async (req, res) => {
-  const { role, name, departmentId, locationIds = [], allLocations, qualifications, registrationNo, otpCode } = req.body;
+  const { role, name, qualifications, registrationNo, otpCode } = req.body;
   if (!E.MEMBER_ROLES.includes(role)) throw badRequest('Choose a role');
-  if (!name) throw badRequest('Enter the full name');
+  if (!name || !String(name).trim()) throw badRequest('Enter the full name');
   const phone = normalizePhone(req.body.phone);
+  const before = await existingMember(req.practiceId, phone);
+  if (before) throw alreadyOnTeam(before);
+  const access = await accessFor(req, role, req.body);
+  const departmentId = DEPARTMENT_ROLES.includes(role) ? await departmentFor(req, req.body) : null;
   // The new team member confirms their number with the code sent to it.
   if (!otpCode) throw badRequest('Verify their mobile number with the code sent to it', 'OTP_REQUIRED');
   await checkOtp(phone, 'verify_member_phone', otpCode);
   const s = await seats(req.practiceId);
   if (s.limit != null && s.used >= s.limit) throw conflict(`All ${s.limit} seats on the ${s.plan} plan are used`, 'NO_SEATS', s);
   let user = await M.User.findOne({ phone });
-  if (!user) user = await M.User.create({ phone, name, phoneVerifiedAt: new Date() });
-  if (await M.Member.exists({ practiceId: req.practiceId, userId: user._id })) throw conflict('This person is already on the team');
-  const member = await M.Member.create({
-    practiceId: req.practiceId, userId: user._id, role, departmentId, locationIds, allLocations: Boolean(allLocations),
+  if (!user) user = await M.User.create({ phone, name: String(name).trim(), phoneVerifiedAt: new Date() });
+  const fields = {
+    role, departmentId: departmentId || undefined, ...access,
     qualifications: role === 'doctor' ? qualifications : undefined, registrationNo: role === 'doctor' ? registrationNo : undefined,
-    phone, invitedBy: req.user._id,
-  });
-  if (role === 'doctor' && !(await M.DoctorProfile.exists({ userId: user._id }))) {
-    await M.DoctorProfile.create({ userId: user._id, displayName: name, degreesSummary: qualifications, registration: registrationNo ? { number: registrationNo } : undefined });
+    phone, invitedBy: req.user._id, status: 'active', suspendedAt: undefined, removedAt: undefined,
+  };
+  // Someone removed earlier comes back on their old membership (one per person and practice).
+  let member = await M.Member.findOne({ practiceId: req.practiceId, userId: user._id });
+  if (member) {
+    Object.assign(member, fields, { joinedAt: new Date() });
+    await member.save();
+  } else {
+    member = await M.Member.create({ practiceId: req.practiceId, userId: user._id, ...fields });
   }
-  await member.populate([{ path: 'userId', select: 'name phone' }, { path: 'departmentId', select: 'name' }, { path: 'locationIds', select: 'name' }]);
-  res.status(201).json(memberView(member));
+  if (role === 'doctor' && !(await M.DoctorProfile.exists({ userId: user._id }))) {
+    await M.DoctorProfile.create({ userId: user._id, displayName: String(name).trim(), degreesSummary: qualifications, registration: registrationNo ? { number: registrationNo } : undefined });
+  }
+  await member.populate(MEMBER_POPULATE);
+  res.status(201).json(memberView(member, req, await activeOwners(req.practiceId)));
 });
 
+const sameIds = (a, b) => {
+  const x = (a || []).map((v) => String(v._id || v)).sort();
+  const y = (b || []).map((v) => String(v._id || v)).sort();
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+};
+
+// People-Member "Edit access": role, locations, the doctor(s) an assistant
+// works for, department, suspend / reactivate. Nobody changes their own access,
+// only owners change an owner, and the practice always keeps an active owner.
 r.patch('/members/:id', ownerOnly, async (req, res) => {
+  if (!isId(req.params.id)) throw notFound('Member');
   const m = await M.Member.findOne({ _id: req.params.id, practiceId: req.practiceId });
   if (!m) throw notFound('Member');
-  const body = pick(req.body, ['role', 'departmentId', 'locationIds', 'allLocations', 'qualifications', 'registrationNo']);
-  if (body.role && !E.MEMBER_ROLES.includes(body.role)) throw badRequest('Unknown role');
-  if (m.isOwner && body.role && body.role !== m.role) throw conflict("The owner's role can't be changed");
-  Object.assign(m, body);
-  if (req.body.suspended !== undefined) {
-    if (m.isOwner) throw conflict("The owner can't be suspended");
-    m.status = req.body.suspended ? 'suspended' : 'active';
-    m.suspendedAt = req.body.suspended ? new Date() : undefined;
-    // "Suspended members lose access immediately"
-    if (req.body.suspended && !(await M.Member.exists({ userId: m.userId, status: 'active', _id: { $ne: m._id } }))) {
-      await M.AuthSession.updateMany({ userId: m.userId, revokedAt: null }, { revokedAt: new Date() });
-    }
+  const lock = lockFor(req, m);
+  const role = req.body.role !== undefined ? req.body.role : m.role;
+  if (!E.MEMBER_ROLES.includes(role)) throw badRequest('Unknown role');
+  const access = await accessFor(req, role, req.body, m);
+  const suspend = req.body.suspended === undefined ? undefined : Boolean(req.body.suspended);
+  const accessChanged = role !== m.role || access.allLocations !== Boolean(m.allLocations)
+    || !sameIds(access.locationIds, m.locationIds) || !sameIds(access.assistsDoctorIds, m.assistsDoctorIds);
+  const statusChanged = suspend !== undefined && suspend !== (m.status === 'suspended');
+  if (lock?.code === 'MEMBER_REMOVED') throw conflict(lock.reason, lock.code);
+  if (lock?.code === 'OWNER_REQUIRED') throw forbidden(lock.reason, lock.code);
+  if (lock?.code === 'SELF_ACCESS' && (accessChanged || statusChanged)) throw conflict(lock.reason, lock.code);
+  if (m.isOwner && role !== m.role) throw conflict("An owner's role can't be changed", 'OWNER_ROLE');
+  if (m.isOwner && suspend && statusChanged && (await activeOwners(req.practiceId)) <= 1) throw conflict('The practice needs at least one active owner', 'LAST_OWNER');
+  // Reactivating needs a free seat like adding someone does.
+  if (statusChanged && !suspend) {
+    const s = await seats(req.practiceId);
+    if (s.limit != null && s.used >= s.limit) throw conflict(`All ${s.limit} seats on the ${s.plan} plan are used`, 'NO_SEATS', s);
   }
+  m.role = role;
+  Object.assign(m, access);
+  if (!DEPARTMENT_ROLES.includes(role)) m.departmentId = undefined;
+  else if (req.body.departmentId !== undefined || req.body.departmentName !== undefined) m.departmentId = (await departmentFor(req, req.body)) || undefined;
+  if (role === 'doctor') Object.assign(m, pick(req.body, ['qualifications', 'registrationNo']));
+  else Object.assign(m, { qualifications: undefined, registrationNo: undefined });
   await m.save();
-  await m.populate([{ path: 'userId', select: 'name phone' }, { path: 'departmentId', select: 'name' }, { path: 'locationIds', select: 'name' }]);
-  res.json(memberView(m));
+  if (statusChanged) await setSuspended(m._id, suspend);
+  const fresh = await M.Member.findById(m._id).populate(MEMBER_POPULATE);
+  if (accessChanged && fresh.status === 'active') await tellAccessChanged(fresh, 'Your access changed');
+  if (statusChanged && !suspend) await tellAccessChanged(fresh, 'Your access is back on');
+  res.json(memberView(fresh, req, await activeOwners(req.practiceId)));
+});
+
+// People-Member "Remove from team": access ends at once; their name stays on past records.
+r.delete('/members/:id', ownerOnly, async (req, res) => {
+  if (!isId(req.params.id)) throw notFound('Member');
+  const m = await M.Member.findOne({ _id: req.params.id, practiceId: req.practiceId });
+  if (!m || m.status === 'removed') throw notFound('Member');
+  const lock = lockFor(req, m);
+  if (lock?.code === 'OWNER_REQUIRED') throw forbidden(lock.reason, lock.code);
+  if (lock?.code === 'SELF_ACCESS') throw conflict("You can't remove yourself from the team. Another owner can.", lock.code);
+  if (m.isOwner && m.status === 'active' && (await activeOwners(req.practiceId)) <= 1) throw conflict('The practice needs at least one active owner', 'LAST_OWNER');
+  m.status = 'removed';
+  m.removedAt = new Date();
+  m.isOwner = false;
+  await m.save();
+  await signOutUnlessMember(m);
+  res.json({ ok: true });
 });
 
 // ── Invites (Register step 2) ──

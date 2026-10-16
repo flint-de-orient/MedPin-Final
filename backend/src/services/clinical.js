@@ -81,6 +81,7 @@ async function patientSummary(patient, practiceId, acc) {
       id: patient._id, name: patient.name, phone: patient.phone, gender: patient.gender, age: T.ageFrom(patient),
       bloodGroup: patient.bloodGroup, heightCm: patient.heightCm, weightKg: patient.weightKg, bmi,
       riskLevel: patient.riskLevel, healthScore: await require('./health').currentScore(patient).catch(() => patient.healthScore), hasApp: Boolean(patient.userId),
+      photo: patient.userId ? (await require('./photos').photosFor([patient.userId])).get(String(patient.userId)) || null : null,
     },
     conditions: patient.conditions,
     allergies: patient.allergies,

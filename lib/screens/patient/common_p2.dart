@@ -417,9 +417,13 @@ class P2AvatarDot extends StatelessWidget {
   final double dotSize;
   final double dotBorder;
   final double inset;
+
+  /// The person's profile photo (initials while it loads or without one).
+  final String? photo;
   const P2AvatarDot(
     this.initials, {
     super.key,
+    this.photo,
     required this.size,
     required this.fontSize,
     required this.dot,
@@ -435,7 +439,7 @@ class P2AvatarDot extends StatelessWidget {
     child: Stack(
       clipBehavior: Clip.none,
       children: [
-        MpAvatar(initials, size: size, fontSize: fontSize),
+        MpAvatar(initials, size: size, fontSize: fontSize, photo: photo),
         Positioned(
           right: inset,
           bottom: inset,
