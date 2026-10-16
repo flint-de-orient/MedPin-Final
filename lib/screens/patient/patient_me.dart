@@ -83,7 +83,10 @@ class _Viewer {
 
   /// Live only: their user id.
   final String? userId;
-  const _Viewer(this.initials, this.name, this.role, {this.userId});
+
+  /// Profile photo link (none in the design preview).
+  final String? photo;
+  const _Viewer(this.initials, this.name, this.role, {this.userId, this.photo});
 }
 
 const _viewers = [
@@ -222,6 +225,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
               t.str('practice'),
             ].where((x) => x.isNotEmpty).join(' · '),
             userId: t.str('userId'),
+            photo: t.str('photoUrl').isEmpty ? null : t.str('photoUrl'),
           ),
           p2AccessLevels[t.str('accessLevel')] ?? _levels[1],
         ),
@@ -581,7 +585,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                     [
                       for (var i = 0; i < viewers.length; i++)
                         _Row(
-                          leading: MpAvatar(viewers[i].$1.initials, size: 40, fontSize: 14),
+                          leading: MpAvatar(viewers[i].$1.initials, size: 40, fontSize: 14, photo: viewers[i].$1.photo),
                           title: viewers[i].$1.name,
                           sub: viewers[i].$2,
                           subColor: viewers[i].$2 == _stopSharing ? MP.ink3 : MP.ink2,

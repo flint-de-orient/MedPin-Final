@@ -3,6 +3,7 @@ const M = require('../models');
 const T = require('../lib/time');
 const { sendPush, sendWhatsApp } = require('./push');
 const { sendEmail } = require('./email');
+const { translateNotice, LANGS } = require('../lib/notify_i18n');
 
 /**
  * @param {ObjectId[]} userIds
@@ -18,13 +19,21 @@ async function notify(userIds, n) {
   const ids = [...new Set((userIds || []).filter(Boolean).map(idOf))];
   if (!ids.length) return [];
   const channels = ['in_app', ...(n.push === false ? [] : ['push']), ...(n.whatsapp ? ['whatsapp'] : [])];
+  // Each person reads it in their app language (Bengali / Hindi: lib/notify_i18n.js);
+  // type, screen and params stay the same for everyone.
+  const langOf = new Map((await M.User.find({ _id: { $in: ids }, language: { $in: LANGS } }, 'language').lean()).map((u) => [String(u._id), u.language]));
+  const texts = new Map();
+  const textFor = (id) => {
+    const lang = langOf.get(id) || 'en';
+    if (!texts.has(lang)) texts.set(lang, lang === 'en' ? { title: n.title, body: n.body } : translateNotice(n, lang));
+    return texts.get(lang);
+  };
   const docs = await M.Notification.insertMany(
     ids.map((userId) => ({
       userId,
       practiceId: n.practiceId,
       type: n.type,
-      title: n.title,
-      body: n.body,
+      ...textFor(userId),
       screen: n.screen,
       params: n.params,
       channels,
@@ -43,7 +52,7 @@ async function notify(userIds, n) {
       const t = p?.types || {};
       // Emergencies and urgent alerts always come through (Chat settings → urgent alerts).
       if (/emergency|urgent/.test(n.type)) return true;
-      if (/appointment|request|visit|queue|doctor_leave|clinic_closed|reschedul|fee_paid|refund/.test(n.type)) return t.appointments !== false;
+      if (/appointment|request|visit|queue|doctor_leave|clinic_closed|reschedul|fee_|refund/.test(n.type)) return t.appointments !== false;
       if (/message/.test(n.type)) return t.messages !== false;
       if (/lab|record|prescription|alert_watch/.test(n.type)) return t.labResults !== false;
       if (/follow_up|morning_summary/.test(n.type)) return t.followUps !== false;
@@ -60,15 +69,31 @@ async function notify(userIds, n) {
       const p = prefs.get(id);
       return !p || urgentFor(id) || (p.push !== false && typeOn(p) && !quiet(p, id));
     });
-    const tokens = n.push === false ? [] : await M.DeviceToken.find({ userId: { $in: pushIds } }).distinct('token');
-    const data = { screen: n.screen || '', type: n.type, notificationId: '', ...Object.fromEntries(Object.entries(n.params || {}).map(([k, v]) => [k, String(v)])) };
-    if (tokens.length) await sendPush(tokens, { title: n.title, body: n.body, data, urgent: isUrgent });
+    const devices = n.push === false ? [] : await M.DeviceToken.find({ userId: { $in: pushIds } }, 'userId token').lean();
+    const data = { screen: n.screen || '', type: n.type, notificationId: '', ...(n.practiceId ? { practiceId: String(n.practiceId) } : {}), ...Object.fromEntries(Object.entries(n.params || {}).map(([k, v]) => [k, String(v)])) };
+    // One push per language, each phone once (in its owner's language).
+    const byLang = new Map();
+    const seen = new Set();
+    for (const d of devices) {
+      if (!d.token || seen.has(d.token)) continue;
+      seen.add(d.token);
+      const lang = langOf.get(String(d.userId)) || 'en';
+      if (!byLang.has(lang)) byLang.set(lang, { id: String(d.userId), tokens: [] });
+      byLang.get(lang).tokens.push(d.token);
+    }
+    for (const { id, tokens } of byLang.values()) await sendPush(tokens, { ...textFor(id), data, urgent: isUrgent });
+    // Everyone not buzzed (in-app only, push or this type switched off, quiet hours): a
+    // silent "notifications changed", so an open list and the bell's dot update at once.
+    const pushed = new Set(n.push === false ? [] : pushIds);
+    const quietIds = ids.filter((id) => !pushed.has(id));
+    if (quietIds.length) await signal(quietIds, { type: 'notifications_changed', ...(n.practiceId ? { practiceId: String(n.practiceId) } : {}) });
     if (n.whatsapp) {
       const waIds = ids.filter((id) => {
         const p = prefs.get(id);
         return !p || (p.whatsapp !== false && typeOn(p) && !quiet(p, id));
       });
       const users = await M.User.find({ _id: { $in: waIds } }, 'phone');
+      // WhatsApp stays in English: it goes out as the approved (English) Meta templates.
       await Promise.allSettled(users.map((u) => sendWhatsApp(u.phone, `${n.title}${n.body ? ` — ${n.body}` : ''}`, { template: n.type, params: n.waParams })));
     }
     // Email copy for staff who switched it on (Profile → Notifications → Email).
@@ -76,7 +101,10 @@ async function notify(userIds, n) {
     const emailIds = n.push === false ? [] : ids.filter((id) => prefs.get(id)?.email === true && typeOn(prefs.get(id)) && !quiet(prefs.get(id), id));
     if (emailIds.length) {
       const users = await M.User.find({ _id: { $in: emailIds }, email: { $exists: true, $ne: '' } }, 'email');
-      await Promise.allSettled(users.map((u) => sendEmail({ to: u.email, subject: `MedPin: ${n.title}`, text: `${n.title}${n.body ? `\n\n${n.body}` : ''}` })));
+      await Promise.allSettled(users.map((u) => {
+        const t = textFor(String(u._id));
+        return sendEmail({ to: u.email, subject: `MedPin: ${t.title}`, text: `${t.title}${t.body ? `\n\n${t.body}` : ''}` });
+      }));
     }
   })().catch((err) => console.warn('[notify]', err.message));
   return docs;
@@ -150,4 +178,32 @@ async function deskFor(practiceId, { locationId, doctorId } = {}) {
     .map((m) => m.userId);
 }
 
-module.exports = { notify, practiceStaff, clinicians, signal, deskOrDoctors, hasDesk, DESK_ROLES };
+/**
+ * Doctors' assistants who work for any of [doctorIds] here (an assistant with no
+ * doctors chosen assists everyone). They see clinical alerts (alerts permission).
+ */
+async function assistantsOf(practiceId, doctorIds = []) {
+  const want = new Set(doctorIds.map(idOf));
+  const members = await M.Member.find({ practiceId, status: 'active', role: 'doctor_assistant' }, 'userId assistsDoctorIds');
+  return members
+    .filter((m) => !(m.assistsDoctorIds || []).length || !want.size || m.assistsDoctorIds.some((d) => want.has(String(d))))
+    .map((m) => m.userId);
+}
+
+/**
+ * Where a patient is looked after in a practice, for "who at the desk":
+ * the next visit's (else the latest visit's) location and doctor, else the
+ * branch they registered at; the doctor falls back to their main doctor here.
+ */
+async function patientPlace(practiceId, patientId) {
+  const now = new Date();
+  const next = await M.Appointment.findOne({ practiceId, patientId, startAt: { $gte: now }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }, 'locationId doctorId').sort({ startAt: 1 });
+  const last = next || (await M.Appointment.findOne({ practiceId, patientId, locationId: { $ne: null } }, 'locationId doctorId').sort({ startAt: -1 }));
+  let locationId = last?.locationId;
+  if (!locationId) locationId = (await M.PatientEnrolment.findOne({ practiceId, patientId }, 'homeLocationId'))?.homeLocationId;
+  let doctorId = last?.doctorId;
+  if (!doctorId) doctorId = (await M.CareTeamAccess.findOne({ practiceId, patientId, isPrimary: true }, 'userId'))?.userId;
+  return { locationId: locationId || undefined, doctorId: doctorId || undefined };
+}
+
+module.exports = { notify, practiceStaff, clinicians, signal, deskOrDoctors, deskFor, hasDesk, assistantsOf, patientPlace, DESK_ROLES };

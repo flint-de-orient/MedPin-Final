@@ -33,7 +33,7 @@ async function sessionsOn(doctorId, day, dls) {
     const loc = dl.locationId;
     if (!loc || loc.status !== 'active') continue;
     if (leave.some((l) => !l.locationId || String(l.locationId) === String(loc._id))) continue;
-    if (await M.LocationClosure.exists({ locationId: loc._id, startDate: { $lt: end }, endDate: { $gte: d } })) continue;
+    if (await M.LocationClosure.exists({ locationId: loc._id, startDate: { $lt: end }, endDate: { $gte: d }, allDay: { $ne: false } })) continue;
     const hours = (loc.weeklyHours || []).find((h) => h.weekday === T.weekday(d));
     if (hours && hours.isOpen === false) continue;
     const opens = hours?.opensAt ?? 0;
@@ -66,7 +66,7 @@ async function replyMinutes(doctorId, now = new Date()) {
   // Chats the doctor has answered in.
   const convIds = await M.Message.distinct('conversationId', { senderId: doctorId, createdAt: { $gte: since } });
   const msgs = convIds.length
-    ? await M.Message.find({ conversationId: { $in: convIds }, createdAt: { $gte: since }, senderType: { $in: ['patient', 'doctor'] } }, 'conversationId senderType senderId createdAt')
+    ? await M.Message.find({ conversationId: { $in: convIds }, createdAt: { $gte: since }, senderType: { $in: ['patient', 'doctor'] }, 'meta.auto': { $ne: true } },'conversationId senderType senderId createdAt')
       .sort({ createdAt: 1 }).limit(5000)
     : [];
   const waiting = new Map(); // conversation → when the patient's unanswered message came

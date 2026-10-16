@@ -86,6 +86,12 @@ class _PeopleScreenState extends State<PeopleScreen> with LiveData {
     ];
   }
 
+  /// Member id → profile photo link (none in the design preview).
+  Map<String?, String> get _photos => {
+        for (final m in data?.obj('members').list('items') ?? const <Map<String, dynamic>>[])
+          if (m.str('photo').isNotEmpty) m['id'] as String?: m.str('photo'),
+      };
+
   /// Member ids whose access the viewer may change (design preview: all but the owner).
   Set<String?> get _editable {
     if (data == null) return {for (final g in _groups) for (final p in g.$2) if (p.$4 != 'Owner') p.$1};
@@ -115,7 +121,7 @@ class _PeopleScreenState extends State<PeopleScreen> with LiveData {
             gap: 20,
             children: [
               for (final g in _liveGroups)
-                _Group(g.$1, g.$2, editable: _editable, keyOf: (p) => data == null ? p.$1 : p.$6, onOpen: (id) => _open('People-Member', {'memberId': id})),
+                _Group(g.$1, g.$2, editable: _editable, photos: _photos, keyOf: (p) => data == null ? p.$1 : p.$6, onOpen: (id) => _open('People-Member', {'memberId': id})),
             ],
           ),
           MpButton('Add someone', icon: I.plus, iconStroke: 1.75, onTap: addSomeone),
@@ -179,8 +185,9 @@ class _Group extends StatelessWidget {
   final List<_Person> people;
   final ValueChanged<String?> onOpen;
   final Set<String?> editable;
+  final Map<String?, String> photos;
   final String? Function(_Person p) keyOf;
-  const _Group(this.label, this.people, {required this.onOpen, required this.editable, required this.keyOf});
+  const _Group(this.label, this.people, {required this.onOpen, required this.editable, this.photos = const {}, required this.keyOf});
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +196,7 @@ class _Group extends StatelessWidget {
       children: [
         D9Label(label, h: 1.35, padding: const EdgeInsets.only(bottom: 4)),
         for (var i = 0; i < people.length; i++)
-          _PersonRow(people[i], first: i == 0, editable: editable.contains(keyOf(people[i])), onTap: () => onOpen(people[i].$6)),
+          _PersonRow(people[i], first: i == 0, photo: photos[people[i].$6], editable: editable.contains(keyOf(people[i])), onTap: () => onOpen(people[i].$6)),
       ],
     );
   }
@@ -199,10 +206,11 @@ class _PersonRow extends StatelessWidget {
   final _Person p;
   final bool first;
   final VoidCallback onTap;
+  final String? photo;
 
   /// Shows "Edit access" (the viewer may change this member's access).
   final bool editable;
-  const _PersonRow(this.p, {required this.first, required this.onTap, this.editable = false});
+  const _PersonRow(this.p, {required this.first, required this.onTap, this.photo, this.editable = false});
 
   @override
   Widget build(BuildContext context) {
@@ -220,6 +228,7 @@ class _PersonRow extends StatelessWidget {
             fontSize: 14,
             bg: suspended ? MP.fill : MP.primarySoft,
             fg: suspended ? MP.ink3 : MP.primary,
+            photo: photo,
           ),
           const Gap(12),
           Expanded(

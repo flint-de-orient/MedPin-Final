@@ -204,6 +204,7 @@ class _PeopleMemberScreenState extends State<PeopleMemberScreen> with LiveData {
           : _MemberHeader(
               name: m.str('name'),
               initials: F.initials(m.str('name')),
+              photo: m.str('photo').isEmpty ? null : m.str('photo'),
               line: [
                 if (m.str('phone').isNotEmpty) D9Fmt.phone(m.str('phone')),
                 if (joined != null) 'Joined ${D9Fmt.monthYear(joined)}',
@@ -352,7 +353,8 @@ class _MemberHeader extends StatelessWidget {
   final String name;
   final String initials;
   final String line;
-  const _MemberHeader({this.name = 'Rohit Saha', this.initials = 'RS', this.line = '+91 98311 20486 · Joined Mar 2026'});
+  final String? photo;
+  const _MemberHeader({this.name = 'Rohit Saha', this.initials = 'RS', this.line = '+91 98311 20486 · Joined Mar 2026', this.photo});
 
   @override
   Widget build(BuildContext context) {
@@ -364,7 +366,7 @@ class _MemberHeader extends StatelessWidget {
         children: [
           MpIconButton(I.back, label: 'Back', onTap: () => Nav.back(context)),
           const Gap(4),
-          MpAvatar(initials, size: 40, fontSize: 14),
+          MpAvatar(initials, size: 40, fontSize: 14, photo: photo),
           // margin-right 8 + gap 4
           const Gap(12),
           Expanded(

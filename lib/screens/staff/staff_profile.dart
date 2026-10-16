@@ -5,9 +5,9 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/photo.dart';
 import '../../data/session.dart';
+import '../../widgets/clinic_switch.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
-import '../doctor/common_d4.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Staff-Profile.dc.html — "Profile" (front desk).
@@ -30,34 +30,45 @@ const _languages = ['English', 'Bengali', 'Hindi'];
 /// App language name ↔ API code.
 const _languageCodes = {'English': 'en', 'Bengali': 'bn', 'Hindi': 'hi'};
 
-const _roleLabels = {'front_desk': 'Front desk', 'doctor': 'Doctor', 'nurse': 'Nurse', 'dietician': 'Dietician', 'admin': 'Admin'};
-
 /// Live data: GET /api/me (name, phone, language, app lock, membership),
-/// GET /api/locations (clinic line), unread notifications.
-/// Saves: PATCH /api/me.
+/// GET /api/members/me (my role here, the locations I cover with their
+/// doctors, the doctors I work for, permissions; GET /api/locations when the
+/// server is older), unread notifications. Saves: PATCH /api/me.
+/// Staff in two clinics get a Clinic row to switch (Session.I.usePractice).
 class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
   String _language = 'English';
   bool _appLock = true;
 
   @override
   Future<Object?> fetch() async {
-    final r = await Future.wait([
+    final r = await Future.wait<Object?>([
       Api.I.get('/api/me'),
-      Api.I.get('/api/locations'),
+      Api.I.get('/api/members/me').then<Object?>((v) => v, onError: (_) => null),
       Api.I.get('/api/notifications', query: {'limit': '1', if (Session.I.practiceId != null) 'practiceId': Session.I.practiceId}),
     ]);
     final me = (r[0] as Map).cast<String, dynamic>();
     final user = me.obj('user');
     _language = _languageCodes.entries.firstWhere((e) => e.value == user['language'], orElse: () => _languageCodes.entries.first).key;
     _appLock = user['appLock'] == true;
-    final locs = r[1] is List ? r[1] as List : ((r[1] as Map)['items'] as List? ?? const []);
-    return {...me, 'location': locs.isEmpty ? null : locs.first, 'unreadNotifications': (r[2] as Map)['unread'] ?? 0};
+    final mine = r[1] is Map ? (r[1] as Map).cast<String, dynamic>() : null;
+    Object? location;
+    if (mine == null) {
+      final l = await Api.I.get('/api/locations');
+      final locs = l is List ? l : ((l as Map)['items'] as List? ?? const []);
+      location = locs.isEmpty ? null : locs.first;
+    }
+    return {...me, 'mine': mine, 'location': location, 'unreadNotifications': (r[2] as Map)['unread'] ?? 0};
   }
 
+  /// My membership in the active clinic (GET /api/members/me), if the server has it.
+  Map<String, dynamic> get _mine => data?.obj('mine') ?? const {};
+
   Map<String, dynamic> get _user => data?.obj('user') ?? const {};
+  /// The clinic I'm working in now (the one chosen when I'm in several).
   Map<String, dynamic> get _membership {
     final list = data?.list('memberships') ?? const [];
-    return list.where((m) => m['status'] == 'active').firstOrNull ?? (list.isEmpty ? const {} : list.first);
+    final active = list.where((m) => m['status'] == 'active');
+    return active.where((m) => '${m['practiceId']}' == Session.I.practiceId).firstOrNull ?? active.firstOrNull ?? (list.isEmpty ? const {} : list.first);
   }
 
   String get _name => data == null ? 'Tania Ghosh' : _user.str('name', 'Your name');
@@ -69,13 +80,43 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
     return p.length == 10 ? '+91 ${p.substring(0, 5)} ${p.substring(5)}' : p;
   }
 
-  String get _role => data == null ? 'Front desk' : (_roleLabels[_membership['role']] ?? 'Team member');
+  String get _role => data == null ? 'Front desk' : roleLabel(_membership['role'] as String?);
 
-  String get _clinicLine {
-    if (data == null) return 'City Care Clinic · Salt Lake';
-    final loc = data!.obj('location');
+  String get _practiceName => data == null ? 'City Care Clinic' : _mine.obj('practice').str('name', _membership.str('practiceName'));
+
+  /// "City Care Clinic · Salt Lake" for a location.
+  String _placeLine(Map<String, dynamic> loc) {
     final place = loc.str('shortName', loc.str('name'));
-    return [_membership.str('practiceName'), if (place.isNotEmpty) place].where((x) => x.isNotEmpty).join(' · ');
+    final practice = _practiceName;
+    if (place.isNotEmpty && practice.isNotEmpty && place.toLowerCase().contains(practice.toLowerCase())) return place;
+    return [practice, if (place.isNotEmpty) place].where((x) => x.isNotEmpty).join(' · ');
+  }
+
+  /// The locations I cover, each with the doctors working there and what I may change.
+  List<Map<String, dynamic>> get _places {
+    if (data == null) {
+      return const [
+        {'id': null, 'shortName': 'Salt Lake', 'doctors': [{'name': 'Dr. Arjun Sen'}, {'name': 'Dr. Rina Mitra'}]},
+      ];
+    }
+    if (_mine.isNotEmpty) return _mine.list('coverage');
+    final loc = data!.obj('location');
+    return loc.isEmpty ? const [] : [loc];
+  }
+
+  /// "Dr. Arjun Sen · Dr. Rina Mitra", "No doctors here yet"; null when unknown (older server).
+  String? _doctorsLine(Map<String, dynamic> loc) {
+    if (!loc.containsKey('doctors') || loc['doctors'] is! List) return null;
+    final names = [for (final d in loc.list('doctors')) d.str('name')].where((n) => n.isNotEmpty).toList();
+    return names.isEmpty ? 'No doctors here yet' : names.join(' · ');
+  }
+
+  /// Can I change anything at this location (details, hours or closures)?
+  bool _canChange(Map<String, dynamic> loc) {
+    if (!isLive) return true;
+    final can = loc.obj('can');
+    if (can.isEmpty) return Session.I.isOwner || Session.I.role == 'practice_manager';
+    return can['details'] == true || can['closures'] == true;
   }
 
   int get _notes => data == null ? 3 : data!.numOr('unreadNotifications').toInt();
@@ -108,32 +149,25 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
       toast(context, 'Account settings are not in the design yet');
       return;
     }
-    final v = await d4FormSheet(
+    final v = await openSheet<Map<String, String>>(
       context,
-      title: 'Account',
-      subtitle: 'Your phone number is how you sign in. To change it, ask the practice owner.',
-      fields: [
-        D4FormField('Name', value: _user.str('name')),
-        D4FormField('Email (optional)', value: _user.str('email'), hint: 'name@example.com', keyboard: TextInputType.emailAddress),
-      ],
+      (_) => _AccountSheet(user: _user, mine: _mine, role: _role, practice: _practiceName, phone: _phone),
     );
-    if (v == null || v.isEmpty || !mounted) return;
-    if (v[0].isEmpty) {
-      toast(context, 'Enter your name');
-      return;
-    }
-    if (v[1].isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v[1])) {
-      toast(context, 'Enter a valid email');
-      return;
-    }
-    if (!await _save({'name': v[0], 'email': v[1]}) || !mounted) return;
+    if (v == null || !mounted) return;
+    if (v['name'] == _user.str('name') && v['email'] == _user.str('email')) return;
+    if (!await _save(v) || !mounted) return;
     toast(context, 'Account updated');
     reload(quiet: true);
   }
 
-  Future<void> _openClinic() async {
-    final id = data?.obj('location')['id'];
+  Future<void> _openClinic(Map<String, dynamic> loc) async {
+    final id = loc['id'];
     await Nav.go(context, 'Clinic-Editor', args: isLive && id != null ? {'locationId': '$id'} : null);
+    if (mounted && isLive) reload(quiet: true);
+  }
+
+  Future<void> _switchClinic() async {
+    await chooseClinic(context);
     if (mounted && isLive) reload(quiet: true);
   }
 
@@ -200,36 +234,6 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
                   D10ListRow(
                     divider: true,
                     vPad: 12,
-                    onTap: _openClinic,
-                    child: Row(
-                      children: [
-                        const Ico(_building, size: 22, color: MP.ink2),
-                        const Gap(12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Clinic details', style: title),
-                              const Gap(2),
-                              Text(
-                                _clinicLine,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: sub,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Gap(12),
-                        const Ico(I.edit, size: 16, color: MP.primary),
-                        const Gap(4),
-                        Text('Edit', style: tx(14, w: w600, c: MP.primary, h: _lh)),
-                      ],
-                    ),
-                  ),
-                  D10ListRow(
-                    divider: true,
-                    vPad: 12,
                     onTap: _editAccount,
                     child: Row(
                       children: [
@@ -250,6 +254,86 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
                       ],
                     ),
                   ),
+                ],
+              ),
+
+              // Clinic: the one I work in (switch when I'm in several) and every location I cover.
+              _Section(
+                title: 'Clinic',
+                rows: [
+                  if (isLive && Session.I.activeMemberships.length > 1)
+                    D10ListRow(
+                      vPad: 12,
+                      onTap: _switchClinic,
+                      child: Row(
+                        children: [
+                          const Ico(_building, size: 22, color: MP.ink2),
+                          const Gap(12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_practiceName, maxLines: 1, overflow: TextOverflow.ellipsis, style: title),
+                                const Gap(2),
+                                Text(
+                                  tr(context, 'You work in #1 clinics').replaceFirst('#1', '${Session.I.activeMemberships.length}'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: sub,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Gap(12),
+                          Text('Switch', style: tx(14, w: w600, c: MP.primary, h: _lh)),
+                        ],
+                      ),
+                    ),
+                  if (_places.isEmpty)
+                    D10ListRow(
+                      vPad: 12,
+                      child: Row(
+                        children: [
+                          const Ico(_building, size: 22, color: MP.ink2),
+                          const Gap(12),
+                          Expanded(child: Text('No locations yet', style: sub)),
+                        ],
+                      ),
+                    ),
+                  for (final (i, loc) in _places.indexed)
+                    D10ListRow(
+                      divider: i > 0 || (isLive && Session.I.activeMemberships.length > 1),
+                      vPad: 12,
+                      onTap: () => _openClinic(loc),
+                      child: Row(
+                        children: [
+                          const Ico(_building, size: 22, color: MP.ink2),
+                          const Gap(12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_placeLine(loc), maxLines: 2, overflow: TextOverflow.ellipsis, style: title),
+                                if (_doctorsLine(loc) != null) ...[
+                                  const Gap(2),
+                                  Text(_doctorsLine(loc)!, maxLines: 2, overflow: TextOverflow.ellipsis, style: sub),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const Gap(12),
+                          if (_canChange(loc)) ...[
+                            const Ico(I.edit, size: 16, color: MP.primary),
+                            const Gap(4),
+                            Text('Edit', style: tx(14, w: w600, c: MP.primary, h: _lh)),
+                          ] else ...[
+                            Text('View', style: tx(14, w: w600, c: MP.primary, h: _lh)),
+                            const Gap(4),
+                            const Ico(I.chevronRight, size: 18, color: MP.ink3),
+                          ],
+                        ],
+                      ),
+                    ),
                 ],
               ),
 
@@ -371,5 +455,151 @@ class _Switch extends StatelessWidget {
         ),
       ),
     ));
+  }
+}
+
+/// What a role's permissions let someone do, in plain words (Account sheet).
+const _canSay = [
+  ('viewPatients', 'See patients and book their visits'),
+  ('vitals', 'Record vitals (BP, sugar, weight)'),
+  ('fees', 'Collect fees and give refunds'),
+  ('chats', 'Chat with patients'),
+  ('closures', 'Add holidays and closures'),
+  ('doctorHours', "Change doctors' hours"),
+  ('manageClinic', 'Change clinic details and weekly hours'),
+  ('clinical', 'Open consultations and clinical notes'),
+  ('editRecords', 'Update allergies, conditions and patient details'),
+  ('prescribe', 'Write prescriptions'),
+  ('labs', 'Enter lab results'),
+  ('labReview', 'Mark lab results reviewed'),
+  ('alerts', 'See health alerts'),
+  ('manageAlerts', 'Act on health alerts'),
+  ('ai', 'Use MedPin AI'),
+  ('reports', 'See clinic reports'),
+  ('exports', 'Download patient lists'),
+  ('billing', 'Manage the MedPin plan and invoices'),
+];
+
+/// Profile → Account: photo, name and email (editable), the sign-in number,
+/// and my place in the clinic — role, practice, department, locations, the
+/// doctors I work for, when I joined and what my role lets me do.
+/// Resolves with {name, email} to save, or null.
+class _AccountSheet extends StatefulWidget {
+  final Map<String, dynamic> user;
+  final Map<String, dynamic> mine;
+  final String role;
+  final String practice;
+  final String phone;
+  const _AccountSheet({required this.user, required this.mine, required this.role, required this.practice, required this.phone});
+
+  @override
+  State<_AccountSheet> createState() => _AccountSheetState();
+}
+
+class _AccountSheetState extends State<_AccountSheet> {
+  late final _name = TextEditingController(text: widget.user.str('name'));
+  late final _email = TextEditingController(text: widget.user.str('email'));
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _email.dispose();
+    super.dispose();
+  }
+
+  void _done() {
+    final name = _name.text.trim();
+    final email = _email.text.trim();
+    if (name.isEmpty) return toast(context, 'Enter your name');
+    if (email.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) return toast(context, 'Enter a valid email');
+    Navigator.pop(context, {'name': name, 'email': email});
+  }
+
+  String get _locations {
+    final m = widget.mine;
+    if (m['allLocations'] == true) return 'All locations';
+    final names = [for (final l in m.list('coverage')) l.str('shortName', l.str('name'))].where((n) => n.isNotEmpty).toList();
+    return names.isEmpty ? '—' : names.join(', ');
+  }
+
+  String? get _joined {
+    final d = F.date(widget.mine['joinedAt']);
+    return d == null ? null : '${F.dayMonth(d)} ${d.year}';
+  }
+
+  List<String> get _can {
+    final perms = widget.mine.obj('permissions');
+    if (widget.mine['isOwner'] == true) return const ['Everything in this clinic (you are an owner)'];
+    return [for (final (k, say) in _canSay) if (perms[k] == true) say];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final m = widget.mine;
+    final department = m.obj('department').str('name');
+    final doctors = [for (final d in m.list('worksFor')) d.str('name')].where((n) => n.isNotEmpty).toList();
+    return MpSheet(
+      title: 'Account',
+      showClose: true,
+      child: VGap(
+        gap: 16,
+        children: [
+          Row(
+            children: [
+              MyPhotoAvatar(F.initials(_name.text.isEmpty ? widget.user.str('name') : _name.text), size: 64, fontSize: 22),
+              const Gap(16),
+              Expanded(child: Text('Tap the camera to change your photo. Patients and your team see it.', style: tx(14, c: MP.ink2, h: 1.45))),
+            ],
+          ),
+          MpInput(label: 'Name', controller: _name, autofillHints: const [AutofillHints.name]),
+          MpInput(
+            label: 'Phone',
+            value: widget.phone,
+            readOnly: true,
+            tab: true,
+            help: 'Your sign-in number. To change it, ask the practice owner.',
+          ),
+          MpInput(label: 'Email (optional)', controller: _email, hint: 'name@example.com', keyboard: TextInputType.emailAddress),
+          if (m.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(16)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  MpKV('Role', widget.role),
+                  if (widget.practice.isNotEmpty) MpKV('Clinic', widget.practice),
+                  if (department.isNotEmpty) MpKV('Department', department),
+                  MpKV('Locations', _locations),
+                  if (doctors.isNotEmpty) MpKV(m['role'] == 'doctor_assistant' ? 'Assists' : 'Doctors', doctors.join(', ')),
+                  if (_joined != null) MpKV('Joined', _joined!),
+                ],
+              ),
+            ),
+          if (_can.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Semantics(header: true, child: Text('What you can do', style: tx(14, w: w600))),
+                const Gap(8),
+                for (final line in _can)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(padding: EdgeInsets.only(top: 2), child: Ico(I.check, size: 16, color: MP.primary, stroke: 2)),
+                        const Gap(8),
+                        Expanded(child: Text(line, style: tx(14, c: MP.ink2, h: 1.4))),
+                      ],
+                    ),
+                  ),
+                Text('Need something else? Ask the practice owner.', style: tx(13, c: MP.ink3, h: 1.4)),
+              ],
+            ),
+          MpButton('Save', onTap: _done),
+        ],
+      ),
+    );
   }
 }

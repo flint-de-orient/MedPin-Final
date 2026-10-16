@@ -7,11 +7,12 @@ import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
+import '../../data/where.dart';
 import '../../widgets/clinic_map.dart';
 import '../../widgets/file_view.dart';
 import '../../widgets/mp.dart';
+import 'common_d11.dart';
 import 'common_d7.dart';
-import 'profile_leave.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Clinic-Editor.dc.html — "Location editor" (Edit location).
@@ -19,6 +20,12 @@ import '../../widgets/i18n.dart';
 /// without it a new location is added (POST /api/locations). Closures:
 /// POST / DELETE /api/locations/:id/closures; deactivate / activate:
 /// POST /api/locations/:id/deactivate (409 HAS_UPCOMING → tap again to confirm).
+/// Who may change what comes from the server (`can`: details / hours /
+/// closures, and `canEdit` per doctor): the owner and practice manager change
+/// everything, the front desk adds and removes closures, and the rest is
+/// shown read-only with one line saying who changes it. A doctor's row opens
+/// their hours here (PUT /api/locations/:id/doctors/:doctorId/hours), or the
+/// doctor's own Profile-Schedule for themselves.
 class ClinicEditorScreen extends StatefulWidget {
   const ClinicEditorScreen({super.key});
 
@@ -27,9 +34,10 @@ class ClinicEditorScreen extends StatefulWidget {
 }
 
 class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
-  // A form: don't refresh by itself while it's being filled in.
+  // A form for the owner / practice manager: don't refresh by itself while it's
+  // being filled in. Others only see it (and add closures): it follows changes live.
   @override
-  bool get autoRefresh => false;
+  bool get autoRefresh => !_manager;
 
   static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -51,9 +59,9 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
   String? _locationId;
 
   /// Closure ids, parallel to [_closures] (live); closures added to a new
-  /// location ({reason, startDate, endDate}) are posted after it is created.
+  /// location ({reason, startDate, endDate, allDay, fromMin, toMin}) are posted after it is created.
   final _closureIds = <String?>[];
-  final _pendingClosures = <Map<String, String?>>[];
+  final _pendingClosures = <Map<String, Object?>>[];
 
   /// Opening / closing minute per day (live).
   final _mins = [for (var i = 0; i < 7; i++) (540, 1200)];
@@ -83,6 +91,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
         _closures.clear();
         _closureIds.clear();
         _doctorsLive = const [];
+        _doctorMaps = const [];
         for (var i = 0; i < 7; i++) {
           _open[i] = i < 6;
           _mins[i] = (540, 1200);
@@ -111,12 +120,13 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     }
     _closures
       ..clear()
-      ..addAll([for (final c in l.list('closures')) (_closureLabel(c), c.str('reason', 'Closed all day'))]);
+      ..addAll([for (final c in l.list('closures')) (_closureLabel(c), _closureNote(c))]);
     _closureIds
       ..clear()
       ..addAll([for (final c in l.list('closures')) c.str('id')]);
+    _doctorMaps = l.list('doctors');
     _doctorsLive = [
-      for (final d in l.list('doctors'))
+      for (final d in _doctorMaps)
         (F.initials(d.str('name')), d.str('name'), _weekLine(d.list('week'))),
     ];
     _confirmDeactivate = false;
@@ -132,6 +142,13 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     final end = d7Date(b).replaceFirst(',', '');
     final start = a.month == b.month && a.year == b.year ? d7DayShort(a).substring(0, d7DayShort(a).lastIndexOf(' ')) : d7Date(a).replaceFirst(',', '');
     return '$start – $end';
+  }
+
+  /// 'Durga Puja · closed all day', 'Staff meeting · 2:00 – 4:00 PM' (part of the day).
+  static String _closureNote(Map<String, dynamic> c) {
+    final reason = c.str('reason', 'Closed all day');
+    if (c['allDay'] != false || c['fromMin'] == null || c['toMin'] == null) return reason;
+    return '$reason · ${d7Range(c.numOr('fromMin'), c.numOr('toMin'))}';
   }
 
   /// 'Mon–Sat · 9:00 AM – 1:00 PM', 'Tue · Thu · 5:00 – 8:00 PM'.
@@ -154,6 +171,9 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
   }
 
   List<(String, String, String)>? _doctorsLive;
+
+  /// The doctors' rows as the server sent them (photo, week, isMe, canEdit).
+  List<Map<String, dynamic>> _doctorMaps = const [];
 
   List<(String, String, String)> get _doctorRows => _doctorsLive ?? _doctors;
 
@@ -220,8 +240,27 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
   /// A link MedPin made from the pin (not one the clinic pasted).
   static bool _isPinLink(String url) => url.contains('/maps/search/?api=1&query=');
 
-  /// Clinic details are the owner's (the API refuses others); preview edits freely.
-  bool get _canEdit => !isLive || Session.I.isOwner;
+  /// What the server says this person may change here (GET /api/locations/:id → can).
+  Map<String, dynamic> get _can => data?.obj('can') ?? const {};
+
+  /// Owners and practice managers run the clinic (manageClinic).
+  static bool get _manager => Session.I.isOwner || Session.I.role == 'practice_manager';
+
+  /// Details, letterhead, map and weekly hours; preview edits freely.
+  bool get _canEdit => !isLive || _isNew ? (!isLive || _manager) : (_can.isEmpty ? _manager : _can['details'] == true);
+
+  /// Holidays & closures (the front desk keeps them too).
+  bool get _canClosures => !isLive || _isNew ? (!isLive || _manager) : (_can.isEmpty ? _manager || Session.I.can('closures') : _can['closures'] == true);
+
+  /// One honest line about what this person can't change (null: they can change everything).
+  String? get _lockNote {
+    if (_canEdit) return null;
+    final n = _can['note'];
+    if (n is String && n.isNotEmpty) return n;
+    return _canClosures
+        ? 'You can add and remove holidays and closures. Details and weekly hours are changed by the owner or practice manager.'
+        : 'Only the owner or practice manager can change these details. Ask them if something needs updating.';
+  }
 
   Future<void> _save() async {
     if (isLive) {
@@ -252,12 +291,22 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
         if (_locationId != null) return Api.I.patch('/api/locations/$_locationId', body);
         final created = (await Api.I.post('/api/locations', body) as Map).cast<String, dynamic>();
         for (final c in _pendingClosures) {
-          await Api.I.post('/api/locations/${created.str('id')}/closures', {'startDate': c['startDate'], 'endDate': c['endDate'], 'reason': c['reason']});
+          await Api.I.post('/api/locations/${created.str('id')}/closures', c);
         }
         return created;
       });
       if (ok == null || !mounted) return;
-      toast(context, _locationId == null ? 'Location added' : 'Location saved');
+      // Visits already booked outside new hours stay; the desk was told to move them.
+      final outside = ok is Map ? (ok['outsideHours'] as num?)?.toInt() ?? 0 : 0;
+      toast(
+        context,
+        _locationId == null
+            ? 'Location added'
+            : outside == 0
+                ? 'Location saved'
+                : tr(context, outside == 1 ? 'Location saved · 1 booked visit is outside the new hours' : 'Location saved · #1 booked visits are outside the new hours')
+                    .replaceFirst('#1', '$outside'),
+      );
       Nav.back(context);
       return;
     }
@@ -278,17 +327,13 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     });
   }
 
-  /// Reason and first / last day (Leave and holidays' form). Patients already
-  /// booked on those days are told by the server.
+  /// Dates, all day or part of the day, and the reason. Patients already
+  /// booked then are told by the server (and the desk moves their visits).
   Future<void> _addClosure() async {
-    final r = await pickTimeOff(context, holiday: true, locations: const []);
+    final r = await openSheet<Map<String, Object?>>(context, (_) => _ClosureSheet(locationId: isLive ? _locationId : null));
     if (r == null || !mounted) return;
     if (isLive && _locationId != null) {
-      final ok = await runAction(
-        context,
-        () => Api.I.post('/api/locations/$_locationId/closures', {'startDate': r['startDate'], 'endDate': r['endDate'], 'reason': r['reason']}),
-        busy: _busy,
-      );
+      final ok = await runAction(context, () => Api.I.post('/api/locations/$_locationId/closures', r), busy: _busy);
       if (ok is! Map || !mounted) return;
       final told = (ok['patientsTold'] as num?)?.toInt() ?? 0;
       toast(context, told == 0 ? 'Closure added' : 'Closure added · ${told == 1 ? '1 patient told' : '$told patients told'}');
@@ -297,7 +342,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     }
     if (isLive) _pendingClosures.add(r);
     setState(() {
-      _closures.add((_closureLabel({'startDate': r['startDate'], 'endDate': r['endDate']}), r['reason'] ?? 'Closed all day'));
+      _closures.add((_closureLabel({'startDate': r['startDate'], 'endDate': r['endDate']}), _closureNote(r.cast<String, dynamic>())));
       _closureIds.add(null);
     });
   }
@@ -308,7 +353,8 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
     if (id != null) {
       final ok = await runAction(context, () => Api.I.delete('/api/locations/$_locationId/closures/$id'), busy: _busy);
       if (ok == null || !mounted) return;
-      toast(context, 'Closure removed');
+      final told = ok is Map ? (ok['patientsTold'] as num?)?.toInt() ?? 0 : 0;
+      toast(context, told == 0 ? 'Closure removed' : tr(context, 'Closure removed · #1 booked patients told their visit stands').replaceFirst('#1', '$told'));
       reload(quiet: true);
       return;
     }
@@ -318,6 +364,41 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
       if (isLive && i >= 0 && i < _pendingClosures.length) _pendingClosures.removeAt(i);
       _closures.remove(c);
     });
+  }
+
+  /// A doctor's row: their own hours open Profile-Schedule; anyone else's open
+  /// here — editable when the server says so, read-only otherwise.
+  Future<void> _openDoctor(int i) async {
+    final d = isLive && i < _doctorMaps.length ? _doctorMaps[i] : null;
+    if (d == null || d['isMe'] == true) {
+      await Nav.go(context, 'Profile-Schedule', args: _locationId == null ? null : {'locationId': _locationId});
+      if (mounted && isLive) reload(quiet: true);
+      return;
+    }
+    final week = await openSheet<List<List<(int, int)>>>(
+      context,
+      (_) => _DoctorHoursSheet(doctor: d, place: _name.text.trim(), editable: d['canEdit'] == true),
+    );
+    if (week == null || !mounted || _locationId == null) return;
+    final body = {
+      'week': [
+        for (var k = 0; k < 7; k++)
+          {
+            'weekday': d7Weekdays[k],
+            'sessions': [for (final (a, b) in week[k]) {'startMin': a, 'endMin': b}],
+          },
+      ],
+    };
+    final ok = await runAction(context, () => Api.I.put('/api/locations/$_locationId/doctors/${d.str('doctorId')}/hours', body), busy: _busy);
+    if (ok is! Map || !mounted) return;
+    final outside = (ok['outsideHours'] as num?)?.toInt() ?? 0;
+    toast(
+      context,
+      outside == 0
+          ? 'Hours saved'
+          : tr(context, outside == 1 ? 'Hours saved · 1 booked visit is outside them' : 'Hours saved · #1 booked visits are outside them').replaceFirst('#1', '$outside'),
+    );
+    reload(quiet: true);
   }
 
   bool get _inactive => data?.str('status') == 'inactive';
@@ -401,8 +482,8 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         gap: 16,
         children: [
-          // Only the owner changes clinic details; others see them read-only.
-          if (!_canEdit)
+          // Who changes what: anything this person can't change is read-only, said in one line.
+          if (_lockNote != null)
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(color: MP.primarySoft, borderRadius: BorderRadius.circular(14)),
@@ -411,14 +492,16 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                 children: [
                   const Ico(I.lock, size: 18, color: MP.primary),
                   const Gap(10),
-                  Expanded(child: Text('Only the clinic owner can change these details. Ask them if something needs updating.', style: tx(14, c: MP.ink2, h: 1.4))),
+                  Expanded(child: Text(_lockNote!, style: tx(14, c: MP.ink2, h: 1.4))),
                 ],
               ),
             ),
           IgnorePointer(
             ignoring: !_canEdit,
-            child: VGap(gap: 16, children: [_details(), _letterhead(), _mapLink(), _weeklyHours(), _closuresCard(), _perDoctor()]),
+            child: VGap(gap: 16, children: [_details(), _letterhead(), _mapLink(), _weeklyHours()]),
           ),
+          IgnorePointer(ignoring: !_canClosures, child: _closuresCard()),
+          _perDoctor(),
           if (_canEdit) Padding(padding: const EdgeInsets.only(top: 8), child: MpButton(_isNew ? 'Add location' : 'Save changes', onTap: _save)),
           if (!_isNew && _canEdit) Padding(
             padding: const EdgeInsets.only(top: 16),
@@ -464,6 +547,11 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
               onChanged: _canEdit ? (_) => _onAddressTyped() : null,
             ),
           ),
+          if (_canEdit)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: UseHereLink(onPlace: _useHere),
+            ),
           D7Labeled('Clinic phone', child: D7Field(controller: _phone, tab: true, keyboard: TextInputType.phone)),
         ],
       ),
@@ -550,11 +638,12 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  D7Btn(
-                    'Replace',
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    onTap: _replaceLogo,
-                  ),
+                  if (_canEdit)
+                    D7Btn(
+                      'Replace',
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      onTap: _replaceLogo,
+                    ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -601,6 +690,22 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
         ],
       ),
     );
+  }
+
+  /// "Use current location": the address where the phone is, and the map pin there.
+  void _useHere(Map<String, dynamic> place) {
+    _addrTimer?.cancel();
+    setState(() {
+      final line = addressLine(place, typed: _address.text);
+      if (line.isNotEmpty) _address.text = line;
+      final lat = place['lat'], lng = place['lng'];
+      if (lat is num && lng is num) {
+        _pinAt = (lat: lat.toDouble(), lng: lng.toDouble());
+        if (_isPinLink(_mapUrl.text)) _mapUrl.clear();
+      }
+      _addrNote = 'Address and map pin set to where you are';
+      _addrNoteBad = false;
+    });
   }
 
   /// Typed address → pin, a moment after typing stops.
@@ -729,7 +834,7 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                 excludeSemantics: true,
                 label: open ? 'Edit ${_days[i]} hours, ${_ranges[i]}' : '${_days[i]}, closed',
                 child: Tap(
-                  onTap: () => _editHours(i),
+                  onTap: _canEdit ? () => _editHours(i) : null,
                   radius: 8,
                   child: SizedBox(
                     height: 48,
@@ -749,7 +854,11 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
             const SizedBox(width: 12),
             Semantics(
               label: 'Open on ${_days[i]}',
-              child: MpSwitch(value: open, onChanged: (v) => setState(() => _open[i] = v)),
+              enabled: _canEdit,
+              child: Opacity(
+                opacity: _canEdit ? 1 : 0.45,
+                child: MpSwitch(value: open, onChanged: _canEdit ? (v) => setState(() => _open[i] = v) : null),
+              ),
             ),
           ],
         ),
@@ -763,6 +872,11 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Padding(padding: EdgeInsets.only(bottom: 8), child: D7Title('Holidays & closures')),
+          if (_closures.isEmpty)
+            D7Ruled(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Text('No holidays or closures coming up', style: tx(14, c: MP.ink2)),
+            ),
           for (final c in _closures)
             D7Ruled(
               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -778,9 +892,9 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  if (_canClosures) const SizedBox(width: 12),
                   // 44×44 with CSS margin-right -10px: takes 34px in the row.
-                  SizedBox(
+                  if (_canClosures) SizedBox(
                     width: 34,
                     height: 44,
                     child: OverflowBox(
@@ -799,13 +913,14 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
                 ],
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: D7Btn('Add closure', icon: I.plus, iconSize: 20, padding: EdgeInsets.zero, onTap: _addClosure),
+          if (_canClosures)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: D7Btn('Add closure', icon: I.plus, iconSize: 20, padding: EdgeInsets.zero, onTap: _addClosure),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -825,15 +940,15 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Text('No doctors practise here yet', style: tx(14, c: MP.ink2)),
             ),
-          for (final d in _doctorRows)
+          for (final (i, d) in _doctorRows.indexed)
             Tap(
-              onTap: () => Nav.go(context, 'Profile-Schedule', args: _locationId == null ? null : {'locationId': _locationId}),
+              onTap: () => _openDoctor(i),
               radius: 12,
               child: D7Ruled(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 child: Row(
                   children: [
-                    MpAvatar(d.$1, size: 40, fontSize: 14),
+                    MpAvatar(d.$1, size: 40, fontSize: 14, photo: i < _doctorMaps.length ? _doctorMaps[i]['photo'] as String? : null),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -864,9 +979,13 @@ class _ClinicEditorScreenState extends State<ClinicEditorScreen> with LiveData {
 
 /// Opening hours for one weekday (opened from its hours row).
 class _HoursSheet extends StatefulWidget {
-  const _HoursSheet({required this.day, required this.range});
+  const _HoursSheet({required this.day, required this.range, this.subtitle = 'When patients can book at this location', this.removable = false});
   final String day;
   final String range;
+  final String subtitle;
+
+  /// Shows "Remove these hours" (resolves with '').
+  final bool removable;
 
   @override
   State<_HoursSheet> createState() => _HoursSheetState();
@@ -874,7 +993,7 @@ class _HoursSheet extends StatefulWidget {
 
 class _HoursSheetState extends State<_HoursSheet> {
   /// Half-hour steps, 6:00 AM – 11:00 PM.
-  static final _options = [for (var m = 6 * 60; m <= 23 * 60; m += 30) _label(m)];
+  static final _options = _halfHours;
 
   late String _from = _pick(widget.range.split(' – ').first, '9:00 AM');
   late String _to = _pick(widget.range.split(' – ').last, '8:00 PM');
@@ -900,7 +1019,7 @@ class _HoursSheetState extends State<_HoursSheet> {
   Widget build(BuildContext context) {
     return MpSheet(
       title: '${widget.day} hours',
-      subtitle: 'When patients can book at this location',
+      subtitle: widget.subtitle,
       showClose: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -929,6 +1048,10 @@ class _HoursSheetState extends State<_HoursSheet> {
           ),
           const SizedBox(height: 24),
           MpButton('Save hours', onTap: _done),
+          if (widget.removable) ...[
+            const SizedBox(height: 12),
+            MpButton('Remove these hours', kind: MpBtn.dangerSoft, height: 48, onTap: () => Navigator.pop(context, '')),
+          ],
         ],
       ),
     );
@@ -952,4 +1075,285 @@ class _Checker extends CustomPainter {
 
   @override
   bool shouldRepaint(_Checker old) => false;
+}
+
+/// Half-hour times, 6:00 AM – 11:00 PM ("9:00 AM").
+final _halfHours = [for (var m = 6 * 60; m <= 23 * 60; m += 30) _HoursSheetState._label(m)];
+
+String _ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// "Add closure": first and last day, all day or part of the day, and the
+/// reason. Live, shows how many booked patients will be told (GET
+/// /api/locations/:id/closures/preview). Resolves with the POST body.
+class _ClosureSheet extends StatefulWidget {
+  /// The saved location (live); null for a new location or the design preview.
+  final String? locationId;
+  const _ClosureSheet({this.locationId});
+
+  @override
+  State<_ClosureSheet> createState() => _ClosureSheetState();
+}
+
+class _ClosureSheetState extends State<_ClosureSheet> {
+  final _reason = TextEditingController();
+  late DateTime _from = _today;
+  late DateTime _to = _today;
+  bool _allDay = true;
+  String _closedFrom = '2:00 PM';
+  String _openAgain = '6:00 PM';
+
+  /// Booked patients the closure touches (null: not known yet).
+  int? _booked;
+  Timer? _timer;
+
+  static DateTime get _today {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _count();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _reason.dispose();
+    super.dispose();
+  }
+
+  Map<String, Object?> get _body => {
+        'startDate': _ymd(_from),
+        'endDate': _ymd(_to),
+        'allDay': _allDay,
+        if (!_allDay) 'fromMin': d7ParseTime(_closedFrom),
+        if (!_allDay) 'toMin': d7ParseTime(_openAgain),
+      };
+
+  /// Asks the server, a moment after the choice settles, who is booked then.
+  void _count() {
+    final id = widget.locationId;
+    if (id == null) return;
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 300), () async {
+      if (!_allDay && _halfHours.indexOf(_openAgain) <= _halfHours.indexOf(_closedFrom)) {
+        if (mounted) setState(() => _booked = null);
+        return;
+      }
+      try {
+        final r = await Api.I.get('/api/locations/$id/closures/preview', query: _body);
+        if (mounted) setState(() => _booked = ((r as Map)['booked'] as num?)?.toInt());
+      } catch (_) {
+        if (mounted) setState(() => _booked = null);
+      }
+    });
+  }
+
+  void _changed(VoidCallback f) {
+    setState(f);
+    _count();
+  }
+
+  Future<void> _pick(bool first) async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: first ? _from : (_to.isBefore(_from) ? _from : _to),
+      firstDate: first ? _today : _from,
+      lastDate: DateTime(_today.year + 2, 12, 31),
+      helpText: first ? 'Closed from' : 'Closed until',
+    );
+    if (d == null || !mounted) return;
+    _changed(() {
+      if (first) {
+        _from = d;
+        if (_to.isBefore(d)) _to = d;
+      } else {
+        _to = d;
+      }
+    });
+  }
+
+  void _done() {
+    if (!_allDay && _halfHours.indexOf(_openAgain) <= _halfHours.indexOf(_closedFrom)) {
+      return toast(context, 'Choose an end time after the start time');
+    }
+    final reason = _reason.text.trim();
+    Navigator.pop(context, <String, Object?>{..._body, 'reason': reason.isEmpty ? (_allDay ? 'Closed all day' : 'Closed part of the day') : reason});
+  }
+
+  String? get _bookedLine {
+    final n = _booked;
+    if (n == null) return null;
+    if (n == 0) return 'No patients are booked then';
+    return n == 1 ? '1 booked patient will be told to choose another time' : '$n booked patients will be told to choose another time';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final days = _to.difference(_from).inDays + 1;
+    return MpSheet(
+      title: 'Add closure',
+      subtitle: 'No bookings at this location then, for every doctor',
+      showClose: true,
+      child: VGap(
+        gap: 16,
+        children: [
+          MpInput(label: 'Reason', hint: 'e.g. Durga Puja, staff training', controller: _reason, autofocus: true),
+          D11Group('Dates', [
+            D11Row('From', value: F.dayMonth(_from), onTap: () => _pick(true)),
+            D11Row('Until', value: F.dayMonth(_to), sub: days == 1 ? '1 day' : '$days days', onTap: () => _pick(false)),
+          ]),
+          MpSegmented(
+            options: const ['All day', 'Part of the day'],
+            index: _allDay ? 0 : 1,
+            onChanged: (i) => _changed(() => _allDay = i == 0),
+          ),
+          if (!_allDay)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: MpSelect(label: 'Closed from', value: _closedFrom, options: _halfHours, onChanged: (v) => _changed(() => _closedFrom = v))),
+                const SizedBox(width: 12),
+                Expanded(child: MpSelect(label: 'Open again at', value: _openAgain, options: _halfHours, onChanged: (v) => _changed(() => _openAgain = v))),
+              ],
+            ),
+          if (_bookedLine != null)
+            Semantics(
+              liveRegion: true,
+              child: Text(_bookedLine!, style: tx(14, c: (_booked ?? 0) > 0 ? MP.amber : MP.ink2, h: 1.45)),
+            ),
+          MpButton('Add closure', onTap: _done),
+        ],
+      ),
+    );
+  }
+}
+
+/// A doctor's hours at this location, day by day (a day can have more than
+/// one session). Editable for the doctor's assistant, the practice manager
+/// and the owner; read-only for others, saying who changes them. Resolves
+/// with the new week (Mon … Sun sessions) to save, or null.
+class _DoctorHoursSheet extends StatefulWidget {
+  final Map<String, dynamic> doctor;
+  final String place;
+  final bool editable;
+  const _DoctorHoursSheet({required this.doctor, required this.place, required this.editable});
+
+  @override
+  State<_DoctorHoursSheet> createState() => _DoctorHoursSheetState();
+}
+
+class _DoctorHoursSheetState extends State<_DoctorHoursSheet> {
+  static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  late final List<List<(int, int)>> _week = [
+    for (final wd in d7Weekdays)
+      [
+        for (final x in (widget.doctor.list('week').where((w) => w['weekday'] == wd).firstOrNull?.list('sessions') ?? const <Map<String, dynamic>>[]))
+          (x.numOr('startMin').toInt(), x.numOr('endMin').toInt()),
+      ]..sort((a, b) => a.$1.compareTo(b.$1)),
+  ];
+  bool _dirty = false;
+
+  static String _range((int, int) s) => '${d7Minutes(s.$1)} – ${d7Minutes(s.$2)}';
+
+  /// Edits (or with [at] null, adds) one session on day [d].
+  Future<void> _edit(int d, [int? at]) async {
+    final current = at == null ? (_week[d].isEmpty ? '9:00 AM – 1:00 PM' : '5:00 PM – 8:00 PM') : _range(_week[d][at]);
+    final r = await openSheet<String>(
+      context,
+      (_) => _HoursSheet(day: _days[d], range: current, subtitle: widget.doctor.str('name'), removable: at != null),
+    );
+    if (r == null || !mounted) return;
+    final next = [..._week[d]];
+    if (at != null) next.removeAt(at);
+    if (r.isNotEmpty) {
+      final parts = r.split(' – ');
+      final a = d7ParseTime(parts.first), b = d7ParseTime(parts.last);
+      if (a == null || b == null) return;
+      if (next.any((s) => a < s.$2 && b > s.$1)) return toast(context, 'These hours overlap another session that day');
+      next.add((a, b));
+      next.sort((x, y) => x.$1.compareTo(y.$1));
+    }
+    setState(() {
+      _week[d] = next;
+      _dirty = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = widget.doctor.str('name', 'The doctor');
+    return MpSheet(
+      title: name,
+      subtitle: widget.place.isEmpty
+          ? "Hours here, within the clinic's weekly hours"
+          : tr(context, "Hours at #1, within the clinic's weekly hours").replaceFirst('#1', widget.place),
+      showClose: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var d = 0; d < 7; d++)
+            D7Ruled(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Row(
+                  children: [
+                    SizedBox(width: 44, child: Text(_days[d], style: tx(15, w: w600))),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _week[d].isEmpty
+                          ? Text('Off', style: tx(15, c: MP.ink3))
+                          : Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                for (var k = 0; k < _week[d].length; k++)
+                                  Semantics(
+                                    button: widget.editable,
+                                    label: widget.editable ? 'Edit ${_days[d]} ${_range(_week[d][k])}' : '${_days[d]} ${_range(_week[d][k])}',
+                                    excludeSemantics: true,
+                                    child: Tap(
+                                      onTap: widget.editable ? () => _edit(d, k) : null,
+                                      radius: 8,
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                      child: Text(_range(_week[d][k]), style: tx(15, c: MP.ink, tab: true)),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                    ),
+                    if (widget.editable && _week[d].length < 3)
+                      MpIconButton(I.plus, label: 'Add hours on ${_days[d]}', color: MP.primary, iconSize: 20, onTap: () => _edit(d)),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
+          if (widget.editable)
+            MpButton(
+              'Save hours',
+              onTap: _dirty ? () => Navigator.pop(context, _week) : () => Navigator.pop(context),
+            )
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(padding: EdgeInsets.only(top: 2), child: Ico(I.lock, size: 16, color: MP.ink3)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    tr(context, 'Only #1, the owner or the practice manager can change these hours.').replaceFirst('#1', name),
+                    style: tx(14, c: MP.ink2, h: 1.45),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
 }

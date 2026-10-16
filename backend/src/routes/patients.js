@@ -322,10 +322,44 @@ async function recordVitals(req, patient, body) {
   return vitals;
 }
 
-r.post('/patients/:id/vitals', async (req, res) => {
+// Who may take vitals: the doctor, front desk, assistants, managers, dieticians
+// (models/practice.js VITALS_ROLES); owners always.
+r.post('/patients/:id/vitals', need('vitals'), async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
-  const vitals = await recordVitals(req, patient, req.body);
+  const body = { ...req.body };
+  const isId = (x) => /^[0-9a-f]{24}$/i.test(String(x || ''));
+  // The visit they're for: the one named (if it's this patient's, here), else the
+  // patient's visit here today (with the doctor / arrived first). None: a reading on its own.
+  let appt = isId(body.appointmentId)
+    ? await M.Appointment.findOne({ _id: body.appointmentId, practiceId: req.practiceId, patientId: patient._id })
+    : null;
+  let consult = isId(body.consultationId)
+    ? await M.Consultation.findOne({ _id: body.consultationId, practiceId: req.practiceId, patientId: patient._id })
+    : null;
+  if (!appt && !consult) {
+    const order = ['in_consultation', 'waiting', 'confirmed', 'booked'];
+    const todays = await M.Appointment.find({ practiceId: req.practiceId, patientId: patient._id, date: T.dayStart(), status: { $in: order } });
+    appt = todays.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.startAt - b.startAt)[0] || null;
+  }
+  if (!appt && consult?.appointmentId) appt = await M.Appointment.findById(consult.appointmentId);
+  // The doctor's open consultation for that visit uses them (Consult-Vitals shows them filled in).
+  if (appt && !consult) consult = await M.Consultation.findOne({ appointmentId: appt._id, status: 'draft' }).sort({ startedAt: -1 });
+  body.appointmentId = appt?._id;
+  body.consultationId = consult?._id;
+  if (!body.appointmentId) delete body.appointmentId;
+  if (!body.consultationId) delete body.consultationId;
+  const vitals = await recordVitals(req, patient, body);
+  if (consult && consult.status === 'draft') {
+    consult.vitalsId = vitals._id;
+    await consult.save();
+  }
   await checkReading(vitals, patient).catch(() => {});
+  // The doctor's queue / consultation and the desk's lists show them at once (silent push).
+  (async () => {
+    const { signal, practiceStaff, DESK_ROLES } = require('../services/notify');
+    const desk = appt ? await practiceStaff(req.practiceId, { roles: DESK_ROLES, locationId: appt.locationId }) : [];
+    await signal([appt?.doctorId, consult?.doctorId, ...desk, patient.userId], { type: 'vitals_recorded', patientId: patient._id });
+  })().catch((err) => console.warn('[vitals signal]', err.message));
   res.status(201).json(vitals);
 });
 

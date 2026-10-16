@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import '../core/nav.dart';
 import 'api.dart';
 import 'nav_counts.dart';
+import 'notify_route.dart';
 import 'config.dart';
 import 'device_sync.dart';
 import 'live.dart';
@@ -148,8 +149,13 @@ class Push {
     // Patients open patient-app screens only, staff only staff screens.
     final isPatient = Session.I.landing == 'Main';
     if (isPatient != (spec.panel == 'patient')) return;
-    final args = {for (final e in data.entries) if (!const {'screen', 'type', 'notificationId'}.contains(e.key)) e.key: e.value};
-    Nav.go(ctx, screen, args: args.isEmpty ? null : args);
+    final args = {for (final e in data.entries) if (!const {'screen', 'type', 'notificationId', 'practiceId'}.contains(e.key)) e.key: e.value};
+    if (isPatient) {
+      Nav.go(ctx, screen, args: args.isEmpty ? null : args);
+      return;
+    }
+    // Staff: to that clinic first (staff in two practices), then a screen this role can open.
+    openStaffNotification(ctx, screen: screen, type: data['type']?.toString() ?? '', params: args, practiceId: data['practiceId']?.toString());
   }
 
   /// Called once the first screen after sign-in is showing.

@@ -16,6 +16,8 @@ import 'package:medpin_app/screens/staff/staff_book.dart';
 /// confirmed visit.
 void main() {
   final calls = <(String, String, Object?)>[];
+  // The newer server: doctors this person covers, the patient's story, the days.
+  var smart = false;
 
   setUpAll(() {
     Nav.registry = screenRegistry;
@@ -25,6 +27,7 @@ void main() {
 
   setUp(() {
     calls.clear();
+    smart = false;
     Session.I
       ..accessToken = 'a'
       ..refreshToken = 'r'
@@ -72,6 +75,45 @@ void main() {
                   {'time': '9:30 AM', 'startAt': '${key}T04:00:00.000Z', 'available': true},
                 ]
               : [],
+        };
+      } else if (smart && p == '/api/appointments/booking/doctors') {
+        out = {
+          'items': [
+            {'userId': 'd1', 'name': 'Dr. Arjun Sen', 'locations': [{'id': 'l1', 'name': 'Salt Lake'}]},
+            {'userId': 'd2', 'name': 'Dr. Rina Mitra', 'photo': null, 'locations': [{'id': 'l1', 'name': 'Salt Lake'}]},
+          ],
+        };
+      } else if (smart && p == '/api/appointments/booking/context') {
+        out = {
+          'patient': {'id': 'pt1', 'name': 'Amit Pal', 'conditions': ['Type 2 diabetes'], 'photo': 'https://example.com/amit.jpg'},
+          'lastVisits': [
+            {'doctorId': 'd2', 'doctorName': 'Dr. Rina Mitra', 'at': '2026-09-01T05:00:00.000Z', 'reason': 'Sugar review'},
+          ],
+          'followUps': [
+            {'doctorId': 'd2', 'doctorName': 'Dr. Rina Mitra', 'dueDate': '${key}T00:00:00.000+05:30', 'status': 'not_booked', 'adviceText': 'Review with HbA1c'},
+          ],
+          'pendingTests': [
+            {'name': 'HbA1c', 'doctorId': 'd2'},
+          ],
+          'reportsIn': [],
+          'upcoming': [
+            {'id': 'a9', 'startAt': '${key}T11:30:00.000Z', 'status': 'confirmed', 'doctorId': 'd1', 'doctorName': 'Dr. Arjun Sen', 'locationName': 'Salt Lake'},
+          ],
+        };
+      } else if (smart && p == '/api/appointments/booking/days') {
+        out = {
+          'windowDays': 14,
+          'lastDate': key,
+          'days': [
+            {'date': key, 'open': true, 'free': 1, 'total': 2},
+          ],
+        };
+      } else if (smart && p == '/api/doctors/d2/slots') {
+        out = {
+          'open': req.url.queryParameters['date'] == key,
+          'slots': [
+            {'time': '9:30 AM', 'startAt': '${key}T04:00:00.000Z', 'available': true},
+          ],
         };
       } else if (p == '/api/appointments' && req.method == 'POST') {
         return http.Response(jsonEncode({'id': 'a1', 'status': 'confirmed', 'token': '04'}), 201, headers: json);
@@ -126,6 +168,38 @@ void main() {
     expect((body['startAt'] as String).endsWith('T04:00:00.000Z'), isTrue);
     expect(find.text('Visit confirmed'), findsOneWidget);
     expect(find.textContaining('Token 04'), findsOneWidget);
+    await t.tap(find.text('Done'));
+    await settle(t);
+    await t.pumpWidget(const SizedBox());
+    await t.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets("smart: the patient's doctor, visit type, reasons to tap, a visit already booked", (t) async {
+    smart = true;
+    t.view.physicalSize = const Size(390, 1800);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(MaterialApp(theme: medpinTheme(), navigatorKey: Nav.key, home: const StaffBookScreen()));
+    await settle(t);
+    // Two doctors here: a choice (no doctor picked for a desk member yet).
+    expect(find.text('Dr. Sen'), findsOneWidget);
+    expect(find.text('Dr. Mitra'), findsOneWidget);
+    await t.tap(find.text('Amit Pal'));
+    await settle(t);
+    // Due back with Dr. Mitra for a follow-up: she is chosen and it's a Follow-up.
+    expect(find.textContaining('Review with HbA1c'), findsWidgets);
+    expect(find.textContaining('Already booked'), findsOneWidget, reason: 'the visit with Dr. Sen shows');
+    // Reasons from the story: the advice, the condition.
+    await t.tap(find.text('Sugar review').first);
+    await t.pump();
+    await t.tap(find.text('9:30 AM'));
+    await t.pump();
+    await t.tap(find.text('Book confirmed visit'));
+    await settle(t);
+    final body = calls.lastWhere((c) => c.$1 == 'POST' && c.$2 == '/api/appointments').$3 as Map;
+    expect(body['doctorId'], 'd2');
+    expect(body['visitType'], 'follow_up');
+    expect(body['reason'], 'Sugar review');
     await t.tap(find.text('Done'));
     await settle(t);
     await t.pumpWidget(const SizedBox());

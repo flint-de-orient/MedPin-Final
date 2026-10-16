@@ -281,7 +281,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       }
       out.add(mine
           ? _meta('$time · ${m.str('deliveryStatus') == 'seen' ? 'Seen' : 'Sent'}', right: true)
-          : _meta('${_sender(m)} · $time'));
+          : _clinicMeta(m, time));
     }
     // Not yet confirmed by the server: shown at once.
     for (final m in _outbox) {
@@ -545,6 +545,30 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
 
   Widget _day(String label, EdgeInsets padding) =>
       Center(child: Padding(padding: padding, child: Text(label, style: tx(12, w: w600, c: MP.ink3))));
+
+  /// Under a clinic message: who sent it and their role ("Tania · Front desk · 9:14 AM" —
+  /// the doctor and the desk share this chat), and "Automatic message" for notes the clinic's
+  /// system sent from their account (visit booked, fee paid).
+  Widget _clinicMeta(Map<String, dynamic> m, String time) {
+    final role = m.str('senderRole');
+    final line = [
+      tr(context, _sender(m)),
+      if (role.isNotEmpty && role != 'doctor' && m.str('senderRoleLabel').isNotEmpty) tr(context, m.str('senderRoleLabel')),
+      if (time.isNotEmpty) time,
+    ].join(' · ');
+    if (m['auto'] != true) return _meta(line);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(line, style: tx(12, c: MP.ink3)),
+          Text('Automatic message', style: tx(12, c: MP.ink3)),
+        ],
+      ),
+    );
+  }
 
   Widget _meta(String text, {bool right = false}) => Align(
     alignment: right ? Alignment.centerRight : Alignment.centerLeft,

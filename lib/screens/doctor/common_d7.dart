@@ -378,7 +378,7 @@ class D7ConsultTop extends StatelessWidget {
         children: [
           Row(
             children: [
-              MpAvatar(F.initials(name), size: 40, fontSize: 14),
+              MpAvatar(F.initials(name), size: 40, fontSize: 14, photo: p?['photo'] is String && '${p!['photo']}'.isNotEmpty ? '${p['photo']}' : null),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

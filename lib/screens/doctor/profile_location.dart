@@ -5,6 +5,7 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
+import '../../data/where.dart';
 import '../../widgets/clinic_map.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
@@ -96,6 +97,23 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
 
   String _field(String sample, String key, [String? fallbackKey]) =>
       data == null ? sample : _loc.str(key, fallbackKey == null ? '' : _loc.str(fallbackKey));
+
+  /// "Use current location": the address where the phone is (a house number
+  /// already typed stays), its area, city and pincode, and the map pin there.
+  void _useHere(Map<String, dynamic> place) {
+    final typed = '${_changes['address'] ?? _addressFromMap ?? _field('', 'address')}';
+    final line = addressLine(place, typed: typed);
+    setState(() {
+      if (line.isNotEmpty) {
+        _addressFromMap = line;
+        _changes['address'] = line;
+      }
+      for (final k in const ['area', 'city', 'pincode']) {
+        if ('${place[k] ?? ''}'.trim().isNotEmpty) _changes[k] = '${place[k]}'.trim();
+      }
+      if (place['lat'] is num && place['lng'] is num) _here = (lat: (place['lat'] as num).toDouble(), lng: (place['lng'] as num).toDouble());
+    });
+  }
 
   static String _feeText(num fee) => fee <= 0 ? 'Free' : '₹${F.count(fee)}';
 
@@ -269,8 +287,8 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
             children: [
               const D4CardTitle('Address'),
               ClinicMap(
-                lat: _savedPin?.$1 ?? (data == null ? 22.5867 : null),
-                lng: _savedPin?.$2 ?? (data == null ? 88.4171 : null),
+                lat: _here?.lat ?? _savedPin?.$1 ?? (data == null ? 22.5867 : null),
+                lng: _here?.lng ?? _savedPin?.$2 ?? (data == null ? 88.4171 : null),
                 label: _name,
                 onChanged: (p) => setState(() => _here = (lat: p.lat, lng: p.lng)),
                 autoFillAddress: data != null && _field('', 'address').isEmpty && _addressFromMap == null,
@@ -305,6 +323,7 @@ class _ProfileLocationScreenState extends State<ProfileLocationScreen> with Live
                     _addressFromMap ?? _field('DD-24, Sector 1, Salt Lake, Kolkata 700064', 'address'),
                     onChanged: (v) => _changes['address'] = v.trim(),
                   ),
+                  Align(alignment: Alignment.centerLeft, child: UseHereLink(onPlace: _useHere)),
                   D4Field(
                     'Landmark',
                     _field('Opposite Tank 9, near City Centre', 'landmark'),

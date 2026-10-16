@@ -14,8 +14,11 @@ async function slotsFor({ doctorId, locationId, day, now = new Date() }) {
   const location = await M.Location.findById(locationId);
   if (!location || location.status !== 'active') return { open: false, reason: 'location_inactive', slots: [] };
   const end = T.addDays(d, 1);
-  const closure = await M.LocationClosure.findOne({ locationId, startDate: { $lt: end }, endDate: { $gte: d } });
+  // Closed all day, or for part of the day (those slots go; the rest stay bookable).
+  const closures = await M.LocationClosure.find({ locationId, startDate: { $lt: end }, endDate: { $gte: d } });
+  const closure = closures.find((c) => c.allDay !== false || c.fromMin == null || c.toMin == null);
   if (closure) return { open: false, reason: 'closed', note: closure.reason, slots: [] };
+  const partClosed = (t, len) => closures.some((c) => t < c.toMin && t + len > c.fromMin);
   const leave = await M.DoctorLeave.findOne({
     doctorId, cancelledAt: null, startDate: { $lt: end }, endDate: { $gte: d },
     $or: [{ locationId: null }, { locationId }],
@@ -33,7 +36,9 @@ async function slotsFor({ doctorId, locationId, day, now = new Date() }) {
   const closes = hours?.closesAt ?? 24 * 60;
   const minutes = [];
   for (const { startMin, endMin } of sessions) {
-    for (let t = Math.max(startMin, opens); t + s.slotLengthMin <= Math.min(endMin, closes); t += step) minutes.push(t);
+    for (let t = Math.max(startMin, opens); t + s.slotLengthMin <= Math.min(endMin, closes); t += step) {
+      if (!partClosed(t, s.slotLengthMin)) minutes.push(t);
+    }
   }
   if (!minutes.length) return { open: false, reason: 'clinic_closed', slots: [] };
   const walkIns = new Set(minutes.slice(Math.max(0, minutes.length - (s.walkInPlaces || 0))));
@@ -106,6 +111,24 @@ async function visitLine(appt) {
 
 const note = (...args) => require('./care').chatNote(...args);
 
+/**
+ * A visit was booked, moved, cancelled or changed status: a silent push to the
+ * doctor, the desk at that location and the patient, so every open list
+ * (Appointments, Today, the queue, the patient's visit) refreshes at once.
+ */
+async function visitsChanged(appt) {
+  try {
+    const { signal, DESK_ROLES } = require('./notify');
+    const [desk, patient] = await Promise.all([
+      practiceStaff(appt.practiceId, { roles: DESK_ROLES, locationId: appt.locationId }),
+      M.Patient.findById(appt.patientId, 'userId'),
+    ]);
+    await signal([appt.doctorId, ...desk, patient?.userId], { type: 'visits_changed', appointmentId: appt._id });
+  } catch (err) {
+    console.warn('[visits changed]', err.message);
+  }
+}
+
 async function book(input) {
   const {
     practiceId, locationId, doctorId, patientId, visitType = 'follow_up', mode = 'in_clinic', reason,
@@ -158,8 +181,9 @@ async function book(input) {
   }
   if (chat && !walkIn) {
     const feeText = fee > 0 ? ` Fee ₹${fee} — pay online in the app or at the clinic.` : '';
-    await note({ practiceId, patientId }, `${confirmed ? 'Visit confirmed' : 'Visit booked'}: ${await visitLine(appt)}.${feeText}`, confirmed ? 'visit_confirmed' : 'visit_booked');
+    await note({ practiceId, patientId, locationId, doctorId, by: bookedBy }, `${confirmed ? 'Visit confirmed' : 'Visit booked'}: ${await visitLine(appt)}.${feeText}`, confirmed ? 'visit_confirmed' : 'visit_booked');
   }
+  await visitsChanged(appt);
   return appt;
 }
 
@@ -194,18 +218,21 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
     appt.cancelledAt = now;
     appt.cancelledBy = cancelledBy || 'desk';
     appt.cancelReason = reason;
+    if (by) appt.cancelledByUser = by;
     await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { status: 'waived' });
     // Nothing to pay for a cancelled visit. Already paid: online → refunded at once;
     // at the desk → "refund due" until handed back (Fees / the visit's row).
     if (appt.feeStatus === 'pending') appt.feeStatus = 'waived';
   }
   await appt.save();
-  if (to === 'confirmed') await note(appt, `Visit confirmed: ${await visitLine(appt)}.`, 'visit_confirmed');
-  if (to === 'missed') await note(appt, `We missed you at your visit (${await visitLine(appt)}). Book a new time from your doctor's page whenever you're ready.`, 'visit_missed');
+  // Signed by whoever did it (`by`), else the desk at that visit's branch (care.chatNote).
+  const noteCtx = { practiceId: appt.practiceId, patientId: appt.patientId, locationId: appt.locationId, doctorId: appt.doctorId, by };
+  if (to === 'confirmed') await note(noteCtx, `Visit confirmed: ${await visitLine(appt)}.`, 'visit_confirmed');
+  if (to === 'missed') await note(noteCtx, `We missed you at your visit (${await visitLine(appt)}). Book a new time from your doctor's page whenever you're ready.`, 'visit_missed');
   if (to === 'cancelled') {
     await M.FollowUp.updateMany({ appointmentId: appt._id, status: 'booked' }, { status: 'not_booked', $unset: { appointmentId: 1 } });
-    const by = appt.cancelledBy === 'patient' ? 'You cancelled' : 'The clinic cancelled';
-    await note(appt, `${by} your visit (${await visitLine(appt)})${appt.cancelReason ? ` — ${appt.cancelReason}` : ''}.`, 'visit_cancelled');
+    const who = appt.cancelledBy === 'patient' ? 'You cancelled' : 'The clinic cancelled';
+    await note(noteCtx, `${who} your visit (${await visitLine(appt)})${appt.cancelReason ? ` — ${appt.cancelReason}` : ''}.`, 'visit_cancelled');
   }
   if (to === 'cancelled' && appt.feeStatus === 'paid') {
     const { refundFee } = require('./payments');
@@ -248,7 +275,7 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
       });
     }
     if (appt.cancelledBy === 'patient') {
-      const desk = await practiceStaff(appt.practiceId, { roles: require('./notify').DESK_ROLES, locationId: appt.locationId });
+      const desk = await require('./notify').deskFor(appt.practiceId, { locationId: appt.locationId, doctorId: appt.doctorId });
       const who = await M.Patient.findById(appt.patientId, 'name');
       await notify([...desk, appt.doctorId], {
         type: 'appointment_cancelled', practiceId: appt.practiceId, title: `${who?.name || 'A patient'} cancelled a visit`,
@@ -256,6 +283,7 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
       });
     }
   }
+  await visitsChanged(appt);
   return appt;
 }
 
@@ -295,7 +323,8 @@ async function reschedule(appt, startAt, by, locationId) {
     }
   }
   await M.FollowUp.updateMany({ appointmentId: appt._id }, { appointmentId: next._id });
-  await note(next, `Visit moved to ${await visitLine(next)}${next.feeStatus === 'paid' ? '. Your payment moves with it.' : '.'}`, 'visit_rescheduled');
+  await note({ practiceId: next.practiceId, patientId: next.patientId, locationId: next.locationId, doctorId: next.doctorId, by }, `Visit moved to ${await visitLine(next)}${next.feeStatus === 'paid' ? '. Your payment moves with it.' : '.'}`, 'visit_rescheduled');
+  await visitsChanged(next);
   return next;
 }
 
@@ -305,4 +334,4 @@ async function getAppointment(id, practiceId) {
   return appt;
 }
 
-module.exports = { slotsFor, nextFreeSlot, nextToken, book, transition, reschedule, getAppointment, feeFor, TRANSITIONS, ACTIVE };
+module.exports = { slotsFor, nextFreeSlot, nextToken, book, transition, reschedule, getAppointment, feeFor, visitsChanged, TRANSITIONS, ACTIVE };

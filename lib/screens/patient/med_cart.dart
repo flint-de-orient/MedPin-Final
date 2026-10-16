@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/where.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
@@ -501,6 +502,21 @@ class _AddressSheetState extends State<_AddressSheet> {
     super.dispose();
   }
 
+  /// "Use current location": the street where the phone is (a flat / house
+  /// number already typed stays) and its area, city and PIN code.
+  void _useHere(Map<String, dynamic> place) {
+    String v(String k) => '${place[k] ?? ''}'.trim();
+    // The street only (area, city and PIN have their own fields), else the whole line.
+    final line = addressLine({'label': v('road').isNotEmpty ? v('road') : v('label')}, typed: _line.text);
+    setState(() {
+      if (line.isNotEmpty) _line.text = line;
+      if (v('area').isNotEmpty) _area.text = v('area');
+      if (v('city').isNotEmpty) _city.text = v('city');
+      final pin = v('pincode').replaceAll(RegExp(r'\D'), '');
+      if (pin.length == 6) _pin.text = pin;
+    });
+  }
+
   Future<void> _save() async {
     if (_line.text.trim().isEmpty) {
       toast(context, 'Enter the address');
@@ -582,7 +598,8 @@ class _AddressSheetState extends State<_AddressSheet> {
             MpInput(label: 'Name', hint: 'Home, Office…', controller: _label),
             const Gap(12),
             MpInput(label: 'Address', hint: 'Flat, building, street', controller: _line),
-            const Gap(12),
+            Align(alignment: Alignment.centerLeft, child: UseHereLink(onPlace: _useHere)),
+            const Gap(4),
             Row(
               children: [
                 Expanded(child: MpInput(label: 'Area', controller: _area)),

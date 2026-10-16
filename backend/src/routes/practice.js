@@ -3,7 +3,7 @@ const { Router } = require('express');
 const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
-const { requireAuth, staff, ownerOnly, ownPractice } = require('../middleware/auth');
+const { requireAuth, staff, need, ownerOnly, ownPractice } = require('../middleware/auth');
 const { pick, badRequest, notFound, conflict, forbidden, normalizePhone, isId, escapeRegex } = require('../lib/http');
 const storage = require('../services/storage');
 const { issueOtp, checkOtp } = require('./auth');
@@ -154,6 +154,54 @@ const ownLocation = async (req) => {
   return loc;
 };
 
+// ── Who may change what at a location (permissions in models/practice.js) ──
+const hasPerm = (req, perm) => Boolean(req.member?.isOwner || req.perms?.[perm]);
+const coversLocation = (member, locationId) => Boolean(member?.isOwner || member?.allLocations
+  || (member?.locationIds || []).some((l) => String(l._id || l) === String(locationId)));
+
+/** Edit flags for the Clinic-Editor, with one honest line about what the caller can't change. */
+function clinicAccess(req, loc) {
+  const managed = loc.status === 'view_only' || Boolean(loc.managedByPracticeId);
+  const details = !managed && hasPerm(req, 'manageClinic');
+  const closures = !managed && (details || (hasPerm(req, 'closures') && coversLocation(req.member, loc._id)));
+  let note = null;
+  if (managed) note = 'View only · managed by another organisation.';
+  else if (!details && closures) note = 'You can add and remove holidays and closures. Details and weekly hours are changed by the owner or practice manager.';
+  else if (!details) note = 'Only the owner or practice manager can change these details. Ask them if something needs updating.';
+  return { details, hours: details, closures, note };
+}
+
+/** May the caller change this doctor's hours? Their own always; others with doctorHours (an assistant: their doctors only). */
+function mayChangeHours(req, doctorId) {
+  if (String(doctorId) === String(req.user._id)) return true;
+  if (!hasPerm(req, 'doctorHours')) return false;
+  if (req.member.role === 'doctor_assistant' && !req.member.isOwner) return (req.member.assistsDoctorIds || []).some((d) => String(d) === String(doctorId));
+  return true;
+}
+
+/** Everyone working at this location sees the change at once (open screens reload). */
+async function signalLocation(req, loc) {
+  const { signal, practiceStaff } = require('../services/notify');
+  await signal(await practiceStaff(req.practiceId, { locationId: loc._id }), { type: 'location_changed', practiceId: req.practiceId, locationId: loc._id });
+}
+
+/** Booked visits from now on at this location that fall outside its weekly hours (or a doctor's new week). */
+async function visitsOutsideHours(loc, { doctorId, week } = {}) {
+  const q = { locationId: loc._id, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] }, ...(doctorId ? { doctorId } : {}) };
+  const rows = await M.Appointment.find(q, 'startAt mode').limit(2000);
+  return rows.filter((a) => {
+    if (a.mode && a.mode !== 'in_clinic') return false;
+    const wd = T.weekday(a.startAt);
+    const m = T.minuteOfDay(a.startAt);
+    if (week) {
+      const day = week.find((w) => w.weekday === wd);
+      return !(day?.sessions || []).some((x) => m >= x.startMin && m < x.endMin);
+    }
+    const h = (loc.weeklyHours || []).find((x) => x.weekday === wd);
+    return h ? h.isOpen === false || m < h.opensAt || m >= h.closesAt : false;
+  }).length;
+}
+
 r.get('/locations/:id', async (req, res) => {
   const loc = ownPractice(req, await M.Location.findById(req.params.id), 'Location');
   // A logo uploaded before backgrounds were removed is cleaned once, here.
@@ -174,10 +222,17 @@ r.get('/locations/:id', async (req, res) => {
   const upcomingBookings = await M.Appointment.countDocuments({ locationId: loc._id, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } });
   const json = loc.toJSON();
   if (json.letterhead?.logo) json.letterhead.logo = storage.withUrl(loc.letterhead.logo);
-  res.json({ ...json, upcomingBookings, closures, doctors: doctors.map((d) => ({ doctorId: d.doctorId?._id, name: d.doctorId?.name, week: d.schedule.week })) });
+  const photos = await require('../services/photos').doctorPhotos(doctors.map((d) => d.doctorId?._id).filter(Boolean));
+  res.json({
+    ...json, upcomingBookings, closures, can: clinicAccess(req, loc),
+    doctors: doctors.filter((d) => d.doctorId).map((d) => ({
+      doctorId: d.doctorId._id, name: d.doctorId.name, week: d.schedule.week, slotLengthMin: d.schedule.slotLengthMin,
+      photo: photos.get(String(d.doctorId._id)) || null, isMe: String(d.doctorId._id) === String(req.user._id), canEdit: mayChangeHours(req, d.doctorId._id),
+    })),
+  });
 });
 
-r.patch('/locations/:id', ownerOnly, async (req, res) => {
+r.patch('/locations/:id', need('manageClinic'), async (req, res) => {
   const loc = await ownLocation(req);
   const body = pick(req.body, LOCATION_FIELDS);
   validHours(body.weeklyHours);
@@ -189,7 +244,15 @@ r.patch('/locations/:id', ownerOnly, async (req, res) => {
   if (req.body.hfrId && !/^IN\d{10}$/.test(String(req.body.hfrId).trim())) throw badRequest('Enter the HFR ID like IN1910000123', 'BAD_HFR_ID');
   if (req.body.hfrId) loc.hfrLinkedAt = new Date();
   await loc.save();
-  res.json(loc);
+  await signalLocation(req, loc);
+  // New weekly hours: visits already booked outside them stay, and the desk is told to move them.
+  const outsideHours = body.weeklyHours ? await visitsOutsideHours(loc) : 0;
+  if (outsideHours) {
+    const { notify, deskOrDoctors } = require('../services/notify');
+    const desk = (await deskOrDoctors(req.practiceId, { locationId: loc._id })).filter((id) => String(id) !== String(req.user._id));
+    await notify(desk, { type: 'clinic_hours_changed', practiceId: req.practiceId, title: `${outsideHours} visit${outsideHours === 1 ? '' : 's'} outside the new hours`, body: `${loc.shortName || loc.name} · weekly hours changed`, screen: 'Appointments' });
+  }
+  res.json({ ...loc.toJSON(), outsideHours });
 });
 
 /** Saves a logo with its plain background made transparent (the original is kept beside it). */
@@ -202,7 +265,7 @@ async function saveLogo(file) {
 }
 
 // Letterhead logo printed on this location's prescriptions.
-r.post('/locations/:id/logo', ownerOnly, upload.single('file'), async (req, res) => {
+r.post('/locations/:id/logo', need('manageClinic'), upload.single('file'), async (req, res) => {
   const loc = await ownLocation(req);
   if (!req.file) throw badRequest('Choose a logo file');
   if (!/^image\/(png|jpeg|webp)$/.test(req.file.mimetype)) throw badRequest('Use a PNG, JPG or WebP image');
@@ -248,39 +311,149 @@ r.post('/locations/:id/activate', ownerOnly, async (req, res) => {
   res.json(loc);
 });
 
-r.post('/locations/:id/closures', ownerOnly, async (req, res) => {
-  const loc = await ownLocation(req);
-  if (!req.body.startDate) throw badRequest('Choose the date', 'DATE_REQUIRED');
-  const startDate = T.parseDay(req.body.startDate);
-  const endDate = T.parseDay(req.body.endDate || req.body.startDate);
+/** Closure dates and times from a request (all day, or part of the day: fromMin–toMin). */
+function closureFields(body) {
+  if (!body.startDate) throw badRequest('Choose the date', 'DATE_REQUIRED');
+  const startDate = T.parseDay(body.startDate);
+  const endDate = T.parseDay(body.endDate || body.startDate);
   if (endDate < startDate) throw badRequest('End date is before the start date');
   if (endDate < T.dayStart()) throw badRequest('Choose today or a later date', 'DATE_PAST');
-  const reason = String(req.body.reason || '').trim() || 'Closed all day';
-  const closure = await M.LocationClosure.create({ locationId: loc._id, startDate, endDate, reason, createdBy: req.user._id });
-  // Patients already booked on those days are told, like a doctor's leave; the desk moves the visits.
-  const affected = await M.Appointment.find({
-    locationId: loc._id, startAt: { $gte: startDate, $lt: T.addDays(endDate, 1) }, status: { $in: ['booked', 'confirmed'] },
+  const allDay = !(body.allDay === false || body.allDay === 'false');
+  if (allDay) return { startDate, endDate, allDay, fromMin: undefined, toMin: undefined };
+  const fromMin = Number(body.fromMin);
+  const toMin = Number(body.toMin);
+  if (!Number.isInteger(fromMin) || !Number.isInteger(toMin) || fromMin < 0 || toMin > 1440 || toMin <= fromMin) {
+    throw badRequest('Choose an end time after the start time', 'BAD_HOURS');
+  }
+  return { startDate, endDate, allDay, fromMin, toMin };
+}
+
+/** Booked visits a closure touches (on those days; for part of the day, in those hours). */
+async function closureVisits(loc, c) {
+  const rows = await M.Appointment.find({
+    locationId: loc._id, startAt: { $gte: c.startDate, $lt: T.addDays(c.endDate, 1) }, status: { $in: ['booked', 'confirmed'] },
   }).populate('patientId', 'userId');
+  if (c.allDay !== false) return rows;
+  return rows.filter((a) => {
+    const m = T.minuteOfDay(a.startAt);
+    return m >= c.fromMin && m < c.toMin;
+  });
+}
+
+/** "2026-10-20 to 2026-10-23 · 2:00 PM – 6:00 PM" */
+const closureWhen = (c) => `${T.dayKey(c.startDate)}${+c.endDate !== +c.startDate ? ` to ${T.dayKey(c.endDate)}` : ''}${c.allDay === false ? ` · ${T.fmtTime(c.fromMin)} – ${T.fmtTime(c.toMin)}` : ''}`;
+
+/** The location, when the caller may change its closures (manageClinic, or closures at a location they cover). */
+async function closureLocation(req) {
+  const loc = await ownLocation(req);
+  if (!clinicAccess(req, loc).closures) throw forbidden("Your role doesn't allow changing this location's closures", 'PERMISSION_REQUIRED');
+  return loc;
+}
+
+// Before adding: how many booked patients would be told.
+r.get('/locations/:id/closures/preview', async (req, res) => {
+  const loc = await closureLocation(req);
+  const c = closureFields(req.query);
+  res.json({ booked: (await closureVisits(loc, c)).length });
+});
+
+r.post('/locations/:id/closures', async (req, res) => {
+  const loc = await closureLocation(req);
+  const c = closureFields(req.body);
+  const overlapping = await M.LocationClosure.find({ locationId: loc._id, startDate: { $lte: c.endDate }, endDate: { $gte: c.startDate } });
+  const clash = overlapping.some((o) => o.allDay !== false || c.allDay || (c.fromMin < o.toMin && c.toMin > o.fromMin));
+  if (clash) throw conflict('This location is already closed then. Remove that closure first, or choose other dates.', 'CLOSURE_OVERLAP');
+  const reason = String(req.body.reason || '').trim().slice(0, 120) || (c.allDay ? 'Closed all day' : 'Closed part of the day');
+  const closure = await M.LocationClosure.create({ locationId: loc._id, ...c, reason, createdBy: req.user._id });
+  // Patients already booked then are told, like a doctor's leave; the desk moves the visits.
+  const affected = await closureVisits(loc, c);
   const { notify, deskOrDoctors } = require('../services/notify');
   const where = loc.shortName || loc.name;
-  const days = `${T.dayKey(startDate)}${+endDate !== +startDate ? ` to ${T.dayKey(endDate)}` : ''}`;
+  const days = closureWhen(c);
   await notify(affected.map((a) => a.patientId?.userId).filter(Boolean), {
     type: 'clinic_closed', practiceId: req.practiceId, title: `${where} is closed`,
     body: `${days} · ${reason}. Please choose another time for your visit.`, screen: 'Patient-Doctors', whatsapp: true,
   });
+  const notMe = (ids) => ids.filter((id) => String(id) !== String(req.user._id));
   if (affected.length) {
-    const desk = await deskOrDoctors(req.practiceId, { locationId: loc._id });
+    const desk = notMe(await deskOrDoctors(req.practiceId, { locationId: loc._id }));
     await notify(desk, { type: 'clinic_closed', practiceId: req.practiceId, title: `${affected.length} visit${affected.length === 1 ? '' : 's'} to move`, body: `${where} is closed ${days}`, screen: 'Appointments' });
   }
+  // The doctors who practise here: their sessions then are off.
+  const doctors = notMe(await M.DoctorLocation.find({ locationId: loc._id, status: 'active' }).distinct('doctorId'));
+  await notify(doctors, {
+    type: 'clinic_closed', practiceId: req.practiceId, title: `${where} closed · ${reason}`,
+    body: `${days} · added by ${req.user.name || 'the clinic'}`, screen: 'Profile-Schedule', params: { locationId: String(loc._id) },
+  });
   closure.patientsTold = affected.length;
   await closure.save();
+  await signalLocation(req, loc);
   res.status(201).json({ ...closure.toJSON(), patientsTold: affected.length });
 });
 
-r.delete('/locations/:id/closures/:closureId', ownerOnly, async (req, res) => {
+// Remove a closure: bookings open again; patients still booked then hear their visit stands.
+r.delete('/locations/:id/closures/:closureId', async (req, res) => {
+  const loc = await closureLocation(req);
+  if (!isId(req.params.closureId)) throw notFound('Closure');
+  const c = await M.LocationClosure.findOneAndDelete({ _id: req.params.closureId, locationId: loc._id });
+  if (!c) throw notFound('Closure');
+  let told = 0;
+  if (c.endDate >= T.dayStart()) {
+    const still = await closureVisits(loc, c);
+    const { notify } = require('../services/notify');
+    await notify(still.map((a) => a.patientId?.userId).filter(Boolean), {
+      type: 'clinic_reopened', practiceId: req.practiceId, title: `${loc.shortName || loc.name} is open again`,
+      body: `${closureWhen(c)} · your booked visit stands.`, screen: 'Patient-Doctors',
+    });
+    told = still.length;
+  }
+  await signalLocation(req, loc);
+  res.json({ ok: true, patientsTold: told });
+});
+
+// A doctor's hours at this location (Clinic-Editor → Per-doctor hours).
+r.put('/locations/:id/doctors/:doctorId/hours', async (req, res) => {
   const loc = await ownLocation(req);
-  await M.LocationClosure.deleteOne({ _id: req.params.closureId, locationId: loc._id });
-  res.json({ ok: true });
+  if (!isId(req.params.doctorId)) throw notFound('Doctor');
+  if (!mayChangeHours(req, req.params.doctorId)) throw forbidden('Only the doctor, the owner or the practice manager can change these hours', 'PERMISSION_REQUIRED');
+  const dl = await M.DoctorLocation.findOne({ doctorId: req.params.doctorId, locationId: loc._id, status: 'active' }).populate('doctorId', 'name');
+  if (!dl || !dl.doctorId) throw notFound("Doctor's hours here");
+  const given = Array.isArray(req.body.week) ? req.body.week : null;
+  if (!given) throw badRequest('Send the week', 'BAD_HOURS');
+  const week = E.WEEKDAYS.map((weekday) => {
+    const day = given.find((w) => w && w.weekday === weekday);
+    const sessions = (Array.isArray(day?.sessions) ? day.sessions : [])
+      .map((x) => ({ startMin: Number(x?.startMin), endMin: Number(x?.endMin) }))
+      .sort((a, b) => a.startMin - b.startMin);
+    sessions.forEach((x, i) => {
+      if (!Number.isInteger(x.startMin) || !Number.isInteger(x.endMin) || x.startMin < 0 || x.endMin > 1440 || x.endMin <= x.startMin) {
+        throw badRequest('Closing time must be after opening time', 'BAD_HOURS');
+      }
+      if (i && x.startMin < sessions[i - 1].endMin) throw badRequest('Two sessions on the same day overlap', 'BAD_HOURS');
+    });
+    return { weekday, sessions };
+  });
+  dl.schedule.week = week;
+  dl.markModified('schedule');
+  await dl.save();
+  const outsideHours = await visitsOutsideHours(loc, { doctorId: dl.doctorId._id, week });
+  const { notify, deskOrDoctors } = require('../services/notify');
+  const where = loc.shortName || loc.name;
+  if (String(dl.doctorId._id) !== String(req.user._id)) {
+    await notify([dl.doctorId._id], {
+      type: 'schedule_changed', practiceId: req.practiceId, title: `Your hours at ${where} changed`,
+      body: `Changed by ${req.user.name || 'the clinic'}`, screen: 'Profile-Schedule', params: { locationId: String(loc._id) },
+    });
+  }
+  if (outsideHours) {
+    const desk = (await deskOrDoctors(req.practiceId, { locationId: loc._id, doctorId: dl.doctorId._id })).filter((id) => String(id) !== String(req.user._id));
+    await notify(desk, {
+      type: 'schedule_changed', practiceId: req.practiceId, title: `${outsideHours} visit${outsideHours === 1 ? '' : 's'} outside ${dl.doctorId.name || 'the doctor'}'s new hours`,
+      body: where, screen: 'Appointments',
+    });
+  }
+  await signalLocation(req, loc);
+  res.json({ doctorId: dl.doctorId._id, week, outsideHours });
 });
 
 // ── Departments ──
@@ -479,16 +652,57 @@ r.get('/members', async (req, res) => {
     M.Member.find({ practiceId: req.practiceId, status: { $ne: 'removed' } }).populate(MEMBER_POPULATE),
     activeOwners(req.practiceId),
   ]);
-  res.json({ seats: await seats(req.practiceId), items: members.map((m) => memberView(m, req, owners)), meId: req.member._id });
+  // Everyone's profile photo (a doctor's public photo first) for the avatars.
+  const photos = await require('../services/photos').doctorPhotos(members.map((m) => m.userId?._id || m.userId));
+  const items = members.map((m) => ({ ...memberView(m, req, owners), photo: photos.get(String(m.userId?._id || m.userId)) || null }));
+  res.json({ seats: await seats(req.practiceId), items, meId: req.member._id });
 });
 
 r.get('/members/options', async (req, res) => res.json(await teamOptions(req.practiceId)));
+
+// Profile → Account / Clinic details: my own membership here — role, department,
+// the locations I cover with the doctors working at each, the doctors I work for
+// (an assistant: the ones they assist; others: the doctors at their locations),
+// when I joined and my permissions (the app says them in plain words).
+r.get('/members/me', async (req, res) => {
+  const m = await M.Member.findById(req.member._id).populate(MEMBER_POPULATE);
+  const everywhere = m.isOwner || m.allLocations;
+  const [practice, locs, owners] = await Promise.all([
+    M.Practice.findById(req.practiceId, 'name'),
+    M.Location.find({ practiceId: req.practiceId, status: 'active', ...(everywhere ? {} : { _id: { $in: (m.locationIds || []).map((l) => l._id || l) } }) }).sort({ name: 1 }),
+    activeOwners(req.practiceId),
+  ]);
+  const dls = await M.DoctorLocation.find({ locationId: { $in: locs.map((l) => l._id) }, status: 'active' }).populate('doctorId', 'name');
+  const assists = (m.assistsDoctorIds || []).filter((d) => d && d._id);
+  const photos = await require('../services/photos').doctorPhotos([...dls.map((d) => d.doctorId?._id), ...assists.map((d) => d._id)].filter(Boolean));
+  const doctor = (id, name) => ({ userId: id, name, photo: photos.get(String(id)) || null });
+  const at = (l) => {
+    const seen = new Set();
+    return dls.filter((d) => d.doctorId && String(d.locationId) === String(l._id) && !seen.has(String(d.doctorId._id)) && seen.add(String(d.doctorId._id)))
+      .map((d) => doctor(d.doctorId._id, d.doctorId.name));
+  };
+  const coverage = locs.map((l) => ({ id: l._id, name: l.name, shortName: l.shortName, address: l.address, doctors: at(l), can: clinicAccess(req, l) }));
+  const mine = (d) => String(d.userId) !== String(req.user._id);
+  const worksFor = m.role === 'doctor_assistant' && assists.length
+    ? assists.map((d) => doctor(d._id, d.name))
+    : [...new Map(coverage.flatMap((c) => c.doctors).filter(mine).map((d) => [String(d.userId), d])).values()];
+  res.json({
+    ...memberView(m, req, owners),
+    permissions: req.perms,
+    practice: { id: practice?._id, name: practice?.name },
+    allLocations: everywhere,
+    coverage,
+    worksFor,
+  });
+});
 
 r.get('/members/:id', async (req, res) => {
   if (!isId(req.params.id)) throw notFound('Member');
   const m = await M.Member.findOne({ _id: req.params.id, practiceId: req.practiceId }).populate(MEMBER_POPULATE);
   if (!m) throw notFound('Member');
-  res.json(memberView(m, req, await activeOwners(req.practiceId)));
+  const uid = m.userId?._id || m.userId;
+  const photo = uid ? (await require('../services/photos').doctorPhotos([uid])).get(String(uid)) || null : null;
+  res.json({ ...memberView(m, req, await activeOwners(req.practiceId)), photo });
 });
 
 /** An active or suspended member with this phone: no new code is sent for them. */

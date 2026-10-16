@@ -68,6 +68,28 @@ class _AuthClinicSetupScreenState extends State<AuthClinicSetupScreen> {
     super.dispose();
   }
 
+  /// "I'm at the clinic now": the pin, and the street, area, city and pincode
+  /// at that point filled into the fields still empty (what's typed stays).
+  Future<void> _pinPicked(({double lat, double lng}) p) async {
+    setState(() => _pinAt = p);
+    Map<String, dynamic>? place;
+    try {
+      final r = await Api.I.get('/api/geo/reverse', query: {'lat': '${p.lat}', 'lng': '${p.lng}'}) as Map;
+      place = (r['place'] as Map?)?.cast<String, dynamic>();
+    } catch (_) {
+      // Offline or the map lookup is busy: the pin alone is still saved.
+    }
+    if (!mounted || place == null) return;
+    String v(String k) => '${place![k] ?? ''}'.trim();
+    setState(() {
+      if (_address.text.trim().isEmpty) _address.text = v('road');
+      if (_area.text.trim().isEmpty) _area.text = v('area');
+      if (_city.text.trim().isEmpty) _city.text = v('city');
+      final pin = v('pincode').replaceAll(RegExp(r'\D'), '');
+      if (_pincode.text.trim().isEmpty && pin.length == 6) _pincode.text = pin;
+    });
+  }
+
   static int _minutes(String hhmm) {
     final p = hhmm.split(':');
     return int.parse(p[0]) * 60 + int.parse(p[1]);
@@ -197,7 +219,7 @@ class _AuthClinicSetupScreenState extends State<AuthClinicSetupScreen> {
                 Expanded(child: _field('Pincode', _pincode, keyboard: TextInputType.number, optional: true)),
               ],
             ),
-            UseHereRow(value: _pinAt, onPicked: (p) => setState(() => _pinAt = p)),
+            UseHereRow(value: _pinAt, onPicked: _pinPicked),
             const Gap(8),
             _field('Clinic phone', _clinicPhone, keyboard: TextInputType.phone, optional: true, prefix: '+91'),
             const Gap(8),

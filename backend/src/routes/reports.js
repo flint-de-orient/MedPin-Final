@@ -313,7 +313,7 @@ r.get('/reports/fees', async (req, res) => {
   const payments = await M.Payment.find({
     practiceId: req.practiceId, ...scope,
     $or: [{ status: 'paid', paidAt: { $gte: from, $lt: to } }, { status: 'pending', createdAt: { $gte: from, $lt: to } }],
-  }).populate('patientId', 'name').populate('locationId', 'name shortName').populate(withVisit).lean();
+  }).populate('patientId', 'name').populate('locationId', 'name shortName').populate(withVisit).populate('markedPaidBy', 'name').lean();
   const paid = payments.filter((p) => p.status === 'paid');
   const sumBy = (arr, key) => Object.entries(arr.reduce((acc, x) => { const k = key(x) || 'other'; acc[k] = (acc[k] || 0) + x.amount; return acc; }, {})).map(([k, amount]) => ({ key: k, amount }));
   const locOf = (l) => l?.shortName || l?.name;
@@ -333,7 +333,7 @@ r.get('/reports/fees', async (req, res) => {
     // Cancelled visits paid at the desk (or a failed online refund): money to give back.
     M.Payment.find({ practiceId: req.practiceId, status: 'paid', refundDue: true }).sort({ paidAt: -1 }).populate('patientId', 'name').populate('locationId', 'name shortName').populate(withVisit).lean(),
     // Given back in this period (online through Razorpay, or handed back at the desk).
-    M.Payment.find({ practiceId: req.practiceId, ...scope, status: 'refunded', refundedAt: { $gte: from, $lt: to } }).sort({ refundedAt: -1 }).populate('patientId', 'name').populate('locationId', 'name shortName').populate(withVisit).lean(),
+    M.Payment.find({ practiceId: req.practiceId, ...scope, status: 'refunded', refundedAt: { $gte: from, $lt: to } }).sort({ refundedAt: -1 }).populate('patientId', 'name').populate('locationId', 'name shortName').populate(withVisit).populate('refundedBy', 'name').lean(),
   ]);
   res.json({
     billed: billed.reduce((s, x) => s + x.amount, 0),
@@ -343,9 +343,9 @@ r.get('/reports/fees', async (req, res) => {
     billedByLocation: sumBy(billed.filter((x) => x.amount), (x) => x.loc),
     collectedByMethod: sumBy(paid, (p) => p.method),
     // Each fee collected: who, how (online / cash / UPI / card), when paid, where, for which visit.
-    collectedList: paid.sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt)).map((p) => ({ ...row(p), paidAt: p.paidAt, refundDue: Boolean(p.refundDue) })),
+    collectedList: paid.sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt)).map((p) => ({ ...row(p), paidAt: p.paidAt, refundDue: Boolean(p.refundDue), collectedBy: p.markedPaidBy?.name || null })),
     refundsDue: due.map((p) => ({ ...row(p), paidAt: p.paidAt, note: p.note })),
-    refunded: refunded.map((p) => ({ ...row(p), paidAt: p.paidAt, refundedAt: p.refundedAt })),
+    refunded: refunded.map((p) => ({ ...row(p), paidAt: p.paidAt, refundedAt: p.refundedAt, refundedBy: p.refundedBy?.name || null, refundReason: p.refundReason || null })),
     refundedAmount: refunded.reduce((s, p) => s + p.amount, 0),
     // Patients who chose "Pay at the clinic": the desk collects these.
     toCollectAtClinic: payments.filter((p) => p.status === 'pending' && p.appointmentId?.payAt === 'clinic').reduce((s, p) => s + p.amount, 0),

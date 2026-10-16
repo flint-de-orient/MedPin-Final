@@ -7,6 +7,7 @@ import '../../widgets/mp.dart';
 import 'appointments_manage.dart';
 import 'common_d7.dart';
 import '../../widgets/i18n.dart';
+import '../../widgets/visit_status.dart';
 
 /// Design: Appointments.dc.html — "Appointments".
 /// Live data: GET /api/appointments?view=today|upcoming|past and
@@ -21,7 +22,7 @@ class AppointmentsScreen extends StatefulWidget {
 
 /// A booking request that has no slot yet.
 class _Request {
-  const _Request(this.initials, this.name, this.when, this.reason, this.pref, {this.id, this.patientId});
+  const _Request(this.initials, this.name, this.when, this.reason, this.pref, {this.id, this.patientId, this.photo});
   final String initials;
   final String name;
   final String when;
@@ -31,10 +32,13 @@ class _Request {
   /// Live record ids (null in the design preview).
   final String? id;
   final String? patientId;
+
+  /// The patient's profile photo (live data only).
+  final String? photo;
 }
 
 class _Appt {
-  _Appt(this.day, this.time, this.name, this.where, this.status, {this.id, this.at});
+  _Appt(this.day, this.time, this.name, this.where, this.status, {this.id, this.at, this.raw});
   String day;
   String time;
   final String name;
@@ -44,6 +48,9 @@ class _Appt {
   /// Live appointment id and start (null in the design preview).
   final String? id;
   final DateTime? at;
+
+  /// The appointment as the server sent it (status, patient) — live only.
+  final Map<String, dynamic>? raw;
 }
 
 typedef _SheetResult = ({String action, String day, String time});
@@ -94,6 +101,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
       _statusLabels[a.str('status')] ?? a.str('status'),
       id: a.str('id'),
       at: at,
+      raw: a,
     );
   }
 
@@ -109,6 +117,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
       q.str('preferredTime', 'Any time'),
       id: q.str('id'),
       patientId: p['id'] == null ? null : p.str('id'),
+      photo: q.str('patientPhoto').isEmpty ? null : q.str('patientPhoto'),
     );
   }
 
@@ -277,6 +286,13 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
 
   final _busy = ValueNotifier(false);
 
+  /// The status can still move (not done, cancelled or moved).
+  bool _canChange(_Appt a) => isLive && a.raw != null && !const ['completed', 'cancelled', 'rescheduled'].contains(a.raw!.str('status'));
+
+  Future<void> _changeStatus(_Appt a) async {
+    if (await changeVisitStatus(context, appointmentId: a.id!, status: a.raw!.str('status'), patientName: a.name) && mounted) reload(quiet: true);
+  }
+
   @override
   void dispose() {
     _busy.dispose();
@@ -314,14 +330,20 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
               _ => const <String>[],
             };
     final st = data?.obj('today').obj('stats');
-    final stats =
-        st == null
-            ? [('$_booked', 'Booked'), ('${_requests.length}', 'Waiting'), ('$_freed', 'Freed up')]
-            : [
-              ('${st.numOr('booked')}', 'Booked'),
-              ('${st.numOr('waitingRequests', _requests.length)}', 'Waiting'),
-              ('${st.numOr('freedUp')}', 'Freed up'),
-            ];
+    // The counts follow the tab: Today; Today + Upcoming (the list shows both); Past.
+    Map<String, dynamic>? range(String k) => data?.obj(k)['rangeStats'] is Map ? data!.obj(k).obj('rangeStats') : null;
+    num sum(String key, List<String> tabs) => tabs.fold<num>(0, (n, k) => n + (range(k)?.numOr(key) ?? 0));
+    final hasRange = range('today') != null;
+    final waiting = '${st?.numOr('waitingRequests', _requests.length) ?? _requests.length}';
+    final stats = st == null
+        ? [('$_booked', 'Booked'), ('${_requests.length}', 'Waiting'), ('$_freed', 'Freed up')]
+        : !hasRange
+            ? [('${st.numOr('booked')}', 'Booked'), (waiting, 'Waiting'), ('${st.numOr('freedUp')}', 'Freed up')]
+            : switch (_range) {
+                0 => [('${sum('booked', ['today'])}', 'Booked'), (waiting, 'Waiting'), ('${sum('freedUp', ['today'])}', 'Freed up')],
+                1 => [('${sum('booked', ['today', 'upcoming'])}', 'Booked'), (waiting, 'Waiting'), ('${sum('freedUp', ['today', 'upcoming'])}', 'Freed up')],
+                _ => [('${sum('completed', ['past'])}', 'Done'), ('${sum('missed', ['past'])}', 'Missed'), ('${sum('freedUp', ['past'])}', 'Cancelled')],
+              };
 
     return MpPage(
       header: MpHeader(
@@ -500,7 +522,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
             radius: 12,
             child: Row(
               children: [
-                MpAvatar(q.initials, size: 40, fontSize: 14),
+                MpAvatar(q.initials, size: 40, fontSize: 14, photo: q.photo),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -601,11 +623,22 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
                 const SizedBox(height: 4),
                 Text(a.where, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(14, c: MP.ink2)),
                 const SizedBox(height: 6),
-                Container(
-                  height: 22,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(color: tone.$1, borderRadius: BorderRadius.circular(999)),
-                  child: Center(widthFactor: 1, child: Text(a.status, style: tx(12, w: w600, c: tone.$2))),
+                // Tap the status to change it (arrived, with doctor, done, missed, cancel).
+                Tap(
+                  onTap: _canChange(a) ? () => _changeStatus(a) : null,
+                  radius: 999,
+                  child: Container(
+                    height: 22,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(color: tone.$1, borderRadius: BorderRadius.circular(999)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(child: Text(a.status, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(12, w: w600, c: tone.$2))),
+                        if (_canChange(a)) ...[const SizedBox(width: 3), Ico(I.chevronDown, size: 12, color: tone.$2, stroke: 2.2)],
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

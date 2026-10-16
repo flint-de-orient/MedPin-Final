@@ -62,7 +62,8 @@ function hoursLine(location) {
 
 function qualificationsOf(doctor, lh) {
   const q = (doctor?.qualifications || []).map((x) => x.name).filter(Boolean);
-  return q.length ? q.join(', ') : doctor?.degreesSummary || lh?.tagline || '';
+  // The letterhead tagline ("Diabetes, thyroid and heart care") is the clinic's line, printed under its name — not degrees.
+  return q.length ? q.join(', ') : doctor?.degreesSummary || '';
 }
 
 function registrationOf(doctor, lh) {
@@ -121,6 +122,7 @@ async function drawPrescription({ rx, patient, doctor, location, vitals, complai
     const quals = qualificationsOf(doctor, lh);
     const reg = registrationOf(doctor, lh);
     const clinic = location?.name || practiceName || '';
+    const tagline = String(lh.tagline || '').trim();
     const video = mode === 'video';
 
     const img = (buf, x, y, opts) => {
@@ -158,8 +160,9 @@ async function drawPrescription({ rx, patient, doctor, location, vitals, complai
     const contact = [location?.phone || location?.patientPhone ? `Ph. ${location.phone || location.patientPhone}` : null, hoursLine(location)].filter(Boolean);
     doc.fontSize(8.5);
     const addrH = addr ? heightOf(doc, addr, { width: rightW }) : 0;
+    const tagH = tagline ? heightOf(doc, tagline, { width: rightW }) + 2 : 0;
     const leftH = nameH + 4 + qualH + (doctor?.headline ? 14 : 0) + (reg ? 14 : 0);
-    const rightH = 14 + addrH + contact.length * 12;
+    const rightH = 14 + tagH + addrH + contact.length * 12;
     const bandH = Math.max(tight ? 88 : 96, 24 + Math.max(leftH, rightH, 56) + (tight ? 12 : 18));
 
     // White letterhead: a blue bar on top and a blue rule under it. Clean in
@@ -182,6 +185,7 @@ async function drawPrescription({ rx, patient, doctor, location, vitals, complai
     const rx0 = M + W - rightW;
     let ry = 24;
     if (clinic) ry = text(clinic, rx0, ry, { size: 10.5, weight: 'bold', color: C.primaryDark, width: rightW, align: 'right' }) + 2;
+    if (tagline) ry = text(tagline, rx0, ry, { size: 8.5, weight: 'semi', color: C.primary, width: rightW, align: 'right' }) + 2;
     if (addr) ry = text(addr, rx0, ry, { size: 8.5, color: C.ink2, width: rightW, align: 'right' }) + 2;
     for (const c of contact) ry = text(c, rx0, ry, { size: 8.5, color: C.ink2, width: rightW, align: 'right' }) + 1;
 

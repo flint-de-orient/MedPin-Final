@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/config.dart';
+import '../../data/format.dart';
 import '../../data/nav_counts.dart';
+import '../../data/photo.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../../widgets/i18n.dart';
 
@@ -245,7 +248,13 @@ class D10StaffHeader extends StatelessWidget {
               child: Tap(
                 onTap: () => Nav.tab(context, 'Staff-Profile'),
                 radius: 999,
-                child: const MpAvatar('TG', size: 40, fontSize: 15),
+                // The signed-in person (their photo, else initials); follows a new photo or name at once.
+                child: AppMode.preview
+                    ? const MpAvatar('TG', size: 40, fontSize: 15)
+                    : ListenableBuilder(
+                        listenable: Session.I,
+                        builder: (_, _) => MpAvatar(F.initials(Session.I.name), size: 40, fontSize: 15, photo: myPhotoUrl),
+                      ),
               ),
             )),
           ],

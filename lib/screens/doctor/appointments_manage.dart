@@ -4,7 +4,11 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
+import '../../widgets/booking_calendar.dart';
+import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/visit_status.dart';
+import 'common_d6.dart';
 import 'common_d7.dart';
 import '../../widgets/i18n.dart';
 
@@ -14,6 +18,14 @@ import '../../widgets/i18n.dart';
 /// tapped row, or a waiting request with [assign] = true.
 ///
 /// Pops with `(action: 'reschedule' | 'assign' | 'book' | 'cancel', day:, time:)`.
+///
+/// An appointment opens on "Manage appointment": the patient (photo, name,
+/// phone), doctor, place, date and time, status and fee, and what can be done
+/// from where it is — Reschedule (date and time here, the patient is told, a
+/// payment moves with it), Change status (widgets/visit_status.dart), Collect
+/// the fee / Hand back a refund due (widgets/fee_actions.dart), Call, Message
+/// and Cancel visit (with the reason the patient is told). The server checks
+/// who may act on which visit (their locations / doctors).
 ///
 /// Live, the record comes from [appointmentId] (reschedule / cancel),
 /// [requestId] (assign a waiting request) or [patientId] (book a visit), or
@@ -52,8 +64,14 @@ class AppointmentsManageSheet extends StatefulWidget {
 
 class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with LiveData {
   /// How many days ahead to look for open sessions, and how many chips to show.
-  static const _lookAhead = 10;
-  static const _chips = 4;
+  static const _lookAhead = 14;
+  static const _chips = 10;
+
+  /// An appointment: the overview, or (after Reschedule) the date and time.
+  bool _rescheduling = false;
+
+  /// A day picked in "More dates" beyond the chips: (chip, long, slots).
+  Map<String, dynamic>? _extraDay;
 
   /// The branch chosen in the sheet (null: the default below).
   String? _pickedLoc;
@@ -120,7 +138,9 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
       locationId = null;
     }
     locationId ??= locations.firstOrNull?.str('id');
-    if (doctorId == null || locationId == null) {
+    // Manage appointment opens on the overview: times load once Reschedule is tapped.
+    final needSlots = mode != 'reschedule' || _rescheduling;
+    if (needSlots && (doctorId == null || locationId == null)) {
       throw const ApiException(400, 'NO_SCHEDULE', 'Set up a clinic schedule first');
     }
     final picked = locations.where((l) => l.str('id') == locationId).firstOrNull;
@@ -134,9 +154,9 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
       when = [day, place].where((s) => s.isNotEmpty).join(' · ');
     }
 
-    // The next days with free slots.
+    // The next days with free slots (past times today left out).
     final today = DateTime.now();
-    final days = [for (var i = 0; i < _lookAhead; i++) DateTime(today.year, today.month, today.day + i)];
+    final days = needSlots ? [for (var i = 0; i < _lookAhead; i++) DateTime(today.year, today.month, today.day + i)] : const <DateTime>[];
     final res = await Future.wait([
       for (final d in days)
         Api.I.get('/api/doctors/$doctorId/slots', query: {'locationId': locationId, 'date': d7Key(d)}),
@@ -144,7 +164,10 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
     final open = <Map<String, dynamic>>[];
     for (var i = 0; i < days.length && open.length < _chips; i++) {
       final s = (res[i] as Map).cast<String, dynamic>();
-      final slots = s.list('slots');
+      final slots = [
+        for (final x in s.list('slots'))
+          if ((F.date(x['startAt']) ?? today).isAfter(today)) x,
+      ];
       if (s['open'] != true || !slots.any((x) => x['available'] == true)) continue;
       final d = days[i];
       final short = d7DayShort(d);
@@ -167,6 +190,7 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
       'visitType': args['visitType'] ?? 'follow_up',
       'days': open,
       'prefers': mode == 'assign' ? when.replaceFirst('Requested: ', '') : '',
+      if (appt != null) 'appt': appt,
     };
   }
 
@@ -253,7 +277,12 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
   String get _doctor => data?.str('doctor') ?? widget.doctor;
   String get _when => data?.str('when') ?? widget.when;
 
-  List<Map<String, dynamic>> get _liveDays => data?.list('days') ?? const [];
+  List<Map<String, dynamic>> get _liveDays {
+    final days = data?.list('days') ?? const <Map<String, dynamic>>[];
+    final extra = _extraDay;
+    if (extra == null || days.any((d) => d.str('long') == extra.str('long'))) return days;
+    return [...days, extra];
+  }
 
   /// Chip label, long label.
   List<(String, String)> get _dateList =>
@@ -363,15 +392,281 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
 
   Future<void> _cancel() async {
     if (isLive) {
+      // The patient is told why (a quick reason, or one typed).
+      final reason = await askCancelReason(context, patientName: _name);
+      if (reason == null || !mounted) return;
       final ok = await runAction(
         context,
-        () => Api.I.post('/api/appointments/${data!.str('id')}/cancel', const {}),
+        () => Api.I.post('/api/appointments/${data!.str('id')}/cancel', {'reason': reason}),
         busy: _busy,
       );
       if (ok == null || !mounted) return;
     }
     toast(context, 'Appointment cancelled');
     Navigator.pop(context, (action: 'cancel', day: '', time: ''));
+  }
+
+  // ── Manage appointment (the overview) ──
+
+  /// An appointment's overview (not a request to assign, not choosing a new time).
+  bool get _overview => !_assign && !_rescheduling;
+
+  /// The appointment as the server sent it; the design's sample in the preview.
+  Map<String, dynamic> get _appt => data?.obj('appt') ??
+      {
+        'status': 'confirmed',
+        'startAt': null,
+        'token': '07',
+        'visitType': 'follow_up',
+        'reason': 'Sugar review',
+        'fee': 600,
+        'feeStatus': 'pending',
+        'payAt': 'clinic',
+        'payment': {'id': 'pay1', 'status': 'pending', 'amount': 600},
+        'patient': {'id': 'p1', 'name': widget.name, 'phone': '9830012345'},
+      };
+
+  String get _status => _appt.str('status');
+
+  /// Today or later (a past day's visit is marked missed, not cancelled).
+  bool get _notPast {
+    final at = F.date(_appt['startAt']);
+    if (at == null) return true;
+    final n = DateTime.now();
+    return !DateTime(at.year, at.month, at.day).isBefore(DateTime(n.year, n.month, n.day));
+  }
+
+  Future<void> _startReschedule() async {
+    setState(() {
+      _rescheduling = true;
+      _date = 0;
+      _slot = isLive ? null : _slot;
+    });
+    if (isLive) {
+      setState(() => _switching = true);
+      await reload(quiet: true);
+      if (mounted) setState(() => _switching = false);
+    }
+  }
+
+  Future<void> _changeStatus() async {
+    if (!isLive) return toast(context, 'Status: Arrived');
+    final id = data!.str('id');
+    if (await changeVisitStatus(context, appointmentId: id, status: _status, patientName: _name) && mounted) {
+      // Cancelled from there: nothing more to manage.
+      final now = (await Api.I.get('/api/appointments/$id').catchError((_) => const <String, dynamic>{}) as Map?) ?? const {};
+      if (!mounted) return;
+      if (now['status'] == 'cancelled') {
+        Navigator.pop(context, (action: 'cancel', day: '', time: ''));
+        return;
+      }
+      reload(quiet: true);
+    }
+  }
+
+  Future<void> _collect(VisitFee fee) async {
+    if (!isLive) return toast(context, tr(context, '₹#1 collected').replaceFirst('#1', '${fee.amount}'));
+    if (await collectFee(context, fee, patientName: _name) && mounted) reload(quiet: true);
+  }
+
+  Future<void> _handBack(VisitFee fee) async {
+    if (!isLive) return toast(context, 'Refund recorded');
+    if (await handBackFee(context, fee) && mounted) reload(quiet: true);
+  }
+
+  /// "More dates": any day of the doctor's at this place, then its times.
+  Future<void> _moreDates() async {
+    final d = data;
+    if (d == null) return;
+    final picked = await pickBookingDay(context, doctorId: d.str('doctorId'), locationId: d.str('locationId'));
+    if (picked == null || !mounted) return;
+    final short = d7DayShort(picked);
+    final i = _liveDays.indexWhere((x) => x.str('long') == short);
+    if (i >= 0) return _pickDate(i);
+    try {
+      final s = (await Api.I.get('/api/doctors/${d.str('doctorId')}/slots', query: {'locationId': d.str('locationId'), 'date': d7Key(picked)}) as Map).cast<String, dynamic>();
+      if (!mounted) return;
+      final now = DateTime.now();
+      setState(() {
+        _extraDay = {
+          'chip': short,
+          'long': short,
+          'slots': [
+            for (final x in s.list('slots'))
+              if ((F.date(x['startAt']) ?? now).isAfter(now)) x,
+          ],
+        };
+        _date = _liveDays.length - 1;
+        _slot = null;
+      });
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.message);
+    }
+  }
+
+  static (Color, Color) _tone(String status) => switch (status) {
+        'waiting' => (MP.amberSoft, MP.amber),
+        'in_consultation' => (MP.primarySoft, MP.primary),
+        'completed' => (MP.greenSoft, MP.green),
+        'missed' => (MP.redSoft, MP.red),
+        _ => (MP.fill, MP.ink2),
+      };
+
+  Widget _overviewBody() {
+    final a = _appt;
+    final p = a.obj('patient');
+    final phone = p.str('phone');
+    final photo = a.str('patientPhoto');
+    final at = F.date(a['startAt']);
+    final status = _status;
+    final fee = isLive ? VisitFee.of(a) : const VisitFee(paymentId: 'pay1', amount: 600, status: 'pending', payAtClinic: true);
+    final upcoming = status == 'booked' || status == 'confirmed';
+    final canChange = !const ['completed', 'cancelled', 'rescheduled'].contains(status);
+    final doctor = a.obj('doctor').str('name', _doctor);
+    final practice = Session.I.activeMembership?['practiceName'] as String? ?? '';
+    final loc = a.obj('location').str('name');
+    final place = loc.isEmpty ? _when.split(' · ').last : [practice, loc].where((s) => s.isNotEmpty).join(' — ');
+    final day = at == null ? _when.split(' · ').first : (F.sameDay(at, DateTime.now()) ? '${tr(context, 'Today')}, ${d7DayShort(at)}' : d7DayShort(at));
+    final time = at == null ? _time : F.time(at);
+    final token = a.str('token');
+    final type = switch (a.str('visitType')) { 'new' => 'New visit', 'report_review' => 'Report review', _ => 'Follow-up' };
+    final reason = a.str('reason');
+    final tone = _tone(status);
+    final label = status == 'rescheduled' ? 'Moved' : visitStatusLabel(status);
+    final cancelled = status == 'cancelled'
+        ? [
+            if (a.str('cancelledByName').isNotEmpty) tr(context, 'Cancelled by #1').replaceFirst('#1', a.str('cancelledByName')),
+            if (a.str('cancelReason').isNotEmpty) a.str('cancelReason'),
+          ].join(' · ')
+        : '';
+
+    Widget info(String icon, String text) => Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(padding: const EdgeInsets.only(top: 2), child: Ico(icon, size: 16, color: MP.ink3)),
+              const SizedBox(width: 10),
+              Expanded(child: Text(text, style: tx(15, h: 1.4))),
+            ],
+          ),
+        );
+
+    final actions = <(String, String, String?, VoidCallback, bool)>[
+      if (upcoming) (I.calendar, 'Reschedule', 'Pick a new date and time · the patient is told', _startReschedule, false),
+      if (canChange) (I.clock, 'Change status', 'Arrived, with doctor, done, missed', _changeStatus, false),
+      if (fee != null && fee.due && canChange && status != 'missed')
+        (I.wallet, tr(context, 'Collect ₹#1').replaceFirst('#1', '${fee.amount}'), 'Cash, UPI or card at the counter', () => _collect(fee), false),
+      if (fee != null && fee.refundDue)
+        (I.wallet, tr(context, 'Refund ₹#1').replaceFirst('#1', '${fee.amount}'), fee.method == 'online' ? 'Try the online refund again' : 'Mark it once handed back', () => _handBack(fee), false),
+      if (phone.isNotEmpty) (I.phone, 'Call', d6Phone(phone), () => d6Call(context, phone, _name), false),
+      if (isLive && p.str('id').isNotEmpty) (I.message, 'Message', 'Opens the patient’s chat', () => d6MessagePatient(context, p.str('id')), false),
+      if (!isLive) (I.message, 'Message', 'Opens the patient’s chat', () => Nav.go(context, 'Patient-Thread'), false),
+      if ((upcoming || status == 'waiting') && _notPast) (I.close, 'Cancel visit', 'The patient is told why; a fee paid is refunded', _cancel, true),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              MpAvatar(F.initials(_name), size: 48, fontSize: 16, photo: photo.isEmpty ? null : photo),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(17, w: w700)),
+                    if (phone.isNotEmpty) ...[const SizedBox(height: 2), Text(d6Phone(phone), style: tx(14, c: MP.ink2, tab: true))],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
+            decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                info(I.clock, [day, time, if (token.isNotEmpty) tr(context, 'Token #1').replaceFirst('#1', token)].where((s) => s.isNotEmpty).join(' · ')),
+                if (doctor.isNotEmpty) info(I.stethoscope, doctor),
+                if (place.isNotEmpty) info(I.pin, place),
+                info(I.file, [tr(context, type), if (reason.isNotEmpty) reason].join(' · ')),
+                if (cancelled.isNotEmpty) info(I.close, cancelled),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // Tap the status to change it.
+              Semantics(
+                button: canChange,
+                label: tr(context, 'Status: #1').replaceFirst('#1', tr(context, label)),
+                excludeSemantics: true,
+                child: Tap(
+                  onTap: canChange ? _changeStatus : null,
+                  radius: 999,
+                  child: Container(
+                    height: 24,
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    decoration: BoxDecoration(color: tone.$1, borderRadius: BorderRadius.circular(999)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(label, style: tx(12, w: w600, c: tone.$2, h: 1)),
+                        if (canChange) ...[const SizedBox(width: 3), Ico(I.chevronDown, size: 12, color: tone.$2, stroke: 2.2)],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (fee != null && fee.status != 'free') FeeChip(fee),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final (i, x) in actions.indexed)
+            Tap(
+              onTap: x.$4,
+              radius: 12,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 56),
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
+                decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(color: x.$5 ? MP.redSoft : MP.primarySoft, borderRadius: BorderRadius.circular(10)),
+                      child: Ico(x.$1, size: 18, color: x.$5 ? MP.red : MP.primary),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(x.$2, style: tx(16, w: w600, c: x.$5 ? MP.red : MP.ink)),
+                          if (x.$3 != null) ...[const SizedBox(height: 2), Text(x.$3!, style: tx(13, c: MP.ink2, h: 1.35))],
+                        ],
+                      ),
+                    ),
+                    const Ico(I.chevronRight, size: 18, color: MP.ink3),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -397,7 +692,7 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(_assign ? 'Assign a time' : 'Manage appointment', style: tx(20, w: w700, h: 1.25)),
-                      if (placeholder == null) ...[
+                      if (placeholder == null && !_overview) ...[
                         const SizedBox(height: 4),
                         Text(
                           [_name, if (!_assign && _time.isNotEmpty) _time, if (_doctor.isNotEmpty) _doctor].join(' · '),
@@ -429,8 +724,31 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
           ),
 
           if (placeholder != null) placeholder,
+          if (placeholder == null && _overview) _overviewBody(),
+          if (placeholder == null && _rescheduling)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 20, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: MpHitSlop(
+                  child: Tap(
+                    onTap: () => setState(() => _rescheduling = false),
+                    radius: 8,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Ico(I.chevronLeft, size: 16, color: MP.primary),
+                        const SizedBox(width: 4),
+                        Text('Back to the visit', style: tx(14, w: w600, c: MP.primary)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           // Location: the doctor picks the branch; days and times follow it.
-          if (placeholder == null && (data?.list('locations').length ?? 0) > 1) ...[
+          if (placeholder == null && !_overview && (data?.list('locations').length ?? 0) > 1) ...[
             const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -450,19 +768,19 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
               ),
             ),
           ],
-          if (placeholder == null && _switching)
+          if (placeholder == null && !_overview && _switching)
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 24, 20, 0),
               child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: MP.primary))),
             ),
-          if (placeholder == null && !_switching && dates.isEmpty)
+          if (placeholder == null && !_overview && !_switching && dates.isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
               child: Text('No free times in the next $_lookAhead days.', style: tx(14, c: MP.ink2)),
             ),
 
           // New date
-          if (placeholder == null && !_switching && dates.isNotEmpty) ...[
+          if (placeholder == null && !_overview && !_switching && dates.isNotEmpty) ...[
           const SizedBox(height: 24),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -478,6 +796,8 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
                   if (i > 0) const SizedBox(width: 8),
                   D7Pill(dates[i].$1, on: _date == i, borderOn: false, onTap: () => _pickDate(i)),
                 ],
+                // Any other day of the doctor's here (their hours, leave, closures).
+                if (isLive && !_assign) ...[const SizedBox(width: 8), D7Pill('More dates', borderOn: false, onTap: _moreDates)],
               ],
             ),
           ),
@@ -518,7 +838,7 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
             ),
           ),
           ],
-          if (placeholder == null && dates.isEmpty && !_assign)
+          if (placeholder == null && !_overview && dates.isEmpty && !_assign)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
               child: MpButton.small('Cancel appointment', kind: MpBtn.dangerSoft, onTap: _cancel),

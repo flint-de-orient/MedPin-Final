@@ -82,6 +82,9 @@ const locationClosureSchema = new Schema(
     endDate: { type: Date, required: true },
     reason: { type: String, default: 'Closed all day' },
     allDay: { type: Boolean, default: true },
+    // Part of the day (allDay false): closed from fromMin to toMin on each of those days.
+    fromMin: minuteOfDay,
+    toMin: minuteOfDay,
     createdBy: ref('User'),
     patientsTold: Number, // booked patients told to choose another day
   },
@@ -178,6 +181,36 @@ const ROLE_PERMISSIONS = {
     alerts: false, manageAlerts: false, ai: false, reports: true, fees: true, billing: true, exports: true,
   },
 };
+
+// Clinic set-up (Clinic-Editor), like a clinic's admin / reception split:
+//   manageClinic  location details, weekly hours, letterhead, map pin, holidays
+//   closures      add / remove holidays & closures at the locations they cover
+//                 (the front desk keeps the calendar; booked patients are told)
+//   doctorHours   change a doctor's hours at a location (an assistant: only the
+//                 doctors they assist; every doctor may change their own)
+// Owners pass every check (middleware need()).
+const CLINIC_PERMISSIONS = {
+  practice_manager: { manageClinic: true, closures: true, doctorHours: true },
+  front_desk: { closures: true },
+  doctor_assistant: { doctorHours: true },
+};
+for (const [role, perms] of Object.entries(ROLE_PERMISSIONS)) {
+  Object.assign(perms, { manageClinic: false, closures: false, doctorHours: false }, CLINIC_PERMISSIONS[role]);
+}
+
+// Recording vitals (BP, pulse, SpO2, temperature, weight, sugar): the doctor, and
+// the people who take them in a real clinic before the patient goes in — the
+// front desk, the doctor's assistant, the practice manager; a dietician weighs.
+// Lab staff don't (their readings come in on the lab report).
+const VITALS_ROLES = ['doctor', 'front_desk', 'doctor_assistant', 'practice_manager', 'dietician'];
+for (const [role, perms] of Object.entries(ROLE_PERMISSIONS)) perms.vitals = VITALS_ROLES.includes(role);
+
+// Giving money back that nobody had to (a goodwill refund or an overcharge on a
+// visit that wasn't cancelled) and letting a fee go: the doctor, owner or practice
+// manager. The desk still carries out refunds already due (a cancelled visit's
+// fee handed back, an online refund retried) with `fees`.
+const REFUND_ROLES = ['doctor', 'practice_manager'];
+for (const [role, perms] of Object.entries(ROLE_PERMISSIONS)) perms.refunds = REFUND_ROLES.includes(role);
 
 module.exports = {
   Practice: model('Practice', practiceSchema),

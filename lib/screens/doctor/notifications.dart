@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/notify_route.dart';
 import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../../widgets/i18n.dart';
@@ -11,6 +12,11 @@ import '../../widgets/i18n.dart';
 /// cancellations, messages, shared records, reminders — for the active clinic.
 /// Tap opens the related screen and marks it read; "Mark all read" clears the
 /// bell. Roles that handle clinical alerts get a link to Clinical alerts.
+/// Each tap goes to a screen this role can open (data/notify_route.dart: the
+/// desk's emergency opens the patient's chat, fees open Payments).
+/// Real time: a new notification (push, or a silent "notifications_changed"
+/// when it doesn't buzz) refreshes the list at once (LiveBus); unread
+/// emergencies and urgent chats show a red dot until read or resolved.
 /// Live data: GET /api/notifications?practiceId=, POST /:id/read, /read-all.
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -28,6 +34,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> with LiveData
 
   @override
   Future<Object?> fetch() => Api.I.get('/api/notifications', query: {'limit': '50', if (Session.I.practiceId != null) 'practiceId': Session.I.practiceId});
+
+  // New ones also arrive at once (push / silent signal → LiveBus); this is the backup.
+  @override
+  Duration? get refreshEvery => const Duration(seconds: 15);
+
+  /// Emergencies and urgent chats (red, like the bell's dot).
+  static bool _urgent(Map<String, dynamic> n) => RegExp('emergency|urgent').hasMatch(n.str('type'));
 
   List<Map<String, dynamic>> get _items {
     if (data == null) return [for (final s in _sample) Map<String, dynamic>.from(s)];
@@ -55,10 +68,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> with LiveData
       await runAction(context, () => Api.I.post('/api/notifications/${n['id']}/read'));
     }
     if (!mounted) return;
-    final screen = n.str('screen');
-    if (screen.isNotEmpty && Nav.spec(screen) != null && Nav.spec(screen)!.panel != 'patient') {
-      await Nav.go(context, screen, args: n['params']);
-    }
+    final params = n['params'] is Map ? (n['params'] as Map).cast<String, dynamic>() : null;
+    await openStaffNotification(context, screen: n.str('screen'), type: n.str('type'), params: params, practiceId: n['practiceId']?.toString());
     if (mounted) reload(quiet: true);
   }
 
@@ -119,7 +130,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> with LiveData
                         child: Container(
                           width: 8,
                           height: 8,
-                          decoration: BoxDecoration(color: n['readAt'] == null ? MP.primary : Colors.transparent, shape: BoxShape.circle),
+                          decoration: BoxDecoration(color: n['readAt'] == null ? (_urgent(n) ? MP.red : MP.primary) : Colors.transparent, shape: BoxShape.circle),
                         ),
                       ),
                       const Gap(10),

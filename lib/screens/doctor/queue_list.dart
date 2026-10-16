@@ -85,7 +85,8 @@ class _Q {
       'report_review' => 'Review reports',
       _ => '',
     };
-    final about = conditions.isNotEmpty ? conditions.join(', ') : m.str('reason');
+    // Why they came today first (walk-in complaint / booking reason); their conditions when none was given.
+    final about = m.str('reason').trim().isNotEmpty ? m.str('reason').trim() : conditions.join(', ');
     final meta = [d1AgeSex(p), visit, about].where((x) => x.isNotEmpty).join(' · ');
     String at(String k) {
       final d = F.date(m[k]);

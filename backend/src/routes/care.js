@@ -4,8 +4,8 @@ const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
 const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
-const { badRequest, notFound, conflict, list, escapeRegex, pick } = require('../lib/http');
-const { notify } = require('../services/notify');
+const { badRequest, notFound, conflict, forbidden, list, escapeRegex, pick } = require('../lib/http');
+const { notify, signal } = require('../services/notify');
 const { sendWhatsApp } = require('../services/push');
 
 const r = Router();
@@ -169,22 +169,49 @@ r.get('/alerts', need('alerts'), async (req, res) => {
   if (status !== 'all') q.status = status;
   if (req.query.severity) q.severity = { $in: list(req.query.severity) };
   if (req.query.patientId) q.patientId = req.query.patientId;
-  let items = await M.Alert.find(q).sort({ createdAt: -1 }).limit(300).populate('patientId', 'name gender ageYears ageRecordedAt conditions').populate('noteBy', 'name');
+  let items = await M.Alert.find(q).sort({ createdAt: -1 }).limit(300).populate('patientId', 'name gender ageYears ageRecordedAt conditions userId').populate('noteBy', 'name').populate('deskNotes.by', 'name');
   if (req.query.q) {
     const re = new RegExp(escapeRegex(req.query.q), 'i');
     items = items.filter((a) => re.test(a.patientId?.name || ''));
   }
   items.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || ['open', 'acknowledged', 'resolved'].indexOf(a.status) - ['open', 'acknowledged', 'resolved'].indexOf(b.status) || b.createdAt - a.createdAt);
   const counts = await M.Alert.aggregate([{ $match: { practiceId: req.practiceId } }, { $group: { _id: '$status', n: { $sum: 1 } } }]);
+  const photos = await require('../services/photos').photosFor(items.map((a) => a.patientId?.userId));
   res.json({
     counts: Object.fromEntries(counts.map((c) => [c._id, c.n])),
     items: items.map((a) => ({
       ...a.toJSON(),
-      patient: a.patientId && { id: a.patientId._id, name: a.patientId.name, age: T.ageFrom(a.patientId), gender: a.patientId.gender, conditions: a.patientId.conditions.map((c) => c.name) },
+      patient: a.patientId && {
+        id: a.patientId._id, name: a.patientId.name, age: T.ageFrom(a.patientId), gender: a.patientId.gender, conditions: a.patientId.conditions.map((c) => c.name),
+        photo: a.patientId.userId ? photos.get(String(a.patientId.userId)) || null : null,
+      },
       acknowledgedToday: a.acknowledged?.at && T.dayKey(a.acknowledged.at) === T.dayKey(new Date()),
+      // The front desk's notes ("Doctor informed · Tania, 9:20 AM").
+      deskNotes: (a.deskNotes || []).map((n) => ({ text: n.text, at: n.at, by: n.by?.name || null })),
     })),
   });
 });
+
+/** Notifications about this alert (and, for an urgent chat, that chat's urgent messages). */
+const alertNotes = (a) => {
+  const ids = (x) => [x, String(x)];
+  return {
+    practiceId: a.practiceId,
+    $or: [
+      { 'params.alertId': { $in: ids(a._id) } },
+      ...(a.conversationId ? [{ 'params.conversationId': { $in: ids(a.conversationId) }, type: /emergency|urgent/ }] : []),
+    ],
+  };
+};
+
+/** Marks those notifications read for [userIds] (everyone when null); their bells and lists update at once. */
+async function clearAlertNotes(a, userIds = null) {
+  const q = { ...alertNotes(a), readAt: null, ...(userIds ? { userId: { $in: userIds } } : {}) };
+  const who = await M.Notification.distinct('userId', q);
+  if (!who.length) return;
+  await M.Notification.updateMany(q, { readAt: new Date() });
+  await signal(who, { type: 'notifications_changed', practiceId: String(a.practiceId) });
+}
 
 const getAlert = async (req) => ownPractice(req, await M.Alert.findById(req.params.id), 'Alert');
 const applyNote = (alert, req) => {
@@ -198,6 +225,8 @@ r.post('/alerts/:id/acknowledge', need('manageAlerts'), async (req, res) => {
   a.acknowledged = { by: req.user._id, at: new Date() };
   applyNote(a, req);
   await a.save();
+  // Seen: off my bell. It stays red for the others until it's resolved.
+  await clearAlertNotes(a, [req.user._id]);
   res.json(a);
 });
 
@@ -210,7 +239,43 @@ r.post('/alerts/:id/resolve', need('manageAlerts'), async (req, res) => {
   applyNote(a, req);
   await a.save();
   if (a.conversationId) await M.Conversation.updateOne({ _id: a.conversationId }, { isUrgent: false });
+  // Everyone told about it (doctors, assistants, the desk): read now, so every bell's red dot
+  // clears at once. The desk who had it gets a quiet "Resolved by Dr. Sen" (no buzz).
+  const told = (await M.Notification.distinct('userId', alertNotes(a))).map(String);
+  await clearAlertNotes(a);
+  const clinical = new Set((await M.Member.find({ practiceId: a.practiceId, userId: { $in: told }, status: 'active', role: { $in: ['doctor', 'doctor_assistant'] } }, 'userId')).map((m) => String(m.userId)));
+  const desk = told.filter((id) => id !== String(req.user._id) && !clinical.has(id));
+  if (desk.length) {
+    const { shortName } = require('../services/care');
+    const patient = await M.Patient.findById(a.patientId, 'name');
+    await notify(desk, {
+      type: 'alert_resolved', push: false, practiceId: a.practiceId, title: `Resolved by ${shortName(req.user.name) || 'the doctor'}`,
+      body: `${patient?.name || 'Patient'}: ${a.detail}`.slice(0, 160), screen: 'Patient-Thread',
+      params: { patientId: a.patientId, ...(a.conversationId ? { conversationId: a.conversationId } : {}) },
+    });
+  }
+  if (a.conversationId) {
+    const convo = await M.Conversation.findById(a.conversationId, 'participants');
+    if (convo) await signal(convo.participants.filter((p) => p.role !== 'patient').map((p) => p.userId), { type: 'chat_changed', conversationId: a.conversationId });
+  }
   res.json(a);
+});
+
+// The front desk on a patient's emergency: "Doctor informed" (or another short note). The doctor
+// sees it on the alert; it never acknowledges or resolves it — only a clinician does that.
+r.post('/alerts/:id/desk-note', need('chats'), async (req, res) => {
+  const a = await getAlert(req);
+  if (a.kind !== 'urgent_chat' && !a.escalatedAt) throw forbidden('Only the doctor handles this alert');
+  if (a.status === 'resolved') throw conflict('This alert is already resolved', 'ALREADY_RESOLVED');
+  const text = String(req.body.note || 'Doctor informed').trim().slice(0, 300) || 'Doctor informed';
+  a.deskNotes.push({ text, by: req.user._id, at: new Date() });
+  await a.save();
+  // The doctors' Alerts screens and the thread refresh at once.
+  const { clinicians, assistantsOf } = require('../services/notify');
+  const doctors = await clinicians(a.practiceId, a.patientId, { doctorId: a.doctorId });
+  await signal([...doctors, ...(await assistantsOf(a.practiceId, doctors))], { type: 'alerts_changed', alertId: String(a._id) });
+  if (a.conversationId) await signal([req.user._id], { type: 'chat_changed', conversationId: String(a.conversationId) });
+  res.json({ ok: true, deskNotes: a.deskNotes.map((n) => ({ text: n.text, at: n.at, by: String(n.by) === String(req.user._id) ? req.user.name : null })) });
 });
 
 r.post('/alerts/:id/note', need('manageAlerts'), async (req, res) => {

@@ -329,6 +329,41 @@ async function noShows(now) {
   for (const a of stale) await transition(a, 'missed').catch((err) => console.warn('[jobs] no-show', err.message));
 }
 
+/**
+ * An emergency (urgent chat, a dangerous home reading) that no clinician has
+ * acknowledged within 15 minutes: the front desk covering the patient is asked,
+ * once, to tell the doctor in person — they can interrupt a consultation. The
+ * desk opens the patient's chat (they don't have the clinical alerts screen).
+ * Older than a day: left alone (nobody is paged about yesterday's alert).
+ */
+const ESCALATE_AFTER_MIN = 15;
+async function escalateEmergencies(now) {
+  const { deskFor, clinicians, assistantsOf, patientPlace } = require('./notify');
+  const { shortName } = require('./care');
+  const due = await M.Alert.find({
+    severity: 'emergency', status: 'open', escalatedAt: null,
+    createdAt: { $lte: T.addMinutes(now, -ESCALATE_AFTER_MIN), $gte: T.addDays(now, -1) },
+  }).limit(200);
+  for (const a of due) {
+    await once(`alert-escalate:${a._id}`, async () => {
+      await M.Alert.updateOne({ _id: a._id }, { escalatedAt: now });
+      const place = await patientPlace(a.practiceId, a.patientId);
+      const doctorId = a.doctorId || place.doctorId;
+      const doctors = (await clinicians(a.practiceId, a.patientId, { doctorId })).map(String);
+      const team = new Set([...doctors, ...(await assistantsOf(a.practiceId, doctors)).map(String)]);
+      const desk = (await deskFor(a.practiceId, { locationId: place.locationId, doctorId })).map(String).filter((id) => !team.has(id));
+      if (!desk.length) return;
+      const [patient, doctor] = await Promise.all([M.Patient.findById(a.patientId, 'name'), doctorId ? M.User.findById(doctorId, 'name') : null]);
+      await notify(desk, {
+        type: 'emergency_escalation', practiceId: a.practiceId,
+        title: `${shortName(doctor?.name) || 'The doctor'} hasn't seen an emergency for ${patient?.name || 'a patient'} yet`,
+        body: `Please let the doctor know. ${a.detail}`.slice(0, 200),
+        screen: 'Patient-Thread', params: { alertId: a._id, patientId: a.patientId, ...(a.conversationId ? { conversationId: a.conversationId } : {}) },
+      });
+    });
+  }
+}
+
 // ── Runner ───────────────────────────────────────────────
 
 let timer = null;
@@ -342,7 +377,7 @@ async function tick() {
   const since = last;
   last = now;
   for (const [name, job] of [
-    ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)], ['morning', () => morningSummary(now)], ['appLock', () => appLockOffForPatients()], ['deviceSync', () => deviceSyncNudge(now)],
+    ['escalate', () => escalateEmergencies(now)], ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)], ['morning', () => morningSummary(now)], ['appLock', () => appLockOffForPatients()], ['deviceSync', () => deviceSyncNudge(now)],
     ['followUps', () => followUpReminders(now)], ['lowStock', () => lowStock(now)], ['dailyLog', () => dailyLogReminders(now)], ['digest', () => dailyDigest(now)],
     ['scores', () => healthScores(now)], ['noShows', () => noShows(now)],
     ['payouts', () => payouts(now)],
@@ -369,4 +404,4 @@ function stop() {
   timer = null;
 }
 
-module.exports = { noShows, start, stop, tick, morningSummary, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };
+module.exports = { escalateEmergencies, noShows, start, stop, tick, morningSummary, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };

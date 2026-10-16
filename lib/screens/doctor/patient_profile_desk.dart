@@ -18,7 +18,7 @@ class PatientProfileDeskScreen extends StatefulWidget {
 class _PatientProfileDeskScreenState extends State<PatientProfileDeskScreen> with LiveData {
   /// Desk care rows: icon, title, detail, target screen.
   static const _care = [
-    (I.activity, 'Record vitals', 'Last recorded today, 8:52 AM', 'Consult-Vitals'),
+    (I.activity, 'Record vitals', 'Last recorded today, 8:52 AM', 'Staff-Vitals'),
     (I.upload, "Upload report for today's visit", 'Nothing uploaded for this visit yet', 'Records-Add'),
     (I.calendar, 'Book follow-up', 'City Care Clinic, Salt Lake', 'Appointments'),
     (I.message, 'Message patient', "Opens Priya's conversation", 'Patient-Thread'),
@@ -47,7 +47,7 @@ class _PatientProfileDeskScreenState extends State<PatientProfileDeskScreen> wit
     final latest = rx.isEmpty ? null : rx.first;
     final rxAt = F.date(latest?['issuedAt']);
     return [
-      (I.activity, 'Record vitals', lastAt == null ? 'No vitals recorded yet' : 'Last recorded ${d6When(lastAt)}', 'Consult-Vitals'),
+      (I.activity, 'Record vitals', lastAt == null ? 'No vitals recorded yet' : 'Last recorded ${d6When(lastAt)}', 'Staff-Vitals'),
       (I.upload, "Upload report for today's visit", 'Add a test report or prescription', 'Records-Add'),
       (I.calendar, 'Book follow-up', D6Rec.practiceName.isEmpty ? 'Choose a date and time' : D6Rec.practiceName, 'Appointments-Manage'),
       (I.message, 'Message patient', "Opens ${r.first}'s conversation", 'Patient-Thread'),

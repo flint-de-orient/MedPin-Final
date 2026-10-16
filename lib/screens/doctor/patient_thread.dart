@@ -120,6 +120,22 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     return 'Conversation';
   }
 
+  /// The header photo: the patient's, or the colleague's in a direct chat
+  /// (from their newest message, which is current on every refresh, else the team list).
+  String? get _livePhoto {
+    if (_patient.isNotEmpty) return _patient.str('photo').isEmpty ? null : _patient.str('photo');
+    final me = '${Session.I.user['id']}';
+    final other = '${_conv.list('participants').firstWhere((p) => '${p['userId']}' != me, orElse: () => const {})['userId']}';
+    for (final m in data!.list('items').reversed) {
+      final s = m['senderId'];
+      if ('${s is Map ? s['_id'] ?? s['id'] : s}' == other && m.str('senderPhoto').isNotEmpty) return m.str('senderPhoto');
+    }
+    for (final t in (_contacts ?? const <String, dynamic>{}).list('team')) {
+      if ('${t['userId']}' == other && t.str('photo').isNotEmpty) return t.str('photo');
+    }
+    return null;
+  }
+
   /// "Last seen 2 min ago" / "Next visit Today, 5:00 PM · token 04".
   String get _liveSubtitle {
     final seen = F.date(_patient['lastSeenAt']);
@@ -131,6 +147,27 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     final at = F.date(next['startAt']);
     if (at != null) return 'Next visit ${F.when(at)}${next.str('token').isEmpty ? '' : ' · token ${next.str('token')}'}';
     return _patient.isEmpty ? 'Direct message' : '';
+  }
+
+  /// Who wrote a clinic-side message — the clinic shares one thread per patient:
+  /// "Tania · Front desk", "Dr. Sen"; an automatic note (visit booked,
+  /// fee paid) adds "Automatic message" ("You · Automatic message" for mine).
+  /// Empty for my own typed messages and for the patient's, AI and clinic lines.
+  String _byLine(Map<String, dynamic> m) {
+    final type = m['senderType'];
+    if ((type != 'doctor' && type != 'staff') || m['deleted'] == true) return '';
+    final mine = m['mine'] == true;
+    final auto = m['auto'] == true;
+    if (mine && !auto) return '';
+    final s = m['senderId'];
+    final full = s is Map && s['name'] != null ? '${s['name']}'.trim() : '';
+    final name = RegExp(r'^Dr\.?\s', caseSensitive: false).hasMatch(full) ? F.doctorShort(full) : full.split(RegExp(r'\s+')).first;
+    final role = m.str('senderRoleLabel');
+    return [
+      if (mine) tr(context, 'You') else if (name.isNotEmpty) name,
+      if (!mine && role.isNotEmpty && m['senderRole'] != 'doctor') tr(context, role),
+      if (auto) tr(context, 'Automatic message'),
+    ].join(' · ');
   }
 
   String _senderName(Map<String, dynamic> m) {
@@ -224,6 +261,83 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     if (p is! Map || !mounted) return;
     final phone = '${(p['patient'] as Map?)?['phone'] ?? ''}';
     await d6Call(context, phone, _liveName);
+  }
+
+  /// Front desk on an emergency: "Doctor informed" (shown to the doctor on the alert).
+  /// It never closes the alert — only the doctor resolves it.
+  Future<void> _doctorInformed(String alertId) async {
+    final ok = await runAction(context, () => Api.I.post('/api/alerts/$alertId/desk-note', {'note': 'Doctor informed'}), busy: _busy);
+    if (ok == null || !mounted) return;
+    toast(context, 'Noted. The doctor sees it on the alert.');
+    reload(quiet: true);
+  }
+
+  /// The doctor (manage alerts) resolves it here: every bell's red dot clears.
+  Future<void> _resolveAlert(String alertId) async {
+    final ok = await runAction(context, () => Api.I.post('/api/alerts/$alertId/resolve', const {}), busy: _busy);
+    if (ok == null || !mounted) return;
+    toast(context, 'Emergency resolved');
+    reload(quiet: true);
+  }
+
+  Widget _urgentBanner(Map<String, dynamic> a) {
+    final at = F.date(a['createdAt']);
+    final seenBy = a.str('acknowledgedBy');
+    final doctor = a.str('doctor').isEmpty ? '' : F.doctorShort(a.str('doctor'));
+    final status = seenBy.isNotEmpty
+        ? tr(context, 'Seen by #1').replaceFirst('#1', F.doctorShort(seenBy))
+        : doctor.isEmpty
+            ? tr(context, "The doctor hasn't seen it yet")
+            : tr(context, "#1 hasn't seen it yet").replaceFirst('#1', doctor);
+    final notes = [
+      for (final n in a.list('deskNotes'))
+        [
+          n.str('text'),
+          [if (n.str('by').isNotEmpty) n.str('by').split(RegExp(r'\s+')).first, if (F.date(n['at']) != null) F.time(F.date(n['at'])!)].join(', '),
+        ].where((x) => x.isNotEmpty).join(' · '),
+    ];
+    final id = a.str('id');
+    return Container(
+      color: MP.redSoft,
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Ico(I.emergency, size: 18, color: MP.red),
+              const Gap(8),
+              Expanded(
+                child: Text(
+                  a.str('kind') == 'urgent_chat' ? 'Asked for urgent help' : 'Emergency alert',
+                  style: tx(15, w: w700, c: MP.red, h: 1.35),
+                ),
+              ),
+              if (at != null) Text(F.time(at), style: tx(13, c: MP.red, tab: true)),
+            ],
+          ),
+          if (a.str('detail').isNotEmpty) ...[
+            const Gap(4),
+            Text(a.str('detail'), maxLines: 3, overflow: TextOverflow.ellipsis, style: tx(15, h: 1.45)),
+          ],
+          const Gap(4),
+          Text(status, style: tx(13, c: MP.ink2, h: 1.4)),
+          for (final n in notes) Text(n, style: tx(13, c: MP.ink2, h: 1.4)),
+          const Gap(10),
+          Row(
+            children: [
+              Expanded(child: MpButton.small('Call patient', icon: I.phone, kind: MpBtn.secondary, onTap: _callLive)),
+              const Gap(8),
+              Expanded(
+                child: a['canManage'] == true
+                    ? MpButton.small('Resolve', icon: I.check, kind: MpBtn.danger, onTap: () => _resolveAlert(id))
+                    : MpButton.small('Doctor informed', icon: I.check, kind: MpBtn.danger, onTap: () => _doctorInformed(id)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _searchLive() async {
@@ -407,7 +521,21 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
       final id = m.str('id');
       final key = _msgKeys.putIfAbsent(id, GlobalKey.new);
       final open = _menuFor == id;
-      Widget w = KeyedSubtree(key: key, child: _liveMessage(m, byId));
+      final by = _byLine(m);
+      Widget w = KeyedSubtree(
+        key: key,
+        child: by.isEmpty
+            ? _liveMessage(m, byId)
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(by, textAlign: TextAlign.right, style: tx(12, w: w600, c: MP.ink3, h: 1.35)),
+                  const Gap(4),
+                  _liveMessage(m, byId),
+                ],
+              ),
+      );
       if (m['senderType'] != 'system') {
         w = GestureDetector(
           onLongPress: () {
@@ -599,6 +727,9 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
       body: placeholder ?? Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // The patient's open emergency (staff only): what they wrote, who has seen it,
+          // Call the patient · Doctor informed (desk) / Resolve (doctor).
+          if (live && _conv['urgentAlert'] is Map) _urgentBanner(_conv.obj('urgentAlert')),
           // AI paused notice
           if (showAi) Container(
             color: MP.fill,
@@ -686,7 +817,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
               radius: 12,
               child: Row(
                 children: [
-                  if (!waiting) MpAvatar(live ? F.initials(name) : 'PS', size: 40, fontSize: 14, photo: live && _patient.str('photo').isNotEmpty ? _patient.str('photo') : null),
+                  if (!waiting) MpAvatar(live ? F.initials(name) : 'PS', size: 40, fontSize: 14, photo: live ? _livePhoto : null),
                   const Gap(12),
                   Expanded(
                     child: Column(

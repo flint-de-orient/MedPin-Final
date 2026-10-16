@@ -74,8 +74,9 @@ async function feeReceipt(p) {
       screen: 'Patient-DoctorDetail', params: { doctorId: a.doctorId?._id || a.doctorId },
     });
   }
+  // Signed by who took it at the desk; paid online, by the desk at that branch (or the doctor).
   await require('./care').chatNote(
-    { practiceId: a.practiceId, patientId: a.patientId?._id || a.patientId },
+    { practiceId: a.practiceId, patientId: a.patientId?._id || a.patientId, locationId: a.locationId, doctorId: a.doctorId?._id || a.doctorId, by: p.method === 'online' ? undefined : p.markedPaidBy },
     `Payment received: ₹${p.amount} ${p.method === 'online' ? 'online' : `at the clinic (${p.method === 'cash' ? 'cash' : p.method === 'upi' ? 'UPI' : p.method})`} · reference ${p.razorpayPaymentId || String(p._id).slice(-6)}.`,
     'fee_paid',
   );
@@ -122,6 +123,14 @@ async function orderPaid(orderId, razorpayPaymentId) {
  */
 async function refundFee(payment, { by, handedBack = false } = {}) {
   if (payment.status !== 'paid') return payment;
+  // The desk hands it back or should know it went back: told in the app (not whoever did it).
+  const tellDesk = async (n) => {
+    const a = payment.appointmentId ? await M.Appointment.findById(payment.appointmentId, 'practiceId locationId doctorId patientId').populate('patientId', 'name') : null;
+    if (!a) return;
+    const { notify, deskOrDoctors } = require('./notify');
+    const staff = (await deskOrDoctors(a.practiceId, { locationId: a.locationId, doctorId: a.doctorId })).map(String).filter((id) => id !== String(by || ''));
+    await notify(staff, { practiceId: a.practiceId, screen: 'Report-Fees', params: { appointmentId: a._id }, ...n(a.patientId?.name || 'the patient') });
+  };
   if (payment.method === 'online') {
     if (configured() && payment.razorpayPaymentId) {
       const resp = await fetch(`https://api.razorpay.com/v1/payments/${payment.razorpayPaymentId}/refund`, {
@@ -134,6 +143,7 @@ async function refundFee(payment, { by, handedBack = false } = {}) {
         payment.refundDue = true;
         payment.note = 'Refund failed at Razorpay — retry from Fees';
         await payment.save();
+        await tellDesk((name) => ({ type: 'refund_due', title: `Refund of ₹${payment.amount} to ${name} didn't go through`, body: 'Retry it from Fees, or hand it back at the desk.' })).catch(() => {});
         return payment;
       }
       payment.refundId = body.id;
@@ -148,6 +158,7 @@ async function refundFee(payment, { by, handedBack = false } = {}) {
     payment.refundDue = true;
     payment.note = 'Refund due: visit cancelled';
     await payment.save();
+    await tellDesk((name) => ({ type: 'refund_due', title: `Refund due: ₹${payment.amount} to ${name}`, body: 'The visit was cancelled. Hand it back, then mark it in Fees.' })).catch(() => {});
     return payment;
   }
   payment.status = 'refunded';
@@ -158,8 +169,11 @@ async function refundFee(payment, { by, handedBack = false } = {}) {
   if (payment.appointmentId) await M.Appointment.updateOne({ _id: payment.appointmentId }, { feeStatus: 'refunded' });
   const a = payment.appointmentId ? await M.Appointment.findById(payment.appointmentId).populate('patientId', 'userId') : null;
   if (a) {
+    if (payment.method === 'online') {
+      await tellDesk((name) => ({ type: 'fee_refunded', push: false, title: `₹${payment.amount} refunded online to ${name}` })).catch(() => {});
+    }
     await require('./care').chatNote(
-      { practiceId: a.practiceId, patientId: a.patientId?._id || a.patientId },
+      { practiceId: a.practiceId, patientId: a.patientId?._id || a.patientId, locationId: a.locationId, doctorId: a.doctorId, by },
       payment.method === 'online' ? `Refund: ₹${payment.amount} is on its way back to how you paid (usually 5–7 working days).` : `Refund: ₹${payment.amount} handed back at the clinic.`,
       'fee_refunded',
     );

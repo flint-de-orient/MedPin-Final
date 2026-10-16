@@ -63,7 +63,7 @@ const _appts = [
 /// (icon, label, stem)
 const _actions = [
   (I.userPlus, 'Register walk-in', 'Add-Patient'),
-  (I.activity, 'Record vitals', 'Consult-Vitals'),
+  (I.activity, 'Record vitals', 'Staff-Vitals'),
   (I.calendar, 'Book appointment', 'Staff-Book'),
 ];
 

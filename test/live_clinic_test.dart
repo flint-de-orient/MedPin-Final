@@ -67,7 +67,24 @@ void _serve() {
   Api.I.client = MockClient((req) async {
     final path = req.url.path;
     if (req.method == 'GET') {
-      if (path.startsWith('/api/doctors/') && path.endsWith('/slots')) return _json(_data('slots'));
+      if (path.startsWith('/api/doctors/') && path.endsWith('/slots')) {
+        // The recorded day's times, moved to the day asked for (today: closed, so
+        // the test doesn't depend on the time of day — past times are hidden).
+        final rec = _fx('slots');
+        final want = req.url.queryParameters['date'] ?? (rec['query'] as Map)['date'] as String;
+        final now = DateTime.now();
+        final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+        if (want == today) return _json({'open': false, 'reason': 'no_session', 'slots': const []});
+        final shift = DateTime.parse(want).difference(DateTime.parse((rec['query'] as Map)['date'] as String));
+        final data = (rec['data'] as Map).cast<String, dynamic>();
+        return _json({
+          ...data,
+          'slots': [
+            for (final s in (data['slots'] as List).cast<Map>())
+              {...s, 'startAt': DateTime.parse(s['startAt'] as String).add(shift).toUtc().toIso8601String()},
+          ],
+        });
+      }
       if (path == '/api/geo/search') {
         return _json({
           'items': [
@@ -185,6 +202,18 @@ void main() {
     expect(find.text('Manage appointment'), findsOneWidget);
     expect(find.textContaining((appt['patient'] as Map)['name'] as String), findsOneWidget);
     expect(find.textContaining('City Care Clinic — Salt Lake'), findsOneWidget);
+    // The overview: what can be done from "booked".
+    for (final a in ['Reschedule', 'Change status', 'Call', 'Message']) {
+      expect(find.text(a), findsOneWidget, reason: a);
+    }
+    // The recorded visit's day has passed: it is marked missed, not cancelled.
+    expect(find.text('Cancel visit'), findsNothing);
+    expect(find.text('Upcoming'), findsOneWidget, reason: 'the status chip');
+    expect(t.takeException(), isNull);
+
+    // Reschedule: the date and time in the sheet.
+    await _tap(t, find.text('Reschedule'));
+    expect(find.text('Back to the visit'), findsOneWidget);
     expect(find.text('9:00 AM'), findsOneWidget);
     expect(find.text('Crossed-out times are already booked.'), findsOneWidget);
     expect(t.takeException(), isNull);

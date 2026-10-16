@@ -155,7 +155,8 @@ class _UseHereLinkState extends State<UseHereLink> {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: widget.label,
+      label: _busy ? 'Finding your location…' : widget.label,
+      excludeSemantics: true,
       child: Tap(
         onTap: _busy
             ? null
@@ -167,16 +168,19 @@ class _UseHereLinkState extends State<UseHereLink> {
                 if (place != null) widget.onPlace(place);
               },
         radius: 12,
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _busy
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Ico(I.pin, size: 18, color: MP.primary, stroke: 2),
-            const Gap(8),
-            Text(_busy ? 'Finding your location…' : widget.label, style: tx(14, w: w600, c: MP.primary)),
-          ],
+        // At least 44px tall: a comfortable tap target.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _busy
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Ico(I.pin, size: 18, color: MP.primary, stroke: 2),
+              const Gap(8),
+              Flexible(child: Text(_busy ? 'Finding your location…' : widget.label, style: tx(14, w: w600, c: MP.primary))),
+            ],
+          ),
         ),
       ),
     );

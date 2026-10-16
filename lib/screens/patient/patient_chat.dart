@@ -121,6 +121,14 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
     return fromThread ?? 'Your doctor';
   }
 
+  /// The doctor's photo: from the doctor list, else from their newest message here.
+  String? get _doctorPhoto {
+    if (data == null) return null;
+    final url = '${_doctor['photoUrl'] ?? ''}';
+    if (url.isNotEmpty) return url;
+    return data!.list('items').reversed.where((m) => m['senderType'] == 'doctor').map((m) => m.str('senderPhoto')).where((u) => u.isNotEmpty).firstOrNull;
+  }
+
   ({String status, Color color})? get _presence {
     if (data == null) return (status: 'Available now', color: MP.green);
     if (_doctor['presence'] == null) return null;
@@ -165,7 +173,16 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
                     : m['senderType'] == 'doctor'
                         ? F.doctorShort(_doctorName)
                         : 'Clinic';
-            return (text: _textOf(m), mine: mine, meta: mine ? '$time · ${_status(m)}' : '$who · $time', at: at, raw: m);
+            // The doctor and the desk share the chat: "Tania · Front desk"; notes sent on their
+            // behalf (visit booked, fee paid) say "Automatic message".
+            final role = m.str('senderRole');
+            final from = [
+              tr(context, who),
+              if (role.isNotEmpty && role != 'doctor' && m.str('senderRoleLabel').isNotEmpty) tr(context, m.str('senderRoleLabel')),
+              time,
+              if (m['auto'] == true) tr(context, 'Automatic message'),
+            ].where((x) => x.isNotEmpty).join(' · ');
+            return (text: _textOf(m), mine: mine, meta: mine ? '$time · ${_status(m)}' : from, at: at, raw: m);
           }(),
     ];
   }
@@ -303,7 +320,7 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
               onTap: _openDoctor,
               child: Row(
                 children: [
-                  MpAvatar(data == null ? 'AS' : F.initials(_doctorName), size: 40, fontSize: 14),
+                  MpAvatar(data == null ? 'AS' : F.initials(_doctorName), size: 40, fontSize: 14, photo: _doctorPhoto),
                   const Gap(8),
                   Expanded(
                     child: Column(

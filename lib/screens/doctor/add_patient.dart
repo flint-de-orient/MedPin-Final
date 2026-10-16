@@ -6,6 +6,7 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/voice.dart';
+import '../../data/where.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
 import '../../widgets/i18n.dart';
@@ -48,7 +49,7 @@ Future<int?> addWalkIn(BuildContext context, String patientId, {String? doctorId
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
                   child: Row(
                     children: [
-                      MpAvatar(F.initials('${c['doctorName'] ?? ''}'), size: 40, fontSize: 14),
+                      MpAvatar(F.initials('${c['doctorName'] ?? ''}'), size: 40, fontSize: 14, photo: c['doctorPhoto'] is String && '${c['doctorPhoto']}'.isNotEmpty ? '${c['doctorPhoto']}' : null),
                       const Gap(12),
                       Expanded(
                         child: Column(
@@ -359,6 +360,27 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
       _addrHits = const [];
     });
     FocusScope.of(context).unfocus();
+  }
+
+  /// "Use current location": the street from the phone's location, keeping a
+  /// house number already typed, and its map point (as a picked suggestion).
+  void _useHere(Map<String, dynamic> place) {
+    _addrTimer?.cancel();
+    final line = addressLine(place, typed: _address.text);
+    setState(() {
+      if (line.isNotEmpty) {
+        _address.text = line;
+        _address.selection = TextSelection.collapsed(offset: line.length);
+      }
+      _placeLabel = _address.text.trim();
+      _place = {
+        'lat': place['lat'],
+        'lng': place['lng'],
+        for (final k in const ['area', 'city', 'pincode'])
+          if ('${place[k] ?? ''}'.trim().isNotEmpty) k: '${place[k]}'.trim(),
+      };
+      _addrHits = const [];
+    });
   }
 
   Future<void> _speakAddress() async {
@@ -685,6 +707,7 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
                 onChanged: _onAddressChanged,
                 trailing: _MicButton(label: 'Speak the address', onTap: _speakAddress),
               ),
+              Align(alignment: Alignment.centerLeft, child: UseHereLink(onPlace: _useHere)),
               // Matches from address search; picking one also saves its map point.
               if (_addrHits.isNotEmpty) ...[
                 const Gap(8),

@@ -248,11 +248,14 @@ r.get('/care-team', async (req, res) => {
   // Patient-Me shows "Diabetes · City Care Clinic" under each name.
   const profiles = await M.DoctorProfile.find({ userId: { $in: rows.map((c) => c.userId?._id).filter(Boolean) } }, 'userId displayName headline specialtyKeys');
   const specs = new Map((await M.Specialty.find({ key: { $in: profiles.flatMap((p) => p.specialtyKeys) } }, 'key label')).map((s) => [s.key, s.label]));
+  // Their profile photos, for the avatars (a doctor's public photo first).
+  const photos = await require('../services/photos').doctorPhotos(rows.map((c) => c.userId?._id));
   res.json(rows.map((c) => {
     const prof = profiles.find((p) => String(p.userId) === String(c.userId?._id));
     return {
       userId: c.userId?._id, name: prof?.displayName || c.userId?.name, role: c.role, practiceId: c.practiceId?._id, practice: c.practiceId?.name,
       accessLevel: c.accessLevel, since: c.since, headline: prof?.headline, specialty: specs.get(prof?.specialtyKeys?.[0]) || null,
+      photoUrl: c.userId ? photos.get(String(c.userId._id)) || null : null,
     };
   }));
 });
@@ -562,9 +565,10 @@ r.get('/doctors/:doctorId', async (req, res) => {
     care.adherence(req.patient, 30),
     access?.practiceId ? M.Conversation.findOne({ patientId: req.patient._id, practiceId: access.practiceId, type: 'care' }) : null,
   ]);
-  const fromDoctor = convo ? await M.Message.findOne({ conversationId: convo._id, senderId: prof.userId, deletedForEveryoneAt: null, hiddenFor: { $ne: req.user._id } }).sort({ createdAt: -1 }) : null;
+  // Automatic notes (visit booked, fee paid — meta.auto) aren't "the doctor's latest message".
+  const fromDoctor = convo ? await M.Message.findOne({ conversationId: convo._id, senderId: prof.userId, deletedForEveryoneAt: null, hiddenFor: { $ne: req.user._id }, 'meta.auto': { $ne: true } }).sort({ createdAt: -1 }) : null;
   // The chat's newest message still there (deleted ones and ones hidden for me skipped), from either side.
-  const latestMsg = convo ? await M.Message.findOne({ conversationId: convo._id, deletedForEveryoneAt: null, hiddenFor: { $ne: req.user._id }, senderType: { $ne: 'system' } }).sort({ createdAt: -1 }).populate('senderId', 'name') : null;
+  const latestMsg = convo ? await M.Message.findOne({ conversationId: convo._id, deletedForEveryoneAt: null, hiddenFor: { $ne: req.user._id }, senderType: { $ne: 'system' }, 'meta.auto': { $ne: true } }).sort({ createdAt: -1 }).populate('senderId', 'name') : null;
   const rxFiles = new Map((await M.Prescription.find({ _id: { $in: records.map((x) => x.prescriptionId).filter(Boolean) } }, 'file')).map((x) => [String(x._id), x.file?.key]));
   const lastFileUrl = (x) => storage.signedUrl(x.files?.[0]?.key || rxFiles.get(String(x.prescriptionId)));
   res.json({
@@ -734,7 +738,8 @@ r.post('/visit-requests', async (req, res) => {
     appointment = await S.book({ practiceId: dl.practiceId, locationId: dl.locationId, doctorId, patientId: req.patient._id, startAt: slot, visitType, mode, reason, channel: 'app', bookedBy: req.user._id, requestId: request._id });
     Object.assign(request, { status: 'scheduled', appointmentId: appointment._id, handledAt: new Date() });
     await request.save();
-    const desk = await practiceStaff(dl.practiceId, { roles: require('../services/notify').DESK_ROLES, locationId: dl.locationId });
+    // The desk at that branch (assistants only of this doctor) and the doctor.
+    const desk = await require('../services/notify').deskFor(dl.practiceId, { locationId: dl.locationId, doctorId });
     await notify([...desk, doctorId], {
       type: 'appointment_booked', practiceId: dl.practiceId, title: `${req.patient.name} booked a visit`,
       body: `${T.dayKey(appointment.startAt)} · ${T.fmtTime(T.minuteOfDay(appointment.startAt))}`, screen: 'Appointments',
@@ -769,7 +774,15 @@ r.post('/appointments/:id/pay-at-clinic', async (req, res) => {
   const before = a.payAt;
   a.payAt = 'clinic';
   await a.save();
-  if (before !== 'clinic') await care.chatNote(a, `You'll pay ₹${a.fee} at the clinic for this visit. You can still pay online any time before.`, 'pay_at_clinic');
+  if (before !== 'clinic') {
+    await care.chatNote(a, `You'll pay ₹${a.fee} at the clinic for this visit. You can still pay online any time before.`, 'pay_at_clinic');
+    // The desk collects it: shown in their notifications (no buzz — Payments lists it too).
+    const staff = await require('../services/notify').deskOrDoctors(a.practiceId, { locationId: a.locationId, doctorId: a.doctorId });
+    await notify(staff, {
+      type: 'fee_pay_at_clinic', push: false, practiceId: a.practiceId, title: `${req.patient.name} will pay ₹${a.fee} at the clinic`,
+      body: `${T.dayKey(a.startAt)} · ${T.fmtTime(T.minuteOfDay(a.startAt))}`, screen: 'Appointments', params: { appointmentId: a._id },
+    });
+  }
   res.json({ ok: true, payAt: a.payAt, fee: a.fee, feeStatus: a.feeStatus });
 });
 
@@ -1743,6 +1756,7 @@ r.get('/urgent/doctors', async (req, res) => {
     M.DoctorLocation.find({ doctorId: { $in: ids }, status: 'active' }).populate('locationId', 'phone'),
   ]);
   const labels = new Map((await M.Specialty.find({ key: { $in: profiles.flatMap((x) => x.specialtyKeys) } }, 'key label')).map((s) => [s.key, s.label]));
+  const photos = await require('../services/photos').doctorPhotos(ids);
   const order = { available: 0, in_clinic: 1, away: 2 };
   const items = await Promise.all(team.filter((c) => c.userId).map(async (c) => {
     const prof = profiles.find((x) => String(x.userId) === String(c.userId._id));
@@ -1752,6 +1766,7 @@ r.get('/urgent/doctors', async (req, res) => {
       doctorId: c.userId._id, name: prof?.displayName || c.userId.name, gender: prof?.gender || null,
       specialty: prof ? labels.get(prof.specialtyKeys[0]) || null : null, clinic: c.practiceId?.name || null,
       ...(await require('../services/presence').presenceOf(c.userId._id)), clinicPhone: place?.locationId?.phone || null,
+      photoUrl: photos.get(String(c.userId._id)) || null,
     };
   }));
   items.sort((a, b) => order[a.presence] - order[b.presence]);
@@ -1765,7 +1780,8 @@ r.post('/urgent', async (req, res) => {
   const text = String(req.body.text || 'I need help urgently.').trim();
   const convo = await care.careConversation(req.patient._id, access.practiceId);
   await care.ensureParticipant(convo, req.user._id, 'patient');
-  const msg = await care.postMessage(convo, { sender: req.user, senderType: 'patient', text, isUrgent: true });
+  // The alert tells the doctor and the desk (one notification each, not two).
+  const msg = await care.postMessage(convo, { sender: req.user, senderType: 'patient', text, isUrgent: true, quietForStaff: true });
   const alert = await care.raiseAlert({ practiceId: access.practiceId, patientId: req.patient._id, doctorId: access.userId, severity: 'emergency', kind: 'urgent_chat', detail: text, sourceModel: 'Message', sourceId: msg._id, conversationId: convo._id });
   res.status(201).json({ conversationId: convo._id, messageId: msg._id, alertId: alert._id, call: '108' });
 });

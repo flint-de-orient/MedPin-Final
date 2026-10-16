@@ -96,6 +96,7 @@ import '../screens/doctor/knowledge_options.dart';
 import '../screens/staff/staff_book.dart';
 import '../screens/staff/staff_payments.dart';
 import '../screens/staff/staff_today.dart';
+import '../screens/staff/staff_vitals.dart';
 import '../screens/staff/staff_patients.dart';
 import '../screens/staff/staff_profile.dart';
 import '../screens/patient/patient_home.dart';
@@ -220,6 +221,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Staff-Patients': ScreenSpec(stem: 'Staff-Patients', title: 'Patients', group: 'Front desk', panel: 'staff', builder: (_) => const StaffPatientsScreen()),
   'Staff-Profile': ScreenSpec(stem: 'Staff-Profile', title: 'Profile', group: 'Front desk', panel: 'staff', builder: (_) => const StaffProfileScreen()),
   'Staff-Payments': ScreenSpec(stem: 'Staff-Payments', title: 'Payments', group: 'Front desk', panel: 'staff', builder: (_) => const StaffPaymentsScreen()),
+  'Staff-Vitals': ScreenSpec(stem: 'Staff-Vitals', title: 'Record vitals', group: 'Front desk', panel: 'staff', builder: (_) => const StaffVitalsScreen()),
   'Main': ScreenSpec(stem: 'Main', title: 'Patient · Home', group: 'Patient app', panel: 'patient', builder: (_) => const PatientHomeScreen()),
   'Patient-AskAI': ScreenSpec(stem: 'Patient-AskAI', title: 'Patient · Ask MedPin AI', group: 'Patient app', panel: 'patient', builder: (_) => const PatientAskaiSheet(), sheet: true, parent: 'Main'),
   'Patient-Adherence': ScreenSpec(stem: 'Patient-Adherence', title: 'Patient · adherence by doctor', group: 'Patient app', panel: 'patient', builder: (_) => const PatientAdherenceSheet(), sheet: true, parent: 'Main'),

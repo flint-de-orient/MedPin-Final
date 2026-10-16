@@ -86,13 +86,81 @@ Future<bool> changeVisitStatus(BuildContext context, {required String appointmen
     ),
   );
   if (picked == null || !context.mounted) return false;
+  String? reason;
+  if (picked == 'cancelled') {
+    reason = await askCancelReason(context, patientName: patientName);
+    if (reason == null || !context.mounted) return false;
+  }
   final ok = await runAction(
     context,
     () => picked == 'cancelled'
-        ? Api.I.post('/api/appointments/$appointmentId/cancel', const {'reason': 'Cancelled by the clinic'})
+        ? Api.I.post('/api/appointments/$appointmentId/cancel', {'reason': reason})
         : Api.I.post('/api/appointments/$appointmentId/status', {'status': picked}),
   );
   if (ok == null || !context.mounted) return false;
   toast(context, tr(context, 'Status: #1').replaceFirst('#1', tr(context, visitStatusLabel(picked))));
   return true;
+}
+
+/// Why the clinic is cancelling (the patient is told): a quick reason, or "Other"
+/// to type one. Returns the reason, or null when the sheet is closed.
+const cancelReasons = ['Patient asked', 'Doctor unavailable', 'Clinic closed', 'Booked by mistake'];
+
+Future<String?> askCancelReason(BuildContext context, {String? patientName}) async {
+  final picked = await openSheet<String>(
+    context,
+    (c) => MpSheet(
+      title: 'Cancel visit',
+      subtitle: patientName == null ? 'Why is it cancelled? The patient is told.' : tr(context, 'Why is #1’s visit cancelled? They are told.').replaceFirst('#1', patientName),
+      showClose: true,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (i, r) in [...cancelReasons, 'Other'].indexed)
+              Tap(
+                onTap: () => Navigator.pop(c, r),
+                radius: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+                  decoration: i == 0 ? null : const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(r, style: tx(16, w: w600))),
+                      const Ico(I.chevronRight, size: 18, color: MP.ink3),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (picked != 'Other' || !context.mounted) return picked;
+  final typed = TextEditingController();
+  final other = await openSheet<String>(
+    context,
+    (c) => MpSheet(
+      title: 'Cancel visit',
+      subtitle: 'Why is it cancelled? The patient is told.',
+      showClose: true,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: VGap(
+          gap: 12,
+          children: [
+            MpInput(controller: typed, hint: 'Reason', autofocus: true, maxLines: 2),
+            MpButton('Cancel visit', kind: MpBtn.danger, onTap: () {
+              final t = typed.text.trim();
+              if (t.isEmpty) return toast(c, 'Type the reason');
+              Navigator.pop(c, t);
+            }),
+          ],
+        ),
+      ),
+    ),
+  );
+  return other;
 }

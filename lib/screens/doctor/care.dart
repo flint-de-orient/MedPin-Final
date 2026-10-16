@@ -27,7 +27,10 @@ class _Conv {
   /// Thread to open (live data only).
   final String? conversationId;
   final String? patientId;
-  const _Conv(this.initials, this.name, this.time, this.unread, this.who, this.text, this.chip, {this.conversationId, this.patientId});
+
+  /// The patient's profile photo (live data only).
+  final String? photo;
+  const _Conv(this.initials, this.name, this.time, this.unread, this.who, this.text, this.chip, {this.conversationId, this.patientId, this.photo});
 }
 
 const _rows = [
@@ -104,6 +107,7 @@ class _CareScreenState extends State<CareScreen> with LiveData {
           d8Triage(c['triage']),
           conversationId: c.str('id'),
           patientId: c.obj('patient').str('id'),
+          photo: c.obj('patient').str('photo').isEmpty ? null : c.obj('patient').str('photo'),
         ),
     ];
   }
@@ -247,7 +251,7 @@ class _CareRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              MpAvatar(r.initials, size: 48, fontSize: 16, weight: w600),
+              MpAvatar(r.initials, size: 48, fontSize: 16, weight: w600, photo: r.photo),
               const Gap(12),
               Expanded(
                 child: Column(

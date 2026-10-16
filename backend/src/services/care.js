@@ -1,20 +1,37 @@
 // Alerts, care conversations and medicine adherence.
 const M = require('../models');
 const T = require('../lib/time');
-const { notify, practiceStaff, clinicians, signal } = require('./notify');
+const { notify, clinicians, signal, deskFor, assistantsOf, patientPlace } = require('./notify');
 
 // ── Alerts ────────────────────────────────────────────────
 
 async function raiseAlert({ practiceId, patientId, doctorId, severity, kind, title, detail, sourceModel, sourceId, conversationId }) {
   const alert = await M.Alert.create({ practiceId, patientId, doctorId, severity, kind, title, detail, sourceModel, sourceId, conversationId });
-  // Clinical alerts reach the patient's own doctors (the one named, plus the care team).
-  const staffIds = await clinicians(practiceId, patientId, { doctorId });
+  // Clinical alerts reach the patient's own doctors (the one named, plus the care team) and
+  // their assistants (who see Clinical alerts) — never the front desk: a home reading or a
+  // lab value is the doctor's to judge.
+  const doctors = await clinicians(practiceId, patientId, { doctorId });
+  const team = [...new Set([...doctors, ...(await assistantsOf(practiceId, doctors))].map(String))];
   const patient = await M.Patient.findById(patientId, 'name');
-  await notify(staffIds, {
+  const name = patient?.name || 'patient';
+  await notify(team, {
     type: `alert_${severity}`, practiceId,
-    title: `${severity === 'emergency' ? 'Emergency' : severity === 'urgent' ? 'Urgent' : 'Watch'}: ${patient?.name || 'patient'}`,
-    body: detail, screen: 'Alerts', params: { alertId: alert._id },
+    title: `${severity === 'emergency' ? 'Emergency' : severity === 'urgent' ? 'Urgent' : 'Watch'}: ${name}`,
+    body: detail, screen: 'Alerts', params: { alertId: alert._id, patientId, ...(conversationId ? { conversationId } : {}) },
   });
+  // The patient asked for help (urgent chat): the front desk covering them hears too — they
+  // answer the clinic phone and can interrupt the doctor. They open the chat (not the
+  // clinical alerts), call the patient and note that the doctor was told.
+  if (kind === 'urgent_chat') {
+    const place = await patientPlace(practiceId, patientId);
+    const desk = (await deskFor(practiceId, { locationId: place.locationId, doctorId: doctorId || place.doctorId })).map(String).filter((id) => !team.includes(id));
+    if (desk.length) {
+      await notify(desk, {
+        type: 'urgent_chat', practiceId, title: `Urgent: ${name} needs help`, body: detail,
+        screen: 'Patient-Thread', params: { alertId: alert._id, patientId, ...(conversationId ? { conversationId } : {}) },
+      });
+    }
+  }
   return alert;
 }
 
@@ -94,19 +111,75 @@ function previewOf(msg, senderName) {
   };
 }
 
+const idOf = (x) => (x?._id || x ? String(x?._id || x) : null);
+const STAFF_ROLES = ['doctor', 'front_desk', 'practice_manager', 'doctor_assistant', 'dietician'];
+
 /**
- * A note from the clinic in the patient's chat (shown as a system line): the
- * visit booked / confirmed / moved / cancelled, the fee paid or refunded — so
- * the chat is the patient's full record of what happened. The notification for
- * the same event is sent separately, so this doesn't notify again; open chats
- * refresh at once.
+ * Who signs an automatic note: the person who did it (a doctor or staff member
+ * booking, collecting, cancelling); otherwise (the patient booked or paid in the
+ * app, a background job) someone at the desk covering that visit's location and
+ * doctor — the one who last wrote in this patient's chat, else the one most
+ * recently in the app — and in a clinic without a front desk, the visit's doctor
+ * (else the patient's main doctor here). Returns a Member (userId, role) or null.
  */
-async function chatNote({ practiceId, patientId }, text, event) {
+async function noteSender({ practiceId, patientId, locationId, doctorId, by }, convo) {
+  const patient = await M.Patient.findById(patientId, 'userId');
+  const notPatient = (id) => Boolean(id) && String(id) !== String(patient?.userId || '');
+  if (notPatient(idOf(by))) {
+    const m = await M.Member.findOne({ practiceId, userId: idOf(by), status: 'active', role: { $in: STAFF_ROLES } }, 'userId role');
+    if (m) return m;
+  }
+  const desk = (await deskFor(practiceId, { locationId: idOf(locationId) || undefined, doctorId: idOf(doctorId) || undefined })).map(String).filter(notPatient);
+  let pick = null;
+  if (desk.length === 1) pick = desk[0];
+  else if (desk.length > 1) {
+    const wrote = await M.Message.findOne({ conversationId: convo._id, senderId: { $in: desk }, 'meta.auto': { $ne: true } }, 'senderId').sort({ createdAt: -1 });
+    if (wrote) pick = String(wrote.senderId);
+    else {
+      const users = await M.User.find({ _id: { $in: desk } }, 'lastActiveAt');
+      users.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0) || String(a._id).localeCompare(String(b._id)));
+      pick = String(users[0]?._id || desk[0]);
+    }
+  }
+  if (!pick && notPatient(idOf(doctorId))) pick = idOf(doctorId);
+  if (!pick) {
+    const team = await M.CareTeamAccess.findOne({ practiceId, patientId, isPrimary: true }, 'userId');
+    if (notPatient(team?.userId)) pick = String(team.userId);
+  }
+  return pick ? M.Member.findOne({ practiceId, userId: pick, status: 'active' }, 'userId role') : null;
+}
+
+/**
+ * A note from the clinic in the patient's chat: the visit booked / confirmed /
+ * moved / cancelled, the fee paid or refunded — so the chat is the patient's
+ * full record of what happened. It is sent from a real person's account (see
+ * noteSender) and marked automatic (meta.auto). The notification for the same
+ * event is sent separately, so this doesn't notify again: only the patient's
+ * unread count goes up, and open chats refresh at once. With nobody to sign it,
+ * it is a plain clinic line (senderType system), as before.
+ *
+ * @param ctx {practiceId, patientId, locationId?, doctorId?, by?} — an appointment works too
+ */
+async function chatNote(ctx, text, event) {
+  const practiceId = idOf(ctx?.practiceId);
+  const patientId = idOf(ctx?.patientId);
   if (!practiceId || !patientId || !text) return null;
   try {
-    const convo = await careConversation(patientId, practiceId);
-    const msg = await M.Message.create({ conversationId: convo._id, senderType: 'system', kind: 'text', text, meta: { event } });
-    convo.lastMessage = previewOf(msg, null);
+    let convo = await careConversation(patientId, practiceId);
+    const sender = await noteSender({ practiceId, patientId, locationId: ctx.locationId, doctorId: ctx.doctorId, by: ctx.by }, convo).catch((err) => {
+      console.warn('[chat note sender]', err.message);
+      return null;
+    });
+    let user = null;
+    if (sender) {
+      convo = await ensureParticipant(convo, sender.userId, sender.role === 'doctor' ? 'doctor' : sender.role === 'dietician' ? 'dietician' : 'staff');
+      user = await M.User.findById(sender.userId, 'name');
+    }
+    const msg = await M.Message.create({
+      conversationId: convo._id, kind: 'text', text, meta: { event, auto: true },
+      ...(sender ? { senderId: sender.userId, senderType: sender.role === 'doctor' ? 'doctor' : 'staff' } : { senderType: 'system' }),
+    });
+    convo.lastMessage = previewOf(msg, user?.name);
     for (const p of convo.participants) if (p.role === 'patient') p.unreadCount = (p.unreadCount || 0) + 1;
     await convo.save();
     await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
@@ -132,7 +205,11 @@ async function messageDeleted(convo, msg) {
   await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
 }
 
-async function postMessage(convo, { sender, senderType, text, kind = 'text', ...rest }) {
+/**
+ * [quietForStaff]: the staff aren't notified here because the caller tells them
+ * itself (Patient-Emergency raises an alert that reaches the doctor and the desk).
+ */
+async function postMessage(convo, { sender, senderType, text, kind = 'text', quietForStaff = false, ...rest }) {
   const msg = await M.Message.create({ conversationId: convo._id, senderId: sender?._id, senderType, text, kind, ...rest });
   const senderId = sender ? String(sender._id) : null;
   convo.lastMessage = previewOf(msg, sender?.name);
@@ -161,19 +238,22 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', ...
     if (changed) await convo.save();
   }
   const base = { type: rest.isUrgent ? 'urgent_message' : 'message', practiceId: convo.practiceId, body: (text || '').slice(0, 120) };
-  if (toStaff.length) {
-    await notify(toStaff, { ...base, title: rest.isUrgent ? `Urgent message from ${convo.lastMessage.senderLabel}` : `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-Thread', params: { conversationId: convo._id } });
-    if (rest.isUrgent) {
-      const { deskOrDoctors } = require('./notify');
-      const desk = (await deskOrDoctors(convo.practiceId)).map(String).filter((id) => !toStaff.map(String).includes(id));
-      if (desk.length) await notify(desk, { ...base, title: `Urgent message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-Thread', params: { conversationId: convo._id } });
-    }
+  let toDesk = [];
+  if (senderType === 'patient' && convo.type === 'care' && !quietForStaff) {
+    // The clinic's shared inbox: the front desk covering this patient (their branch and
+    // doctor) hears about it too — they answer most messages (visits, fees, reports).
+    const place = await patientPlace(convo.practiceId, convo.patientId);
+    toDesk = (await deskFor(convo.practiceId, place)).map(String).filter((id) => id !== senderId && !toStaff.map(String).includes(id));
   }
+  if (quietForStaff) toStaff = [];
+  const staffTitle = rest.isUrgent ? `Urgent message from ${convo.lastMessage.senderLabel}` : `New message from ${convo.lastMessage.senderLabel}`;
+  if (toStaff.length) await notify(toStaff, { ...base, title: staffTitle, screen: 'Patient-Thread', params: { conversationId: convo._id } });
+  if (toDesk.length) await notify(toDesk, { ...base, title: staffTitle, screen: 'Patient-Thread', params: { conversationId: convo._id } });
   if (toPatient.length) {
     await notify(toPatient, { ...base, title: `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-DoctorChat', params: { conversationId: convo._id } });
   }
   // Everyone else in the thread (staff who weren't notified, the sender's other phone): refresh now.
-  const told = new Set([...toPatient, ...toStaff].map(String));
+  const told = new Set([...toPatient, ...toStaff, ...toDesk].map(String));
   await signal(convo.participants.map((p) => p.userId).filter((id) => !told.has(String(id))), { type: 'chat_changed', conversationId: convo._id });
   if (senderType === 'patient') await awayReply(convo).catch(() => {});
   return msg;
@@ -355,4 +435,4 @@ async function adherence(patient, days = 30, acc) {
   };
 }
 
-module.exports = { chatNote, doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };
+module.exports = { chatNote, shortName, doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };

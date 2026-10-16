@@ -47,13 +47,15 @@ me.delete('/photo', async (req, res) => {
 });
 
 // Switch the practice used by staff endpoints (also settable per request with X-Practice-Id).
+// Profile → Clinic: the choice is kept for the next sign-in and other devices.
 me.post('/active-practice', async (req, res) => {
-  const member = await M.Member.findOne({ userId: req.user._id, practiceId: req.body.practiceId, status: 'active' });
+  if (!isId(String(req.body.practiceId || ''))) throw badRequest('Choose a clinic', 'BAD_PRACTICE');
+  const member = await M.Member.findOne({ userId: req.user._id, practiceId: String(req.body.practiceId), status: 'active' });
   if (!member) throw forbidden('You are not a member of this practice', 'NOT_A_MEMBER');
   req.user.activePracticeId = member.practiceId;
-  if (req.body.locationId) req.user.activeLocationId = req.body.locationId;
+  if (req.body.locationId && isId(String(req.body.locationId))) req.user.activeLocationId = String(req.body.locationId);
   await req.user.save();
-  res.json({ ok: true, practiceId: member.practiceId });
+  res.json({ ok: true, practiceId: member.practiceId, ...(await accountSummary(req.user)) });
 });
 
 me.post('/devices', async (req, res) => {
@@ -244,6 +246,12 @@ notifications.get('/', async (req, res) => {
     M.Notification.countDocuments({ ...scope, readAt: null }),
     M.Notification.countDocuments({ ...scope, readAt: null, type: /emergency|urgent/ }),
   ]);
+  // Older notices were stored in English: shown in the app language the person uses now.
+  const lang = req.user.language;
+  if (lang === 'bn' || lang === 'hi') {
+    const { translateNotice } = require('../lib/notify_i18n');
+    return res.json({ items: items.map((n) => ({ ...n.toJSON(), ...translateNotice(n, lang) })), unread, urgent });
+  }
   res.json({ items, unread, urgent });
 });
 notifications.post('/read-all', async (req, res) => {

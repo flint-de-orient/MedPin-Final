@@ -7,6 +7,7 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/photo.dart';
 import '../../data/session.dart';
+import '../../widgets/clinic_switch.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import 'profile_booking.dart';
@@ -346,6 +347,15 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
             ),
           ]),
           _Group('Practice', [
+            // A doctor in two clinics: which one this app works in now.
+            if (isLive && Session.I.activeMemberships.length > 1)
+              _SettingRow(
+                Session.I.practiceName(Session.I.practiceId) ?? 'Clinic',
+                sub: tr(context, 'You work in #1 clinics').replaceFirst('#1', '${Session.I.activeMemberships.length}'),
+                value: 'Switch',
+                valueColor: MP.primary,
+                onTap: () => chooseClinic(context),
+              ),
             _SettingRow(
               'Locations',
               sub: '${d4Plural(_locationCount, 'location')} · map, address, contact',

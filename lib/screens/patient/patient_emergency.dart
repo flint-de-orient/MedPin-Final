@@ -146,6 +146,7 @@ class _PatientEmergencySheetState extends State<PatientEmergencySheet> with Live
 
   Widget _doctorRow(BuildContext context, List<_Doctor> docs, int i) {
     final d = docs[i];
+    final photo = data == null || i >= _raw.length ? '' : _raw[i].str('photoUrl');
     return Tap(
       onTap: () => _choose(i),
       radius: 0,
@@ -159,7 +160,7 @@ class _PatientEmergencySheetState extends State<PatientEmergencySheet> with Live
               height: 48,
               child: Stack(
                 children: [
-                  MpAvatar(d.initials, size: 48, fontSize: 15),
+                  MpAvatar(d.initials, size: 48, fontSize: 15, photo: photo.isEmpty ? null : photo),
                   // 12px status dot with a 2px white ring, bottom-right.
                   Positioned(
                     right: 0,

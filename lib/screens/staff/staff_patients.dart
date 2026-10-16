@@ -83,9 +83,9 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
     };
   }
 
-  /// Rows with their conversation id (null in the design preview).
-  List<(_Conv, String?)> get _all {
-    if (data == null) return [for (final r in _rows) (r, null)];
+  /// Rows with their conversation id and the patient's photo (null in the design preview).
+  List<(_Conv, String?, String?)> get _all {
+    if (data == null) return [for (final r in _rows) (r, null, null)];
     return [
       for (final c in data!.list('items'))
         (
@@ -99,6 +99,7 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
             _triageLabels[c['triage']] ?? '',
           ),
           c.str('id'),
+          c.obj('patient').str('photo').isEmpty ? null : c.obj('patient').str('photo'),
         ),
     ];
   }
@@ -160,7 +161,7 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
                   container: true,
                   child: D10ListCard(
                     children: [
-                      for (var i = 0; i < shown.length; i++) _ConvRow(shown[i].$1, divider: i > 0, onTap: () => _open(shown[i].$2)),
+                      for (var i = 0; i < shown.length; i++) _ConvRow(shown[i].$1, photo: shown[i].$3, divider: i > 0, onTap: () => _open(shown[i].$2)),
                     ],
                   ),
                 ),
@@ -218,9 +219,10 @@ class _EnrolmentBanner extends StatelessWidget {
 
 class _ConvRow extends StatelessWidget {
   final _Conv r;
+  final String? photo;
   final bool divider;
   final VoidCallback onTap;
-  const _ConvRow(this.r, {required this.divider, required this.onTap});
+  const _ConvRow(this.r, {this.photo, required this.divider, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -238,13 +240,7 @@ class _ConvRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(color: MP.primarySoft, shape: BoxShape.circle),
-              child: Text(r.$1, style: tx(16, w: w600, c: MP.primary, h: 1)),
-            ),
+            MpAvatar(r.$1, photo: photo, size: 48, fontSize: 16, weight: w600),
             const Gap(12),
             Expanded(
               child: Column(

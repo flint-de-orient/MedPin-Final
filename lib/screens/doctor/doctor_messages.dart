@@ -161,7 +161,8 @@ class _DoctorMessagesScreenState extends State<DoctorMessagesScreen> with LiveDa
         ? 'Your staff · ${d2Role(t['role'])}'
         : ['Colleague', if (t['role'] == 'dietician') 'Dietician' else if (t.str('department').isNotEmpty) t.str('department')].join(' · ');
     final n = c.numOr('unread').toInt();
-    return _Chat(F.initials(name), name, role, _preview(c.obj('lastMessage')), d2ChatTime(c.obj('lastMessage')['at']), n > 0 ? '$n' : '', true, c.str('id'));
+    return _Chat(F.initials(name), name, role, _preview(c.obj('lastMessage')), d2ChatTime(c.obj('lastMessage')['at']), n > 0 ? '$n' : '', true, c.str('id'),
+        t.str('photo').isEmpty ? null : t.str('photo'));
   }
 
   /// Live (urgent chat, other chats newest first, unread conversations, urgent count).

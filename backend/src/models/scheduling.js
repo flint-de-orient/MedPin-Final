@@ -61,6 +61,7 @@ const appointmentSchema = new Schema(
     cancelledAt: Date,
     cancelledBy: enumOf(E.CANCELLED_BY),
     cancelReason: String,
+    cancelledByUser: ref('User'), // the doctor / desk member who cancelled it (Fees, the visit show the name)
     rescheduledFromId: ref('Appointment'),
     rescheduledToId: ref('Appointment'),
     bookedBy: ref('User'),
@@ -106,6 +107,9 @@ const paymentSchema = new Schema(
     refundedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     refundId: String,
     refundDue: { type: Boolean, default: undefined }, // paid at the desk, visit cancelled: to hand back
+    refundReason: String, // a refund of a visit that wasn't cancelled (goodwill, overcharge)
+    waivedBy: ref('User'), // fee let go by the doctor / owner / practice manager
+    waivedAt: Date,
     note: String,
     payoutId: ref('Payout'), // set once this online fee is paid out to the doctor
   },

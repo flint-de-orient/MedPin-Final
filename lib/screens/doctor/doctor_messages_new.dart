@@ -179,6 +179,7 @@ class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> with Li
                         // Live: every patient linked to the clinic, most recently active first.
                         title: live ? 'Patients' : 'Patients seen recently',
                         people: patients,
+                        photos: live ? [for (final p in data!.list('patients')) p.str('photo').isEmpty ? null : p.str('photo')] : const [],
                         team: false,
                         onTap: (i) => live
                             ? _start(context, {'patientId': data!.list('patients')[i].str('id')})
@@ -188,6 +189,7 @@ class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> with Li
                       _Group(
                         title: 'Colleagues & staff',
                         people: team,
+                        photos: live ? [for (final t in data!.list('team')) t.str('photo').isEmpty ? null : t.str('photo')] : const [],
                         team: true,
                         onTap: (i) => live
                             ? _start(context, {'userId': data!.list('team')[i].str('userId')})
@@ -212,9 +214,12 @@ class _DoctorMessagesNewSheetState extends State<DoctorMessagesNewSheet> with Li
 class _Group extends StatelessWidget {
   final String title;
   final List<(String, String, String)> people;
+
+  /// Profile photo links, in the order of [people] (empty in the design preview).
+  final List<String?> photos;
   final bool team;
   final ValueChanged<int> onTap;
-  const _Group({required this.title, required this.people, required this.team, required this.onTap});
+  const _Group({required this.title, required this.people, this.photos = const [], required this.team, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -236,6 +241,7 @@ class _Group extends StatelessWidget {
                   radius: team ? 12 : null,
                   bg: team ? MP.fill : MP.primarySoft,
                   fg: team ? MP.ink2 : MP.primary,
+                  photo: i < photos.length ? photos[i] : null,
                 ),
                 const Gap(12),
                 Expanded(

@@ -43,8 +43,30 @@ const senderTypeFor = async (req, convo) => {
   return 'staff';
 };
 
+const ROLE_LABEL = {
+  doctor: 'Doctor', front_desk: 'Front desk', doctor_assistant: "Doctor's assistant", dietician: 'Dietician',
+  practice_manager: 'Practice manager', lab_manager: 'Lab manager', lab_technician: 'Lab technician',
+};
+
+/** The patient's open emergency for the thread's staff banner (Call the patient · Doctor informed). */
+async function urgentAlertOf(convo, viewer) {
+  const a = await M.Alert.findOne({
+    practiceId: convo.practiceId, patientId: convo.patientId, status: { $in: ['open', 'acknowledged'] },
+    $or: [{ conversationId: convo._id, kind: 'urgent_chat' }, { escalatedAt: { $ne: null } }],
+  }).sort({ createdAt: -1 }).populate('acknowledged.by', 'name').populate('deskNotes.by', 'name').populate('doctorId', 'name');
+  if (!a) return null;
+  return {
+    id: a._id, kind: a.kind, severity: a.severity, status: a.status, detail: a.detail, createdAt: a.createdAt, escalatedAt: a.escalatedAt || null,
+    doctor: a.doctorId?.name || null,
+    acknowledgedBy: a.acknowledged?.by?.name || null, acknowledgedAt: a.acknowledged?.at || null,
+    deskNotes: (a.deskNotes || []).map((n) => ({ text: n.text, at: n.at, by: n.by?.name || null })),
+    canManage: Boolean(M.ROLE_PERMISSIONS[viewer.role]?.manageAlerts),
+  };
+}
+
 const messageView = (m, userId) => ({
   ...m.toJSON(),
+  auto: Boolean(m.meta?.auto), // an automatic note (visit booked, fee paid…) sent from this person's account
   text: m.deletedForEveryoneAt ? null : m.text,
   deleted: Boolean(m.deletedForEveryoneAt),
   attachment: storage.withUrl(m.attachment),
@@ -78,6 +100,16 @@ threads.get('/:id/messages', async (req, res) => {
     const x = m.recordId && recs.find((r) => String(r._id) === String(m.recordId));
     return x ? { id: x._id, kind: x.kind, title: x.title, date: x.recordDate, sourceName: x.sourceName, flagLabel: x.flagLabel } : undefined;
   };
+  // Who wrote each message, with their profile photo (a doctor's public photo first).
+  const senderPhotos = await require('../services/photos').doctorPhotos(msgs.map((m) => m.senderId?._id || m.senderId));
+  // …and their role here ("Tania · Front desk"): the clinic shares one thread per patient.
+  const staffIds = [...new Set(msgs.filter((m) => m.senderId && m.senderType !== 'patient').map((m) => String(m.senderId?._id || m.senderId)))];
+  const roles = new Map(convo.practiceId && staffIds.length
+    ? (await M.Member.find({ practiceId: convo.practiceId, userId: { $in: staffIds } }, 'userId role')).map((x) => [String(x.userId), x.role])
+    : []);
+  const viewer = convo.practiceId && String(patient?.userId || '') !== String(req.user._id)
+    ? await M.Member.findOne({ userId: req.user._id, practiceId: convo.practiceId, status: 'active' }, 'role')
+    : null;
   res.json({
     conversation: {
       ...convo.toJSON(),
@@ -87,11 +119,15 @@ threads.get('/:id/messages', async (req, res) => {
         photo: patient.userId ? (await require('../services/photos').photosFor([patient.userId])).get(String(patient.userId)) || null : null,
       },
       nextVisit: nextVisit && { startAt: nextVisit.startAt, token: String(nextVisit.tokenNo).padStart(2, '0') },
+      // Staff only: the patient's open emergency (urgent chat, or one the desk was asked to pass on).
+      urgentAlert: viewer && convo.type === 'care' ? await urgentAlertOf(convo, viewer) : undefined,
     },
     pinned: pinned && !pinned.deletedForEveryoneAt ? messageView(pinned, req.user._id) : null,
     suggestions,
     items: msgs.map((m) => {
-      const v = { ...messageView(m, req.user._id), record: recordOf(m) };
+      const v = { ...messageView(m, req.user._id), record: recordOf(m), senderPhoto: senderPhotos.get(String(m.senderId?._id || m.senderId)) || null };
+      const role = m.senderType !== 'patient' ? roles.get(String(m.senderId?._id || m.senderId)) : null;
+      if (role) Object.assign(v, { senderRole: role, senderRoleLabel: ROLE_LABEL[role] || null });
       // Older messages the thread's patient sent while listed with another role: shown as theirs.
       if (patientIsOnlyPatient && String(m.senderId?._id || m.senderId) === String(patient.userId) && v.senderType !== 'patient' && v.senderType !== 'system') v.senderType = 'patient';
       return v;
@@ -261,7 +297,7 @@ inbox.get('/contacts', async (req, res) => {
     if (digits.length >= 3) or.push({ phone: new RegExp(escapeRegex(digits.replace(/^91(?=\d{10}$)/, ''))) });
     pq.$or = or;
   }
-  const pts = await M.Patient.find(pq, 'name phone gender ageYears ageRecordedAt dateOfBirth').limit(1000);
+  const pts = await M.Patient.find(pq, 'name phone gender ageYears ageRecordedAt dateOfBirth userId').limit(1000);
   const ids = pts.map((p) => p._id);
   // Last activity here: a visit, a consultation or a chat message.
   const now = new Date();
@@ -287,9 +323,19 @@ inbox.get('/contacts', async (req, res) => {
     .map((p) => ({ p, at: last.get(String(p._id)) || null }))
     .sort((a, b) => (b.at ? b.at.getTime() : 0) - (a.at ? a.at.getTime() : 0) || String(a.p.name || '').localeCompare(String(b.p.name || '')))
     .slice(0, 200);
+  // Profile photos for the avatars: patients' own, the team's (a doctor's public photo first).
+  const photos = require('../services/photos');
+  const teamRows = team.filter((m) => m.userId && match(m.userId.name, m.userId.phone));
+  const [patientPhotos, teamPhotos] = await Promise.all([
+    photos.photosFor(rows.map(({ p }) => p.userId)),
+    photos.doctorPhotos(teamRows.map((m) => m.userId._id)),
+  ]);
   res.json({
-    patients: rows.map(({ p, at }) => ({ id: p._id, name: p.name, phone: p.phone, age: T.ageFrom(p), gender: p.gender, today: status.get(String(p._id)) || null, lastActiveAt: at })),
-    team: team.filter((m) => m.userId && match(m.userId.name, m.userId.phone)).map((m) => ({ userId: m.userId._id, name: m.userId.name, role: m.role, department: m.departmentId?.name })),
+    patients: rows.map(({ p, at }) => ({
+      id: p._id, name: p.name, phone: p.phone, age: T.ageFrom(p), gender: p.gender, today: status.get(String(p._id)) || null, lastActiveAt: at,
+      photo: p.userId ? patientPhotos.get(String(p.userId)) || null : null,
+    })),
+    team: teamRows.map((m) => ({ userId: m.userId._id, name: m.userId.name, role: m.role, department: m.departmentId?.name, photo: teamPhotos.get(String(m.userId._id)) || null })),
   });
 });
 

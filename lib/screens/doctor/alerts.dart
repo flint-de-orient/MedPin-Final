@@ -32,13 +32,21 @@ class _Alert {
     this.noteBy,
     this.id,
     this.patientId,
+    this.photo,
     this.acknowledgedToday = true,
+    this.deskNotes = const [],
   });
+
+  /// The front desk's notes on an emergency ("Doctor informed" · "Tania, 9:20 AM").
+  final List<({String text, String by})> deskNotes;
 
   /// Live record ids (null in the design preview).
   final String? id;
   final String? patientId;
   final bool acknowledgedToday;
+
+  /// The patient's profile photo (live data only).
+  final String? photo;
 
   /// Index into the severities: 0 Emergency, 1 Urgent, 2 Watch.
   final int sev;
@@ -89,6 +97,7 @@ class _AlertsScreenState extends State<AlertsScreen> with LiveData {
     return _Alert(
       id: a.str('id'),
       patientId: p['id'] == null ? null : p.str('id'),
+      photo: p.str('photo').isEmpty ? null : p.str('photo'),
       sev: _sevKeys.indexOf(a.str('severity')).clamp(0, 2),
       time: at == null ? '' : F.askedAt(at),
       initials: F.initials(name),
@@ -103,6 +112,16 @@ class _AlertsScreenState extends State<AlertsScreen> with LiveData {
       note: a['note'] == null || a.str('note').isEmpty ? null : a.str('note'),
       noteBy: [if (noteByName.isNotEmpty) F.doctorShort(noteByName), if (noteAt != null) F.askedAt(noteAt)].join(', '),
       acknowledgedToday: ackAt != null && F.sameDay(ackAt, DateTime.now()),
+      deskNotes: [
+        for (final n in a.list('deskNotes'))
+          (
+            text: n.str('text'),
+            by: [
+              if (n.str('by').isNotEmpty) n.str('by').split(RegExp(r'\s+')).first,
+              if (F.date(n['at']) != null) F.askedAt(F.date(n['at'])!),
+            ].join(', '),
+          ),
+      ],
     );
   }
 
@@ -315,7 +334,7 @@ class _AlertsScreenState extends State<AlertsScreen> with LiveData {
             radius: 12,
             child: Row(
               children: [
-                MpAvatar(a.initials, size: 40, fontSize: 14),
+                MpAvatar(a.initials, size: 40, fontSize: 14, photo: a.photo),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -342,6 +361,19 @@ class _AlertsScreenState extends State<AlertsScreen> with LiveData {
                   Text(a.note!, style: tx(14, h: 1.45)),
                   const SizedBox(height: 4),
                   Text(a.noteBy ?? '', style: tx(13, c: MP.ink3)),
+                ],
+              ),
+            ),
+          for (final n in a.deskNotes)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(12)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(n.text, style: tx(14, h: 1.45)),
+                  const SizedBox(height: 4),
+                  Text(n.by.isEmpty ? 'Front desk' : tr(context, 'Front desk · #1').replaceFirst('#1', n.by), style: tx(13, c: MP.ink3)),
                 ],
               ),
             ),

@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'api.dart';
+import 'live.dart';
+import 'nav_counts.dart';
 
 /// Where the session is kept between launches.
 abstract class SessionStore {
@@ -73,11 +75,51 @@ class Session extends ChangeNotifier {
   List<Map<String, dynamic>> get memberships =>
       [for (final m in (account?['memberships'] as List? ?? const [])) (m as Map).cast<String, dynamic>()];
 
+  /// The clinics this person works in now (staff in two practices have two).
+  List<Map<String, dynamic>> get activeMemberships => [for (final m in memberships) if (m['status'] == 'active') m];
+
+  /// The clinic chosen on this phone (Profile → Clinic); kept with the session.
+  String? chosenPracticeId;
+
+  /// The clinic staff screens work in: the one chosen here, else the one the
+  /// server remembers (activePracticeId), else the first.
   Map<String, dynamic>? get activeMembership {
-    for (final m in memberships) {
-      if (m['status'] == 'active') return m;
+    final active = activeMemberships;
+    if (active.isEmpty) return null;
+    for (final want in [chosenPracticeId, account?['activePracticeId']]) {
+      if (want == null) continue;
+      for (final m in active) {
+        if ('${m['practiceId']}' == '$want') return m;
+      }
+    }
+    return active.first;
+  }
+
+  /// The clinic's name for a practice id ("City Care Clinic"), or null when not one of mine.
+  String? practiceName(String? id) {
+    for (final m in activeMemberships) {
+      if ('${m['practiceId']}' == '$id') return (m['practiceName'] as String?) ?? '';
     }
     return null;
+  }
+
+  /// Switches the clinic everything works in (Profile → Clinic, or a
+  /// notification from the other clinic). Every request then carries its
+  /// x-practice-id, open screens reload (LiveBus) and the badges follow.
+  /// Returns false when [id] isn't one of my active clinics (nothing changes).
+  /// The first screen may change too (a doctor in one clinic, front desk in
+  /// another): callers compare [landing] before and after.
+  Future<bool> usePractice(String? id) async {
+    if (id == null || practiceName(id) == null) return false;
+    if ('${activeMembership?['practiceId']}' == id) return true;
+    chosenPracticeId = id;
+    await _save();
+    notifyListeners();
+    LiveBus.changed();
+    NavCounts.refresh(force: true);
+    // Remembered on the server too (next sign-in, other phones); best effort.
+    Api.I.post('/api/me/active-practice', {'practiceId': id}).ignore();
+    return true;
   }
 
   String? get practiceId => activeMembership?['practiceId'] as String?;
@@ -93,8 +135,14 @@ class Session extends ChangeNotifier {
   }
   String? get patientId => account?['patientId'] as String?;
 
-  /// The first screen for this account: Doctor-Dashboard, Staff-Today, Main or Auth-Welcome.
-  String get landing => (account?['landing'] as String?) ?? 'Auth-Login';
+  /// The first screen for this account: Doctor-Dashboard, Staff-Today, Main or Auth-Welcome
+  /// (for staff, the role they have in the clinic chosen with [usePractice]).
+  String get landing {
+    final server = (account?['landing'] as String?) ?? 'Auth-Login';
+    final role = this.role;
+    if (role == null || chosenPracticeId == null) return server;
+    return const {'doctor': 'Doctor-Dashboard', 'doctor_assistant': 'Doctor-Home', 'dietician': 'Doctor-Home'}[role] ?? 'Staff-Today';
+  }
 
   /// Loads the saved session and checks it with the server.
   /// Returns false when the user has to sign in.
@@ -106,6 +154,7 @@ class Session extends ChangeNotifier {
       accessToken = data['accessToken'] as String?;
       refreshToken = data['refreshToken'] as String?;
       account = (data['account'] as Map?)?.cast<String, dynamic>();
+      chosenPracticeId = data['practiceId'] as String?;
     } catch (_) {
       await _clearLocal();
       return false;
@@ -135,9 +184,10 @@ class Session extends ChangeNotifier {
     accessToken = body['accessToken'] as String?;
     refreshToken = body['refreshToken'] as String?;
     account = {
-      for (final k in ['user', 'memberships', 'patientId', 'landing']) k: body[k],
+      for (final k in ['user', 'memberships', 'activePracticeId', 'patientId', 'landing']) k: body[k],
     };
     pendingPhone = pendingMaskedPhone = pendingDevCode = null;
+    chosenPracticeId = null; // the server's activePracticeId is this account's choice
     restoredAtLaunch = false;
     await _save();
     notifyListeners();
@@ -161,7 +211,7 @@ class Session extends ChangeNotifier {
     if (account == null) return;
     account = {
       ...account!,
-      for (final k in ['user', 'memberships', 'patientId', 'landing'])
+      for (final k in ['user', 'memberships', 'activePracticeId', 'patientId', 'landing'])
         if (body.containsKey(k)) k: body[k],
     };
     await _save();
@@ -251,7 +301,7 @@ class Session extends ChangeNotifier {
 
   Future<void> _save() async {
     try {
-      await store.write(jsonEncode({'accessToken': accessToken, 'refreshToken': refreshToken, 'account': account}));
+      await store.write(jsonEncode({'accessToken': accessToken, 'refreshToken': refreshToken, 'account': account, 'practiceId': chosenPracticeId}));
     } catch (e) {
       debugPrint('Session not saved: $e');
     }
@@ -261,6 +311,7 @@ class Session extends ChangeNotifier {
     accessToken = refreshToken = null;
     pendingSignup = null;
     account = null;
+    chosenPracticeId = null;
     try {
       await store.clear();
     } catch (_) {}

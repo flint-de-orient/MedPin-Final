@@ -143,6 +143,10 @@ const alertSchema = new Schema(
     note: String, // "Called patient, advised to come in"
     noteBy: ref('User'),
     noteAt: Date,
+    // The front desk's notes ("Doctor informed"): seen by the doctor on the alert;
+    // they never acknowledge or resolve it.
+    deskNotes: [{ text: { type: String, maxlength: 300 }, by: ref('User'), at: Date, _id: false }],
+    escalatedAt: Date, // an emergency nobody acknowledged in 15 min: the desk was asked to tell the doctor
     acknowledged: actionStamp,
     resolved: actionStamp,
   },

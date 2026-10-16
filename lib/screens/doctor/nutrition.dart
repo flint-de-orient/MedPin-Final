@@ -29,6 +29,9 @@ class _Conv {
   /// Thread to open (live data only).
   final String? conversationId;
   final String? patientId;
+
+  /// The patient's profile photo (live data only).
+  final String? photo;
   const _Conv(
     this.initials,
     this.name,
@@ -40,6 +43,7 @@ class _Conv {
     this.meta, {
     this.conversationId,
     this.patientId,
+    this.photo,
   });
 }
 
@@ -161,6 +165,7 @@ class _NutritionScreenState extends State<NutritionScreen> with LiveData {
           _mealLogged(F.date(c['lastMealAt'])),
           conversationId: c.str('id'),
           patientId: c.obj('patient').str('id'),
+          photo: c.obj('patient').str('photo').isEmpty ? null : c.obj('patient').str('photo'),
         ),
     ];
   }
@@ -319,7 +324,7 @@ class _NutritionRow extends StatelessWidget {
                   const Ico(I.chevronRight, size: 18, color: MP.ink3),
                 ],
               ),
-              Positioned(left: 0, top: 0, child: MpAvatar(r.initials, size: 48, fontSize: 16, weight: w600)),
+              Positioned(left: 0, top: 0, child: MpAvatar(r.initials, size: 48, fontSize: 16, weight: w600, photo: r.photo)),
             ],
           ),
         ),

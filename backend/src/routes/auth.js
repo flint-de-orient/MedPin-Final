@@ -70,7 +70,9 @@ async function accountSummary(user) {
   const members = await M.Member.find({ userId: user._id, status: { $in: ['active', 'suspended'] } }).populate('practiceId', 'name');
   const patient = await M.Patient.findOne({ userId: user._id }, 'name');
   const active = members.filter((m) => m.status === 'active');
-  const first = active[0];
+  // The clinic this person last chose (Profile → Clinic), else the first one.
+  const chosen = user.activePracticeId && active.find((m) => String(m.practiceId?._id || m.practiceId) === String(user.activePracticeId));
+  const first = chosen || active[0];
   // New number: choose "start my clinic", "I'm a patient" or "I have an invite code".
   let landing = 'Auth-Welcome';
   const LANDING = {
@@ -95,7 +97,9 @@ async function accountSummary(user) {
     memberships: members.map((m) => ({
       id: m._id, practiceId: m.practiceId?._id, practiceName: m.practiceId?.name, role: m.role, isOwner: m.isOwner, status: m.status,
       permissions: M.ROLE_PERMISSIONS[m.role] || {},
+      allLocations: Boolean(m.isOwner || m.allLocations), locationIds: m.locationIds || [], assistsDoctorIds: m.assistsDoctorIds || [],
     })),
+    activePracticeId: first?.practiceId?._id || null,
     patientId: patient?._id || null,
     landing,
   };

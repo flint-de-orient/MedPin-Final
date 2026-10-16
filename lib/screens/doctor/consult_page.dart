@@ -667,7 +667,7 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
         children: [
           Row(
             children: [
-              MpAvatar(F.initials(_patientName), size: 48, fontSize: 16),
+              MpAvatar(F.initials(_patientName), size: 48, fontSize: 16, photo: isLive && patient.str('photo').isNotEmpty ? patient.str('photo') : null),
               const Gap(12),
               Expanded(
                 child: Column(

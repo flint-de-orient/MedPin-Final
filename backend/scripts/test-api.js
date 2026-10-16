@@ -815,6 +815,58 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(pay.status, 'refunded');
     assert.equal((await M.Appointment.findById(appt.id)).feeStatus, 'refunded');
     assert.ok(await M.Notification.exists({ userId: patientUser, type: 'fee_refunded' }));
+    assert.ok(pay.refundedBy, 'who handed it back is kept');
+    const cancelled = ok(await ctx.desk('GET', `/api/appointments/${appt.id}`));
+    assert.ok(cancelled.cancelledByName, 'who cancelled is shown');
+    assert.equal(cancelled.cancelReason, 'Clinic closed');
+
+    // Front-desk policy: who may act on which visit, and who may give money back.
+    const P = M.ROLE_PERMISSIONS;
+    assert.deepEqual([P.doctor.refunds, P.practice_manager.refunds, P.front_desk.refunds, P.doctor_assistant.refunds], [true, true, false, false], 'discretionary refunds: doctor / manager');
+    assert.deepEqual([P.front_desk.vitals, P.doctor_assistant.vitals, P.practice_manager.vitals, P.lab_technician.vitals], [true, true, true, false], 'who takes vitals');
+    const freeSlots = async (n) => {
+      const out = [];
+      for (let day = 1; day <= 12 && out.length < n; day += 1) {
+        const d = T.dayKey(T.addDays(new Date(), day));
+        for (const s of ok(await ctx.desk('GET', `/api/doctors/${ctx.doctorUserId}/slots?locationId=${ctx.locationId}&date=${d}`)).slots) {
+          if (s.available && !s.walkIn && out.length < n) out.push(s);
+        }
+      }
+      assert.equal(out.length, n, 'free slots');
+      return out;
+    };
+    const [s1, s2] = await freeSlots(2);
+    const visit = ok(await ctx.desk('POST', '/api/appointments', { patientId: ctx.patientId, doctorId: ctx.doctorUserId, locationId: ctx.locationId, startAt: s1.startAt, visitType: 'follow_up', confirmed: true }), 201);
+    const other = ok(await ctx.desk('POST', '/api/appointments', { patientId: ctx.patientId, doctorId: ctx.doctorUserId, locationId: ctx.locationId, startAt: s2.startAt, visitType: 'follow_up' }), 201);
+    assert.equal((await ctx.desk('POST', `/api/appointments/${visit.id}/cancel`, {})).status, 400, 'a cancel needs a reason');
+    // The desk moved to another branch: this visit isn't theirs to change.
+    const deskMember = await M.Member.findOne({ userId: (await M.User.findOne({ phone: '9749681391' }))._id, practiceId: (await M.Location.findById(ctx.locationId)).practiceId });
+    const was = { locationIds: deskMember.locationIds, allLocations: deskMember.allLocations };
+    await M.Member.updateOne({ _id: deskMember._id }, { locationIds: [new (require('mongoose').Types.ObjectId)()], allLocations: false });
+    const away = await ctx.desk('POST', `/api/appointments/${visit.id}/cancel`, { reason: 'Patient asked' });
+    assert.deepEqual([away.status, away.body?.error?.code], [403, 'NOT_YOUR_LOCATION'], 'desk at another location: 403');
+    assert.equal((await ctx.desk('POST', `/api/appointments/${visit.id}/status`, { status: 'waiting' })).status, 403);
+    const visitPay = ok(await ctx.doc('GET', `/api/appointments/${visit.id}`)).payment;
+    if (visitPay) assert.equal((await ctx.desk('POST', `/api/payments/${visitPay.id}/mark-paid`, { method: 'cash' })).status, 403, 'nor collect its fee');
+    await M.Member.updateOne({ _id: deskMember._id }, was);
+    // Back at this branch: collect, then a refund of a visit that wasn't cancelled is the doctor's call.
+    if (visitPay) {
+      ok(await ctx.desk('POST', `/api/payments/${visitPay.id}/mark-paid`, { method: 'cash' }));
+      const goodwill = await ctx.desk('POST', `/api/payments/${visitPay.id}/refund`, { handedBack: true, reason: 'Overcharged' });
+      assert.deepEqual([goodwill.status, goodwill.body?.error?.code], [403, 'PERMISSION_REQUIRED'], "the desk can't refund a visit that wasn't cancelled");
+      ok(await ctx.doc('POST', `/api/payments/${visitPay.id}/refund`, { handedBack: true, reason: 'Overcharged' }));
+      const back = await M.Payment.findById(visitPay.id);
+      assert.deepEqual([back.status, back.refundReason], ['refunded', 'Overcharged'], 'the doctor can');
+      assert.equal((await M.Appointment.findById(visit.id)).status, 'confirmed', 'the visit stays booked');
+    }
+    const otherPay = ok(await ctx.doc('GET', `/api/appointments/${other.id}`)).payment;
+    if (otherPay) {
+      assert.equal((await ctx.desk('POST', `/api/payments/${otherPay.id}/waive`, {})).status, 403, "the desk can't waive a fee");
+      ok(await ctx.doc('POST', `/api/payments/${otherPay.id}/waive`, { reason: 'Old patient' }));
+      assert.equal((await M.Payment.findById(otherPay.id)).status, 'waived');
+    }
+    ok(await ctx.desk('POST', `/api/appointments/${visit.id}/cancel`, { reason: 'Booked by mistake' }));
+    ok(await ctx.desk('POST', `/api/appointments/${other.id}/cancel`, { reason: 'Booked by mistake' }));
 
     // A clinic without a front desk: requests go to the doctor; the dashboard says so.
     const { deskOrDoctors, hasDesk } = require('../src/services/notify');
@@ -1146,6 +1198,76 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await ctx.doc('PATCH', `/api/members/${tania.id}`, { suspended: false }));
   });
 
+  await step('clinic set-up: the front desk keeps closures, not hours; staff in two clinics choose one', async () => {
+    // A fresh session for the front desk (suspension above signed them out), without another code.
+    const deskUser = await M.User.findOne({ phone: '9749681391' });
+    const sec = require('../src/lib/security');
+    const sid = await M.AuthSession.create({ userId: deskUser._id, tokenHash: sec.sha256(sec.randomToken()), expiresAt: new Date(Date.now() + 864e5) });
+    const s = { accessToken: sec.signAccess(deskUser, sid._id), user: { id: String(deskUser._id) } };
+    const desk = api(s.accessToken);
+    const loc = ok(await desk('GET', `/api/locations/${ctx.locationId}`));
+    assert.deepEqual([loc.can.details, loc.can.hours, loc.can.closures], [false, false, true], 'front desk: closures only');
+    assert.match(loc.can.note, /holidays and closures/);
+    assert.equal((await desk('PATCH', `/api/locations/${ctx.locationId}`, { name: 'Renamed' })).status, 403, 'front desk cannot change details');
+    const owner = ok(await ctx.doc('GET', `/api/locations/${ctx.locationId}`));
+    assert.deepEqual([owner.can.details, owner.can.closures], [true, true]);
+    const row = loc.doctors.find((d) => String(d.doctorId) === String(ctx.doctorUserId));
+    assert.equal(row.canEdit, false, "front desk sees the doctor's hours read-only");
+    assert.equal((await desk('PUT', `/api/locations/${ctx.locationId}/doctors/${ctx.doctorUserId}/hours`, { week: row.week })).status, 403);
+    // A part-day closure: only those slots go.
+    let day;
+    let before;
+    for (let i = 2; i < 10 && !day; i += 1) {
+      const d = new Date(Date.now() + i * 864e5).toISOString().slice(0, 10);
+      const sl = ok(await desk('GET', `/api/doctors/${ctx.doctorUserId}/slots?locationId=${ctx.locationId}&date=${d}`));
+      if (sl.open && sl.slots.length > 8) [day, before] = [d, sl];
+    }
+    assert.ok(day, 'a bookable day');
+    const from = before.slots[2].minute;
+    const preview = ok(await desk('GET', `/api/locations/${ctx.locationId}/closures/preview?startDate=${day}&allDay=false&fromMin=${from}&toMin=${from + 60}`));
+    assert.equal(typeof preview.booked, 'number');
+    assert.equal((await desk('POST', `/api/locations/${ctx.locationId}/closures`, { startDate: day, allDay: false, fromMin: from, toMin: from })).status, 400, 'end after start');
+    const c = ok(await desk('POST', `/api/locations/${ctx.locationId}/closures`, { startDate: day, allDay: false, fromMin: from, toMin: from + 60, reason: 'Staff meeting' }), 201);
+    assert.equal(c.allDay, false);
+    const after = ok(await desk('GET', `/api/doctors/${ctx.doctorUserId}/slots?locationId=${ctx.locationId}&date=${day}`));
+    assert.ok(after.open, 'the rest of the day stays bookable');
+    assert.ok(!after.slots.some((x) => x.minute + 15 > from && x.minute < from + 60), 'no slots in the closed hour');
+    assert.equal((await desk('POST', `/api/locations/${ctx.locationId}/closures`, { startDate: day, reason: 'Again' })).body.error.code, 'CLOSURE_OVERLAP');
+    ok(await desk('DELETE', `/api/locations/${ctx.locationId}/closures/${c.id}`));
+    assert.equal(ok(await desk('GET', `/api/doctors/${ctx.doctorUserId}/slots?locationId=${ctx.locationId}&date=${day}`)).slots.length, before.slots.length, 'open again');
+    // The owner changes the doctor's hours here; overlapping sessions are refused.
+    const overlap = row.week.map((w) => ({ weekday: w.weekday, sessions: [{ startMin: 540, endMin: 780 }, { startMin: 720, endMin: 900 }] }));
+    assert.equal((await ctx.doc('PUT', `/api/locations/${ctx.locationId}/doctors/${ctx.doctorUserId}/hours`, { week: overlap })).status, 400);
+    const saved = ok(await ctx.doc('PUT', `/api/locations/${ctx.locationId}/doctors/${ctx.doctorUserId}/hours`, { week: row.week }));
+    assert.equal(saved.week.length, 7);
+    // My own membership (Profile → Account / Clinic details).
+    const me = ok(await desk('GET', '/api/members/me'));
+    assert.equal(me.role, 'front_desk');
+    assert.equal(me.practice.name, 'City Care Clinic');
+    assert.ok(me.coverage.some((l) => String(l.id) === String(ctx.locationId) && l.doctors.some((d) => String(d.userId) === String(ctx.doctorUserId))), 'locations with their doctors');
+    assert.ok(me.worksFor.some((d) => String(d.userId) === String(ctx.doctorUserId)));
+    assert.equal(me.permissions.closures, true);
+    // The front desk's own photo: saved, and in every account summary (header avatar, after a restart).
+    const photo = ok(await desk('POST', '/api/me/photo', undefined, { form: fileForm('file', tinyPng(), 'me.png', 'image/png') }));
+    assert.ok(photo.user.photoUrl, 'photo link in the summary');
+    assert.ok(ok(await desk('GET', '/api/auth/session')).user.photoUrl, 'and when the session is restored');
+    const team = ok(await ctx.doc('GET', '/api/members'));
+    assert.ok(team.items.find((x) => String(x.userId) === String(s.user.id))?.photo, 'the team sees it too');
+    // A second clinic: the choice is kept and staff endpoints follow it; a header still wins.
+    const other = await M.Practice.create({ name: 'Lake View Clinic', ownerUserId: ctx.doctorUserId });
+    const m2 = await M.Member.create({ practiceId: other._id, userId: s.user.id, role: 'front_desk', allLocations: true });
+    const sess = ok(await desk('GET', '/api/auth/session'));
+    assert.equal(sess.memberships.filter((m) => m.status === 'active').length, 2);
+    const sw = ok(await desk('POST', '/api/me/active-practice', { practiceId: String(other._id) }));
+    assert.equal(String(sw.activePracticeId), String(other._id));
+    assert.equal(ok(await desk('GET', '/api/members/me')).practice.name, 'Lake View Clinic');
+    assert.equal(ok(await api(s.accessToken, ctx.practiceId)('GET', '/api/members/me')).practice.name, 'City Care Clinic', 'x-practice-id wins');
+    assert.equal((await desk('POST', '/api/me/active-practice', { practiceId: '000000000000000000000000' })).status, 403);
+    ok(await desk('POST', '/api/me/active-practice', { practiceId: String(ctx.practiceId) }));
+    await M.Member.deleteOne({ _id: m2._id });
+    await M.Practice.deleteOne({ _id: other._id });
+  });
+
   await step('reminders and notifications go to the right people, once', async () => {
     const jobs = require('../src/services/jobs');
     const T = require('../src/lib/time');
@@ -1355,7 +1477,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     }
 
     // Setup checklist for a doctor; Home health score and summary; device readings once only.
-    const day = new Date().toISOString().slice(0, 10);
+    const day = require('../src/lib/time').dayKey(new Date()); // the clinic's (IST) day, also just after midnight
     const at = new Date(Date.now() - 3600e3).toISOString();
     const sync = { source: 'Health Connect', days: [{ date: day, steps: 6400 }], readings: [{ kind: 'pulse', at, value: 72 }, { kind: 'bp', at, value: 128, value2: 82 }, { kind: 'spo2', at, value: 300 }] };
     const first = ok(await ctx.pat('POST', '/api/patient/device-sync', sync));
@@ -1507,8 +1629,9 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     }), 201);
     assert.equal(appt.status, 'confirmed', 'a desk booking is confirmed straight away');
     const patient = await M.Patient.findById(ctx.patientId, 'userId');
-    if (patient.userId) assert.ok(await M.Notification.exists({ userId: patient.userId, type: 'appointment_booked', title: 'Visit confirmed' }), 'the patient is told');
-    ok(await ctx.desk('POST', `/api/appointments/${appt.id}/cancel`, {}));
+    // In their app language (this patient chose Hindi).
+    if (patient.userId) assert.ok(await M.Notification.exists({ userId: patient.userId, type: 'appointment_booked', title: 'विज़िट पक्की' }), 'the patient is told');
+    ok(await ctx.desk('POST', `/api/appointments/${appt.id}/cancel`, { reason: 'Patient asked' }));
 
     // Bell: urgent counts only unread emergencies.
     const deskUser = ok(await ctx.desk('GET', '/api/me')).user.id;
@@ -1552,6 +1675,173 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(again.resendInSec > 0 && again.resendInSec <= 30);
     assert.equal(again.devCode, undefined, 'no new code');
     assert.equal(await checkOtp('9000012345', 'register', first.devCode), true, 'the first code still works');
+  });
+
+  await step('automatic chat notes are signed by a real person (desk at the branch, else the doctor)', async () => {
+    const care = require('../src/services/care');
+    const deskUser = String(ok(await ctx.desk('GET', '/api/me')).user.id);
+    const patient = await M.Patient.findById(ctx.patientId, 'userId');
+    const convoOf = (pid) => M.Conversation.findOne({ patientId: pid, practiceId: ctx.practiceId, type: 'care' });
+    const unread = (c, uid) => c.participants.find((p) => String(p.userId) === String(uid))?.unreadCount || 0;
+    const base = { practiceId: ctx.practiceId, patientId: ctx.patientId, locationId: ctx.locationId, doctorId: ctx.doctorUserId };
+    // The desk books: the "Visit booked" note is theirs (staff, automatic); only the patient's unread goes up.
+    let free = null;
+    for (let day = 2; day < 14 && !free; day += 1) {
+      const d = new Date(Date.now() + day * 864e5).toISOString().slice(0, 10);
+      free = ok(await ctx.desk('GET', `/api/doctors/${ctx.doctorUserId}/slots?locationId=${ctx.locationId}&date=${d}`)).slots.find((s) => s.available && !s.walkIn);
+    }
+    const before = await convoOf(ctx.patientId);
+    const appt = ok(await ctx.desk('POST', '/api/appointments', { patientId: ctx.patientId, doctorId: ctx.doctorUserId, locationId: ctx.locationId, startAt: free.startAt, visitType: 'follow_up' }), 201);
+    const booked = await M.Message.findOne({ conversationId: before._id, 'meta.event': 'visit_booked' }).sort({ createdAt: -1 });
+    assert.equal(String(booked.senderId), deskUser, 'sent from the desk member who booked');
+    assert.equal(booked.senderType, 'staff');
+    assert.equal(booked.meta.auto, true);
+    const after = await convoOf(ctx.patientId);
+    assert.equal(String(after.lastMessage.senderId), deskUser, 'the preview shows who sent it');
+    assert.equal(unread(after, patient.userId), unread(before, patient.userId) + 1, "the patient's unread goes up");
+    if (before.participants.some((p) => String(p.userId) === deskUser)) assert.equal(unread(after, deskUser), unread(before, deskUser), "the sender's doesn't");
+    assert.equal(unread(after, ctx.doctorUserId), unread(before, ctx.doctorUserId), "the other staff's don't");
+    const view = ok(await ctx.pat('GET', `/api/conversations/${before._id}/messages`)).items.find((m) => m.id === String(booked._id));
+    assert.equal(view.auto, true);
+    assert.equal(view.senderRoleLabel, 'Front desk');
+    assert.equal(view.senderId.name, 'Tania Ghosh');
+    // The doctor cancels: signed by the doctor.
+    ok(await ctx.doc('POST', `/api/appointments/${appt.id}/cancel`, { reason: 'Doctor away' }));
+    const cancelled = await M.Message.findOne({ conversationId: before._id, 'meta.event': 'visit_cancelled' }).sort({ createdAt: -1 });
+    assert.equal(String(cancelled.senderId), String(ctx.doctorUserId));
+    assert.equal(cancelled.senderType, 'doctor');
+    // Done by the patient (booked / paid in the app): the desk at that branch signs it.
+    const byPatient = await care.chatNote({ ...base, by: patient.userId }, 'Payment received: ₹500 online.', 'fee_paid');
+    assert.equal(String(byPatient.senderId), deskUser);
+    // Two at the desk: the one who last wrote in this chat, else the one most recently in the app.
+    const rina = await M.User.create({ name: 'Rina Das', phone: '9000000111', lastActiveAt: new Date(Date.now() + 60e3) });
+    await M.Member.create({ practiceId: ctx.practiceId, userId: rina._id, role: 'front_desk', locationIds: [ctx.locationId] });
+    await M.Message.create({ conversationId: before._id, senderId: rina._id, senderType: 'staff', text: 'Your report is in.' });
+    assert.equal(String((await care.chatNote(base, 'Visit confirmed.', 'visit_confirmed')).senderId), String(rina._id), 'the last to write');
+    await M.Message.create({ conversationId: before._id, senderId: deskUser, senderType: 'staff', text: 'See you tomorrow.' });
+    assert.equal(String((await care.chatNote(base, 'Visit confirmed.', 'visit_confirmed')).senderId), deskUser);
+    const asha = await M.Patient.create({ name: 'Asha Roy', gender: 'female', phone: '9000000222' });
+    assert.equal(String((await care.chatNote({ ...base, patientId: asha._id }, 'Visit booked.', 'visit_booked')).senderId), String(rina._id), 'nobody wrote yet: most recently active');
+    // A branch without a front desk: the visit's doctor.
+    const branch = await M.Location.create({ practiceId: ctx.practiceId, name: 'City Care — New Town' });
+    const solo = await care.chatNote({ ...base, locationId: branch._id }, 'Visit booked.', 'visit_booked');
+    assert.equal(String(solo.senderId), String(ctx.doctorUserId));
+    assert.equal(solo.senderType, 'doctor');
+    // Old clinic lines (no sender) still come through.
+    await M.Message.create({ conversationId: before._id, senderType: 'system', text: 'Visit booked (old note).', meta: { event: 'visit_booked' } });
+    const old = ok(await ctx.pat('GET', `/api/conversations/${before._id}/messages`)).items.find((m) => m.text === 'Visit booked (old note).');
+    assert.equal(old.senderType, 'system');
+    // The doctor's own "latest message" on the patient's doctor page skips automatic notes.
+    const card = ok(await ctx.pat('GET', `/api/patient/doctors/${ctx.doctorUserId}`)).conversation;
+    assert.notEqual(card.latestFromDoctor?.text, 'Visit booked.');
+    await M.Member.deleteOne({ userId: rina._id });
+    await M.Location.deleteOne({ _id: branch._id });
+    ctx.rinaId = rina._id;
+  });
+
+  await step('emergencies: doctor and desk on an urgent chat, clinicians only on readings, escalation, resolve clears every bell', async () => {
+    const jobs = require('../src/services/jobs');
+    const deskUser = String(ok(await ctx.desk('GET', '/api/me')).user.id);
+    const count = (userId, q = {}) => M.Notification.countDocuments({ userId, ...q });
+    await M.Notification.updateMany({ userId: deskUser }, { readAt: new Date() });
+    // Earlier steps' emergencies for this patient are dealt with (so only this step's count).
+    await M.Alert.updateMany({ practiceId: ctx.practiceId, status: { $ne: 'resolved' } }, { status: 'resolved' });
+    // A patient's message reaches the desk covering them (the clinic's shared inbox).
+    const msgsBefore = await count(deskUser, { type: 'message' });
+    const convo = await M.Conversation.findOne({ patientId: ctx.patientId, practiceId: ctx.practiceId, type: 'care' });
+    ok(await ctx.pat('POST', `/api/conversations/${convo._id}/messages`, { text: 'Can I come at 6 instead?' }), 201);
+    assert.equal(await count(deskUser, { type: 'message' }), msgsBefore + 1, 'the desk hears about patient messages');
+    // Patient-Emergency: one alert to the doctor (no second "urgent message"), the desk gets the chat.
+    const docUrgentMsgs = await count(ctx.doctorUserId, { type: 'urgent_message' });
+    const u = ok(await ctx.pat('POST', '/api/patient/urgent', { doctorId: ctx.doctorUserId, text: 'Severe chest pain, sweating.' }), 201);
+    assert.ok(await M.Notification.exists({ userId: ctx.doctorUserId, type: 'alert_emergency', 'params.alertId': new mongoose.Types.ObjectId(u.alertId) }), 'the doctor gets the alert');
+    assert.equal(await count(ctx.doctorUserId, { type: 'urgent_message' }), docUrgentMsgs, 'not twice');
+    const deskNote = await M.Notification.findOne({ userId: deskUser, type: 'urgent_chat' }).sort({ createdAt: -1 });
+    assert.ok(deskNote, 'the desk is told');
+    assert.equal(deskNote.screen, 'Patient-Thread', 'they open the chat, not clinical alerts');
+    assert.equal(String(deskNote.params.conversationId), String(u.conversationId));
+    assert.equal(await count(deskUser, { type: /^alert_/, readAt: null }), 0, 'no clinical alert for the desk');
+    assert.equal(ok(await ctx.desk('GET', `/api/notifications?limit=1&practiceId=${ctx.practiceId}`)).urgent, 1, 'red dot');
+    // The desk sees it on the thread, can't acknowledge or resolve, can say "Doctor informed".
+    const thread = ok(await ctx.desk('GET', `/api/conversations/${u.conversationId}/messages`));
+    assert.equal(String(thread.conversation.urgentAlert.id), String(u.alertId));
+    assert.equal(thread.conversation.urgentAlert.canManage, false);
+    assert.equal(ok(await ctx.pat('GET', `/api/conversations/${u.conversationId}/messages`)).conversation.urgentAlert, undefined, 'not shown to the patient');
+    assert.equal((await ctx.desk('POST', `/api/alerts/${u.alertId}/acknowledge`)).status, 403);
+    assert.equal((await ctx.desk('POST', `/api/alerts/${u.alertId}/resolve`)).status, 403);
+    ok(await ctx.desk('POST', `/api/alerts/${u.alertId}/desk-note`, {}));
+    assert.equal((await M.Alert.findById(u.alertId)).status, 'open', "a desk note doesn't close it");
+    const onAlert = ok(await ctx.doc('GET', '/api/alerts')).items.find((a) => String(a.id) === String(u.alertId));
+    assert.deepEqual(onAlert.deskNotes.map((n) => [n.text, n.by]), [['Doctor informed', 'Tania Ghosh']], 'the doctor sees it on the alert');
+    // A dangerous home reading: clinicians only.
+    const deskBefore = await count(deskUser);
+    ok(await ctx.pat('POST', '/api/patient/readings', { bpSystolic: 192, bpDiastolic: 124 }), 201);
+    const reading = await M.Alert.findOne({ practiceId: ctx.practiceId, patientId: ctx.patientId, kind: 'reading', severity: 'emergency', status: 'open' }).sort({ createdAt: -1 });
+    assert.ok(reading);
+    assert.equal(await count(deskUser), deskBefore, 'the front desk gets no clinical alert');
+    assert.equal((await ctx.desk('POST', `/api/alerts/${reading._id}/desk-note`, {})).status, 403, 'not theirs to note (yet)');
+    // Nobody acknowledged it in 15 minutes: the desk is asked to tell the doctor, once.
+    await M.Alert.collection.updateOne({ _id: reading._id }, { $set: { createdAt: new Date(Date.now() - 16 * 60e3) } });
+    await jobs.escalateEmergencies(new Date());
+    await jobs.escalateEmergencies(new Date());
+    const esc = await M.Notification.find({ userId: deskUser, type: 'emergency_escalation', 'params.alertId': reading._id });
+    assert.equal(esc.length, 1, 'once');
+    assert.match(esc[0].title, /Dr\. Sen hasn't seen an emergency for Priya Sharma yet/);
+    assert.ok((await M.Alert.findById(reading._id)).escalatedAt);
+    ok(await ctx.desk('POST', `/api/alerts/${reading._id}/desk-note`, { note: 'Told Dr. Sen in person' }));
+    // The doctor resolves both: every notification about them is read (red dots clear), the desk gets a quiet "Resolved by".
+    ok(await ctx.doc('POST', `/api/alerts/${u.alertId}/resolve`));
+    ok(await ctx.doc('POST', `/api/alerts/${reading._id}/resolve`));
+    assert.equal(await M.Notification.countDocuments({ 'params.alertId': { $in: [new mongoose.Types.ObjectId(u.alertId), reading._id] }, readAt: null }), 0, "everyone's are read");
+    const resolved = await M.Notification.findOne({ userId: deskUser, type: 'alert_resolved' }).sort({ createdAt: -1 });
+    assert.equal(resolved.title, 'Resolved by Dr. Sen');
+    assert.ok(!resolved.channels.includes('push'), 'no buzz');
+    const bell = ok(await ctx.desk('GET', `/api/notifications?limit=1&practiceId=${ctx.practiceId}`));
+    assert.equal(bell.urgent, 0, 'no red dot once resolved');
+    assert.equal(ok(await ctx.desk('GET', `/api/conversations/${u.conversationId}/messages`)).conversation.urgentAlert, null);
+  });
+
+  await step("notifications in each person's app language (Bengali / Hindi), every template covered", async () => {
+    // Templates: known text translates, unknown stays; every notify() text in src/ has one.
+    require('./test-notify-i18n').run();
+    const { notify } = require('../src/services/notify');
+    const [bn, hi, en] = await M.User.create([
+      { phone: '9000071001', name: 'Bengali reader', language: 'bn' },
+      { phone: '9000071002', name: 'Hindi reader', language: 'hi' },
+      { phone: '9000071003', name: 'English reader' },
+    ]);
+    await M.DeviceToken.create([bn, hi, en].map((u, i) => ({ userId: u._id, token: `lang-test-${i}`, platform: 'android' })));
+    // Pushes (FCM is off in tests: sendPush logs "[push:dev] n device(s): title").
+    const pushed = [];
+    const log = console.log;
+    console.log = (...a) => (String(a[0]).startsWith('[push:dev]') ? pushed.push(String(a[0])) : log(...a));
+    try {
+      const params = { appointmentId: new mongoose.Types.ObjectId() };
+      await notify([bn._id, hi._id, en._id], { type: 'refund_due', title: "Refund of ₹500 to Rajat Mondal didn't go through", body: 'Retry it from Fees, or hand it back at the desk.', screen: 'Report-Fees', params });
+      await notify([bn._id, hi._id, en._id], { type: 'support', title: 'Something new from the clinic', body: 'Free text stays as it is' });
+      for (let i = 0; i < 50 && pushed.length < 4; i += 1) await new Promise((r) => setTimeout(r, 40));
+      const of = async (u, type) => M.Notification.findOne({ userId: u._id, type }).lean();
+      const [b, h, e] = await Promise.all([of(bn, 'refund_due'), of(hi, 'refund_due'), of(en, 'refund_due')]);
+      assert.equal(b.title, 'Rajat Mondal-কে ₹500 ফেরত দেওয়া যায়নি');
+      assert.equal(b.body, 'ফি থেকে আবার চেষ্টা করুন, অথবা রিসেপশনে টাকা ফেরত দিন।');
+      assert.equal(h.title, 'Rajat Mondal को ₹500 का रिफ़ंड नहीं हो पाया');
+      assert.equal(e.title, "Refund of ₹500 to Rajat Mondal didn't go through", 'English unchanged');
+      for (const n of [b, h, e]) assert.deepEqual([n.type, n.screen, String(n.params.appointmentId)], ['refund_due', 'Report-Fees', String(params.appointmentId)], 'same type, screen and params');
+      for (const u of [bn, hi, en]) assert.equal((await of(u, 'support')).title, 'Something new from the clinic', 'unknown text unchanged');
+      assert.ok(pushed.some((p) => p.endsWith(': Rajat Mondal-কে ₹500 ফেরত দেওয়া যায়নি')), 'Bengali push');
+      assert.ok(pushed.some((p) => p.endsWith(': Rajat Mondal को ₹500 का रिफ़ंड नहीं हो पाया')), 'Hindi push');
+      assert.ok(pushed.some((p) => p.endsWith(": Refund of ₹500 to Rajat Mondal didn't go through")), 'English push');
+    } finally {
+      console.log = log;
+    }
+    // Changing the app language (Profile → Language) changes what the server writes.
+    const desk = await M.User.findOne({ phone: '9749681391' });
+    const before = desk.language;
+    ok(await ctx.desk('PATCH', '/api/me', { language: 'bn' }));
+    assert.equal((await M.User.findById(desk._id)).language, 'bn');
+    await notify([desk._id], { type: 'lang_check', title: 'Visit confirmed', push: false });
+    assert.equal((await M.Notification.findOne({ userId: desk._id, type: 'lang_check' })).title, 'ভিজিট নিশ্চিত');
+    ok(await ctx.desk('PATCH', '/api/me', { language: before || 'en' }));
   });
 
   server.close();
