@@ -10,6 +10,7 @@ const T = require('../src/lib/time');
 const { issueConsultation } = require('../src/services/clinical');
 const { careConversation, postMessage, raiseAlert } = require('../src/services/care');
 const { nextToken } = require('../src/services/scheduling');
+const storage = require('../src/services/storage');
 
 // Keep the seed quiet: no push/WhatsApp/AI work while loading.
 env.ai.provider = 'off';
@@ -60,6 +61,15 @@ async function main() {
     { doctorId: sen._id, locationId: newTown._id, practiceId: practice._id, services: [{ name: 'New consultation', visitType: 'new', fee: 500 }, { name: 'Follow-up', visitType: 'follow_up', fee: 500 }, { name: 'Report review', visitType: 'report_review', fee: 0, freeWithinDays: 7 }], schedule: { week: week(['tue', 'wed', 'thu', 'sat'], 1080, 1230), slotLengthMin: 20, walkInPlaces: 2 } },
   ]);
   await M.DoctorProfile.updateOne({ userId: sen._id }, { presence: 'in_clinic' });
+  // Prescriptions can't be issued without a signature on file (SIGNATURE_REQUIRED).
+  const sigPng = await require('sharp')(Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="700" height="260"><path d="M60 150 C120 40, 160 220, 220 120 S320 60, 360 150 S460 200, 520 110 S600 90, 640 160" stroke="#1a1a2e" stroke-width="7" fill="none"/></svg>',
+  )).png().toBuffer();
+  for (const userId of [sen._id, mitra._id]) {
+    if ((await M.DoctorProfile.findOne({ userId }, 'signature'))?.signature?.key) continue;
+    const signature = await storage.save(sigPng, { folder: 'signatures', name: 'signature.png', mimeType: 'image/png' });
+    await M.DoctorProfile.updateOne({ userId }, { signature, signatureOriginal: signature });
+  }
 
   // ── Patients from the design ──
   const people = [
