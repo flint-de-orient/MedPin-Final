@@ -552,13 +552,14 @@ r.get('/doctors/:doctorId', async (req, res) => {
   const [card] = await doctorCards(req, [prof], origin);
   const places = await M.DoctorLocation.find({ doctorId: prof.userId, status: 'active' }).populate('locationId', 'name address area googleMapsUrl geo');
   const access = await M.CareTeamAccess.findOne({ patientId: req.patient._id, userId: prof.userId });
-  const [nextVisit, lastVisit, records, history, courses] = await Promise.all([
-    M.Appointment.findOne({ patientId: req.patient._id, doctorId: prof.userId, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }).sort({ startAt: 1 }).populate('locationId', 'name shortName googleMapsUrl'),
+  const [upcoming, lastVisit, records, history, courses] = await Promise.all([
+    M.Appointment.find({ patientId: req.patient._id, doctorId: prof.userId, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }).sort({ startAt: 1 }).limit(6).populate('locationId', 'name shortName googleMapsUrl'),
     M.Consultation.findOne({ patientId: req.patient._id, doctorId: prof.userId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).populate('vitalsId').populate('prescriptionId', 'items tests advice file'),
     M.MedicalRecord.find({ patientId: req.patient._id, deletedAt: null, $or: [{ doctorId: prof.userId }, { 'sharedWith.userId': prof.userId }] }).sort({ recordDate: -1 }).limit(50),
     M.Consultation.find({ patientId: req.patient._id, doctorId: prof.userId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).limit(10),
     M.MedicationCourse.find({ patientId: req.patient._id, doctorId: prof.userId, status: 'active' }),
   ]);
+  const nextVisit = upcoming[0] || null;
   // Patient-DoctorDetail extras: specialty label, plan adherence, the chat with this doctor's clinic.
   const [spec, adh, convo] = await Promise.all([
     M.Specialty.findOne({ key: prof.specialtyKeys[0] }, 'label'),
@@ -579,6 +580,11 @@ r.get('/doctors/:doctorId', async (req, res) => {
     places: places.map((d) => ({ locationId: d.locationId._id, name: d.locationId.name, address: d.locationId.address, area: d.locationId.area, mapUrl: d.locationId.googleMapsUrl, lat: d.locationId.geo?.coordinates?.[1] ?? null, lng: d.locationId.geo?.coordinates?.[0] ?? null, km: haversineKm(origin, d.locationId.geo?.coordinates), services: d.services })),
     access: access && { level: access.accessLevel, since: access.since },
     nextVisit,
+    // Booked as well, after the next one ("Also booked: Thu 22 Oct, 11:30 AM").
+    moreVisits: upcoming.slice(1).map((a) => ({
+      id: a._id, startAt: a.startAt, tokenNo: a.tokenNo ?? null, visitType: a.visitType, status: a.status,
+      locationId: a.locationId?._id || a.locationId, location: a.locationId?.shortName || a.locationId?.name || null,
+    })),
     lastVisit: lastVisit && {
       date: lastVisit.startedAt, diagnoses: lastVisit.diagnoses.map((d) => d.name), vitals: lastVisit.vitalsId, prescriptionId: lastVisit.prescriptionId?._id, advice: lastVisit.prescriptionId?.advice,
       chiefComplaint: lastVisit.chiefComplaint, prescriptionUrl: storage.signedUrl(lastVisit.prescriptionId?.file?.key),
@@ -717,6 +723,29 @@ r.post('/visit-requests', async (req, res) => {
   if (slot) {
     const lastDay = T.addDays(T.dayStart(), (dl.schedule?.bookingWindowDays || 7) + 1);
     if (new Date(slot) >= lastDay) throw badRequest(`You can book up to ${dl.schedule?.bookingWindowDays || 7} days ahead`, 'OUTSIDE_BOOKING_WINDOW');
+  }
+  // One upcoming visit per doctor is the usual case (a second booking is most often a mistake or
+  // a change of plan). Already booked with this doctor: the app asks — move that visit to the
+  // new time (moveId), or keep both on purpose (another: true).
+  const existing = await M.Appointment.findOne({ patientId: req.patient._id, doctorId, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } })
+    .sort({ startAt: 1 }).populate('locationId', 'name shortName');
+  if (existing && slot && isId(req.body.moveId) && String(req.body.moveId) === String(existing._id)) {
+    if (dl.schedule?.cancelCutoffHours && existing.startAt - Date.now() < dl.schedule.cancelCutoffHours * 3600e3) {
+      throw conflict(`Visits can be moved up to ${dl.schedule.cancelCutoffHours} hours before. Please call the clinic.`, 'TOO_LATE');
+    }
+    const moved = await S.reschedule(existing, slot, req.user._id);
+    const { deskOrDoctors } = require('../services/notify');
+    const staff = await deskOrDoctors(moved.practiceId, { locationId: moved.locationId, doctorId: moved.doctorId });
+    await notify([...new Set([...staff.map(String), String(moved.doctorId)])], {
+      type: 'appointment_rescheduled', push: false, practiceId: moved.practiceId, title: `${req.patient.name} moved their visit`,
+      body: `${T.dayKey(moved.startAt)} · ${T.fmtTime(T.minuteOfDay(moved.startAt))}`, screen: 'Appointments',
+    });
+    return res.status(201).json({ request: null, appointment: moved, moved: true });
+  }
+  if (existing && req.body.another !== true) {
+    throw Object.assign(conflict(`You already have a visit with this doctor on ${T.dayKey(existing.startAt)}`, 'ALREADY_BOOKED'), {
+      details: { appointmentId: existing._id, startAt: existing.startAt, location: existing.locationId?.shortName || existing.locationId?.name || null, tokenNo: existing.tokenNo ?? null },
+    });
   }
   await M.PatientEnrolment.findOneAndUpdate(
     { patientId: req.patient._id, practiceId: dl.practiceId },

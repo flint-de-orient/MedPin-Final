@@ -110,6 +110,9 @@ threads.get('/:id/messages', async (req, res) => {
   const viewer = convo.practiceId && String(patient?.userId || '') !== String(req.user._id)
     ? await M.Member.findOne({ userId: req.user._id, practiceId: convo.practiceId, status: 'active' }, 'role')
     : null;
+  // Payment requests in this page of messages: their payments, so the cards show Pay / Paid now.
+  const payIds = msgs.filter((m) => m.meta?.event === 'payment_request' && /^[a-f\d]{24}$/i.test(String(m.meta.paymentId || ''))).map((m) => m.meta.paymentId);
+  const payOf = new Map((payIds.length ? await M.Payment.find({ _id: { $in: payIds } }, 'amount status method appointmentId') : []).map((p) => [String(p._id), p]));
   res.json({
     conversation: {
       ...convo.toJSON(),
@@ -126,6 +129,10 @@ threads.get('/:id/messages', async (req, res) => {
     suggestions,
     items: msgs.map((m) => {
       const v = { ...messageView(m, req.user._id), record: recordOf(m), senderPhoto: senderPhotos.get(String(m.senderId?._id || m.senderId)) || null };
+      if (m.meta?.event === 'payment_request') {
+        const p = payOf.get(String(m.meta.paymentId));
+        if (p) v.payment = { id: p._id, amount: p.amount, status: p.status, method: p.method || null, appointmentId: m.meta.appointmentId || (p.appointmentId ? String(p.appointmentId) : null) };
+      }
       const role = m.senderType !== 'patient' ? roles.get(String(m.senderId?._id || m.senderId)) : null;
       if (role) Object.assign(v, { senderRole: role, senderRoleLabel: ROLE_LABEL[role] || null });
       // Older messages the thread's patient sent while listed with another role: shown as theirs.

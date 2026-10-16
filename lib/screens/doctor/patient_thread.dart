@@ -8,6 +8,7 @@ import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../data/voice.dart';
 import '../../widgets/chat_tools.dart';
+import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
 import '../../widgets/i18n.dart';
@@ -522,17 +523,22 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
       final key = _msgKeys.putIfAbsent(id, GlobalKey.new);
       final open = _menuFor == id;
       final by = _byLine(m);
+      // A payment link sent in the chat: the same card the patient sees, Paid / not yet.
+      final pay = m['payment'] is Map ? Align(alignment: Alignment.centerRight, child: PaymentRequestCard(payment: m.obj('payment'))) : null;
       Widget w = KeyedSubtree(
         key: key,
-        child: by.isEmpty
+        child: by.isEmpty && pay == null
             ? _liveMessage(m, byId)
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(by, textAlign: TextAlign.right, style: tx(12, w: w600, c: MP.ink3, h: 1.35)),
-                  const Gap(4),
+                  if (by.isNotEmpty) ...[
+                    Text(by, textAlign: TextAlign.right, style: tx(12, w: w600, c: MP.ink3, h: 1.35)),
+                    const Gap(4),
+                  ],
                   _liveMessage(m, byId),
+                  if (pay != null) pay,
                 ],
               ),
       );

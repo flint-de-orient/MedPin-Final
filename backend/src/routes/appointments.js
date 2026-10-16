@@ -728,7 +728,16 @@ r.post('/payments/:id/link', async (req, res) => {
   const patient = await M.Patient.findById(p.patientId, 'name phone userId');
   if (!patient?.userId && !patient?.phone) throw badRequest('This patient has no phone number or MedPin app to send a link to. Collect the fee at the counter.', 'NO_CONTACT');
   const url = await require('../services/payments').feeLink(p, patient);
-  if (patient.userId) await notify([patient.userId], { type: 'payment_link', practiceId: req.practiceId, title: `Pay ₹${p.amount} for your visit`, body: url, whatsapp: true });
+  // Also in the clinic chat (a card with Pay), signed by whoever sent it.
+  const conversationId = await require('../services/care').paymentRequestNote(p, { by: req.user._id }).catch((err) => { console.warn('[payment note]', err.message); return null; });
+  if (patient.userId) {
+    // One notice per fee: sending it again replaces the earlier one (no pile of "Pay ₹600").
+    await M.Notification.deleteMany({ userId: patient.userId, type: 'payment_link', 'params.paymentId': String(p._id) });
+    await notify([patient.userId], {
+      type: 'payment_link', practiceId: req.practiceId, title: `Pay ₹${p.amount} for your visit`, body: `Tap to pay in the app, or open ${url}`, whatsapp: true,
+      ...(conversationId ? { screen: 'Patient-DoctorChat', params: { conversationId, paymentId: String(p._id) } } : { params: { paymentId: String(p._id) } }),
+    });
+  }
   // Where it went, for the toast ("on the MedPin app" / "by SMS").
   res.json({ ...p.toJSON(), sentTo: patient.userId ? 'app' : 'sms' });
 });

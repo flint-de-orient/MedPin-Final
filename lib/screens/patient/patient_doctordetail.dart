@@ -181,8 +181,8 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
     );
   }
 
-  Future<void> _reschedule() async {
-    final next = _next;
+  Future<void> _reschedule([Map<String, dynamic>? visit]) async {
+    final next = visit ?? _next;
     final loc = next == null ? null : _locationId(next);
     if (next == null || loc == null) {
       p2Missing(context, 'Rescheduling');
@@ -206,8 +206,8 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
     reload(quiet: true);
   }
 
-  Future<void> _cancelVisit() async {
-    final next = _next;
+  Future<void> _cancelVisit([Map<String, dynamic>? visit]) async {
+    final next = visit ?? _next;
     if (next == null) return;
     final at = F.date(next['startAt']);
     final ok = await openSheet<bool>(
@@ -510,9 +510,54 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
             ],
           ),
           if (next != null) ..._feeRow(next),
+          // Also booked with this doctor, after the next visit: each one can be moved or cancelled.
+          for (final v in _d.list('moreVisits')) ...[
+            const Gap(12),
+            Tap(
+              onTap: () => _otherVisit(v),
+              radius: 10,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  const Ico(I.calendar, size: 16, color: MP.ink2),
+                  const Gap(8),
+                  Expanded(
+                    child: Text(
+                      tr(context, 'Also booked: #1').replaceFirst('#1', [
+                        if (F.date(v['startAt']) != null) F.when(F.date(v['startAt'])!),
+                        v.str('location'),
+                      ].where((x) => x.isNotEmpty).join(' · ')),
+                      style: tx(14, w: w600, c: MP.ink2, h: 1.35),
+                    ),
+                  ),
+                  const Ico(I.chevronRight, size: 16, color: MP.ink3),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// Another booked visit with this doctor: move it, or cancel it (e.g. booked twice by mistake).
+  Future<void> _otherVisit(Map<String, dynamic> v) async {
+    final at = F.date(v['startAt']);
+    final i = await openSheet<int>(
+      context,
+      (_) => P2ActionSheet(
+        title: at == null ? 'Your visit' : F.when(at),
+        actions: const [(I.calendar, 'Reschedule', false), (I.close, 'Cancel visit', true)],
+      ),
+    );
+    if (i == null || !mounted) return;
+    // Same shape as the next visit for the shared handlers (location id at locationId).
+    final visit = {...v, 'locationId': v['locationId']};
+    if (i == 0) {
+      await _reschedule(visit);
+    } else {
+      await _cancelVisit(visit);
+    }
   }
 
   /// Pays the next visit's fee in the app (Razorpay Checkout).

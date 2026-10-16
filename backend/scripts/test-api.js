@@ -1892,12 +1892,27 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(hist.status, 200, `history: ${hist.status}`);
 
     // A payment link asked for twice is the same link (one per fee), re-sent.
-    const due = ok(await ctx.doc('GET', '/api/payments?status=pending')).find((p) => p.amount > 0);
+    // A fee to collect from the app patient (so the chat card can be checked end to end).
+    await M.Payment.create({ practiceId: ctx.practiceId, patientId: ctx.patientId, locationId: ctx.locationId, amount: 450, status: 'pending', purpose: 'consultation' }).catch(() => null);
+    const due = ok(await ctx.doc('GET', '/api/payments?status=pending')).find((p) => p.amount === 450) || ok(await ctx.doc('GET', '/api/payments?status=pending')).find((p) => p.amount > 0);
     if (due) {
       const a = ok(await ctx.desk('POST', `/api/payments/${due.id}/link`));
       const b = ok(await ctx.desk('POST', `/api/payments/${due.id}/link`));
       assert.equal(a.paymentLinkUrl, b.paymentLinkUrl, 'same link re-sent');
       assert.ok(['app', 'sms'].includes(b.sentTo));
+      // In the clinic chat once (a Pay card), not a new card per tap; one notice per fee.
+      const cards = await M.Message.find({ 'meta.event': 'payment_request', 'meta.paymentId': String(due.id) });
+      assert.equal(cards.length, 1, 'one payment card in the chat');
+      const pt = await M.Patient.findById(due.patientId?.id || due.patientId?._id || due.patientId, 'userId');
+      if (pt?.userId) {
+        assert.equal(await M.Notification.countDocuments({ userId: pt.userId, type: 'payment_link', 'params.paymentId': String(due.id) }), 1, 'one notice per fee');
+        const thread = ok(await ctx.doc('GET', `/api/conversations/${cards[0].conversationId}/messages`)).items.find((m) => m.id === String(cards[0]._id));
+        assert.equal(thread.payment.status, 'pending', 'the card shows it is not paid yet');
+        ok(await ctx.desk('POST', `/api/payments/${due.id}/mark-paid`, { method: 'cash' }));
+        const after = ok(await ctx.doc('GET', `/api/conversations/${cards[0].conversationId}/messages`)).items.find((m) => m.id === String(cards[0]._id));
+        assert.equal(after.payment.status, 'paid', 'and turns Paid once collected');
+        console.log('    · payment card in chat checked');
+      }
     }
   });
 

@@ -8,6 +8,7 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/voice.dart';
 import '../../widgets/chat_tools.dart';
+import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import 'common_p2.dart';
@@ -401,9 +402,16 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
         day = label;
         items.add(Center(child: Text(label, style: tx(12, w: w600, c: MP.ink3))));
       }
-      items
-        ..add(m.mine ? _outgoing(m.text, m.raw) : _incoming(m.text, m.raw))
-        ..add(m.mine ? Align(alignment: Alignment.centerRight, child: Text(m.meta, style: meta)) : Text(m.meta, style: meta));
+      items.add(m.mine ? _outgoing(m.text, m.raw) : _incoming(m.text, m.raw));
+      // "Please pay ₹600" from the clinic: pay right here; it turns Paid live.
+      final pay = m.raw?['payment'];
+      if (!m.mine && pay is Map) {
+        items.add(Align(
+          alignment: Alignment.centerLeft,
+          child: PaymentRequestCard(payment: pay.cast<String, dynamic>(), forPatient: true, onPaid: () => reload(quiet: true)),
+        ));
+      }
+      items.add(m.mine ? Align(alignment: Alignment.centerRight, child: Text(m.meta, style: meta)) : Text(m.meta, style: meta));
     }
     if (messages.isEmpty) {
       items.add(Center(child: Text(_conversationId == null ? 'No conversation yet' : 'Today', style: tx(12, w: w600, c: MP.ink3))));

@@ -1755,19 +1755,51 @@ class _DoctorSheetState extends State<_DoctorSheet> {
       return;
     }
     final slot = _slot;
-    final res = await runAction(
-      context,
-      () => Api.I.post('/api/patient/visit-requests', {
-        'doctorId': d.id,
-        if ((_locId ?? d.locationId) != null) 'locationId': _locId ?? d.locationId,
-        'visitType': d.mine ? 'follow_up' : 'new',
-        'mode': 'in_clinic',
-        if (slot != null && _laterDate == null) 'slot': _startAt[slot],
-        if (_laterDate != null) 'preferredTime': '${F.dateLong(_laterDate!)} · any time',
-        if (slot == null && _laterDate == null) 'preferredTime': 'Any time the clinic suggests',
-      }),
-      busy: _busy,
-    );
+    final body = {
+      'doctorId': d.id,
+      if ((_locId ?? d.locationId) != null) 'locationId': _locId ?? d.locationId,
+      'visitType': d.mine ? 'follow_up' : 'new',
+      'mode': 'in_clinic',
+      if (slot != null && _laterDate == null) 'slot': _startAt[slot],
+      if (_laterDate != null) 'preferredTime': '${F.dateLong(_laterDate!)} · any time',
+      if (slot == null && _laterDate == null) 'preferredTime': 'Any time the clinic suggests',
+    };
+    // Already booked with this doctor: move that visit here, or keep both on purpose.
+    Future<Object?> send(Map<String, dynamic> extra) => runAction(context, () async {
+          try {
+            return await Api.I.post('/api/patient/visit-requests', {...body, ...extra});
+          } on ApiException catch (e) {
+            if (e.code == 'ALREADY_BOOKED') return {'alreadyBooked': e.details ?? const {}};
+            rethrow;
+          }
+        }, busy: _busy);
+    var res = await send(const {});
+    if (res is Map && res['alreadyBooked'] is Map) {
+      if (!mounted) return;
+      final had = (res['alreadyBooked'] as Map).cast<String, dynamic>();
+      final hadAt = F.date(had['startAt']);
+      final canMove = body['slot'] != null && had['appointmentId'] != null;
+      final choice = await openSheet<int>(
+        context,
+        (_) => P2ActionSheet(
+          title: hadAt == null
+              ? tr(context, 'You already have a visit with #1').replaceFirst('#1', d.name)
+              : tr(context, 'You already have a visit with #1 on #2').replaceFirst('#1', d.name).replaceFirst('#2', F.when(hadAt)),
+          actions: [
+            if (canMove) (I.calendar, tr(context, 'Move it to #1').replaceFirst('#1', slot ?? ''), false),
+            (I.plus, 'Keep both visits', false),
+          ],
+        ),
+      );
+      if (choice == null || !mounted) return;
+      final move = canMove && choice == 0;
+      res = await send(move ? {'moveId': had['appointmentId']} : const {'another': true});
+      if (res is Map && res['moved'] == true) {
+        if (!mounted) return;
+        Navigator.pop(context, 'Visit moved to $slot');
+        return;
+      }
+    }
     if (res is! Map || !mounted) return;
     final appt = (res['appointment'] as Map?)?.cast<String, dynamic>();
     final token = appt?['tokenNo'];

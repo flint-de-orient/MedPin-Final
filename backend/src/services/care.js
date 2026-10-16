@@ -160,7 +160,7 @@ async function noteSender({ practiceId, patientId, locationId, doctorId, by }, c
  *
  * @param ctx {practiceId, patientId, locationId?, doctorId?, by?} — an appointment works too
  */
-async function chatNote(ctx, text, event) {
+async function chatNote(ctx, text, event, extraMeta = {}) {
   const practiceId = idOf(ctx?.practiceId);
   const patientId = idOf(ctx?.patientId);
   if (!practiceId || !patientId || !text) return null;
@@ -176,7 +176,7 @@ async function chatNote(ctx, text, event) {
       user = await M.User.findById(sender.userId, 'name');
     }
     const msg = await M.Message.create({
-      conversationId: convo._id, kind: 'text', text, meta: { event, auto: true },
+      conversationId: convo._id, kind: 'text', text, meta: { ...extraMeta, event, auto: true },
       ...(sender ? { senderId: sender.userId, senderType: sender.role === 'doctor' ? 'doctor' : 'staff' } : { senderType: 'system' }),
     });
     convo.lastMessage = previewOf(msg, user?.name);
@@ -188,6 +188,30 @@ async function chatNote(ctx, text, event) {
     console.warn('[chat note]', err.message);
     return null;
   }
+}
+
+/**
+ * "Send payment link": the request also goes into the patient's clinic chat, from whoever
+ * sent it, as a card with Pay (patient) / Paid (everyone) — not only a notification.
+ * Asked again within 12 h: no second card (the notification is re-sent instead).
+ * Returns the conversation id (the notification opens that chat).
+ */
+async function paymentRequestNote(payment, { by } = {}) {
+  const appt = payment.appointmentId ? await M.Appointment.findById(payment.appointmentId, 'practiceId locationId doctorId patientId startAt') : null;
+  const practiceId = appt?.practiceId || payment.practiceId;
+  const patientId = appt?.patientId || payment.patientId;
+  if (!practiceId || !patientId) return null;
+  const convo = await careConversation(patientId, practiceId);
+  const recent = await M.Message.exists({ conversationId: convo._id, 'meta.event': 'payment_request', 'meta.paymentId': String(payment._id), createdAt: { $gte: new Date(Date.now() - 12 * 3600e3) } });
+  if (recent) return convo._id;
+  const when = appt?.startAt ? ` for your visit on ${T.dayKey(appt.startAt)}, ${T.fmtTime(T.minuteOfDay(appt.startAt))}` : ' for your visit';
+  await chatNote(
+    { practiceId, patientId, locationId: appt?.locationId, doctorId: appt?.doctorId, by },
+    `Please pay ₹${payment.amount}${when}. Tap Pay to pay in the app, or pay at the clinic.`,
+    'payment_request',
+    { paymentId: String(payment._id), appointmentId: appt?._id ? String(appt._id) : null },
+  );
+  return convo._id;
 }
 
 /**
@@ -511,4 +535,5 @@ async function adherence(patient, days = 30, acc) {
 }
 
 module.exports = {
-  openNow, chatNote, shortName, doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };
+  openNow,
+  paymentRequestNote, chatNote, shortName, doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };

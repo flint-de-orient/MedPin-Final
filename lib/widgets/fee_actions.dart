@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Text;
 
 import '../data/api.dart';
+import '../data/checkout.dart';
 import '../data/live.dart';
 import 'i18n.dart';
 import 'mp.dart';
@@ -133,4 +134,83 @@ String linkSentNote(BuildContext context, String patient, Object? res) {
   final to = res is Map ? res['sentTo'] : null;
   final s = to == 'sms' ? 'Payment link sent to #1 by SMS' : to == 'app' ? 'Payment link sent to #1 in the MedPin app' : 'Payment link sent to #1';
   return tr(context, s).replaceFirst('#1', patient);
+}
+
+/// The clinic's "please pay" message in the chat (a payment link sent by the desk or the
+/// doctor): the amount and whether it's paid, live from the server. The patient pays right
+/// there in the app; the doctor and desk see the same card turn "Paid".
+class PaymentRequestCard extends StatefulWidget {
+  /// The message's `payment`: {id, amount, status, method, appointmentId, url}.
+  final Map<String, dynamic> payment;
+
+  /// The patient's chat (shows Pay); the clinic's thread shows the status only.
+  final bool forPatient;
+  final VoidCallback? onPaid;
+  const PaymentRequestCard({super.key, required this.payment, this.forPatient = false, this.onPaid});
+
+  @override
+  State<PaymentRequestCard> createState() => _PaymentRequestCardState();
+}
+
+class _PaymentRequestCardState extends State<PaymentRequestCard> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.payment;
+    final amount = ((p['amount'] as num?) ?? 0).round();
+    final status = '${p['status'] ?? 'pending'}';
+    final paid = status == 'paid';
+    final closed = !paid && status != 'pending'; // refunded / waived / cancelled
+    final (bg, fg, label) = paid
+        ? (MP.greenSoft, MP.green, tr(context, '₹#1 paid').replaceFirst('#1', '$amount'))
+        : closed
+            ? (MP.fill, MP.ink2, tr(context, status == 'refunded' ? '₹#1 refunded' : 'No payment needed').replaceFirst('#1', '$amount'))
+            : (MP.amberSoft, MP.amber, tr(context, '₹#1 to pay').replaceFirst('#1', '$amount'));
+    final canPay = widget.forPatient && !paid && !closed && '${p['appointmentId'] ?? ''}'.isNotEmpty;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 310),
+      child: Container(
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(color: MP.white, border: Border.all(color: MP.line), borderRadius: BorderRadius.circular(14)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Ico(paid ? I.check : I.wallet, size: 16, color: fg, stroke: 2),
+                const Gap(8),
+                Expanded(child: Text('Visit fee', style: tx(14, w: w600))),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+                  child: Text(label, style: tx(12, w: w600, c: fg, h: 1)),
+                ),
+              ],
+            ),
+            if (canPay) ...[
+              const Gap(10),
+              MpButton(
+                tr(context, 'Pay ₹#1').replaceFirst('#1', '$amount'),
+                onTap: _busy
+                    ? null
+                    : () async {
+                        setState(() => _busy = true);
+                        final ok = await Checkout.pay(context, kind: 'fee', id: '${p['appointmentId']}');
+                        if (!mounted) return;
+                        setState(() => _busy = false);
+                        if (ok) widget.onPaid?.call();
+                      },
+              ),
+            ] else if (!widget.forPatient && !paid && !closed) ...[
+              const Gap(6),
+              Text('Not paid yet · the card turns Paid when they pay', style: tx(12, c: MP.ink3, h: 1.35)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }

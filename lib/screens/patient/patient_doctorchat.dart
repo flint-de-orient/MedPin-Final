@@ -11,6 +11,7 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/voice.dart';
 import '../../widgets/chat_tools.dart';
+import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import '../../widgets/i18n.dart';
@@ -277,6 +278,13 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
           child: kind == 'voice' && m['deleted'] != true
               ? _Bubble('', mine: mine, child: VoiceNoteChip(url: m.obj('voice').obj('file').str('url'), seconds: m.obj('voice')['durationSec'] as num?, color: mine ? MP.white : MP.ink))
               : _Bubble(text, mine: mine),
+        ));
+      }
+      // "Please pay ₹600" from the clinic: pay right here; it turns Paid live.
+      if (m['payment'] is Map) {
+        out.add(Align(
+          alignment: Alignment.centerLeft,
+          child: PaymentRequestCard(payment: m.obj('payment'), forPatient: true, onPaid: () => reload(quiet: true)),
         ));
       }
       out.add(mine
