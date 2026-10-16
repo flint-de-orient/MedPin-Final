@@ -705,6 +705,85 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(profile.abnormalResults.length >= 1 && profile.currentMedicines.length === 2);
   });
 
+  await step('sharing waits for the patient; readings from lab reports; when-needed medicines; reminders', async () => {
+    const T = require('../src/lib/time');
+    // A shared report: in the app only for the doctor (no push), and "New" on the patient until opened.
+    const before = await M.Notification.countDocuments({ userId: ctx.doctorUserId, type: 'record_shared' });
+    const up = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'scan.pdf', 'application/pdf', { kind: 'test_result', shareWith: ctx.doctorUserId }) }), 201);
+    assert.deepEqual(up.heldShare, [], 'nothing to check: shared now');
+    const note = await M.Notification.findOne({ userId: ctx.doctorUserId, type: 'record_shared' }).sort({ createdAt: -1 });
+    assert.equal(await M.Notification.countDocuments({ userId: ctx.doctorUserId, type: 'record_shared' }), before + 1);
+    assert.ok(!note.channels.includes('push'), 'a shared report is not a push');
+    const row = ok(await ctx.doc('GET', '/api/patients?limit=100')).items.find((p) => String(p.id) === String(ctx.patientId));
+    assert.ok(row.newReports >= 1, 'marked New for the doctor');
+    ok(await ctx.doc('GET', `/api/patients/${ctx.patientId}`));
+    assert.equal(ok(await ctx.doc('GET', '/api/patients?limit=100')).items.find((p) => String(p.id) === String(ctx.patientId)).newReports, 0, 'opening the patient clears it');
+
+    // A report uploaded for a test that turns out to be another test: not shared until the patient keeps it.
+    const assistant = require('../src/services/assistant');
+    const realRead = assistant.extractLabReport;
+    try {
+      const rx = await M.Prescription.findOne({ patientId: ctx.patientId, 'tests.0': { $exists: true } });
+      assistant.extractLabReport = async () => ({ document_type: 'prescription', lab_name: '', collected_on: '', tests: [] });
+      const held = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'x.pdf', 'application/pdf', { kind: 'test_result', forTests: rx.tests[0], shareWith: ctx.doctorUserId }) }), 201);
+      assert.deepEqual(held.heldShare, [String(ctx.doctorUserId)], 'held until the patient chooses');
+      assert.equal((await M.MedicalRecord.findById(held.record.id)).sharedWith.length, 0);
+
+      // A confirmed fasting sugar from a lab report becomes a reading (tiles, score, doctor's view)…
+      assistant.extractLabReport = async () => null;
+      const lab = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'fbs.pdf', 'application/pdf', { kind: 'test_result' }) }), 201);
+      await M.MedicalRecord.updateOne({ _id: lab.record.id }, { status: 'processing' });
+      const saved = ok(await ctx.pat('POST', `/api/patient/records/${lab.record.id}/split`, {
+        collectedAt: T.dayKey(new Date()),
+        tests: [{ testName: 'Fasting Blood Sugar', pageFrom: 1, pageTo: 1, summary: '', values: [{ analyte: 'Glucose, Fasting', value: '148', unit: 'mg/dL', refText: '70-100', flag: 'high' }] }],
+      }), 201);
+      const reading = await M.Vitals.findOne({ patientId: ctx.patientId, source: 'lab', bloodSugar: 148 });
+      assert.ok(reading, 'the lab value is a reading');
+      assert.equal(reading.sugarType, 'fasting');
+      const home = ok(await ctx.pat('GET', '/api/patient/home'));
+      // On the Fasting sugar tile with its source (the newest value wins, so a later home reading stays last).
+      assert.ok(home.tracked.blood_sugar.some((x) => x.value === 148 && x.source === 'lab'), 'the lab sugar is on the tile');
+      // …and goes when the report is deleted.
+      ok(await ctx.pat('DELETE', `/api/patient/records/${saved[0].id || saved[0]._id}`));
+      assert.equal(await M.Vitals.countDocuments({ fromLabId: reading.fromLabId }), 0);
+    } finally {
+      assistant.extractLabReport = realRead;
+    }
+
+    // "When needed" medicines: no doses on a schedule, never missed, no "runs out" warning.
+    const asNeeded = await M.MedicationCourse.create({
+      patientId: ctx.patientId, name: 'Paracetamol', strength: '650 mg', dose: { morning: 1 }, frequency: 'as_needed',
+      startDate: T.addDays(T.dayStart(), -3), status: 'active', stockUnits: 4, trackingEnabled: true,
+    });
+    const doses = ok(await ctx.pat('GET', `/api/patient/doses?date=${T.dayKey(new Date())}`));
+    assert.ok(!doses.items.some((d) => String(d.medicine?.id || d.courseId) === String(asNeeded._id)), 'no scheduled dose');
+    assert.equal(await M.DoseLog.countDocuments({ courseId: asNeeded._id, status: { $ne: 'taken' } }), 0);
+    const meds = ok(await ctx.pat('GET', '/api/patient/medicines'));
+    const pm = (meds.items || meds).find((c) => String(c.id) === String(asNeeded._id));
+    assert.equal(pm.asNeeded, true);
+    await M.MedicationCourse.deleteOne({ _id: asNeeded._id });
+
+    // App lock is off for a new account.
+    assert.equal(new M.User({ phone: '9000000001', name: 'New' }).appLock, false);
+
+    // Reminders: the daily-log one is on only once chosen (or a meal log was asked for).
+    const me = ok(await ctx.pat('GET', '/api/patient/me'));
+    assert.equal(typeof me.reminders.dailyLog, 'boolean');
+    assert.equal(me.reminders.ring, true, 'medicine alarms ring like an alarm by default');
+    const after = ok(await ctx.pat('PATCH', '/api/patient/me', { settings: { dailyLogReminder: true } }));
+    assert.equal(after.reminders.dailyLog, true);
+    // The phone says what it scheduled; the server then pushes only what it doesn't cover.
+    ok(await ctx.pat('POST', '/api/me/devices', { token: 'test-phone-token', platform: 'android', localAlarms: true }));
+    const until = T.addDays(new Date(), 7);
+    assert.equal(ok(await ctx.pat('POST', '/api/me/devices/reminders', { token: 'test-phone-token', until: until.toISOString(), dailyLogAt: '20:00' })).ok, true);
+    const { phoneCovers } = require('../src/services/reminders');
+    const phones = await M.DeviceToken.find({ token: 'test-phone-token' });
+    assert.equal(phoneCovers(phones, T.addDays(new Date(), -1), T.addDays(new Date(), 2)), true, 'scheduled on the phone');
+    assert.equal(phoneCovers(phones, T.addDays(new Date(), 1), T.addDays(new Date(), 2)), false, 'changed after the phone synced: pushed');
+    assert.equal(phoneCovers(phones, T.addDays(new Date(), -1), T.addDays(new Date(), 9)), false, 'beyond what it scheduled: pushed');
+    await M.DeviceToken.deleteOne({ token: 'test-phone-token' });
+  });
+
   await step('pharmacy: cart, quotes, order', async () => {
     const meds = ok(await ctx.pat('GET', '/api/patient/medicines'));
     const cart = ok(await ctx.pat('POST', '/api/patient/cart/items', { courseId: meds.items.find((m) => m.name === 'Metformin').id, packOption: '1_month' }), 201);

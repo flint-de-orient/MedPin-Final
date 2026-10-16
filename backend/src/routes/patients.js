@@ -100,7 +100,13 @@ r.get('/patients', async (req, res) => {
   // ?locationId=: patients seen at (or registered at) that branch; one seen at both shows under both.
   const at = String(req.query.locationId || '');
   if (/^[0-9a-f]{24}$/i.test(at)) patients = patients.filter((p) => branch.get(String(p._id))?.seenAt.includes(at));
-  const rows = patients.map((p) => listRow(p, { lastVisitAt: lv.get(String(p._id)) || null, branch: branch.get(String(p._id)) }));
+  // Reports patients shared with me that I haven't opened yet ("New" on the row).
+  const unseen = await M.Notification.aggregate([
+    { $match: { userId: req.user._id, type: 'record_shared', readAt: null, 'params.patientId': { $in: patients.map((p) => p._id) } } },
+    { $group: { _id: '$params.patientId', n: { $sum: 1 } } },
+  ]);
+  const newReports = new Map(unseen.map((u) => [String(u._id), u.n]));
+  const rows = patients.map((p) => listRow(p, { lastVisitAt: lv.get(String(p._id)) || null, branch: branch.get(String(p._id)), newReports: newReports.get(String(p._id)) || 0 }));
   if (req.query.sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name));
   else rows.sort((a, b) => new Date(b.lastVisitAt || 0) - new Date(a.lastVisitAt || 0));
   res.json({
@@ -198,6 +204,8 @@ const viewer = (req, patient) => accessFor({ userId: req.user._id, practiceId: r
 r.get('/patients/:id', async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
   const acc = await viewer(req, patient);
+  // Opening the patient is seeing what they shared: the "New" mark goes.
+  await M.Notification.updateMany({ userId: req.user._id, type: 'record_shared', readAt: null, 'params.patientId': patient._id }, { readAt: new Date() });
   const [summary, adh, careTeam, plan, enrolment] = await Promise.all([
     patientSummary(patient, req.practiceId, acc),
     adherence(patient, 30, acc),
@@ -208,7 +216,8 @@ r.get('/patients/:id', async (req, res) => {
   res.json({
     ...summary,
     accessLevel: acc.level,
-    adherence: adh,
+    // Overall, plus this doctor's own prescriptions (what they're responsible for).
+    adherence: { ...adh, mine: adh.perDoctor.find((d) => d.doctor === String(req.user._id)) || null },
     careTeam: careTeam.map((c) => ({ userId: c.userId?._id, name: c.userId?.name, role: c.role, accessLevel: c.accessLevel, since: c.since })),
     treatmentPlan: plan,
     mealLog: plan?.nutritionBy ? { on: true, by: { id: plan.nutritionBy, name: (await M.User.findById(plan.nutritionBy, 'name'))?.name } } : { on: false },
@@ -346,7 +355,7 @@ r.post('/patients/:id/records', upload.array('files', 10), async (req, res) => {
     });
   }
   let extracted = null;
-  if (kind === 'test_result') extracted = await extractLabReport(req.files[0].buffer, req.files[0].mimetype).catch(() => null);
+  if (kind === 'test_result') extracted = await extractLabReport(req.files.map((f) => ({ buffer: f.buffer, mimetype: f.mimetype })), null).catch(() => null);
   res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted });
 });
 

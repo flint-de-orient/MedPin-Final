@@ -304,13 +304,19 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
         ? (total != null ? 'Week ${(day / 7).ceil()} of ${(total / 7).ceil()}' : 'Week ${(day / 7).ceil()}')
         : (total != null ? 'Day $day of ${total.toInt()}' : 'Day $day');
     final pct = c['adherencePct'] as num?;
+    final few = p3FewDoses(c['adherenceCount']);
     final (taken, takenColor) = c['tracked'] == false
         ? ('Not tracked', MP.ink3)
+        : c['asNeeded'] == true
+        ? ('When needed', MP.ink2)
+        : few != null
+        ? (few, c.obj('adherenceCount').numOr('taken') == c.obj('adherenceCount').numOr('total') ? MP.green : MP.amber)
         : pct == null
         ? ('New', MP.ink3)
         : ('${pct.round()}%', pct >= 85 ? MP.green : MP.amber);
     final stock = c.obj('stock');
-    final daysLeft = stock['daysLeft'] as num?;
+    // "When needed": how long it lasts depends on use, so just how many are left.
+    final daysLeft = c['asNeeded'] == true ? null : stock['daysLeft'] as num?;
     final units = stock['units'] as num?;
     final stockText = units == null
         ? 'Not set'
@@ -916,7 +922,19 @@ class _MedCard extends StatelessWidget {
           const Gap(14),
           Row(
             children: [
-              Expanded(child: stat('Taken · 30 days', m.taken, m.takenColor)),
+              Expanded(
+                child: stat(
+                  m.raw == null
+                      ? 'Taken · 30 days'
+                      : m.raw!['asNeeded'] == true
+                          ? 'Doses'
+                          : p3FewDoses(m.raw!['adherenceCount']) != null
+                              ? p3TakenSince(context, m.raw!['adherenceCount'])
+                              : 'Taken · 30 days',
+                  m.taken,
+                  m.takenColor,
+                ),
+              ),
               const Gap(8),
               Expanded(child: stat('In stock', m.stock, m.stockColor)),
             ],

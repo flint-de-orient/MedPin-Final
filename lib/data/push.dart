@@ -10,6 +10,7 @@ import 'nav_counts.dart';
 import 'config.dart';
 import 'live.dart';
 import 'local_notes.dart';
+import 'med_alarms.dart';
 import 'session.dart';
 
 /// Push notifications (Firebase Cloud Messaging): registers this phone with
@@ -56,6 +57,16 @@ class Push {
     }
   }
 
+  /// What this phone scheduled itself (MedAlarms): doses and visits up to [until],
+  /// the daily-log reminder at [dailyLogAt]. The server then pushes only the rest.
+  Future<void> reportReminders({required DateTime until, String? dailyLogAt}) async {
+    final t = token;
+    if (t == null || !Session.I.signedIn) return;
+    try {
+      await Api.I.post('/api/me/devices/reminders', {'token': t, 'until': until.toUtc().toIso8601String(), 'dailyLogAt': dailyLogAt});
+    } on ApiException catch (_) {}
+  }
+
   /// Tells the server again (e.g. notifications were just allowed, so the phone rings dose alarms itself).
   Future<void> refresh() async {
     final t = token;
@@ -81,6 +92,8 @@ class Push {
   void _foreground(RemoteMessage msg) {
     NavCounts.refresh(force: true); // a new chat or alert changes the tab-bar badges
     LiveBus.changed(); // and whatever screen is open may now be out of date
+    // Medicines or visits changed (a new prescription, a visit booked): re-schedule the phone's alarms.
+    if (msg.data['type'] == 'reminders_changed') MedAlarms.I.sync();
     final n = msg.notification;
     if (n == null) return; // a silent "chat changed": the refresh above is all it needs
     final type = msg.data['type']?.toString() ?? '';

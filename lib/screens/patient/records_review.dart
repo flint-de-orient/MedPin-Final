@@ -196,12 +196,8 @@ class _RecordsReviewScreenState extends State<RecordsReviewScreen> with LiveData
       for (final s in record.list('sharedWith')) s.str('userId'),
     };
     _liveDoctors = doctors;
-    _shareWith = args['shareWith'] != null || shared.isNotEmpty
-        ? shared
-        : {
-            for (final d in doctors)
-              if (d.suggested) d.id,
-          };
+    // Only who the patient picked on Add record (or already shared with) — nobody is ticked for them.
+    _shareWith = shared;
     _liveTests = [for (final t in extracted.list('tests')) _Test.fromApi(t)];
     _selected = [for (final _ in _liveTests) true];
     _open = [for (var i = 0; i < _liveTests.length; i++) i == 0];
@@ -444,8 +440,10 @@ class _FileCard extends StatelessWidget {
   final String preview;
   /// Live: the uploaded file, drawn as its first page (tap to read it all).
   final ReportFile? file;
+  final List<ReportFile> more;
   const _FileCard({required this.onRetake})
     : file = null,
+      more = const [],
       files = '1 FILE · 6 PAGES',
       pages = '6',
       lab = 'Suraksha Diagnostics',
@@ -465,6 +463,7 @@ class _FileCard extends StatelessWidget {
     return _FileCard._(
       onRetake: onRetake,
       file: record.list('files').isEmpty ? null : ReportFile.fromApi(record.list('files').first),
+      more: [for (final x in record.list('files').skip(1)) ReportFile.fromApi(x)].whereType<ReportFile>().toList(),
       files: '$n ${n == 1 ? 'FILE' : 'FILES'}${pages > 0 ? ' · $pages ${pages == 1 ? 'PAGE' : 'PAGES'}' : ''}',
       pages: '$pages',
       lab: extracted.str('lab_name', source == 'uploaded by you' || source.isEmpty ? 'Your report' : source),
@@ -473,7 +472,7 @@ class _FileCard extends StatelessWidget {
     );
   }
 
-  const _FileCard._({required this.onRetake, required this.file, required this.files, required this.pages, required this.lab, required this.collected, required this.preview});
+  const _FileCard._({required this.onRetake, required this.file, this.more = const [], required this.files, required this.pages, required this.lab, required this.collected, required this.preview});
 
   static Widget _bar(double height, double width, Color color) => FractionallySizedBox(
     widthFactor: width,
@@ -513,7 +512,7 @@ class _FileCard extends StatelessWidget {
                     left: 0,
                     top: 0,
                     child: file != null
-                        ? FilePreview(file: file, width: 70, height: 94, title: lab)
+                        ? FilePreview(file: file, more: more, width: 70, height: 94, title: lab)
                         : Container(
                             width: 70,
                             height: 94,

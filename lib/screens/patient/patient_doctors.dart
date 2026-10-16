@@ -7,6 +7,7 @@ import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'patient_finddoctor.dart' show openDoctorBooking;
 import '../../widgets/i18n.dart';
+import 'common_p3.dart';
 
 /// Design: Patient-Doctors.dc.html — "Patient · Doctor tab: my doctors".
 ///
@@ -119,7 +120,7 @@ class _PatientDoctorsScreenState extends State<PatientDoctorsScreen> with LiveDa
     final pct = d['adherencePct'];
     final medLine = meds == 0
         ? 'No medicines from this doctor'
-        : '$meds medicine${meds == 1 ? '' : 's'} · ${pct is num ? '${pct.round()}% taken' : 'not tracked'}';
+        : '$meds medicine${meds == 1 ? '' : 's'} · ${p3FewDoses(d['adherenceCount']) != null ? '${p3FewDoses(d['adherenceCount'])} doses taken' : pct is num ? '${pct.round()}% taken' : 'not tracked'}';
     final convo = d.str('conversationId');
     return _Doc(
       F.initials(name),

@@ -79,6 +79,11 @@ const patientSchema = new Schema(
       medReminders: { type: Boolean, default: true },
       dailyLogReminder: { type: Boolean, default: true },
       dailyLogReminderAt: { type: String, default: '20:00' },
+      // Set once the patient turns the daily-log reminder on or off themselves; until then
+      // it's on only when their care team asked for a meal log.
+      dailyLogReminderChosen: { type: Boolean, default: false },
+      // Medicine alarms ring like an alarm (alarm sound, even on silent, on the lock screen).
+      alarmRing: { type: Boolean, default: true },
       visitReminders: { type: Boolean, default: true },
       // Breakfast / lunch / dinner (doses are timed around them: services/care.js doseMinute).
       reminderTimes: {

@@ -50,6 +50,25 @@ const meView = (p, user) => ({
   appLock: user.appLock,
 });
 
+/** Doses taken of those counted, for "2 of 2 doses since 14 Oct" until a percentage is fair. */
+const adhCount = (x) => (x?.total ? { taken: x.taken, total: x.total, since: x.since, enough: x.enough } : null);
+
+/**
+ * The reminders as they really work: medicines and visits unless switched off;
+ * the daily-log reminder when the patient switched it on, or — not chosen —
+ * when their care team asked for a meal log. The phone schedules these.
+ */
+async function remindersOf(p) {
+  const s = p.settings || {};
+  const dailyLog = s.dailyLogReminderChosen ? s.dailyLogReminder !== false : await dailyLogUsed(p);
+  return {
+    medicines: s.medReminders !== false, visits: s.visitReminders !== false, dailyLog,
+    dailyLogAt: /^\d{2}:\d{2}$/.test(s.dailyLogReminderAt || '') ? s.dailyLogReminderAt : '20:00',
+    // Medicine alarms ring like an alarm (even on silent) unless switched off.
+    ring: s.alarmRing !== false,
+  };
+}
+
 r.get('/me', async (req, res) => {
   const p = req.patient;
   // Height / weight not on the profile yet: the newest reading fills them in.
@@ -65,7 +84,12 @@ r.get('/me', async (req, res) => {
       await p.save();
     }
   }
-  res.json(meView(p, req.user));
+  // Lab tiles worth adding because the doctor asked for that test (Customize shows "Suggested").
+  const asked = await require('../services/advisedtests').advisedTests(p).catch(() => []);
+  const keys = new Set(asked.flatMap((t) => [...require('../services/advisedtests').keysOf(t.name)]));
+  const suggestedMeasures = [...(keys.has('lipid') ? ['ldl'] : []), ...(keys.has('kft') ? ['creatinine'] : []), ...(keys.has('hba1c') ? ['hba1c'] : [])]
+    .filter((m) => !(p.trackedMeasures || []).includes(m));
+  res.json({ ...meView(p, req.user), suggestedMeasures, reminders: await remindersOf(p) });
 });
 
 r.patch('/me', async (req, res) => {
@@ -92,10 +116,12 @@ r.patch('/me', async (req, res) => {
     const s = req.body.settings;
     const hhmm = (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
     const next = p.settings.toObject();
-    for (const k of ['medReminders', 'dailyLogReminder', 'visitReminders']) if (typeof s[k] === 'boolean') next[k] = s[k];
+    for (const k of ['medReminders', 'dailyLogReminder', 'visitReminders', 'alarmRing']) if (typeof s[k] === 'boolean') next[k] = s[k];
+    if (typeof s.dailyLogReminder === 'boolean') next.dailyLogReminderChosen = true;
     if (s.dailyLogReminderAt !== undefined) {
       if (!hhmm(s.dailyLogReminderAt)) throw badRequest('Choose a time like 20:00');
       next.dailyLogReminderAt = s.dailyLogReminderAt;
+      next.dailyLogReminderChosen = true;
     }
     if (s.bedAt !== undefined) {
       if (!hhmm(s.bedAt)) throw badRequest('Choose a time like 22:30');
@@ -125,7 +151,7 @@ r.patch('/me', async (req, res) => {
     Object.assign(req.user, userBody, body.name ? { name: body.name } : {});
     await req.user.save();
   }
-  res.json(meView(p, req.user));
+  res.json({ ...meView(p, req.user), reminders: await remindersOf(p) });
 });
 
 // The patient's own prescription PDF (View / Download in Records), in English or
@@ -220,7 +246,7 @@ r.get('/home', async (req, res) => {
     M.TreatmentPlan.findOne({ patientId: p._id }).sort({ updatedAt: -1 }),
   ]);
   const refills = courses
-    .filter((c) => c.stockUnits != null && dosesPerDay(c.dose) > 0)
+    .filter((c) => c.stockUnits != null && dosesPerDay(c.dose) > 0 && c.frequency !== 'as_needed')
     .map((c) => ({ courseId: c._id, name: `${c.name} ${c.strength || ''}`.trim(), tabletsLeft: c.stockUnits, daysLeft: Math.floor(c.stockUnits / dosesPerDay(c.dose)) }))
     .filter((x) => x.daysLeft <= 5)
     .sort((a, b) => a.daysLeft - b.daysLeft);
@@ -267,7 +293,17 @@ r.get('/home', async (req, res) => {
   ]);
   const weekStart = T.addDays(today, -((new Date(now.getTime() + T.IST_MS).getUTCDay() + 6) % 7));
   const activity = plans[0];
-  const series = (pickFn) => readings.map((v) => ({ at: v.recordedAt, ...pickFn(v) })).filter((x) => x.value != null).slice(-7);
+  // Each point says where it came from: home, a watch, the clinic or a lab report.
+  const series = (pickFn) => readings.map((v) => ({ at: v.recordedAt, source: v.source, ...pickFn(v) })).filter((x) => x.value != null).slice(-7);
+  // A lab value over time (last 7 results): LDL, creatinine.
+  const labSeries = async (re, not) => (await M.LabResult.find({ patientId: p._id, 'values.analyte': re }, 'collectedAt values').sort({ collectedAt: 1 }))
+    .map((r) => {
+      const x = r.values.find((v) => re.test(v.analyte || '') && !(not && not.test(v.analyte || '')));
+      const value = x ? (typeof x.value === 'number' ? x.value : parseFloat(x.valueText)) : NaN;
+      return { at: r.collectedAt, source: 'lab', value: Number.isFinite(value) ? value : null, flag: x?.flag || null, unit: x?.unit || null };
+    })
+    .filter((x) => x.value != null)
+    .slice(-7);
   const tracked = {
     blood_sugar: series((v) => ({ value: v.sugarType === 'fasting' ? v.bloodSugar : null })),
     blood_pressure: series((v) => ({ value: v.bpSystolic, value2: v.bpDiastolic })),
@@ -282,6 +318,8 @@ r.get('/home', async (req, res) => {
       })
       .filter((x) => x.value != null)
       .slice(-7),
+    ldl: await labSeries(/\bldl\b/i, /ratio|\/|hdl/i),
+    creatinine: await labSeries(/creatinine/i, /urine|ratio|clearance|acr/i),
   };
   res.json({
     latestPrescription: useUpload
@@ -492,9 +530,10 @@ r.get('/doctors/:doctorId', async (req, res) => {
       chiefComplaint: lastVisit.chiefComplaint, prescriptionUrl: storage.signedUrl(lastVisit.prescriptionId?.file?.key),
     },
     adherencePct: adh.perDoctor.find((d) => d.doctor === String(prof.userId))?.pct ?? null,
+    adherenceCount: (({ taken, total, since, enough } = {}) => (total ? { taken, total, since, enough } : null))(adh.perDoctor.find((d) => d.doctor === String(prof.userId))),
     medicines: courses.map((c) => {
       const a = adh.perMedicine.find((m) => String(m.courseId) === String(c._id));
-      return { id: c._id, name: c.name, strength: c.strength, pattern: c.frequency === 'weekly' ? `Once a week${c.weekday ? ` · ${c.weekday}` : ''}` : doseText(c.dose), foodRelation: c.foodRelation, tracked: c.trackingEnabled, adherencePct: a?.pct ?? null, isNew: a ? a.isNew : true };
+      return { id: c._id, name: c.name, strength: c.strength, pattern: c.frequency === 'weekly' ? `Once a week${c.weekday ? ` · ${c.weekday}` : ''}` : doseText(c.dose), foodRelation: c.foodRelation, tracked: c.trackingEnabled, adherencePct: a?.pct ?? null, isNew: a ? a.isNew : true, asNeeded: c.frequency === 'as_needed', adherenceCount: adhCount(a) };
     }),
     records: records.map((x) => ({ id: x._id, kind: x.kind, title: x.title, date: x.recordDate, origin: x.origin, sourceName: x.sourceName, flagLabel: x.flagLabel, flagTone: x.flagTone, url: lastFileUrl(x) })),
     timeline: history.map((h) => ({ date: h.startedAt, text: h.diagnoses.map((d) => d.name).join(', ') || h.chiefComplaint })),
@@ -600,7 +639,7 @@ r.get('/my-doctors', async (req, res) => {
       specialty: spec?.label || null, practiceId: c.practiceId?._id, area: place?.locationId?.area || place?.locationId?.shortName || null, locationId: place?.locationId?._id || null,
       doctorId: c.userId._id, name: prof?.displayName || c.userId.name, role: c.role, headline: prof?.headline, clinic: c.practiceId?.name,
       ...(await require('../services/presence').presenceOf(c.userId._id)), nextVisit: next && { id: next._id, startAt: next.startAt, token: String(next.tokenNo).padStart(2, '0') },
-      lastSeenAt: last?.completedAt, followUpDue: fu?.dueDate, medicines: meds, adherencePct: docAdh?.pct ?? null,
+      lastSeenAt: last?.completedAt, followUpDue: fu?.dueDate, medicines: meds, adherencePct: docAdh?.pct ?? null, adherenceCount: adhCount(docAdh),
       conversationId: convo?._id, unread: convo?.participants.find((p) => String(p.userId) === String(req.user._id))?.unreadCount || 0,
     });
   }
@@ -729,6 +768,7 @@ r.get('/medicines', async (req, res) => {
       id: c._id, name: c.name, strength: c.strength, pattern: c.frequency === 'weekly' ? `Once a week${c.weekday ? ` · ${c.weekday}` : ''}` : doseText(c.dose),
       foodRelation: c.foodRelation, instructions: c.instructions, prescriber: c.prescriberName, doctorId: c.doctorId, startDate: c.startDate, endDate: c.endDate,
       course: { day, totalDays }, tracked: c.trackingEnabled, adherencePct: a?.pct ?? null,
+      asNeeded: c.frequency === 'as_needed', adherenceCount: a?.total ? { taken: a.taken, total: a.total, since: a.since, enough: a.enough } : null,
       stock: c.stockUnits != null ? { units: c.stockUnits, daysLeft: perDay ? Math.floor(c.stockUnits / perDay) : null } : null,
       // Med-AddToCart works out pack sizes from these; self-added medicines can be edited.
       dose: c.dose, frequency: c.frequency, weekday: c.weekday, perDay, unitsPerStrip: c.unitsPerStrip || 10,
@@ -865,7 +905,7 @@ r.get('/adherence', async (req, res) => {
       groups.set(key, {
         id: key, name: names.get(key) || fallbackName || (key === 'self' ? 'Added by you' : key),
         specialty: prof ? labels.get(prof.specialtyKeys[0]) || null : null, clinic: access?.practiceId?.name || null,
-        pct: perDoc?.pct ?? null, medicines: [],
+        pct: perDoc?.pct ?? null, count: adhCount(perDoc), medicines: [],
       });
     }
     return groups.get(key);
@@ -873,7 +913,7 @@ r.get('/adherence', async (req, res) => {
   for (const d of out.perDoctor) groupOf(d.doctor);
   for (const m of out.perMedicine) {
     const key = m.doctorId ? String(m.doctorId) : m.prescriber || 'self';
-    groupOf(key, m.prescriber).medicines.push({ courseId: m.courseId, name: m.name, strength: m.strength, tracked: m.tracked, pct: m.pct, isNew: m.isNew, startDate: started.get(String(m.courseId)) || null });
+    groupOf(key, m.prescriber).medicines.push({ courseId: m.courseId, name: m.name, strength: m.strength, tracked: m.tracked, pct: m.pct, isNew: m.isNew, asNeeded: m.asNeeded, count: adhCount(m), startDate: started.get(String(m.courseId)) || null });
   }
   const doctors = [...groups.values()].map((g) => ({ ...g, tracked: g.medicines.length ? g.medicines.some((m) => m.tracked) : g.pct != null }));
   doctors.sort((a, b) => Number(b.tracked) - Number(a.tracked) || (b.medicines.length - a.medicines.length));
@@ -1143,16 +1183,43 @@ r.get('/records/:id', async (req, res) => {
 });
 
 // Records-Add: upload. For a test report the AI proposes the tests it found (Records-Review).
+/**
+ * Doctors told about reports a patient shared: in the app only (the patient
+ * is marked "New" in their list, and the morning summary counts them) — not a
+ * push for every report.
+ */
+async function notifyShared(patient, userIds, n, kind) {
+  const what = kind === 'prescription' ? 'a prescription' : n === 1 ? 'a report' : `${n} reports`;
+  await notify(userIds, { type: 'record_shared', push: false, title: `${patient.name} shared ${what}`, screen: 'Patient-Profile', params: { patientId: patient._id } });
+}
+
+/** A critical lab value in a report shared with doctors: an urgent alert in each of their clinics. */
+async function criticalAlert(patient, userIds, records) {
+  const { raiseAlert } = require('../services/care');
+  const rows = await M.CareTeamAccess.find({ patientId: patient._id, userId: { $in: userIds }, accessLevel: { $ne: 'not_shared' } }, 'userId practiceId');
+  const seen = new Set();
+  for (const r of rows) {
+    if (!r.practiceId || seen.has(String(r.practiceId))) continue;
+    seen.add(String(r.practiceId));
+    for (const rec of records) {
+      await raiseAlert({ practiceId: r.practiceId, patientId: patient._id, doctorId: r.userId, severity: 'urgent', kind: 'lab', detail: `Critical result in ${rec.title} (shared by the patient)`, sourceModel: 'MedicalRecord', sourceId: rec._id })
+        .catch((err) => console.warn('[critical lab]', err.message));
+    }
+  }
+}
+
 r.post('/records', upload.array('files', 10), async (req, res) => {
   if (!req.files?.length) throw badRequest('Choose a file');
   const kind = req.body.kind === 'prescription' ? 'prescription' : 'test_result';
   const files = [];
   for (const f of req.files) files.push(await storage.save(f.buffer, { folder: 'records', name: f.originalname, mimeType: f.mimetype }));
-  const sharedWith = list(req.body.shareWith).filter(isId).map((userId) => ({ userId }));
+  // Who the patient picked to share it with. A test report is shared once it's settled:
+  // after "Check your report" (split), or now when it needs no checking.
+  const chosen = list(req.body.shareWith).filter(isId).map((userId) => ({ userId }));
   const record = await M.MedicalRecord.create({
     patientId: req.patient._id, kind, title: req.body.title || (kind === 'prescription' ? 'Prescription' : 'Test report'),
     recordDate: req.body.recordDate ? T.parseDay(req.body.recordDate) : new Date(), origin: 'shared_by_patient', sourceName: req.body.sourceName || 'uploaded by you',
-    uploadSource: E.UPLOAD_SOURCES.includes(req.body.uploadSource) ? req.body.uploadSource : undefined, files, sharedWith,
+    uploadSource: E.UPLOAD_SOURCES.includes(req.body.uploadSource) ? req.body.uploadSource : undefined, files, sharedWith: [],
     status: kind === 'test_result' ? 'processing' : 'ready', uploadedBy: req.user._id, flagLabel: 'New', flagTone: 'new',
   });
   let extracted = null;
@@ -1165,16 +1232,26 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
     }
   }
   if (kind === 'test_result') {
-    extracted = await assistant.extractLabReport(req.files[0].buffer, req.files[0].mimetype).catch((err) => { console.warn('[extract]', err.message); return null; });
+    // Every page: a report photographed page by page is read as one.
+    extracted = await assistant.extractLabReport(req.files.map((f) => ({ buffer: f.buffer, mimetype: f.mimetype })), null).catch((err) => { console.warn('[extract]', err.message); return null; });
     // Which of the doctor's tests the report really contains (its content, not the file name).
     await applyTestCheck(req.patient, record, list(req.body.forTests).map((s) => String(s).trim()).filter(Boolean).slice(0, 1), extracted);
     if (!extracted || !extracted.tests?.length) record.status = 'ready';
     await record.save();
   }
-  if (sharedWith.length) {
-    await notify(sharedWith.map((s) => s.userId), { type: 'record_shared', title: `${req.patient.name} shared a ${kind === 'prescription' ? 'prescription' : 'report'}`, screen: 'Patient-Profile', params: { patientId: req.patient._id } });
+  // Not shared yet: going to "Check your report" (shared when saved there), or it wasn't the
+  // test it was uploaded for (shared only if the patient keeps it — POST …/share).
+  const check = record.testCheck;
+  const held = record.status === 'processing' || Boolean(check && !check.auto && check.checked !== false && !check.found?.length);
+  if (chosen.length && !held) {
+    record.sharedWith = chosen;
+    await record.save();
+    await notifyShared(req.patient, chosen.map((s) => s.userId), 1, kind);
   }
-  res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted, testCheck: record.testCheck || null, medicines: record.extractedMedicines || [] });
+  res.status(201).json({
+    record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted, testCheck: record.testCheck || null, medicines: record.extractedMedicines || [],
+    heldShare: held ? chosen.map((s) => String(s.userId)) : [],
+  });
 });
 
 /**
@@ -1202,8 +1279,12 @@ r.post('/records/:id/extract', async (req, res) => {
   if (!rec) throw notFound('Record');
   const file = rec.files[0];
   if (rec.kind !== 'test_result' || !file?.key) throw badRequest('This record has no report to read', 'NOT_A_REPORT');
-  const buffer = await storage.read(file.key).catch(() => null);
-  const extracted = buffer ? await assistant.extractLabReport(buffer, file.mimeType || 'application/pdf').catch((err) => { console.warn('[extract]', err.message); return null; }) : null;
+  const pages = [];
+  for (const f of rec.files.slice(0, 10)) {
+    const b = await storage.read(f.key).catch(() => null);
+    if (b) pages.push({ buffer: b, mimetype: f.mimeType || 'application/pdf' });
+  }
+  const extracted = pages.length ? await assistant.extractLabReport(pages, null).catch((err) => { console.warn('[extract]', err.message); return null; }) : null;
   // Read again: check it again against what it was uploaded for.
   if (extracted) await applyTestCheck(req.patient, rec, rec.testCheck && !rec.testCheck.auto ? rec.testCheck.asked || [] : [], extracted);
   if (!extracted && rec.status === 'processing') rec.status = 'ready';
@@ -1244,9 +1325,10 @@ r.post('/records/:id/split', async (req, res) => {
   parent.deletedAt = new Date(); // replaced by the per-test records
   await parent.save();
   const fresh = sharedWith.filter((s) => !parent.sharedWith.some((p) => String(p.userId) === String(s.userId)));
-  if (fresh.length) {
-    await notify(fresh.map((s) => s.userId), { type: 'record_shared', title: `${req.patient.name} shared ${created.length === 1 ? 'a report' : `${created.length} reports`}`, screen: 'Patient-Profile', params: { patientId: req.patient._id } });
-  }
+  if (fresh.length) await notifyShared(req.patient, fresh.map((s) => s.userId), created.length, 'test_result');
+  // A critical value is the one thing that can't wait for the morning summary.
+  const critical = created.filter((rec, i) => (tests[i].values || []).some((v) => v.flag === 'critical'));
+  if (critical.length && sharedWith.length) await criticalAlert(req.patient, sharedWith.map((s) => s.userId), critical);
   res.status(201).json(created);
 });
 
@@ -1258,13 +1340,18 @@ r.post('/records/:id/share', async (req, res) => {
   rec.sharedWith = ids.map((userId) => rec.sharedWith.find((s) => String(s.userId) === userId) || { userId });
   await rec.save();
   if (fresh.length) {
-    await notify(fresh, { type: 'record_shared', title: `${req.patient.name} shared ${rec.kind === 'prescription' ? 'a prescription' : 'a report'}`, screen: 'Patient-Profile', params: { patientId: req.patient._id } });
+    await notifyShared(req.patient, fresh, 1, rec.kind);
   }
   res.json(rec);
 });
 
 r.delete('/records/:id', async (req, res) => {
-  await M.MedicalRecord.updateOne({ _id: req.params.id, patientId: req.patient._id }, { deletedAt: new Date() });
+  const r0 = await M.MedicalRecord.updateOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null }, { deletedAt: new Date() });
+  // Its readings (sugar / BP from the report) go with it.
+  if (r0.modifiedCount) {
+    const labs = await M.LabResult.find({ recordId: req.params.id, patientId: req.patient._id }).distinct('_id');
+    if (labs.length) await M.Vitals.deleteMany({ fromLabId: { $in: labs } });
+  }
   res.json({ ok: true });
 });
 

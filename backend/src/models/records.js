@@ -82,6 +82,14 @@ const labResultSchema = new Schema(
   baseOptions,
 );
 labResultSchema.index({ patientId: 1, collectedAt: -1 });
+// Its sugar / BP values become readings, so the tiles, score and doctor's view stay current.
+labResultSchema.post('save', async function toReadings() {
+  try {
+    await require('../services/labvitals').syncFromLab(this);
+  } catch (err) {
+    console.warn('[lab → readings]', err.message);
+  }
+});
 labResultSchema.index({ patientId: 1, 'values.analyte': 1, collectedAt: -1 }); // trends
 labResultSchema.index({ practiceId: 1, collectedAt: -1, abnormalCount: -1 });
 

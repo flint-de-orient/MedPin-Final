@@ -9,6 +9,7 @@ import 'patient_finddoctor.dart' show openDoctorBooking;
 import '../../data/rx_pdf.dart';
 import '../../data/checkout.dart';
 import '../../widgets/i18n.dart';
+import 'common_p3.dart';
 
 /// Design: Patient-DoctorDetail.dc.html — "Patient · doctor page (Dr. Sen)".
 ///
@@ -632,8 +633,15 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
                 [m.str('pattern'), _foodLabels[m.str('foodRelation')] ?? ''].where((x) => x.isNotEmpty).join(' · '),
                 m['tracked'] == false
                     ? 'Not tracked'
-                    : (m['isNew'] == true || m['adherencePct'] is! num ? 'New' : '${(m['adherencePct'] as num).round()}%'),
-                m['adherencePct'] is num && m['isNew'] != true ? _pctColor(m['adherencePct'] as num) : MP.ink3,
+                    : m['asNeeded'] == true
+                        ? 'When needed'
+                        : p3FewDoses(m['adherenceCount']) ??
+                            (m['isNew'] == true || m['adherencePct'] is! num ? 'New' : '${(m['adherencePct'] as num).round()}%'),
+                m['asNeeded'] == true || p3FewDoses(m['adherenceCount']) != null
+                    ? MP.ink2
+                    : m['adherencePct'] is num && m['isNew'] != true
+                        ? _pctColor(m['adherencePct'] as num)
+                        : MP.ink3,
               ),
           ];
     final pct = data == null ? 82 : _d['adherencePct'] as num?;
@@ -651,7 +659,13 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
               textBaseline: TextBaseline.alphabetic,
               children: [
                 Expanded(child: Text('Your plan', style: tx(20, w: w700, h: 1.25))),
-                if (pct != null) Text('${pct.round()}% taken', style: tx(14, w: w700, c: data == null ? MP.amber : _pctColor(pct))),
+                if (data != null && p3FewDoses(_d['adherenceCount']) != null)
+                  Text(
+                    '${p3FewDoses(_d['adherenceCount'])} ${tr(context, 'doses taken')}',
+                    style: tx(14, w: w700, c: MP.ink2),
+                  )
+                else if (pct != null)
+                  Text('${pct.round()}% taken', style: tx(14, w: w700, c: data == null ? MP.amber : _pctColor(pct))),
               ],
             ),
           ),

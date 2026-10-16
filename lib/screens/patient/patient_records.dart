@@ -700,7 +700,8 @@ class _RecordSheetState extends State<_RecordSheet> with LiveData {
     final meds = r.obj('prescription').list('items');
     final url = _fileUrl;
     final files = r.list('files');
-    final file = files.isEmpty ? null : ReportFile.fromApi(files.first);
+    final all = [for (final x in files) ReportFile.fromApi(x)].whereType<ReportFile>().toList();
+    final file = all.isEmpty ? null : all.first;
 
     return MpSheet(
       child: Column(
@@ -712,21 +713,23 @@ class _RecordSheetState extends State<_RecordSheet> with LiveData {
             const Gap(16),
             // The report itself: its first page; tap to read every page.
             P2Box(
-              onTap: () => openFileView(context, file, title: r.str('title', 'Report')),
+              onTap: () => openFilesView(context, all, title: r.str('title', 'Report')),
               label: 'View ${r.str('title', 'the report')}',
               padding: const EdgeInsets.all(12),
               radius: 16,
               color: MP.bg,
               child: Row(
                 children: [
-                  FilePreview(file: file, width: 64, height: 86, title: r.str('title', 'Report')),
+                  FilePreview(file: file, more: all.skip(1).toList(), width: 64, height: 86, title: r.str('title', 'Report')),
                   const Gap(14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${files.length} ${files.length == 1 ? 'FILE' : 'FILES'} · ${file.isPdf ? 'PDF' : file.isImage ? 'PHOTO' : 'FILE'}',
+                          all.length > 1 && all.every((x) => x.isImage)
+                              ? '${all.length} PAGES · PHOTOS'
+                              : '${files.length} ${files.length == 1 ? 'FILE' : 'FILES'} · ${file.isPdf ? 'PDF' : file.isImage ? 'PHOTO' : 'FILE'}',
                           style: tx(12, w: w700, c: MP.ink2, em: 0.06),
                         ),
                         const Gap(4),

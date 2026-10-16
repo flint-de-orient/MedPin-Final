@@ -169,6 +169,11 @@ const referralSchema = new Schema(
   baseOptions,
 );
 
+// A visit booked, moved or cancelled: the patient's phone re-schedules its visit reminders.
+appointmentSchema.post('save', function () {
+  require('../services/reminders').remindersChanged(this.patientId);
+});
+
 module.exports = {
   AppointmentRequest: model('AppointmentRequest', appointmentRequestSchema),
   Appointment: model('Appointment', appointmentSchema),

@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/med_alarms.dart';
+import 'alarm_check.dart';
 import '../../data/photo.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
@@ -133,6 +135,14 @@ const _icRuler = '<path d="M21.3 15.3 8.7 2.7a1 1 0 0 0-1.4 0L2.7 7.3a1 1 0 0 0 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
 class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
+  @override
+  void initState() {
+    super.initState();
+    AlarmCheck.ok().then((ok) {
+      if (mounted) setState(() => _alarmsOk = ok);
+    });
+  }
+
   _Me _sample = const _Me(
     name: 'Priya Sharma',
     age: 29,
@@ -205,7 +215,12 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
   }
 
   bool get _medR => data == null ? _medReminders : _settings['medReminders'] != false;
-  bool get _logR => data == null ? _logReminder : _settings['dailyLogReminder'] != false;
+  // As it really works (GET /me reminders): chosen by the patient, else on only when a meal log was asked for.
+  bool get _logR => data == null ? _logReminder : (_p.obj('reminders')['dailyLog'] as bool? ?? _settings['dailyLogReminder'] != false);
+  bool get _ringR => data == null ? true : (_p.obj('reminders')['ring'] as bool? ?? _settings['alarmRing'] != false);
+
+  /// Left out of battery saving (Android), so alarms ring on time.
+  bool? _alarmsOk;
   bool get _visitR => data == null ? _visitReminders : _settings['visitReminders'] != false;
   bool get _lock => data == null ? _appLock : _p['appLock'] == true;
   String get _lang {
@@ -481,6 +496,27 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                     trailing: MpSwitch(value: _medR, onChanged: (v) => _setReminder('medReminders', v)),
                     onTap: () => _setReminder('medReminders', !_medR),
                   ),
+                  if (_medR)
+                    _Row(
+                      icon: I.bell,
+                      title: 'Ring even on silent',
+                      sub: _ringR ? 'Alarm sound, on the lock screen' : 'A normal notification',
+                      trailing: MpSwitch(value: _ringR, onChanged: (v) => _setReminder('alarmRing', v)),
+                      onTap: () => _setReminder('alarmRing', !_ringR),
+                    ),
+                  if (_medR && isLive && _alarmsOk == false)
+                    _Row(
+                      icon: I.alert,
+                      title: 'Keep alarms on time',
+                      sub: 'Your phone may delay alarms to save battery',
+                      subColor: MP.amber,
+                      trailing: const _Action('Fix'),
+                      onTap: () async {
+                        await AlarmCheck.show(context);
+                        final ok = await AlarmCheck.ok();
+                        if (mounted) setState(() => _alarmsOk = ok);
+                      },
+                    ),
                   _Row(
                     icon: I.edit,
                     title: 'Daily log reminder',
@@ -561,7 +597,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
       });
       return;
     }
-    _toggle(key, v);
+    _toggle(key, v).then((_) => MedAlarms.I.sync()); // the phone's alarms follow at once
   }
 
   /// Daily log reminder: pick the time (also turns it on).
@@ -584,6 +620,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
         'settings': {'dailyLogReminder': true, 'dailyLogReminderAt': hhmm},
       });
       if (!ok || !mounted) return;
+      MedAlarms.I.sync();
     }
     toast(context, "We'll remind you at ${_clock(hhmm)} if nothing is logged");
   }

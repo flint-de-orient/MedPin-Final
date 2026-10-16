@@ -65,6 +65,20 @@ me.post('/devices', async (req, res) => {
   res.json({ ok: true });
 });
 
+// The phone tells what reminders it scheduled itself (medicine alarms, visits,
+// daily log) — the server then pushes only the ones it doesn't cover.
+me.post('/devices/reminders', async (req, res) => {
+  const token = typeof req.body.token === 'string' ? req.body.token.trim() : '';
+  if (!token) throw badRequest('token is required');
+  const until = new Date(req.body.until);
+  const at = typeof req.body.dailyLogAt === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(req.body.dailyLogAt) ? req.body.dailyLogAt : null;
+  const r = await M.DeviceToken.updateOne(
+    { token, userId: req.user._id },
+    { remindersSyncedAt: new Date(), remindersUntil: Number.isNaN(+until) ? null : until, dailyLogAt: at, lastSeenAt: new Date() },
+  );
+  res.json({ ok: r.matchedCount > 0 });
+});
+
 // ── Privacy and data: signed-in devices ──
 me.get('/sessions', async (req, res) => {
   const rows = await M.AuthSession.find({ userId: req.user._id, revokedAt: null, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });

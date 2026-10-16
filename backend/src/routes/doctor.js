@@ -101,6 +101,10 @@ r.patch('/doctor/profile', async (req, res) => {
   for (const k of ['chatSettings', 'notificationPrefs']) {
     if (body[k]) body[k] = { ...(p[k]?.toObject?.() || {}), ...body[k] };
   }
+  // Morning summary time: HH:MM, else unchanged.
+  if (body.notificationPrefs?.digestAt !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.notificationPrefs.digestAt))) {
+    body.notificationPrefs.digestAt = p.notificationPrefs?.digestAt || '08:00';
+  }
   Object.assign(p, body);
   // New payout details: set up where RazorpayX sends the money (needs the full account number now).
   if (body.payout) {

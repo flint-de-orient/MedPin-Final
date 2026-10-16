@@ -410,6 +410,22 @@ Future<bool> p3Confirm(BuildContext context, {required String title, required St
   return ok ?? false;
 }
 
+/// A percentage of only a few doses misleads ("100%" on day 2): until the
+/// server says there are enough (6+ counted), "2 of 2" instead. Null once a
+/// percentage is fair, or when there's no count.
+String? p3FewDoses(Object? count) {
+  if (count is! Map || count['enough'] == true) return null;
+  final total = (count['total'] as num?)?.toInt() ?? 0;
+  if (total == 0) return null;
+  return '${(count['taken'] as num?)?.toInt() ?? 0} of $total';
+}
+
+/// "Taken since 14 Oct" for a count that isn't a percentage yet ("Taken" without a date).
+String p3TakenSince(BuildContext context, Object? count) {
+  final at = count is Map ? F.date(count['since']) : null;
+  return at == null ? tr(context, 'Taken') : tr(context, 'Taken since #1').replaceFirst('#1', F.dayMonth(at));
+}
+
 /// Small grey note line used for empty sheets.
 class P3Empty extends StatelessWidget {
   final String text;

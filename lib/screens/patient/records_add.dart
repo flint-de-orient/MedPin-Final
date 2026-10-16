@@ -76,15 +76,17 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     if (_forPatient != null) return {'doctors': const []};
     final pre = _args['doctorId'] as String?;
     final name = _args['doctorName'] as String?;
+    final askedLabel = tr(context, 'Asked for this test');
     final doctors = await p3LoadDoctors();
-    // Opened from a doctor's page ("Share"): that doctor is ticked even when
-    // they aren't in the care team yet.
+    // Only the doctor this sheet was opened for is ticked: the one who asked for
+    // this test, or whose page "Share" was tapped on. Nobody else is ticked for
+    // the patient — they pick. (Even when that doctor isn't in the care team yet.)
     if (pre != null && !doctors.any((d) => d.id == pre)) doctors.insert(0, P3Doctor(pre, name ?? 'This doctor', ''));
-    _liveDoctors = doctors;
-    _shareWith = {
+    _liveDoctors = [
       for (final d in doctors)
-        if (d.suggested || d.id == pre) d.id,
-    };
+        d.id == pre && _forTest != null ? P3Doctor(d.id, d.name, askedLabel) : d,
+    ];
+    _shareWith = {if (pre != null) pre};
     return {'doctors': doctors.length};
   }
 
@@ -101,15 +103,28 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     }
     if (_busy.value) return;
     final source = _sourceKeys[i];
-    UploadFile? file;
+    // A report on paper usually has several pages: the gallery picks them all at once,
+    // the camera asks "Add another page?" after each photo. All are read as one report.
+    final pages = <UploadFile>[];
     try {
-      file = source == 'pdf' ? await Files.pdf() : await Files.photo(camera: source == 'camera');
+      if (source == 'pdf') {
+        final f = await Files.pdf();
+        if (f != null) pages.add(f);
+      } else if (source == 'gallery') {
+        pages.addAll(await Files.photos());
+      } else {
+        while (pages.length < 10) {
+          final f = await Files.photo(camera: true);
+          if (f == null || !mounted) break;
+          pages.add(f);
+          if (!mounted || !await _anotherPage(pages.length)) break;
+        }
+      }
     } catch (_) {
       if (mounted) toast(context, "Couldn't open ${source == 'camera' ? 'the camera' : 'your files'}");
       return;
     }
-    if (file == null || !mounted) return;
-    final upload = file;
+    if (pages.isEmpty || !mounted) return;
     final kind = _kind == 0 ? 'prescription' : 'test_result';
     final patientId = _forPatient;
     // The doctor this sheet was opened for, even if the care team didn't load.
@@ -121,7 +136,7 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
       context,
       () => Api.I.upload(
         patientId != null ? '/api/patients/$patientId/records' : '/api/patient/records',
-        files: {'files': [upload]},
+        files: {'files': pages},
         fields: {
           'kind': kind,
           'uploadSource': source,
@@ -143,6 +158,12 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
     // Uploaded for one test: was it really that test?
     if (_forTest != null && patientId == null && !await _checked(body.obj('testCheck'), recordId)) return;
     if (!mounted) return;
+    // Kept after a "wrong report" warning: shared now (the server held it until the patient chose).
+    final held = [for (final id in (body['heldShare'] as List? ?? const [])) '$id'];
+    if (held.isNotEmpty && body.obj('record').str('status') != 'processing') {
+      await Api.I.post('/api/patient/records/$recordId/share', {'userIds': held}).catchError((_) => null);
+      if (!mounted) return;
+    }
     if (patientId == null && extracted.list('tests').isNotEmpty) {
       // Check and save each test on Records-Review.
       final nav = Navigator.of(context);
@@ -158,6 +179,25 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
           : 'Report saved',
     );
     Navigator.of(context).pop(recordId);
+  }
+
+  /// After a photo: another page of the same report, or done.
+  Future<bool> _anotherPage(int n) async {
+    final more = await openSheet<bool>(
+      context,
+      (c) => MpSheet(
+        title: tr(context, n == 1 ? '1 page added' : '#1 pages added').replaceFirst('#1', '$n'),
+        subtitle: 'Does the report have another page? Add each page so we read all of it.',
+        child: VGap(
+          gap: 8,
+          children: [
+            MpButton('Add another page', icon: I.camera, onTap: () => Navigator.pop(c, true)),
+            MpButton(tr(context, n == 1 ? 'Done · upload 1 page' : 'Done · upload #1 pages').replaceFirst('#1', '$n'), kind: MpBtn.secondary, onTap: () => Navigator.pop(c, false)),
+          ],
+        ),
+      ),
+    );
+    return more == true;
   }
 
   /// What the server found in a report uploaded for [_forTest]. The right

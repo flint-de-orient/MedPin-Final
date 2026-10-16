@@ -191,6 +191,8 @@ const vitalsSchema = new Schema(
     bloodSugar: { type: Number, min: 10, max: 1000 }, // mg/dL
     sugarType: enumOf(E.SUGAR_TYPES),
     note: String,
+    // Made from a confirmed lab result (services/labvitals.js); removed with it.
+    fromLabId: { type: Schema.Types.ObjectId, ref: 'LabResult' },
   },
   baseOptions,
 );
@@ -242,6 +244,10 @@ const medicationCourseSchema = new Schema(
   baseOptions,
 );
 medicationCourseSchema.index({ patientId: 1, status: 1 });
+// A new / changed / stopped medicine: the patient's phone re-schedules its alarms.
+medicationCourseSchema.post('save', function () {
+  require('../services/reminders').remindersChanged(this.patientId);
+});
 
 // One scheduled dose: Taken / Skipped / missed (drives adherence %).
 const doseLogSchema = new Schema(

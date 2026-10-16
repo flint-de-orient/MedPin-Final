@@ -133,6 +133,12 @@ const RELATED = {
   crp: /infection|inflamm|arthrit|fever/i,
 };
 
+/** Is a test / value ("HbA1c", "LDL cholesterol") about any of these conditions? */
+function isRelated(name, conditions) {
+  const text = (conditions || []).join(', ');
+  return Boolean(text) && [...keysOf(name)].some((k) => RELATED[k]?.test(text));
+}
+
 /** The diagnoses this test is for, from the prescription's list ("Type 2 Diabetes Mellitus"), or null. */
 function relatedDiagnoses(name, summary) {
   const keys = [...keysOf(name)];
@@ -191,4 +197,4 @@ async function advisedTests(patient) {
   return out.sort((a, b) => settled(a) - settled(b));
 }
 
-module.exports = { advisedTests, lookup, keysOf, inReport, checkReport, relatedDiagnoses, CATALOG };
+module.exports = { advisedTests, lookup, keysOf, inReport, checkReport, relatedDiagnoses, isRelated, CATALOG };

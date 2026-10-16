@@ -21,20 +21,25 @@ class PatientTrackSheet extends StatefulWidget {
 class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
   static const _max = 4;
   static const _items = [
-    (key: 'blood_sugar', name: 'Blood sugar', source: 'You log it'),
-    (key: 'blood_pressure', name: 'Blood pressure', source: 'You log it'),
+    (key: 'blood_sugar', name: 'Blood sugar', source: 'You log it or a lab report'),
+    (key: 'blood_pressure', name: 'Blood pressure', source: 'You log it or a BP log'),
     (key: 'hba1c', name: 'HbA1c', source: 'From lab reports'),
     (key: 'heart_rate', name: 'Heart rate', source: 'You log it or a device'),
     (key: 'weight', name: 'Weight', source: 'You log it'),
     (key: 'spo2', name: 'SpO₂', source: 'From a device'),
+    (key: 'ldl', name: 'LDL cholesterol', source: 'From lab reports'),
+    (key: 'creatinine', name: 'Creatinine', source: 'From lab reports (kidneys)'),
   ];
+
+  /// Lab tiles the doctor's tests make worth adding (GET /me suggestedMeasures).
+  Set<String> _suggested = {};
   /// Watches and rings sync through Health Connect (Android) or Apple Health.
   static const _devices = [
     ('watch', 'Smartwatch', 'Fitbit, Samsung, Mi, Noise, boAt and more'),
     ('ring', 'Smart ring', 'Oura, Ultrahuman, RingConn and more'),
   ];
 
-  final List<bool> _on = [true, true, false, false, false, false];
+  final List<bool> _on = [true, true, false, false, false, false, false, false];
   final _busy = ValueNotifier(false);
 
   @override
@@ -49,6 +54,7 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
           k: (at: F.date((devices[k] as Map)['at'])!, app: [for (final a in ((devices[k] as Map)['apps'] as List? ?? const [])) '$a'].join(', ')),
     };
     final tracked = {for (final m in (me['trackedMeasures'] as List? ?? const [])) '$m'};
+    _suggested = {for (final m in (me['suggestedMeasures'] as List? ?? const [])) '$m'};
     for (var i = 0; i < _items.length; i++) {
       _on[i] = tracked.contains(_items[i].key);
     }
@@ -206,7 +212,10 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
                     children: [
                       Text(_items[i].name, style: tx(15, w: w700)),
                       const Gap(2),
-                      Text(_items[i].source, style: tx(12, h: 1.35, c: MP.ink2)),
+                      Text(
+                        _suggested.contains(_items[i].key) && !on ? 'Suggested · your doctor asked for this test' : _items[i].source,
+                        style: tx(12, h: 1.35, w: _suggested.contains(_items[i].key) && !on ? w600 : w400, c: _suggested.contains(_items[i].key) && !on ? MP.primary : MP.ink2),
+                      ),
                     ],
                   ),
                 ),

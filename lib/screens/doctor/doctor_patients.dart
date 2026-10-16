@@ -144,16 +144,22 @@ class _DoctorPatientsScreenState extends State<DoctorPatientsScreen> with LiveDa
       final flag = _filterFlags[_filter];
       return [
         for (final p in d.list('items'))
-          _Patient(
+          () {
+            // Reports this patient shared that I haven't opened yet (cleared when I open the patient).
+            final n = p.numOr('newReports').toInt();
+            final shared = n == 0 ? null : (tr(context, n == 1 ? '1 new report shared' : '#1 new reports shared').replaceFirst('#1', '$n'), MP.primary);
+            final f = flag ?? shared;
+            return _Patient(
             p.str('name'),
             d2PatientMeta(p),
             [for (final c in (p['conditions'] as List? ?? const [])) '$c'].join(' · '),
             d2LastSeen(p['lastVisitAt']),
-            flag?.$1,
-            flag?.$2 ?? MP.ink2,
+            f?.$1,
+            f?.$2 ?? MP.ink2,
             p.str('id'),
             _branches.length > 1 ? _branchOf(p) : null,
-          ),
+          );
+          }(),
       ];
     }
     final list = _patients.where(_inFilter).toList();

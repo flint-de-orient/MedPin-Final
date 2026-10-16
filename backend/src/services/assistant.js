@@ -373,17 +373,23 @@ const LAB_SCHEMA = {
 };
 
 /** Reads an uploaded report (PDF or image) into tests and values. Returns null without AI. */
+/**
+ * Reads a report. [buffer] is one file, or a list of [{ buffer, mimetype }] —
+ * the pages of one report photographed one by one, read together in order.
+ */
 async function extractLabReport(buffer, mimeType) {
   if (!ai.enabled()) return null;
-  const block = mimeType === 'application/pdf'
-    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') } }
-    : { type: 'image', source: { type: 'base64', media_type: mimeType, data: buffer.toString('base64') } };
+  const files = Array.isArray(buffer) ? buffer.slice(0, 10) : [{ buffer, mimetype: mimeType }];
+  const blocks = files.map((f) => (f.mimetype === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.buffer.toString('base64') } }
+    : { type: 'image', source: { type: 'base64', media_type: f.mimetype, data: f.buffer.toString('base64') } }));
+  const many = files.length > 1;
   const out = await ai.completeJson({
     system: 'You read Indian medical test reports: lab reports, ECG / X-ray / ultrasound / echo reports, eye (fundus) examinations, and home BP or sugar logs. '
       + 'Extract every test, panel or examination with its values or findings exactly as printed (a BP log: one test "Home blood pressure log" with each reading as a value). '
       + 'Use the test names printed on the report, not the file name. Write each summary as one plain-language sentence for the patient. Use flag "normal" when no reference range is printed. '
       + 'Set document_type to what the file is; when it is a prescription, not a medical document, or too blurred / cut off to read, return no tests.',
-    messages: [{ role: 'user', content: [block, { type: 'text', text: 'Extract the tests from this report.' }] }],
+    messages: [{ role: 'user', content: [...blocks, { type: 'text', text: many ? `These ${files.length} images are the pages of one report, in order (page 1 first). Extract the tests from it.` : 'Extract the tests from this report.' }] }],
     schema: LAB_SCHEMA,
     effort: 'medium',
     vision: true,

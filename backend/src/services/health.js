@@ -18,6 +18,23 @@ function bpScore(sys, dia) {
   return 25;
 }
 
+/** HbA1c (%): the 3-month sugar average — the measure that matters most in diabetes. */
+function hba1cScore(x) {
+  if (x == null) return null;
+  if (x < 5.7) return 100;
+  if (x < 6.5) return 90;
+  if (x < 7) return 80;
+  if (x < 8) return 60;
+  if (x < 9) return 40;
+  return 20;
+}
+
+const hba1cOf = (lab) => {
+  const v = (lab?.values || []).find((x) => /hba1c|glycated|glycosylated|a1c/i.test(x.analyte || ''));
+  const n = v ? (typeof v.value === 'number' ? v.value : parseFloat(v.valueText)) : null;
+  return Number.isFinite(n) && n > 2 && n < 20 ? n : null;
+};
+
 function sugarScore(fasting) {
   if (fasting == null) return null;
   if (fasting < 70) return 50;
@@ -33,12 +50,14 @@ async function scoreAt(patient, at = new Date()) {
   const d14 = T.addDays(day, -13);
   const d7 = T.addDays(day, -6);
   const d90 = T.addDays(day, -89);
-  const [doses, vitals, sugar, logs, labs] = await Promise.all([
+  const d120 = T.addDays(day, -119);
+  const [doses, vitals, sugar, logs, labs, a1cLab] = await Promise.all([
     M.DoseLog.find({ patientId: patient._id, scheduledAt: { $gte: d14, $lte: at } }, 'status scheduledAt'),
     M.Vitals.findOne({ patientId: patient._id, recordedAt: { $lte: at }, bpSystolic: { $ne: null } }).sort({ recordedAt: -1 }),
     M.Vitals.findOne({ patientId: patient._id, recordedAt: { $lte: at }, sugarType: 'fasting', bloodSugar: { $ne: null } }).sort({ recordedAt: -1 }),
     M.HealthLog.find({ patientId: patient._id, loggedAt: { $gte: d7, $lte: at } }, 'type steps durationMin loggedAt'),
     M.LabResult.find({ patientId: patient._id, collectedAt: { $gte: d90, $lte: at } }, 'abnormalCount hasCritical values'),
+    M.LabResult.findOne({ patientId: patient._id, collectedAt: { $gte: d120, $lte: at }, 'values.analyte': /hba1c|glycated|glycosylated|a1c/i }, 'collectedAt values').sort({ collectedAt: -1 }),
   ]);
   const parts = [];
   // Medicines: doses taken of those due (a dose still due today doesn't count against).
@@ -49,8 +68,18 @@ async function scoreAt(patient, at = new Date()) {
   }
   const bp = bpScore(vitals?.bpSystolic, vitals?.bpDiastolic);
   if (bp != null && vitals.recordedAt >= d90) parts.push({ key: 'bp', label: 'Blood pressure', weight: 15, score: bp, detail: `${vitals.bpSystolic}/${vitals.bpDiastolic} mmHg on ${T.dayKey(vitals.recordedAt)}` });
-  const sg = sugarScore(sugar?.bloodSugar);
-  if (sg != null && sugar.recordedAt >= d90) parts.push({ key: 'sugar', label: 'Fasting sugar', weight: 15, score: sg, detail: `${sugar.bloodSugar} mg/dL on ${T.dayKey(sugar.recordedAt)}` });
+  // Sugar: the newest fasting sugar (a home reading or a lab report) and the latest HbA1c (4 months).
+  const sg = sugar && sugar.recordedAt >= d90 ? sugarScore(sugar.bloodSugar) : null;
+  const a1c = hba1cOf(a1cLab);
+  const a1cS = hba1cScore(a1c);
+  if (sg != null || a1cS != null) {
+    const score = sg != null && a1cS != null ? a1cS * 0.6 + sg * 0.4 : (a1cS ?? sg);
+    const detail = [
+      a1cS != null && `HbA1c ${a1c}% on ${T.dayKey(a1cLab.collectedAt)}`,
+      sg != null && `fasting ${sugar.bloodSugar} mg/dL on ${T.dayKey(sugar.recordedAt)}${sugar.source === 'lab' ? ' (lab)' : ''}`,
+    ].filter(Boolean).join(' · ');
+    parts.push({ key: 'sugar', label: a1cS != null ? 'Sugar control' : 'Fasting sugar', weight: 15, score: clamp(score), detail });
+  }
   const activeDays = new Set(logs.filter((l) => (l.type === 'steps' && l.steps >= 4000) || (l.type === 'exercise' && (l.durationMin || 0) >= 15)).map((l) => T.dayKey(l.loggedAt))).size;
   const loggedDays = new Set(logs.map((l) => T.dayKey(l.loggedAt))).size;
   if (logs.length) {
@@ -58,10 +87,27 @@ async function scoreAt(patient, at = new Date()) {
     parts.push({ key: 'logging', label: 'Days logged', weight: 10, score: clamp((loggedDays / 7) * 100), detail: `${loggedDays} of the last 7 days` });
   }
   if (labs.length) {
-    const tests = labs.reduce((n, l) => n + (l.values?.length || 0), 0) || labs.length;
-    const abnormal = labs.reduce((n, l) => n + (l.abnormalCount || 0), 0);
+    // Values about the patient's own conditions (HbA1c, LDL for a diabetic) count twice
+    // as much as others (a slightly high blood-count value).
+    const { isRelated } = require('./advisedtests');
+    const conditions = (patient.conditions || []).map((c) => c.name);
+    let all = 0;
+    let off = 0;
+    let n = 0;
+    let nOff = 0;
+    for (const l of labs) {
+      for (const v of l.values || []) {
+        const w = isRelated(v.analyte, conditions) ? 2 : 1;
+        all += w;
+        n += 1;
+        if (v.flag && v.flag !== 'normal') {
+          off += w;
+          nOff += 1;
+        }
+      }
+    }
     const critical = labs.some((l) => l.hasCritical);
-    parts.push({ key: 'labs', label: 'Lab results in range', weight: 10, score: critical ? 20 : clamp(100 - (abnormal / tests) * 100), detail: `${tests - abnormal} of ${tests} values in range (90 days)` });
+    if (all) parts.push({ key: 'labs', label: 'Lab results in range', weight: 10, score: critical ? 20 : clamp(100 - (off / all) * 100), detail: `${n - nOff} of ${n} values in range (90 days)` });
   }
   const weight = parts.reduce((n, p) => n + p.weight, 0);
   // Too little to say anything fair: no score yet.
@@ -79,10 +125,20 @@ async function refreshScore(patient) {
   return { ...now, weeklyDelta: patient.healthScore.weeklyDelta ?? null };
 }
 
-/** Score for the home screen: recomputed at most every 6 hours. */
+/**
+ * The score as it is now (Home, the doctor's view): recomputed when anything it
+ * uses changed since it was worked out — a reading or lab report, a dose
+ * marked, a log — and at least every 6 hours (doses become missed with time).
+ */
 async function currentScore(patient) {
   const at = patient.healthScore?.computedAt;
-  if (!at || Date.now() - new Date(at).getTime() > 6 * 3600e3) await refreshScore(patient);
+  let stale = !at || Date.now() - new Date(at).getTime() > 6 * 3600e3;
+  if (!stale) {
+    const since = { patientId: patient._id, updatedAt: { $gt: new Date(at) } };
+    const changed = await Promise.all([M.Vitals.exists(since), M.LabResult.exists(since), M.DoseLog.exists(since), M.HealthLog.exists(since)]);
+    stale = changed.some(Boolean);
+  }
+  if (stale) await refreshScore(patient);
   return patient.healthScore;
 }
 

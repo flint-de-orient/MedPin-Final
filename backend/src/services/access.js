@@ -71,6 +71,8 @@ async function accessFor({ userId, practiceId }, patient) {
     vitalsFilter() {
       const or = [ownPractice];
       if (allows('full_record')) or.push({ ...elsewhere, source: { $ne: 'home' } });
+      // Readings taken from lab reports follow the lab results' rule ("prescriptions and tests").
+      else if (allows('prescriptions_and_tests')) or.push({ ...elsewhere, source: 'lab' });
       if (level === 'full_with_logs' || level === 'daily_log_only') or.push({ ...elsewhere, source: { $in: ['home', 'device'] } });
       return { $or: or };
     },

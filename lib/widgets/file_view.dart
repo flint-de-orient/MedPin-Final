@@ -96,7 +96,20 @@ class FilePreview extends StatelessWidget {
   final double height;
   final String title;
   final double radius;
-  const FilePreview({super.key, required this.file, this.width = 70, this.height = 94, this.title = 'Report', this.radius = 8});
+
+  /// The report's other files (pages photographed one by one): tapping opens them all; the badge counts them.
+  final List<ReportFile> more;
+  const FilePreview({super.key, required this.file, this.width = 70, this.height = 94, this.title = 'Report', this.radius = 8, this.more = const []});
+
+  Widget _badge(int n) => Positioned(
+        right: 4,
+        bottom: 4,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(color: MP.ink.withValues(alpha: 0.72), borderRadius: BorderRadius.circular(6)),
+          child: Text('$n', style: tx(10, w: w700, c: MP.white, tab: true)),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -106,13 +119,19 @@ class FilePreview extends StatelessWidget {
     if (f == null) {
       inner = const _Blank();
     } else if (f.isImage) {
-      inner = Image.network(
-        f.url,
-        fit: BoxFit.cover,
-        alignment: Alignment.topCenter,
-        cacheWidth: (width * dpr).round(),
-        errorBuilder: (_, _, _) => const _FileIcon(),
-        loadingBuilder: (_, child, p) => p == null ? child : const _Loading(),
+      inner = Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            f.url,
+            fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
+            cacheWidth: (width * dpr).round(),
+            errorBuilder: (_, _, _) => const _FileIcon(),
+            loadingBuilder: (_, child, p) => p == null ? child : const _Loading(),
+          ),
+          if (more.isNotEmpty) _badge(more.length + 1),
+        ],
       );
     } else if (f.isPdf && PdfPages.supported) {
       inner = FutureBuilder<PdfPageImage>(
@@ -125,16 +144,7 @@ class FilePreview extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               Image.memory(p.png, fit: BoxFit.cover, alignment: Alignment.topCenter, gaplessPlayback: true),
-              if (p.pages > 1)
-                Positioned(
-                  right: 4,
-                  bottom: 4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(color: MP.ink.withValues(alpha: 0.72), borderRadius: BorderRadius.circular(6)),
-                    child: Text('${p.pages}', style: tx(10, w: w700, c: MP.white, tab: true)),
-                  ),
-                ),
+              if (p.pages > 1 || more.isNotEmpty) _badge(more.isEmpty ? p.pages : more.length + 1),
             ],
           );
         },
@@ -147,7 +157,7 @@ class FilePreview extends StatelessWidget {
       label: f == null ? null : 'Open $title',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: f == null ? null : () => openFileView(context, f, title: title),
+        onTap: f == null ? null : () => openFilesView(context, [f, ...more], title: title),
         child: Container(
           width: width,
           height: height,
@@ -211,10 +221,18 @@ Future<void> openFileView(BuildContext context, ReportFile f, {String title = 'R
   await Downloads.open(context, f.url, name: f.name.isEmpty ? title : f.name);
 }
 
+/// A report kept as several files (pages photographed one by one): one viewer, page by page.
+Future<void> openFilesView(BuildContext context, List<ReportFile> files, {String title = 'Report'}) async {
+  if (files.isEmpty) return;
+  if (files.length == 1) return openFileView(context, files.first, title: title);
+  await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => _FileViewScreen(file: files.first, files: files, title: title)));
+}
+
 class _FileViewScreen extends StatefulWidget {
   final ReportFile file;
+  final List<ReportFile> files;
   final String title;
-  const _FileViewScreen({required this.file, required this.title});
+  const _FileViewScreen({required this.file, this.files = const [], required this.title});
   @override
   State<_FileViewScreen> createState() => _FileViewScreenState();
 }
@@ -225,13 +243,19 @@ class _FileViewScreenState extends State<_FileViewScreen> {
   int _at = 0;
   String? _error;
 
-  ReportFile get _f => widget.file;
+  /// Several files: one page each (a photo, or a PDF's first page).
+  bool get _many => widget.files.length > 1;
+  ReportFile get _f => _many ? widget.files[_at.clamp(0, widget.files.length - 1)] : widget.file;
+  ReportFile _fileAt(int i) => _many ? widget.files[i] : widget.file;
+  int _pageAt(int i) => _many ? 0 : i;
   String get _name => _f.name.isNotEmpty ? _f.name : widget.title;
 
   @override
   void initState() {
     super.initState();
-    if (_f.isPdf) {
+    if (_many) {
+      _pages = widget.files.length;
+    } else if (_f.isPdf) {
       // Page 1 tells how many pages there are.
       PdfPages.page(_f, 0, 1080).then((p) {
         if (mounted) setState(() => _pages = p.pages);
@@ -254,15 +278,17 @@ class _FileViewScreenState extends State<_FileViewScreen> {
   }
 
   Widget _page(BuildContext context, int i) {
-    if (_f.isImage) {
+    final file = _fileAt(i);
+    if (file.isImage) {
       return InteractiveViewer(
         maxScale: 5,
-        child: Center(child: Image.network(_f.url, fit: BoxFit.contain, errorBuilder: (_, _, _) => const _FileIcon())),
+        child: Center(child: Image.network(file.url, fit: BoxFit.contain, errorBuilder: (_, _, _) => const _FileIcon())),
       );
     }
+    if (!PdfPages.supported) return const _FileIcon();
     final width = (MediaQuery.of(context).size.width * MediaQuery.of(context).devicePixelRatio).round().clamp(600, 1600);
     return FutureBuilder<PdfPageImage>(
-      future: PdfPages.page(_f, i, width),
+      future: PdfPages.page(file, _pageAt(i), width),
       builder: (_, s) {
         final p = s.data;
         if (s.hasError) return Center(child: Text(tr(context, "Couldn't show page #1").replaceFirst('#1', '${i + 1}'), style: tx(14, c: MP.ink2)));

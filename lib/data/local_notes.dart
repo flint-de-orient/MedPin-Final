@@ -22,6 +22,19 @@ class LocalNotes {
   static const urgent = AndroidNotificationChannel('medpin_urgent', 'Urgent', description: 'Emergency alerts and urgent messages', importance: Importance.max);
   static const doses = AndroidNotificationChannel('medpin_doses', 'Medicine alarms', description: 'Time to take your medicine', importance: Importance.max);
 
+  /// Medicine alarms that ring like an alarm clock: the alarm sound at alarm
+  /// volume (so a phone on silent still rings), over the lock screen.
+  /// Profile → "Ring even on silent" (on by default) picks this one.
+  static final dosesRing = AndroidNotificationChannel(
+    'medpin_doses_ring',
+    'Medicine alarms (ring)',
+    description: 'Rings for your medicine even when the phone is on silent',
+    importance: Importance.max,
+    bypassDnd: true,
+    sound: const UriAndroidNotificationSound('content://settings/system/alarm_alert'),
+    audioAttributesUsage: AudioAttributesUsage.alarm,
+  );
+
   bool get supported => !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
 
   Future<void> init() async {
@@ -37,7 +50,7 @@ class LocalNotes {
       onDidReceiveNotificationResponse: (r) => _handle(r.payload),
     );
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    for (final c in [general, urgent, doses]) {
+    for (final c in [general, urgent, doses, dosesRing]) {
       await android?.createNotificationChannel(c);
     }
     // Opened by tapping a notification while the app was closed.
@@ -83,7 +96,19 @@ class LocalNotes {
   }
 
   NotificationDetails _details(AndroidNotificationChannel c) => NotificationDetails(
-        android: AndroidNotificationDetails(c.id, c.name, channelDescription: c.description, importance: c.importance, priority: c.importance == Importance.max ? Priority.max : Priority.high),
+        android: c.id == dosesRing.id
+            ? AndroidNotificationDetails(
+                c.id,
+                c.name,
+                channelDescription: c.description,
+                importance: Importance.max,
+                priority: Priority.max,
+                category: AndroidNotificationCategory.alarm,
+                fullScreenIntent: true,
+                audioAttributesUsage: AudioAttributesUsage.alarm,
+                sound: c.sound,
+              )
+            : AndroidNotificationDetails(c.id, c.name, channelDescription: c.description, importance: c.importance, priority: c.importance == Importance.max ? Priority.max : Priority.high),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true),
       );
 
@@ -101,7 +126,9 @@ class LocalNotes {
   }
 
   /// Rings at [at] (phone time), even if the app is closed or offline.
-  Future<void> schedule({required int id, required DateTime at, required String title, String? body, Map<String, dynamic>? payload}) async {
+  /// [kind]: 'dose' (medicine alarm), 'ring' (medicine alarm that rings even on
+  /// silent), or 'reminder' (visit, daily log — an ordinary notification).
+  Future<void> schedule({required int id, required DateTime at, required String title, String? body, Map<String, dynamic>? payload, String kind = 'dose'}) async {
     if (!supported) return;
     await init();
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
@@ -109,7 +136,7 @@ class LocalNotes {
     await _plugin.zonedSchedule(
       id: id,
       scheduledDate: tz.TZDateTime.from(at, tz.local),
-      notificationDetails: _details(doses),
+      notificationDetails: _details(switch (kind) { 'ring' => dosesRing, 'reminder' => general, _ => doses }),
       androidScheduleMode: exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle,
       title: title,
       body: body,

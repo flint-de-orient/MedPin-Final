@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import '../../widgets/i18n.dart';
+import 'common_p3.dart';
 
 typedef _Doc = ({
   String name,
@@ -75,6 +76,9 @@ class _PatientAdherenceSheetState extends State<PatientAdherenceSheet> with Live
   static String _medLine(Map<String, dynamic> m) {
     final name = m.str('name');
     if (m['tracked'] != true) return '$name not tracked';
+    if (m['asNeeded'] == true) return '$name when needed';
+    final few = p3FewDoses(m['count']);
+    if (few != null) return '$name $few';
     if (m['isNew'] == true || m['pct'] == null) {
       final start = F.date(m['startDate']);
       return start != null && F.sameDay(start, DateTime.now()) ? '$name started today' : '$name new';
@@ -103,13 +107,15 @@ class _PatientAdherenceSheetState extends State<PatientAdherenceSheet> with Live
       );
     }
     final pct = d['pct'] as num?;
+    final few = p3FewDoses(d['count']);
     final good = pct != null && pct >= 90;
     return (
       name: d.str('name'),
       dept: dept,
-      pct: pct == null ? 'No doses yet' : '${pct.round()}%',
-      pctSize: pct == null ? 14.0 : 20.0,
-      pctColor: pct == null ? MP.ink3 : (good ? MP.green : MP.amber),
+      // A few doses: "2 of 2 doses" until a percentage is fair.
+      pct: few != null ? '$few doses' : pct == null ? 'No doses yet' : '${pct.round()}%',
+      pctSize: pct == null || few != null ? 14.0 : 20.0,
+      pctColor: few != null ? MP.ink2 : pct == null ? MP.ink3 : (good ? MP.green : MP.amber),
       bar: pct == null ? null : (pct / 100).clamp(0, 1).toDouble(),
       barColor: good ? MP.primary : MP.amber,
       meds: meds.map(_medLine).join(' · '),
@@ -122,6 +128,8 @@ class _PatientAdherenceSheetState extends State<PatientAdherenceSheet> with Live
   String get _overall {
     if (data == null) return '86%';
     final p = data!['overallPct'] as num?;
+    final few = p3FewDoses(data!['overall']);
+    if (few != null) return few;
     return p == null ? '–' : '${p.round()}%';
   }
 

@@ -16,7 +16,7 @@ const userSchema = new Schema(
     avatarUrl: String,
     photo: fileSchema, // profile photo (doctors: the same file as DoctorProfile.photo)
     language: enumOf(E.LANGUAGES, { default: 'en' }), // "App language"
-    appLock: { type: Boolean, default: true }, // "Fingerprint or PIN to open"
+    appLock: { type: Boolean, default: false }, // "Fingerprint or PIN to open" — off until the person turns it on
     termsAcceptedAt: Date, // Register: "agree to the Terms of Use and Privacy Policy"
     activePracticeId: ref('Practice'), // context line on Doctor-Dashboard
     activeLocationId: ref('Location'),
@@ -71,6 +71,12 @@ const deviceTokenSchema = new Schema(
     platform: enumOf(E.PLATFORMS, { required: true }),
     // The app rings medicine alarms on this phone itself (so the server doesn't push them too).
     localAlarms: { type: Boolean, default: false },
+    // What this phone has scheduled itself (lib/data/med_alarms.dart), so the server pushes
+    // only what it hasn't: doses and visits up to remindersUntil, as they were at
+    // remindersSyncedAt; the daily-log reminder at dailyLogAt (HH:MM, null = none).
+    remindersSyncedAt: Date,
+    remindersUntil: Date,
+    dailyLogAt: String,
     lastSeenAt: Date,
   },
   baseOptions,

@@ -100,6 +100,8 @@ const doctorProfileSchema = new Schema(
       whatsapp: { type: Boolean, default: true },
       email: { type: Boolean, default: false },
       dailyDigest: { type: Boolean, default: true },
+      // Morning summary of what patients shared, results to look at, adherence drops (HH:MM, IST).
+      digestAt: { type: String, default: '08:00' },
       quietHours: {
         enabled: { type: Boolean, default: false },
         from: { type: String, default: '22:00' },

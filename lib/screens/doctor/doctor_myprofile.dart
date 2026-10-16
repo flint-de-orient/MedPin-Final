@@ -208,7 +208,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
   }
 
   bool _sampleAppLock = true;
-  bool get _appLock => data == null ? _sampleAppLock : _user['appLock'] != false;
+  bool get _appLock => data == null ? _sampleAppLock : _user['appLock'] == true;
 
   /// App lock (fingerprint / PIN): PATCH /api/me; the lock follows at once.
   Future<void> _setAppLock(bool v) async {

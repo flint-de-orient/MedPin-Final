@@ -35,7 +35,7 @@ module.exports = {
   ACCESS_LEVELS: ['full_with_logs', 'full_record', 'prescriptions_and_tests', 'daily_log_only', 'not_shared'],
   ENROLMENT_STATUSES: ['pending_code', 'linked', 'revoked'],
   SHARE_SCOPES: ['full', 'partial'],
-  TRACKED_MEASURES: ['blood_sugar', 'blood_pressure', 'hba1c', 'heart_rate', 'weight', 'spo2'],
+  TRACKED_MEASURES: ['blood_sugar', 'blood_pressure', 'hba1c', 'heart_rate', 'weight', 'spo2', 'ldl', 'creatinine'],
 
   // Appointments (Appointments, Queue-List, Staff-Today, Doctor-History)
   VISIT_TYPES: ['new', 'follow_up', 'report_review'],

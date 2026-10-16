@@ -6,12 +6,15 @@ const { sendEmail } = require('./email');
 
 /**
  * @param {ObjectId[]} userIds
- * @param {{type, title, body?, screen?, params?, practiceId?, whatsapp?: boolean}} n
+ * @param {{type, title, body?, screen?, params?, practiceId?, whatsapp?: boolean, push?: boolean}} n
+ *   push: false — in the app only, no phone notification (e.g. a patient sharing a
+ *   report: a doctor with thousands of patients sees it marked on the patient and
+ *   in the morning summary, not as a buzz each time).
  */
 async function notify(userIds, n) {
   const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
   if (!ids.length) return [];
-  const channels = ['in_app', 'push', ...(n.whatsapp ? ['whatsapp'] : [])];
+  const channels = ['in_app', ...(n.push === false ? [] : ['push']), ...(n.whatsapp ? ['whatsapp'] : [])];
   const docs = await M.Notification.insertMany(
     ids.map((userId) => ({
       userId,
@@ -52,9 +55,9 @@ async function notify(userIds, n) {
       const p = prefs.get(id);
       return !p || urgentFor(id) || (p.push !== false && typeOn(p) && !quiet(p, id));
     });
-    const tokens = await M.DeviceToken.find({ userId: { $in: pushIds } }).distinct('token');
+    const tokens = n.push === false ? [] : await M.DeviceToken.find({ userId: { $in: pushIds } }).distinct('token');
     const data = { screen: n.screen || '', type: n.type, notificationId: '', ...Object.fromEntries(Object.entries(n.params || {}).map(([k, v]) => [k, String(v)])) };
-    await sendPush(tokens, { title: n.title, body: n.body, data, urgent: isUrgent });
+    if (tokens.length) await sendPush(tokens, { title: n.title, body: n.body, data, urgent: isUrgent });
     if (n.whatsapp) {
       const waIds = ids.filter((id) => {
         const p = prefs.get(id);

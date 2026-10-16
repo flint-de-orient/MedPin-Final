@@ -52,14 +52,21 @@ async function doseReminders(now, since) {
   if (!doses.length) return;
   const patients = new Map((await M.Patient.find({ _id: { $in: doses.map((d) => d.patientId) } }, 'userId settings')).map((p) => [String(p._id), p]));
   const courses = new Map((await M.MedicationCourse.find({ _id: { $in: doses.map((d) => d.courseId) } }, 'name strength foodRelation dose')).map((c) => [String(c._id), c]));
-  // Phones that ring alarms themselves don't need the server's push too.
-  const alarmUsers = new Set((await M.DeviceToken.find({ localAlarms: true }, 'userId')).map((t) => String(t.userId)));
+  // Phones that ring alarms themselves don't need the server's push too — for the doses
+  // they have scheduled (a dose changed after the phone last synced, or beyond what it
+  // scheduled, still gets the push).
+  const { phoneCovers } = require('./reminders');
+  const phones = new Map();
+  for (const t of await M.DeviceToken.find({ userId: { $in: [...patients.values()].map((p) => p.userId).filter(Boolean) }, localAlarms: true })) {
+    if (!phones.has(String(t.userId))) phones.set(String(t.userId), []);
+    phones.get(String(t.userId)).push(t);
+  }
   // Medicines due at the same time: one reminder listing them, not one each.
   const groups = new Map();
   for (const d of doses) {
     const p = patients.get(String(d.patientId));
     const c = courses.get(String(d.courseId));
-    if (!p?.userId || p.settings?.medReminders === false || !c || alarmUsers.has(String(p.userId))) continue;
+    if (!p?.userId || p.settings?.medReminders === false || !c || phoneCovers(phones.get(String(p.userId)), d.updatedAt, d.scheduledAt)) continue;
     const key = `${d.patientId}:${d.scheduledAt.getTime()}`;
     if (!groups.has(key)) groups.set(key, { p, slot: d.slot, items: [] });
     groups.get(key).items.push({ d, c });
@@ -90,6 +97,9 @@ async function visitReminders(now) {
       if (a.createdAt && a.startAt - a.createdAt < (hours === 24 ? 12 : 2) * 3600e3) continue;
       const p = await M.Patient.findById(a.patientId, 'userId settings');
       if (!p?.userId || p.settings?.visitReminders === false) continue;
+      // The patient's phone has this visit's reminders scheduled itself.
+      const devices = await M.DeviceToken.find({ userId: p.userId, localAlarms: true });
+      if (require('./reminders').phoneCovers(devices, a.updatedAt, a.startAt)) continue;
       const mins = Math.round((a.startAt - now) / 60000);
       const label = hours === 2
         ? (mins < 90 ? `in ${mins} minutes` : 'in about 2 hours')
@@ -162,7 +172,11 @@ async function dailyLogReminders(now) {
     if (minute < T.hhmmToMin(at)) continue;
     const logged = await M.HealthLog.exists({ patientId: p._id, loggedAt: { $gte: T.dayStart(now) } });
     if (logged) continue;
-    if (!(await require('../routes/patient').dailyLogUsed(p))) continue;
+    // On when the patient switched it on, or (not chosen) when their care team asked for a meal log.
+    if (!p.settings?.dailyLogReminderChosen && !(await require('../routes/patient').dailyLogUsed(p))) continue;
+    // Their phone rings it itself at this time.
+    const phone = await M.DeviceToken.exists({ userId: p.userId, localAlarms: true, dailyLogAt: at, remindersUntil: { $gte: now } });
+    if (phone) continue;
     await once(`log:${p._id}:${day}`, () =>
       notify([p.userId], { type: 'daily_log_reminder', title: "Log today's meals", body: 'A quick photo or a line is enough. Your care team sees it.', screen: 'Patient-Log' }),
     );
@@ -194,6 +208,79 @@ async function dailyDigest(now) {
       });
     });
   }
+}
+
+/**
+ * The doctor's morning summary (their own time, default 08:00): what patients
+ * shared since yesterday's summary and which results need a look, patients
+ * whose medicine-taking dropped, and patients asked to log meals who stopped.
+ * One notification instead of one per patient — a doctor with thousands of
+ * patients isn't buzzed all day. Urgent things still come at once (alerts).
+ */
+async function morningSummary(now) {
+  const nowMin = T.minuteOfDay(now);
+  const day = T.dayKey(now);
+  const since = T.addDays(now, -1);
+  const doctors = await M.Member.find({ role: { $in: ['doctor', 'dietician'] }, status: 'active' }, 'userId practiceId role').populate('practiceId', 'name');
+  if (nowMin < 5 * 60) return; // nobody's summary is before 05:00
+  const done = new Set((await M.ReminderLog.find({ key: new RegExp(`^morning:.*:${day}$`) }, 'key')).map((r) => r.key));
+  for (const m of doctors) {
+    const key = `morning:${m.userId}:${m.practiceId?._id}:${day}`;
+    if (done.has(key)) continue; // already sent today
+    const prof = await M.DoctorProfile.findOne({ userId: m.userId }, 'notificationPrefs');
+    const prefs = prof?.notificationPrefs;
+    if (prefs?.dailyDigest === false) continue;
+    if (nowMin < T.hhmmToMin(prefs?.digestAt || '08:00')) continue;
+    await once(key, async () => {
+      const team = await M.CareTeamAccess.find({ userId: m.userId, practiceId: m.practiceId?._id, accessLevel: { $ne: 'not_shared' } }).distinct('patientId');
+      if (!team.length) return;
+      const [shared, abnormal, asked] = await Promise.all([
+        M.MedicalRecord.countDocuments({ patientId: { $in: team }, 'sharedWith.userId': m.userId, deletedAt: null, updatedAt: { $gte: since } }),
+        M.MedicalRecord.countDocuments({ patientId: { $in: team }, 'sharedWith.userId': m.userId, deletedAt: null, updatedAt: { $gte: since }, flagTone: 'high' }),
+        M.MedicalRecord.countDocuments({ patientId: { $in: team }, 'sharedWith.userId': m.userId, deletedAt: null, updatedAt: { $gte: since }, 'forTests.0': { $exists: true } }),
+      ]);
+      // Taking their medicines from this doctor: under 70% over the last 7 days (6+ doses counted).
+      const myCourses = await M.MedicationCourse.find({ patientId: { $in: team }, doctorId: m.userId, status: 'active', frequency: { $ne: 'as_needed' } }).distinct('_id');
+      const counted = myCourses.length
+        ? await M.DoseLog.aggregate([
+          { $match: { courseId: { $in: myCourses }, scheduledAt: { $gte: T.addDays(now, -7), $lte: T.addMinutes(now, -120) } } },
+          { $group: { _id: '$patientId', taken: { $sum: { $cond: [{ $eq: ['$status', 'taken'] }, 1, 0] } }, total: { $sum: 1 } } },
+        ])
+        : [];
+      const dropped = counted.filter((c) => c.total >= 6 && c.taken / c.total < 0.7).length;
+      // Asked to log meals (this doctor / dietician reviews them) and nothing for 2 days.
+      const askedToLog = await M.TreatmentPlan.find({ practiceId: m.practiceId?._id, nutritionBy: m.userId }).distinct('patientId');
+      const logging = askedToLog.length ? await M.HealthLog.find({ patientId: { $in: askedToLog }, type: 'meal', loggedAt: { $gte: T.addDays(now, -2) } }).distinct('patientId') : [];
+      const notLogging = askedToLog.length - logging.length;
+      const parts = [
+        shared && `${shared} ${shared === 1 ? 'report' : 'reports'} shared${abnormal ? ` (${abnormal} out of range)` : ''}${asked ? ` · ${asked} you asked for` : ''}`,
+        dropped && `${dropped} ${dropped === 1 ? 'patient' : 'patients'} below 70% on medicines`,
+        notLogging > 0 && `${notLogging} not logging meals`,
+      ].filter(Boolean);
+      if (!parts.length) return;
+      await notify([m.userId], {
+        type: 'morning_summary', practiceId: m.practiceId?._id, title: `Your patients since yesterday · ${m.practiceId?.name || 'clinic'}`,
+        body: parts.join(' · '), screen: 'Doctor-Patients',
+      });
+    });
+  }
+}
+
+/**
+ * One-time: app lock used to be on for every new account. Patients never chose
+ * it, so it's switched off for them once (they can turn it on in Profile).
+ * Doctors and staff keep theirs: their phones hold many patients' records.
+ */
+let appLockChecked = false;
+async function appLockOffForPatients() {
+  if (appLockChecked) return;
+  appLockChecked = true;
+  await once('migrate:app-lock-off-patients-v1', async () => {
+    const staff = await M.Member.find({ status: { $ne: 'removed' } }).distinct('userId');
+    const patients = await M.Patient.find({ userId: { $ne: null } }).distinct('userId');
+    const r = await M.User.updateMany({ _id: { $in: patients, $nin: staff }, appLock: true }, { appLock: false });
+    console.log(`[jobs] app lock switched off for ${r.modifiedCount} patient accounts`);
+  });
 }
 
 /** Doctors' online fees, paid out every Monday from 10:00 IST. */
@@ -240,7 +327,7 @@ async function tick() {
   const since = last;
   last = now;
   for (const [name, job] of [
-    ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)],
+    ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)], ['morning', () => morningSummary(now)], ['appLock', () => appLockOffForPatients()],
     ['followUps', () => followUpReminders(now)], ['lowStock', () => lowStock(now)], ['dailyLog', () => dailyLogReminders(now)], ['digest', () => dailyDigest(now)],
     ['scores', () => healthScores(now)], ['noShows', () => noShows(now)],
     ['payouts', () => payouts(now)],
@@ -267,4 +354,4 @@ function stop() {
   timer = null;
 }
 
-module.exports = { noShows, start, stop, tick, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };
+module.exports = { noShows, start, stop, tick, morningSummary, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };

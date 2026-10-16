@@ -17,6 +17,7 @@ import 'patient_log.dart';
 import '../../data/rx_pdf.dart';
 import '../../data/downloads.dart';
 import '../../widgets/i18n.dart';
+import 'alarm_check.dart';
 
 /// Design: Main.dc.html — "Patient · Home".
 class PatientHomeScreen extends StatefulWidget {
@@ -265,6 +266,18 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     if (ok != null && mounted) reload(quiet: true);
   }
 
+  bool _alarmAsked = false;
+
+  /// Once, when there are medicines to remind about: keep alarms on time (battery saving).
+  void _askAlarmsOnce() {
+    if (_alarmAsked || !isLive || data == null) return;
+    if (!data!.list('tasks').any((t) => t.str('kind') == 'dose')) return;
+    _alarmAsked = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AlarmCheck.askOnce(context);
+    });
+  }
+
   int get _exMin => data?.obj('exercise').numOr('minutes').toInt() ?? 0;
   int get _exGoal => data?.obj('exercise').numOr('goal', 30).toInt() ?? 30;
   int get _exSessions => data?.obj('exercise').numOr('sessions').toInt() ?? 0;
@@ -308,7 +321,12 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     'heart_rate': ('Heart rate', ' bpm'),
     'spo2': ('SpO₂', '%'),
     'hba1c': ('HbA1c', '%'),
+    'ldl': ('LDL cholesterol', ' mg/dL'),
+    'creatinine': ('Creatinine', ' mg/dL'),
   };
+
+  /// Measures that come only from lab reports (a tap opens Records, not "add a reading").
+  static const _labOnly = {'hba1c', 'ldl', 'creatinine'};
 
   /// Sparkline points in the tile's 130×32 box.
   static String _points(List<num> values) {
@@ -341,6 +359,14 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
       case 'hba1c':
         final target = data!.obj('targets').numOr('hba1c', 7);
         return v > target ? ('Above target', MP.amber) : ('In target', MP.green);
+      case 'ldl':
+      case 'creatinine':
+        // The lab's own range (its flag on the report).
+        return switch (last.str('flag')) {
+          'high' || 'critical' => ('Above range', MP.amber),
+          'low' => ('Below range', MP.amber),
+          _ => ('In range', MP.green),
+        };
       default:
         return ('', MP.ink3);
     }
@@ -362,9 +388,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
               label: label,
               value: '–',
               points: '',
-              note: m == 'hba1c' ? 'From your next lab report' : 'No reading yet',
+              note: _labOnly.contains(m) ? 'From your next lab report' : 'No reading yet',
               noteColor: MP.ink3,
-              onTap: () => m == 'hba1c' ? Nav.tab(context, 'Patient-Records') : _openReading(context, m),
+              onTap: () => _labOnly.contains(m) ? Nav.tab(context, 'Patient-Records') : _openReading(context, m),
             );
           }
           final last = series.last;
@@ -374,7 +400,9 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
           final (status, color) = _noteFor(m, last);
           // When it was measured: the time today, else the date.
           final at = F.date(last['at']);
-          final stamp = at == null ? '' : (F.sameDay(at, DateTime.now()) ? F.time(at) : F.dayMonth(at));
+          final when = at == null ? '' : (F.sameDay(at, DateTime.now()) ? F.time(at) : F.dayMonth(at));
+          // A value from a lab report says so ("lab · 15 Oct").
+          final stamp = last.str('source') == 'lab' && !_labOnly.contains(m) && when.isNotEmpty ? 'lab · $when' : when;
           final note = [status, stamp].where((s) => s.isNotEmpty).join(' · ');
           return _TrackTile(
             label: label,
@@ -383,7 +411,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
             points: _points([for (final x in series) x.numOr('value')]),
             note: note,
             noteColor: color,
-            onTap: () => m == 'hba1c' ? Nav.tab(context, 'Patient-Records') : _openReading(context, m),
+            onTap: () => _labOnly.contains(m) ? Nav.tab(context, 'Patient-Records') : _openReading(context, m),
           );
         }(),
     ];
@@ -418,6 +446,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     final placeholder = livePlaceholder();
     final slides = placeholder == null ? _slides : const <P1Slide>[];
+    _askAlarmsOnce();
     return MpPage(
       nav: const PatientNav(current: 0),
       overlays: [

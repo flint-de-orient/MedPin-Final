@@ -224,7 +224,10 @@ async function ensureDoses(patient, from, to = from) {
   for (let day = start; day <= end; day = T.addDays(day, 1)) {
     for (const c of courses) {
       if (c.startDate > day || (c.endDate && c.endDate < day) || (c.stoppedAt && c.stoppedAt < day)) continue;
-      if (c.frequency === 'weekly' && c.weekday && c.weekday !== T.weekday(day)) continue;
+      // "When needed" (e.g. paracetamol for fever): no set times — no alarm, never a missed dose.
+      if (c.frequency === 'as_needed') continue;
+      // Weekly: on its day; without one set, the weekday it started.
+      if (c.frequency === 'weekly' && (c.weekday || T.weekday(c.startDate)) !== T.weekday(day)) continue;
       for (const slot of SLOTS) {
         if (!(c.dose?.[slot] > 0)) continue;
         want.set(`${c._id}|${T.dayKey(day)}|${slot}`, { course: c, slot, scheduledAt: T.atMinute(day, doseMinute(patient.settings, slot, c.foodRelation)) });
@@ -255,7 +258,14 @@ async function ensureDoses(patient, from, to = from) {
     if (keep.status === 'due' && keep.scheduledAt.getTime() !== w.scheduledAt.getTime()) moves.push({ id: keep._id, scheduledAt: w.scheduledAt });
   }
   // Doses no longer in the schedule (medicine stopped, dose or slot changed): future, unmarked ones go.
-  for (const list of groups.values()) for (const d of list) if (d.status === 'due' && d.scheduledAt > now) drop.push(d._id);
+  // A "when needed" medicine never had a schedule: its unmarked doses go whatever the date (they
+  // were never missed); the ones the patient marked taken stay.
+  const asNeeded = new Set((await M.MedicationCourse.find({ patientId: patient._id, frequency: 'as_needed' }, '_id')).map((c) => String(c._id)));
+  for (const list of groups.values()) {
+    for (const d of list) {
+      if (asNeeded.has(String(d.courseId)) ? d.status !== 'taken' : d.status === 'due' && d.scheduledAt > now) drop.push(d._id);
+    }
+  }
   if (drop.length) await M.DoseLog.deleteMany({ _id: { $in: drop } });
   for (const m of moves) await M.DoseLog.updateOne({ _id: m.id }, { scheduledAt: m.scheduledAt }).catch(() => {});
   if (inserts.length) await M.DoseLog.insertMany(inserts, { ordered: false }).catch(() => {});
@@ -271,11 +281,16 @@ async function adherence(patient, days = 30, acc) {
   const from = T.addDays(T.dayStart(now), -(days - 1));
   await ensureDoses(patient, from, now);
   const allCourses = await M.MedicationCourse.find({ patientId: patient._id });
-  const courses = acc ? allCourses.filter((c) => acc.courseVisible(c)) : allCourses;
+  const visible = acc ? allCourses.filter((c) => acc.courseVisible(c)) : allCourses;
+  // "When needed" medicines aren't on a schedule, so they don't count for or against.
+  const courses = visible.filter((c) => c.frequency !== 'as_needed');
   const doses = await M.DoseLog.find({ patientId: patient._id, courseId: { $in: courses.map((c) => c._id) }, scheduledAt: { $gte: from, $lte: now } });
   const courseById = new Map(courses.map((c) => [String(c._id), c]));
   const pct = (taken, total) => (total ? Math.round((taken / total) * 100) : null);
-  const tally = () => ({ taken: 0, total: 0 });
+  const tally = () => ({ taken: 0, total: 0, since: null });
+  // A percentage of a few doses misleads ("100%" on day 2): until there are 6, show "2 of 2 doses".
+  const ENOUGH = 6;
+  const view = (t) => (t ? { pct: pct(t.taken, t.total), taken: t.taken, total: t.total, since: t.since, enough: t.total >= ENOUGH } : null);
   const overall = tally();
   const byCourse = new Map();
   const byDoctor = new Map();
@@ -288,6 +303,7 @@ async function adherence(patient, days = 30, acc) {
     for (const t of [overall, byCourse.get(String(d.courseId)) || byCourse.set(String(d.courseId), tally()).get(String(d.courseId)), byDoctor.get(doc) || byDoctor.set(doc, tally()).get(doc)]) {
       t.total += 1;
       if (s === 'taken') t.taken += 1;
+      if (!t.since || d.scheduledAt < t.since) t.since = d.scheduledAt;
     }
     if (s !== 'taken') missesBySlot[d.slot] += 1;
   }
@@ -295,13 +311,18 @@ async function adherence(patient, days = 30, acc) {
   return {
     days,
     overallPct: pct(overall.taken, overall.total),
-    perMedicine: courses
+    overall: view(overall.total ? overall : null),
+    perMedicine: visible
       .filter((c) => c.status === 'active')
       .map((c) => {
         const t = byCourse.get(String(c._id));
-        return { courseId: c._id, name: c.name, strength: c.strength, doctorId: c.doctorId, prescriber: c.prescriberName, tracked: c.trackingEnabled, pct: t ? pct(t.taken, t.total) : null, isNew: !t };
+        const asNeeded = c.frequency === 'as_needed';
+        return {
+          courseId: c._id, name: c.name, strength: c.strength, doctorId: c.doctorId, prescriber: c.prescriberName, tracked: c.trackingEnabled, asNeeded,
+          pct: t ? pct(t.taken, t.total) : null, isNew: !t && !asNeeded, ...(t ? { taken: t.taken, total: t.total, since: t.since, enough: t.total >= ENOUGH } : {}),
+        };
       }),
-    perDoctor: [...byDoctor.entries()].map(([doctor, t]) => ({ doctor, pct: pct(t.taken, t.total) })),
+    perDoctor: [...byDoctor.entries()].map(([doctor, t]) => ({ doctor, ...view(t) })),
     mostMissedSlot: worstSlot && worstSlot[1] > 0 ? { slot: worstSlot[0], misses: worstSlot[1] } : null,
   };
 }

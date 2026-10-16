@@ -18,6 +18,8 @@ class ProfileNotificationsScreen extends StatefulWidget {
 
 class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen> with LiveData {
   bool _push = true, _whatsapp = true, _email = false, _digest = true;
+  /// Morning summary time (what patients shared, results to look at, adherence drops).
+  String _digestAt = '08:00';
   bool _appointments = true, _messages = true, _labs = true, _followUps = true;
   bool _quiet = false;
   String _quietFrom = '22:00', _quietTo = '07:00';
@@ -41,6 +43,7 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
     _whatsapp = n['whatsapp'] != false;
     _email = n['email'] == true;
     _digest = n['dailyDigest'] != false;
+    _digestAt = n.str('digestAt', '08:00');
     final t = n.obj('types');
     _appointments = t['appointments'] != false;
     _messages = t['messages'] != false;
@@ -80,6 +83,7 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
           'whatsapp': _whatsapp,
           'email': _email,
           'dailyDigest': _digest,
+          'digestAt': _digestAt,
           'quietHours': {'enabled': _quiet, 'from': _quietFrom, 'to': _quietTo},
           'types': {'appointments': _appointments, 'messages': _messages, 'labResults': _labs, 'followUps': _followUps},
         },
@@ -129,7 +133,17 @@ class _ProfileNotificationsScreenState extends State<ProfileNotificationsScreen>
                 D11Switch('Patient messages', 'New chats and replies', value: _messages, onChanged: (v) => setState(() => _messages = v)),
                 D11Switch('Test results', 'New and abnormal reports', value: _labs, onChanged: (v) => setState(() => _labs = v)),
                 D11Switch('Follow-ups', 'Patients due or overdue', value: _followUps, onChanged: (v) => setState(() => _followUps = v)),
-                D11Switch('Daily summary', 'Your day at 8 PM: visits, open alerts, chats', value: _digest, onChanged: (v) => setState(() => _digest = v)),
+                D11Switch(
+                  'Daily summaries',
+                  'Morning: reports patients shared, results to check, patients missing medicines. Evening at 8 PM: your day.',
+                  value: _digest,
+                  onChanged: (v) => setState(() => _digest = v),
+                ),
+                if (_digest)
+                  D11Row('Morning summary at', value: d11Clock(_digestAt), onTap: () async {
+                    final r = await d11PickTime(context, 'Morning summary at', _digestAt);
+                    if (r != null && mounted) setState(() => _digestAt = r);
+                  }),
               ]),
               D11Group('Quiet hours', [
                 D11Switch(

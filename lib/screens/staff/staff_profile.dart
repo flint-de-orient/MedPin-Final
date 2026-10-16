@@ -49,7 +49,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
     final me = (r[0] as Map).cast<String, dynamic>();
     final user = me.obj('user');
     _language = _languageCodes.entries.firstWhere((e) => e.value == user['language'], orElse: () => _languageCodes.entries.first).key;
-    _appLock = user['appLock'] != false;
+    _appLock = user['appLock'] == true;
     final locs = r[1] is List ? r[1] as List : ((r[1] as Map)['items'] as List? ?? const []);
     return {...me, 'location': locs.isEmpty ? null : locs.first, 'unreadNotifications': (r[2] as Map)['unread'] ?? 0};
   }

@@ -34,6 +34,14 @@ class Files {
     return UploadFile(bytes, x.name, x.mimeType ?? _imageMime(x.name));
   }
 
+  /// Several photos from the gallery at once (the pages of one report), up to [limit]. Empty if cancelled.
+  static Future<List<UploadFile>> photos({double maxSide = 2000, int limit = 10}) async {
+    final xs = await _images.pickMultiImage(maxWidth: maxSide, maxHeight: maxSide, imageQuality: 85, limit: limit);
+    return [
+      for (final x in xs.take(limit)) UploadFile(await x.readAsBytes(), x.name, x.mimeType ?? _imageMime(x.name)),
+    ];
+  }
+
   /// A PDF from the device. Null if cancelled.
   static Future<UploadFile?> pdf() => _pick(FileType.custom, const ['pdf']);
 
