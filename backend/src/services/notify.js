@@ -115,4 +115,24 @@ async function signal(userIds, data) {
   }
 }
 
-module.exports = { notify, practiceStaff, clinicians, signal };
+/**
+ * Who does the front desk's work here: the front desk / practice manager at
+ * that location; in a clinic without one, the doctor it's about (or every
+ * doctor of the clinic) — they handle requests, check-ins and fees themselves.
+ */
+// Who does the front desk's work: receptionists, practice managers and doctors' assistants.
+const DESK_ROLES = ['front_desk', 'practice_manager', 'doctor_assistant'];
+
+async function deskOrDoctors(practiceId, { locationId, doctorId } = {}) {
+  const desk = await practiceStaff(practiceId, { roles: DESK_ROLES, locationId });
+  if (desk.length) return desk;
+  if (doctorId) return [doctorId];
+  return practiceStaff(practiceId, { roles: ['doctor'], locationId });
+}
+
+/** Does this clinic (location) have someone at the front desk? */
+async function hasDesk(practiceId, locationId) {
+  return (await practiceStaff(practiceId, { roles: DESK_ROLES, locationId })).length > 0;
+}
+
+module.exports = { notify, practiceStaff, clinicians, signal, deskOrDoctors, hasDesk, DESK_ROLES };

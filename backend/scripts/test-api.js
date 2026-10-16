@@ -784,6 +784,63 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     await M.DeviceToken.deleteOne({ token: 'test-phone-token' });
   });
 
+  await step('fees: pay at the clinic, collect once, refunds; no front desk; records renamed', async () => {
+    const T = require('../src/lib/time');
+    // A free slot in the next days.
+    let free = null;
+    for (let day = 1; day <= 6 && !free; day += 1) {
+      const d = T.dayKey(T.addDays(new Date(), day));
+      free = ok(await ctx.desk('GET', `/api/doctors/${ctx.doctorUserId}/slots?locationId=${ctx.locationId}&date=${d}`)).slots.find((s) => s.available && !s.walkIn);
+    }
+    assert.ok(free, 'a free slot');
+    const appt = ok(await ctx.desk('POST', '/api/appointments', { patientId: ctx.patientId, doctorId: ctx.doctorUserId, locationId: ctx.locationId, startAt: free.startAt, visitType: 'follow_up' }), 201);
+    // "Pay at the clinic" is kept: the desk and doctor see "collect".
+    const chose = ok(await ctx.pat('POST', `/api/patient/appointments/${appt.id}/pay-at-clinic`, {}));
+    assert.equal(chose.payAt, 'clinic');
+    const list = ok(await ctx.desk('GET', `/api/appointments?view=date&date=${T.dayKey(new Date(free.startAt))}`));
+    const row = list.items.find((a) => a.id === appt.id);
+    assert.equal(row.payAt, 'clinic');
+    assert.equal(row.payment.status, 'pending');
+    // Collected at the desk once (a second "mark paid" is refused); the patient gets a receipt.
+    ok(await ctx.desk('POST', `/api/payments/${row.payment.id}/mark-paid`, { method: 'cash' }));
+    assert.equal((await ctx.desk('POST', `/api/payments/${row.payment.id}/mark-paid`, { method: 'upi' })).status, 409, 'not taken twice');
+    const patientUser = (await M.Patient.findById(ctx.patientId)).userId;
+    assert.ok(await M.Notification.exists({ userId: patientUser, type: 'fee_paid' }), 'receipt to the patient');
+    // Cancelled after paying at the desk: a refund to hand back, then marked handed back.
+    ok(await ctx.desk('POST', `/api/appointments/${appt.id}/cancel`, { reason: 'Clinic closed' }));
+    let pay = await M.Payment.findById(row.payment.id);
+    assert.equal(pay.refundDue, true, 'refund due at the desk');
+    ok(await ctx.desk('POST', `/api/payments/${pay._id}/refund`, { handedBack: true }));
+    pay = await M.Payment.findById(pay._id);
+    assert.equal(pay.status, 'refunded');
+    assert.equal((await M.Appointment.findById(appt.id)).feeStatus, 'refunded');
+    assert.ok(await M.Notification.exists({ userId: patientUser, type: 'fee_refunded' }));
+
+    // A clinic without a front desk: requests go to the doctor; the dashboard says so.
+    const { deskOrDoctors, hasDesk } = require('../src/services/notify');
+    const practice = (await M.Location.findById(ctx.locationId)).practiceId;
+    if (!(await hasDesk(practice, ctx.locationId))) {
+      assert.deepEqual((await deskOrDoctors(practice, { locationId: ctx.locationId, doctorId: ctx.doctorUserId })).map(String), [String(ctx.doctorUserId)]);
+    } else {
+      const desk = await deskOrDoctors(practice, { locationId: ctx.locationId, doctorId: ctx.doctorUserId });
+      assert.ok(desk.length >= 1 && !desk.map(String).includes(String(ctx.doctorUserId)), 'the desk does it when there is one');
+    }
+    const dash = ok(await ctx.doc('GET', '/api/dashboard'));
+    assert.equal(typeof dash.hasDesk, 'boolean');
+    assert.equal(typeof dash.requests.pending, 'number');
+    assert.equal(typeof dash.fees.collected, 'number');
+
+    // Records: the patient renames one, and says a "prescription" is a test report after all.
+    const up = ok(await ctx.pat('POST', '/api/patient/records', undefined, { form: fileForm('files', tinyPdf(), 'rx.pdf', 'application/pdf', { kind: 'prescription' }) }), 201);
+    const renamed = ok(await ctx.pat('PATCH', `/api/patient/records/${up.record.id}`, { title: 'Dr. Mitra · thyroid', sourceName: 'Dr. Rina Mitra', recordDate: T.dayKey(T.addDays(new Date(), -3)) }));
+    assert.equal(renamed.record.title, 'Dr. Mitra · thyroid');
+    assert.equal(renamed.record.sourceName, 'Dr. Rina Mitra');
+    assert.equal((await ctx.pat('PATCH', `/api/patient/records/${up.record.id}`, { recordDate: T.dayKey(T.addDays(new Date(), 3)) })).status, 400, 'no future dates');
+    const asTest = ok(await ctx.pat('PATCH', `/api/patient/records/${up.record.id}`, { kind: 'test_result' }));
+    assert.equal(asTest.record.kind, 'test_result');
+    assert.equal(asTest.record.status, 'processing', 'read as a report next');
+  });
+
   await step('pharmacy: cart, quotes, order', async () => {
     const meds = ok(await ctx.pat('GET', '/api/patient/medicines'));
     const cart = ok(await ctx.pat('POST', '/api/patient/cart/items', { courseId: meds.items.find((m) => m.name === 'Metformin').id, packOption: '1_month' }), 201);

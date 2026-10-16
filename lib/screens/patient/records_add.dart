@@ -7,6 +7,7 @@ import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
+import 'record_details_sheet.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Records-Add.dc.html — "Records · add a record" (sheet over Patient-Records).
@@ -164,6 +165,44 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
       await Api.I.post('/api/patient/records/$recordId/share', {'userIds': held}).catchError((_) => null);
       if (!mounted) return;
     }
+    var record = body.obj('record');
+    var detected = body.obj('detected');
+    var meds = body.list('medicines');
+    // The wrong kind: a test report uploaded as a prescription, or the other way round.
+    if (patientId == null && _forTest == null && detected['mismatch'] == true) {
+      final toKind = detected.str('kind');
+      if (await _askSwitch(toKind) && mounted) {
+        final res = await runAction(context, () => Api.I.patch('/api/patient/records/$recordId', {'kind': toKind}));
+        if (!mounted) return;
+        if (res is Map) {
+          p3RecordsChanged.value++;
+          if (toKind == 'test_result') {
+            // Read it as a report: check each test on Records-Review.
+            final nav = Navigator.of(context);
+            nav.pop(recordId);
+            Nav.go(nav.context, 'Records-Review', args: {'recordId': recordId, 'shareWith': _shareWith.toList()});
+            return;
+          }
+          final r = res.cast<String, dynamic>();
+          record = r.obj('record');
+          detected = r.obj('detected');
+          meds = r.list('medicines');
+        }
+      }
+      if (!mounted) return;
+    }
+    // A prescription: check the name, doctor and date MedPin read from it (the patient has the final say).
+    if (patientId == null && record.str('kind') == 'prescription') {
+      await openSheet<Map<String, dynamic>>(context, (_) => RecordDetailsSheet(record: record, detected: detected, afterUpload: true));
+      if (!mounted) return;
+      final rx = record.str('kind') == 'prescription';
+      toast(
+        context,
+        rx && meds.isNotEmpty ? 'Prescription saved · ${meds.length} ${meds.length == 1 ? 'medicine' : 'medicines'} found — add them in Medicines' : 'Prescription saved',
+      );
+      Navigator.of(context).pop(recordId);
+      return;
+    }
     if (patientId == null && extracted.list('tests').isNotEmpty) {
       // Check and save each test on Records-Review.
       final nav = Navigator.of(context);
@@ -171,7 +210,6 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
       Nav.go(nav.context, 'Records-Review', args: {'record': body.obj('record'), 'extracted': extracted, 'shareWith': _shareWith.toList()});
       return;
     }
-    final meds = body.list('medicines');
     toast(
       context,
       kind == 'prescription'
@@ -179,6 +217,28 @@ class _RecordsAddSheetState extends State<RecordsAddSheet> with LiveData {
           : 'Report saved',
     );
     Navigator.of(context).pop(recordId);
+  }
+
+  /// "This looks like a test report" (uploaded as a prescription) / the other way round.
+  Future<bool> _askSwitch(String toKind) async {
+    final test = toKind == 'test_result';
+    final yes = await openSheet<bool>(
+      context,
+      (c) => MpSheet(
+        title: test ? 'This looks like a test report' : 'This looks like a prescription',
+        subtitle: test
+            ? 'We read test results in it, not a prescription. Save it as a test report so its values are tracked?'
+            : 'We read medicines in it, not test results. Save it as a prescription?',
+        child: VGap(
+          gap: 8,
+          children: [
+            MpButton(test ? 'Save as a test report' : 'Save as a prescription', onTap: () => Navigator.pop(c, true)),
+            MpButton('Keep as it is', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, false)),
+          ],
+        ),
+      ),
+    );
+    return yes == true;
   }
 
   /// After a photo: another page of the same report, or done.

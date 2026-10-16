@@ -154,7 +154,7 @@ const ROLE_PERMISSIONS = {
   },
   doctor_assistant: {
     viewPatients: true, clinical: true, prescribe: false, editRecords: true, labs: true, labReview: false, chats: true,
-    alerts: true, manageAlerts: false, ai: true, reports: false, fees: false, billing: false, exports: false,
+    alerts: true, manageAlerts: false, ai: true, reports: false, fees: true, billing: false, exports: false,
   },
   dietician: {
     viewPatients: true, clinical: true, prescribe: false, editRecords: true, labs: false, labReview: false, chats: true,

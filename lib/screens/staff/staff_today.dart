@@ -8,6 +8,7 @@ import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
 import '../../widgets/i18n.dart';
+import '../../widgets/fee_actions.dart';
 
 /// Design: Staff-Today.dc.html — "Today" (front desk).
 class StaffTodayScreen extends StatefulWidget {
@@ -341,6 +342,9 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
     final a = _apptRows[i];
     final status = a.$3;
     final (bg, fg) = _statusColors[status]!;
+    // The visit fee: paid (and how), to collect at the desk, or a refund to hand back.
+    final appt = data?.list('items').where((x) => x.str('id') == a.$5).firstOrNull;
+    final fee = appt == null ? null : VisitFee.of(appt);
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
@@ -377,6 +381,34 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                             Flexible(child: _line(a.$4, tx(13, c: MP.ink3, h: _lh))),
                           ],
                         ),
+                        if (fee != null && fee.status != 'free') ...[
+                          const Gap(6),
+                          Row(
+                            children: [
+                              Flexible(child: FeeChip(fee)),
+                              if (fee.due && status != 'Missed') ...[
+                                const Gap(10),
+                                Tap(
+                                  onTap: () async {
+                                    if (await collectFee(context, fee, patientName: a.$2) && mounted) reload(quiet: true);
+                                  },
+                                  radius: 6,
+                                  child: Text(tr(context, 'Collect'), style: tx(13, w: w600, c: MP.primary)),
+                                ),
+                              ],
+                              if (fee.refundDue) ...[
+                                const Gap(10),
+                                Tap(
+                                  onTap: () async {
+                                    if (await handBackFee(context, fee) && mounted) reload(quiet: true);
+                                  },
+                                  radius: 6,
+                                  child: Text(tr(context, 'Refund'), style: tx(13, w: w600, c: MP.primary)),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),

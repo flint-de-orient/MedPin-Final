@@ -509,18 +509,7 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
               ),
             ],
           ),
-          if (next != null && next['feeStatus'] == 'pending' && (next['fee'] as num? ?? 0) > 0) ...[
-            const Gap(8),
-            P2Box(
-              onTap: _payOnline,
-              label: 'Pay the visit fee online',
-              height: 48,
-              radius: 12,
-              color: MP.primary,
-              alignment: Alignment.center,
-              child: Text('Pay ₹${(next['fee'] as num).round()} online', style: tx(14, w: w700, c: MP.white)),
-            ),
-          ],
+          if (next != null) ..._feeRow(next),
         ],
       ),
     );
@@ -532,6 +521,67 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
     if (next == null) return;
     final paid = await Checkout.pay(context, kind: 'fee', id: next.str('id'));
     if (paid && mounted) reload(quiet: true);
+  }
+
+  /// "I'll pay at the clinic": kept, so the desk (or the doctor) knows to collect it.
+  Future<void> _payAtClinic() async {
+    final next = _next;
+    if (next == null) return;
+    final ok = await runAction(context, () => Api.I.post('/api/patient/appointments/${next.str('id')}/pay-at-clinic', const {}));
+    if (ok == null || !mounted) return;
+    toast(context, 'Pay at the clinic when you arrive');
+    reload(quiet: true);
+  }
+
+  /// The visit fee: paid (online / at the clinic), to pay at the clinic, refunded, or free —
+  /// with Pay online while it's still due.
+  List<Widget> _feeRow(Map<String, dynamic> next) {
+    final fee = (next['fee'] as num? ?? 0).round();
+    final status = next.str('feeStatus', 'pending');
+    final atClinic = next.str('payAt') == 'clinic';
+    final (text, color, icon) = switch (status) {
+      'paid' => (atClinic ? tr(context, '₹#1 paid at the clinic') : tr(context, '₹#1 paid online'), MP.green, I.check),
+      'refunded' => (tr(context, '₹#1 refunded'), MP.ink2, I.check),
+      'free' || 'waived' => (tr(context, 'No fee for this visit'), MP.ink2, I.check),
+      _ => fee == 0
+          ? (tr(context, 'No fee for this visit'), MP.ink2, I.check)
+          : atClinic
+              ? (tr(context, 'Pay ₹#1 at the clinic'), MP.amber, I.clock)
+              : (tr(context, 'Visit fee ₹#1 · not paid yet'), MP.amber, I.clock),
+    };
+    final due = status == 'pending' && fee > 0;
+    return [
+      const Gap(12),
+      Row(
+        children: [
+          Ico(icon, size: 16, color: color, stroke: 2.2),
+          const Gap(8),
+          Expanded(child: Text(text.replaceFirst('#1', '$fee'), style: tx(14, w: w600, c: color))),
+          if (due && !atClinic)
+            MpHitSlop(child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _payAtClinic,
+              child: Text("I'll pay at the clinic", style: tx(13, w: w600, c: MP.primary)),
+            )),
+        ],
+      ),
+      if (due) ...[
+        const Gap(10),
+        P2Box(
+          onTap: _payOnline,
+          label: 'Pay the visit fee online',
+          height: 48,
+          radius: 12,
+          color: atClinic ? MP.white : MP.primary,
+          border: atClinic ? MP.lineStrong : null,
+          alignment: Alignment.center,
+          child: Text(
+            atClinic ? tr(context, 'Pay ₹#1 online instead').replaceFirst('#1', '$fee') : 'Pay ₹$fee online',
+            style: tx(14, w: w700, c: atClinic ? MP.primary : MP.white),
+          ),
+        ),
+      ],
+    ];
   }
 
   Widget _todo(String text, bool done, VoidCallback onTap) => MpHitSlop(child: Semantics(

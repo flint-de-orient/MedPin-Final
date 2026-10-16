@@ -11,6 +11,10 @@ const medicalRecordSchema = new Schema(
     // Medicines read from an uploaded prescription (AI), until the patient adds them.
     extractedMedicines: [Schema.Types.Mixed],
     extractedDoctor: String,
+    // Also read from an uploaded prescription: where, why and the tests advised (advisedtests.js lists them).
+    extractedClinic: String,
+    extractedDiagnosis: String,
+    extractedTests: [String],
     medicinesAddedAt: Date,
     patientId: ref('Patient', true),
     kind: enumOf(E.RECORD_KINDS, { required: true }),

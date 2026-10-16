@@ -43,7 +43,12 @@ const filtersOf = (q) => ({
 /** Completed visits in range, filtered, with patient age attached. */
 async function visits(req, from, to, f, extra = {}) {
   const q = { practiceId: req.practiceId, date: { $gte: from, $lt: to }, ...extra };
-  if (!extra.status) q.status = 'completed';
+  if (!extra.status) {
+    // A visit counts on the day it happened (seen early / late: its completion day, not the booked day).
+    q.status = 'completed';
+    delete q.date;
+    q.$or = [{ completedAt: { $gte: from, $lt: to } }, { completedAt: null, date: { $gte: from, $lt: to } }];
+  }
   if (f.locationIds.length) q.locationId = { $in: f.locationIds };
   if (f.visitTypes.length) q.visitType = { $in: f.visitTypes };
   if (f.modes.length) q.mode = { $in: f.modes };
@@ -213,7 +218,7 @@ r.get('/reports/fees', async (req, res) => {
   const payments = await M.Payment.find({
     practiceId: req.practiceId, ...scope,
     $or: [{ status: 'paid', paidAt: { $gte: from, $lt: to } }, { status: 'pending', createdAt: { $gte: from, $lt: to } }],
-  }).populate('patientId', 'name').populate('locationId', 'name shortName').populate('appointmentId', 'startAt mode').lean();
+  }).populate('patientId', 'name').populate('locationId', 'name shortName').populate('appointmentId', 'startAt mode payAt').lean();
   const paid = payments.filter((p) => p.status === 'paid');
   const sumBy = (arr, key) => Object.entries(arr.reduce((acc, x) => { const k = key(x) || 'other'; acc[k] = (acc[k] || 0) + x.amount; return acc; }, {})).map(([k, amount]) => ({ key: k, amount }));
   res.json({
@@ -223,7 +228,12 @@ r.get('/reports/fees', async (req, res) => {
     freeVisits: rows.filter((a) => !a.fee).length,
     billedByLocation: sumBy(rows.map((a) => ({ amount: a.fee || 0, loc: a.locationId?.shortName || a.locationId?.name })), (x) => x.loc),
     collectedByMethod: sumBy(paid, (p) => p.method),
-    pending: payments.filter((p) => p.status === 'pending').map((p) => ({ id: p._id, patientId: p.patientId?._id, patient: p.patientId?.name, date: p.appointmentId?.startAt || p.createdAt, location: p.locationId?.shortName || p.locationId?.name, mode: p.appointmentId?.mode, amount: p.amount, linkSentAt: p.paymentLinkSentAt })),
+    // Cancelled visits paid at the desk (or a failed online refund): money to give back.
+    refundsDue: (await M.Payment.find({ practiceId: req.practiceId, status: 'paid', refundDue: true }).populate('patientId', 'name').lean())
+      .map((p) => ({ id: p._id, patient: p.patientId?.name, patientId: p.patientId?._id, amount: p.amount, method: p.method, note: p.note })),
+    // Patients who chose "Pay at the clinic": the desk collects these.
+    toCollectAtClinic: payments.filter((p) => p.status === 'pending' && p.appointmentId?.payAt === 'clinic').reduce((s, p) => s + p.amount, 0),
+    pending: payments.filter((p) => p.status === 'pending').map((p) => ({ payAt: p.appointmentId?.payAt || null, id: p._id, patientId: p.patientId?._id, patient: p.patientId?.name, date: p.appointmentId?.startAt || p.createdAt, location: p.locationId?.shortName || p.locationId?.name, mode: p.appointmentId?.mode, amount: p.amount, linkSentAt: p.paymentLinkSentAt })),
   });
 });
 
@@ -300,8 +310,23 @@ r.get('/dashboard', async (req, res) => {
   const user = await M.User.findById(req.user._id, 'name');
   const location = req.user.activeLocationId ? await M.Location.findById(req.user.activeLocationId, 'name shortName') : null;
   const practice = await M.Practice.findById(req.practiceId, 'name');
+  // Today's fees for these visits: collected (online / at the desk) and still to collect.
+  const todayPays = await M.Payment.find({ appointmentId: { $in: todayAppts.map((a) => a._id) }, status: { $in: ['pending', 'paid'] } }, 'status method amount').lean();
+  const sum = (xs) => xs.reduce((s, p) => s + (p.amount || 0), 0);
+  // A clinic without a front desk: the doctor confirms requests, checks patients in and collects fees.
+  const { hasDesk } = require('../services/notify');
+  const desk = await hasDesk(req.practiceId, req.user.activeLocationId);
+  const waitingRequests = await M.AppointmentRequest.countDocuments({ practiceId: req.practiceId, status: 'pending', ...(req.member.role === 'doctor' ? { doctorId: req.user._id } : {}) });
   res.json({
     greetingName: user.name,
+    hasDesk: desk,
+    requests: { pending: waitingRequests },
+    fees: {
+      collected: sum(todayPays.filter((p) => p.status === 'paid')),
+      online: sum(todayPays.filter((p) => p.status === 'paid' && p.method === 'online')),
+      atClinic: sum(todayPays.filter((p) => p.status === 'paid' && p.method !== 'online')),
+      toCollect: sum(todayPays.filter((p) => p.status === 'pending')),
+    },
     date: today,
     practiceName: practice?.name,
     location: location && (location.shortName || location.name),

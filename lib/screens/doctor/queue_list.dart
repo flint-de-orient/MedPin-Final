@@ -9,6 +9,8 @@ import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'queue_select.dart';
 import '../../widgets/i18n.dart';
+import '../../widgets/fee_actions.dart';
+import '../../data/session.dart';
 
 /// Design: Queue-List.dc.html — "Patient queue".
 /// Live data (args {'locationId'}; default: today's chosen / first open
@@ -44,6 +46,9 @@ class _Q {
   /// Live: the appointment and patient ids.
   final String? id;
   final String? patientId;
+
+  /// Live: the visit fee (paid / to collect / refund due), null in the design preview.
+  final VisitFee? fee;
   const _Q(
     this.kind,
     this.token,
@@ -59,6 +64,7 @@ class _Q {
     this.buttonKind = MpBtn.tonal,
     this.id,
     this.patientId,
+    this.fee,
   });
 
   /// A queue row from GET /api/queue.
@@ -113,6 +119,7 @@ class _Q {
       buttonKind: kind == _Kind.done ? MpBtn.secondary : MpBtn.tonal,
       id: m.str('id'),
       patientId: m.str('patientId', p.str('id')),
+      fee: VisitFee.of(m),
     );
   }
 }
@@ -386,6 +393,32 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
       await Nav.go(context, 'Consult-Page', args: {'appointmentId': r.id, 'patientId': r.patientId});
     }
     if (mounted) reload(quiet: true);
+  }
+
+  /// No front desk at this clinic (GET /api/queue hasDesk): the doctor checks patients in here.
+  bool get _noDesk => data != null && _queue['hasDesk'] == false;
+
+  List<Widget> _deskActions(_Q r) {
+    final fee = r.fee;
+    Widget link(String text, VoidCallback onTap) => Tap(onTap: onTap, radius: 6, child: Text(text, style: tx(14, w: w600, c: MP.primary)));
+    return [
+      if (_noDesk && r.kind == _Kind.booked && r.id != null) link(tr(context, 'Check in'), () => _checkIn(r)),
+      if (fee != null && fee.due && Session.I.can('fees') && r.kind != _Kind.missed)
+        link(tr(context, 'Collect ₹#1').replaceFirst('#1', '${fee.amount}'), () async {
+          if (await collectFee(context, fee, patientName: r.name) && mounted) reload(quiet: true);
+        }),
+      if (fee != null && fee.refundDue && Session.I.can('fees'))
+        link(tr(context, 'Refund ₹#1').replaceFirst('#1', '${fee.amount}'), () async {
+          if (await handBackFee(context, fee) && mounted) reload(quiet: true);
+        }),
+    ];
+  }
+
+  Future<void> _checkIn(_Q r) async {
+    final ok = await runAction(context, () => Api.I.post('/api/appointments/${r.id}/status', {'status': 'waiting'}));
+    if (ok == null || !mounted) return;
+    toast(context, tr(context, '#1 checked in').replaceFirst('#1', r.name));
+    reload(quiet: true);
   }
 
   Future<void> _recordVitals(_Q r) async {
@@ -740,9 +773,19 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
                     ok: r.docs > 0,
                   ),
                   if (r.ai) const _Chip('AI brief', icon: I.sparkle, stroke: 2, ai: true),
+                  if (r.fee != null && r.fee!.status != 'free') FeeChip(r.fee!),
                 ],
               ),
             ),
+            // Desk work on the row: collect the fee, hand back a refund, and — in a clinic
+            // without a front desk — check the patient in.
+            if (_deskActions(r).isNotEmpty) ...[
+              const Gap(10),
+              Padding(
+                padding: const EdgeInsets.only(left: 56),
+                child: Wrap(spacing: 16, runSpacing: 8, children: _deskActions(r)),
+              ),
+            ],
             const Gap(12),
             Padding(
               padding: const EdgeInsets.only(left: 56),

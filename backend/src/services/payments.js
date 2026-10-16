@@ -50,8 +50,34 @@ async function feePaid(paymentId, razorpayPaymentId) {
     { status: 'paid', method: 'online', paidAt: new Date(), ...(razorpayPaymentId ? { razorpayPaymentId } : {}) },
     { new: true },
   );
-  if (p?.appointmentId) await M.Appointment.updateOne({ _id: p.appointmentId }, { feeStatus: 'paid' });
+  if (p?.appointmentId) {
+    await M.Appointment.updateOne({ _id: p.appointmentId }, { feeStatus: 'paid', payAt: 'online' });
+    await feeReceipt(p).catch((err) => console.warn('[fee receipt]', err.message));
+  }
   return p;
+}
+
+/**
+ * A visit fee paid (online, or collected at the desk): the patient gets a
+ * receipt; the doctor and desk see it in the app (no push) — their queue and
+ * reports already show it.
+ */
+async function feeReceipt(p) {
+  const { notify, deskOrDoctors } = require('./notify');
+  const a = await M.Appointment.findById(p.appointmentId).populate('patientId', 'userId name').populate('doctorId', 'name');
+  if (!a) return;
+  const how = p.method === 'online' ? 'online' : `at the clinic (${p.method === 'cash' ? 'cash' : p.method === 'upi' ? 'UPI' : p.method})`;
+  if (a.patientId?.userId) {
+    await notify([a.patientId.userId], {
+      type: 'fee_paid', practiceId: a.practiceId, title: `Paid ₹${p.amount} ${p.method === 'online' ? 'online' : 'at the clinic'}`,
+      body: `Your visit with ${a.doctorId?.name || 'the doctor'} · reference ${p.razorpayPaymentId || String(p._id).slice(-6)}`,
+      screen: 'Patient-DoctorDetail', params: { doctorId: a.doctorId?._id || a.doctorId },
+    });
+  }
+  const staff = await deskOrDoctors(a.practiceId, { locationId: a.locationId, doctorId: a.doctorId?._id || a.doctorId });
+  await notify([...new Set([...staff.map(String), String(a.doctorId?._id || a.doctorId)])], {
+    type: 'fee_paid', push: false, practiceId: a.practiceId, title: `${a.patientId?.name || 'Patient'} paid ₹${p.amount} ${how}`, screen: 'Appointments',
+  });
 }
 
 /** Link for a pharmacy order paid online (saved on the order). */
@@ -81,6 +107,59 @@ async function orderPaid(orderId, razorpayPaymentId) {
     await require('./notify').notify([patient.userId], { type: 'order_update', title: `Paid ₹${order.total} for your medicines`, body: 'The pharmacy can see it is paid.', screen: 'Patient-Medicines' }).catch(() => {});
   }
   return order;
+}
+
+/**
+ * A visit fee given back (the visit was cancelled). Paid online: refunded
+ * through Razorpay (in dev nothing was charged, so it's simply marked). Paid at
+ * the desk: marked "refund due" until staff hand it back ([by] = who did).
+ * The patient is told either way.
+ */
+async function refundFee(payment, { by, handedBack = false } = {}) {
+  if (payment.status !== 'paid') return payment;
+  if (payment.method === 'online') {
+    if (configured() && payment.razorpayPaymentId) {
+      const resp = await fetch(`https://api.razorpay.com/v1/payments/${payment.razorpayPaymentId}/refund`, {
+        method: 'POST',
+        headers: { authorization: `Basic ${Buffer.from(`${env.razorpay.keyId}:${env.razorpay.keySecret}`).toString('base64')}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ amount: Math.round(payment.amount * 100), notes: { paymentId: String(payment._id) } }),
+      }).catch(() => null);
+      const body = resp ? await resp.json().catch(() => ({})) : {};
+      if (!resp?.ok) {
+        payment.refundDue = true;
+        payment.note = 'Refund failed at Razorpay — retry from Fees';
+        await payment.save();
+        return payment;
+      }
+      payment.refundId = body.id;
+    } else if (env.isProd) {
+      payment.refundDue = true;
+      payment.note = 'Refund due: online payment, Razorpay not set up';
+      await payment.save();
+      return payment;
+    }
+  } else if (!handedBack) {
+    // Cash / UPI at the desk: the desk hands it back, then marks it.
+    payment.refundDue = true;
+    payment.note = 'Refund due: visit cancelled';
+    await payment.save();
+    return payment;
+  }
+  payment.status = 'refunded';
+  payment.refundDue = undefined;
+  payment.refundedAt = new Date();
+  payment.refundedBy = by;
+  await payment.save();
+  if (payment.appointmentId) await M.Appointment.updateOne({ _id: payment.appointmentId }, { feeStatus: 'refunded' });
+  const a = payment.appointmentId ? await M.Appointment.findById(payment.appointmentId).populate('patientId', 'userId') : null;
+  if (a?.patientId?.userId) {
+    await require('./notify').notify([a.patientId.userId], {
+      type: 'fee_refunded', practiceId: a.practiceId, title: `₹${payment.amount} refunded`,
+      body: payment.method === 'online' ? 'Back to how you paid, usually in 5–7 working days.' : 'Handed back at the clinic.',
+      screen: 'Patient-Doctors',
+    });
+  }
+  return payment;
 }
 
 /** Money back for a paid order that is cancelled (Razorpay refund when set up). */
@@ -122,4 +201,4 @@ async function planPaid(subscriptionId, planKey, razorpayPaymentId) {
   return sub;
 }
 
-module.exports = { configured, createLink, feeLink, feePaid, planLink, planPaid, orderLink, orderPaid, refundOrder };
+module.exports = { feeReceipt, refundFee, configured, createLink, feeLink, feePaid, planLink, planPaid, orderLink, orderPaid, refundOrder };

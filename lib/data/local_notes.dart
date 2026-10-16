@@ -5,6 +5,15 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+/// Buttons on a medicine alarm, pressed while MedPin isn't running: Snooze
+/// rings it again after the patient's snooze time; Stop just dismisses it.
+/// (Taken opens the app, which marks the doses — see LocalNotes.onAction.)
+@pragma('vm:entry-point')
+Future<void> localNotesBackground(NotificationResponse r) async {
+  if (r.actionId != 'snooze') return;
+  await LocalNotes.I.snooze(r.payload);
+}
+
 /// On-device notifications: push messages shown while the app is open, and
 /// alarms scheduled on the phone (medicine doses) that ring even offline.
 /// Tapping one opens the screen in its payload ({screen, params}).
@@ -17,6 +26,9 @@ class LocalNotes {
 
   /// Called with {screen, params} when a notification is tapped.
   void Function(Map<String, dynamic> payload)? onTap;
+
+  /// A medicine alarm's "Taken" button ({doseIds, …}): the app marks the doses taken.
+  void Function(Map<String, dynamic> payload)? onTaken;
 
   static const general = AndroidNotificationChannel('medpin_general', 'Updates', description: 'Visits, messages, reports and reminders', importance: Importance.high);
   static const urgent = AndroidNotificationChannel('medpin_urgent', 'Urgent', description: 'Emergency alerts and urgent messages', importance: Importance.max);
@@ -47,7 +59,8 @@ class LocalNotes {
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
         iOS: DarwinInitializationSettings(requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false),
       ),
-      onDidReceiveNotificationResponse: (r) => _handle(r.payload),
+      onDidReceiveNotificationResponse: _response,
+      onDidReceiveBackgroundNotificationResponse: localNotesBackground,
     );
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     for (final c in [general, urgent, doses, dosesRing]) {
@@ -55,7 +68,40 @@ class LocalNotes {
     }
     // Opened by tapping a notification while the app was closed.
     final launch = await _plugin.getNotificationAppLaunchDetails();
-    if (launch?.didNotificationLaunchApp == true) _handle(launch!.notificationResponse?.payload);
+    if (launch?.didNotificationLaunchApp == true && launch!.notificationResponse != null) _response(launch.notificationResponse!);
+  }
+
+  void _response(NotificationResponse r) {
+    switch (r.actionId) {
+      case 'snooze':
+        snooze(r.payload);
+      case 'stop':
+        break; // dismissed (the 30-min "still to take" reminder stays while not marked)
+      case 'taken':
+        try {
+          final p = (jsonDecode(r.payload ?? '{}') as Map).cast<String, dynamic>();
+          onTaken?.call(p);
+        } catch (_) {}
+      default:
+        _handle(r.payload);
+    }
+  }
+
+  /// Rings a medicine alarm again after its snooze time (payload carries it all).
+  Future<void> snooze(String? payload) async {
+    try {
+      final p = (jsonDecode(payload ?? '{}') as Map).cast<String, dynamic>();
+      final mins = (p['snooze'] as num?)?.toInt() ?? 10;
+      await schedule(
+        // Its own id range (900M+): re-syncing the scheduled alarms (700M–800M) never cancels a snooze.
+        id: 900000000 + (((p['alarmId'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch) % 100000000),
+        at: DateTime.now().add(Duration(minutes: mins.clamp(1, 120))),
+        title: '${p['title'] ?? 'Time for your medicine'}',
+        body: p['body'] as String?,
+        payload: p,
+        kind: '${p['kind'] ?? 'dose'}',
+      );
+    } catch (_) {}
   }
 
   void _handle(String? payload) {
@@ -95,7 +141,16 @@ class LocalNotes {
     }
   }
 
-  NotificationDetails _details(AndroidNotificationChannel c) => NotificationDetails(
+  /// Medicine alarms stay in the notification bar until the patient answers:
+  /// Taken (opens MedPin, marks them), Snooze (rings again after their snooze
+  /// time), Stop (dismisses).
+  static List<AndroidNotificationAction> _doseActions(int snoozeMin) => [
+        const AndroidNotificationAction('taken', 'Taken', showsUserInterface: true),
+        AndroidNotificationAction('snooze', 'Snooze $snoozeMin min'),
+        const AndroidNotificationAction('stop', 'Stop'),
+      ];
+
+  NotificationDetails _details(AndroidNotificationChannel c, {int? snoozeMin}) => NotificationDetails(
         android: c.id == dosesRing.id
             ? AndroidNotificationDetails(
                 c.id,
@@ -107,8 +162,23 @@ class LocalNotes {
                 fullScreenIntent: true,
                 audioAttributesUsage: AudioAttributesUsage.alarm,
                 sound: c.sound,
+                ongoing: true,
+                autoCancel: false,
+                visibility: NotificationVisibility.public,
+                actions: _doseActions(snoozeMin ?? 10),
               )
-            : AndroidNotificationDetails(c.id, c.name, channelDescription: c.description, importance: c.importance, priority: c.importance == Importance.max ? Priority.max : Priority.high),
+            : c.id == doses.id
+                ? AndroidNotificationDetails(
+                    c.id,
+                    c.name,
+                    channelDescription: c.description,
+                    importance: c.importance,
+                    priority: Priority.max,
+                    category: AndroidNotificationCategory.reminder,
+                    visibility: NotificationVisibility.public,
+                    actions: _doseActions(snoozeMin ?? 10),
+                  )
+                : AndroidNotificationDetails(c.id, c.name, channelDescription: c.description, importance: c.importance, priority: c.importance == Importance.max ? Priority.max : Priority.high),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true),
       );
 
@@ -136,11 +206,12 @@ class LocalNotes {
     await _plugin.zonedSchedule(
       id: id,
       scheduledDate: tz.TZDateTime.from(at, tz.local),
-      notificationDetails: _details(switch (kind) { 'ring' => dosesRing, 'reminder' => general, _ => doses }),
+      notificationDetails: _details(switch (kind) { 'ring' => dosesRing, 'reminder' => general, _ => doses }, snoozeMin: (payload?['snooze'] as num?)?.toInt()),
       androidScheduleMode: exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle,
       title: title,
       body: body,
-      payload: payload == null ? null : jsonEncode(payload),
+      // Medicine alarms carry what Snooze / Taken need (title, body, kind, snooze time, doses).
+      payload: jsonEncode({...?payload, if (kind != 'reminder') ...{'alarmId': id, 'title': title, 'body': body, 'kind': kind}}),
     );
   }
 

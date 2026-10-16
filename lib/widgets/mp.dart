@@ -1448,7 +1448,13 @@ class MpKV extends StatelessWidget {
           children: [
             Expanded(child: Text(k, style: tx(15, c: MP.ink2))),
             const Gap(12),
-            Flexible(child: Text(v, textAlign: TextAlign.right, style: tx(15, w: vWeight, c: vColor ?? MP.ink, tab: true))),
+            // Right edge, short or long (a short value used to start mid-row).
+            Flexible(
+              child: Align(
+                alignment: Alignment.topRight,
+                child: Text(v, textAlign: TextAlign.right, style: tx(15, w: vWeight, c: vColor ?? MP.ink, tab: true)),
+              ),
+            ),
           ],
         ),
       );

@@ -84,6 +84,8 @@ const patientSchema = new Schema(
       dailyLogReminderChosen: { type: Boolean, default: false },
       // Medicine alarms ring like an alarm (alarm sound, even on silent, on the lock screen).
       alarmRing: { type: Boolean, default: true },
+      // Snooze on a medicine alarm: minutes (5–60).
+      snoozeMin: { type: Number, default: 10, min: 5, max: 60 },
       visitReminders: { type: Boolean, default: true },
       // Breakfast / lunch / dinner (doses are timed around them: services/care.js doseMinute).
       reminderTimes: {

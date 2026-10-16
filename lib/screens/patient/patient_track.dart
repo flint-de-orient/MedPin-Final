@@ -53,6 +53,8 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
         if (devices[k] is Map && F.date((devices[k] as Map)['at']) != null)
           k: (at: F.date((devices[k] as Map)['at'])!, app: [for (final a in ((devices[k] as Map)['apps'] as List? ?? const [])) '$a'].join(', ')),
     };
+    // Access given but nothing from a watch / ring yet: "Waiting", not "Connect".
+    _hcOn = _seen.length < _devices.length && await DeviceSync.healthConnectGranted();
     final tracked = {for (final m in (me['trackedMeasures'] as List? ?? const [])) '$m'};
     _suggested = {for (final m in (me['suggestedMeasures'] as List? ?? const [])) '$m'};
     for (var i = 0; i < _items.length; i++) {
@@ -73,6 +75,8 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
   DateTime? _synced;
   /// When data last came from a watch / ring app, and which app.
   Map<String, ({DateTime at, String app})> _seen = {};
+  /// Health Connect is on and MedPin may read from it.
+  bool _hcOn = false;
 
   Future<void> _connect() async {
     if (!isLive) return toast(context, 'Connect your watch or ring');
@@ -154,7 +158,11 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
                                 Text(
                                   _seen[_devices[i].$1] != null
                                       ? '${_seen[_devices[i].$1]!.app} · last data ${F.ago(_seen[_devices[i].$1]!.at)}'
-                                      : _synced != null
+                                      : isLive && _hcOn
+                                          ? _devices[i].$1 == 'watch'
+                                              ? 'Health Connect is on · no data from a watch yet — turn on Health Connect sync in your watch app'
+                                              : 'Health Connect is on · no data from a ring yet — turn on Health Connect sync in your ring app'
+                                          : _synced != null
                                           ? 'No data from a ${_devices[i].$1} yet · ${_devices[i].$3}'
                                           : _devices[i].$3,
                                   style: tx(13, c: MP.ink2),
@@ -163,8 +171,14 @@ class _PatientTrackSheetState extends State<PatientTrackSheet> with LiveData {
                             ),
                           ),
                           const Gap(12),
-                          // Connected only when data has really come from that kind of device.
-                          if (isLive && _seen[_devices[i].$1] != null) const MpBadge.green('Connected') else const MpBadge.blue('Connect'),
+                          // Connected only when data has really come from that kind of device;
+                          // Waiting while access is given but that device hasn't sent anything.
+                          if (isLive && _seen[_devices[i].$1] != null)
+                            const MpBadge.green('Connected')
+                          else if (isLive && _hcOn)
+                            const MpBadge('Waiting')
+                          else
+                            const MpBadge.blue('Connect'),
                         ],
                       ),
                     ),

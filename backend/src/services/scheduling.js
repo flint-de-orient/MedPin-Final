@@ -176,8 +176,17 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
     appt.cancelledBy = cancelledBy || 'desk';
     appt.cancelReason = reason;
     await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { status: 'waived' });
+    // Nothing to pay for a cancelled visit. Already paid: online → refunded at once;
+    // at the desk → "refund due" until handed back (Fees / the visit's row).
+    if (appt.feeStatus === 'pending') appt.feeStatus = 'waived';
   }
   await appt.save();
+  if (to === 'cancelled' && appt.feeStatus === 'paid') {
+    const { refundFee } = require('./payments');
+    for (const p of await M.Payment.find({ appointmentId: appt._id, status: 'paid' })) {
+      await refundFee(p, { by }).catch((err) => console.warn('[refund]', err.message));
+    }
+  }
 
   if (to === 'completed' || to === 'missed') {
     let fu = await M.FollowUp.findOne({ appointmentId: appt._id });
@@ -213,7 +222,7 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
       });
     }
     if (appt.cancelledBy === 'patient') {
-      const desk = await practiceStaff(appt.practiceId, { roles: ['front_desk'], locationId: appt.locationId });
+      const desk = await practiceStaff(appt.practiceId, { roles: require('./notify').DESK_ROLES, locationId: appt.locationId });
       const who = await M.Patient.findById(appt.patientId, 'name');
       await notify([...desk, appt.doctorId], {
         type: 'appointment_cancelled', practiceId: appt.practiceId, title: `${who?.name || 'A patient'} cancelled a visit`,
@@ -238,13 +247,26 @@ async function reschedule(appt, startAt, by, locationId) {
   await appt.save();
   next.rescheduledFromId = appt._id;
   await next.save();
+  // Already paid: the payment moves with the visit (it stays paid; nothing is asked again).
   // Same branch: keep the original fee record instead of the one book() just made.
   // Another branch: its own fee applies, so the old unpaid one is waived.
-  if (moved) {
+  const paid = await M.Payment.findOne({ appointmentId: appt._id, status: 'paid' });
+  if (paid) {
+    await M.Payment.deleteMany({ appointmentId: next._id, status: 'pending' });
+    paid.appointmentId = next._id;
+    await paid.save();
+    next.feeStatus = 'paid';
+    next.payAt = appt.payAt;
+    await next.save();
+  } else if (moved) {
     await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { status: 'waived', note: 'Moved to another branch' });
   } else if (await M.Payment.exists({ appointmentId: appt._id })) {
     await M.Payment.deleteMany({ appointmentId: next._id });
     await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { appointmentId: next._id });
+    if (appt.payAt) {
+      next.payAt = appt.payAt;
+      await next.save();
+    }
   }
   await M.FollowUp.updateMany({ appointmentId: appt._id }, { appointmentId: next._id });
   return next;

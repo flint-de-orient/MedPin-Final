@@ -25,8 +25,23 @@ const view = (a) => {
     location: a.locationId?.name ? { id: a.locationId._id, name: a.locationId.shortName || a.locationId.name } : undefined,
     locationId: a.locationId?._id || a.locationId,
     waitingMin: a.status === 'waiting' && a.arrivedAt ? Math.round((Date.now() - a.arrivedAt) / 60000) : null,
+    // The fee: its payment (to collect at the desk, or paid and how) — see withPayments().
+    payment: a._payment || null,
   };
 };
+
+/** Each visit's fee payment (id, status, method, amount), for the desk / doctor rows. */
+async function withPayments(appts) {
+  const ids = appts.map((a) => a._id);
+  const pays = ids.length ? await M.Payment.find({ appointmentId: { $in: ids }, status: { $in: ['pending', 'paid', 'refunded'] } }).sort({ createdAt: -1 }) : [];
+  const by = new Map();
+  for (const p of pays) if (!by.has(String(p.appointmentId))) by.set(String(p.appointmentId), p);
+  for (const a of appts) {
+    const p = by.get(String(a._id));
+    a._payment = p ? { id: p._id, status: p.status, method: p.method || null, amount: p.amount, paidAt: p.paidAt || null, refundDue: Boolean(p.refundDue) } : null;
+  }
+  return appts;
+}
 const populate = (q) => q.populate('patientId', 'name gender ageYears ageRecordedAt dateOfBirth phone conditions createdAt').populate('doctorId', 'name').populate('locationId', 'name shortName');
 
 // Today / Upcoming / Past, or a single date.
@@ -47,7 +62,7 @@ r.get('/appointments', async (req, res) => {
   else if (viewName !== 'past') q.status = { $nin: ['cancelled', 'rescheduled'] };
   const sort = viewName === 'past' ? { startAt: -1 } : { startAt: 1 };
   const [items, total, stats] = await Promise.all([
-    populate(M.Appointment.find(q).sort(sort).skip(skip).limit(limit)),
+    populate(M.Appointment.find(q).sort(sort).skip(skip).limit(limit)).then(withPayments),
     M.Appointment.countDocuments(q),
     M.Appointment.aggregate([
       { $match: { practiceId: req.practiceId, date: today } },
@@ -223,7 +238,7 @@ r.get('/queue', async (req, res) => {
   if (req.query.locationId) q.locationId = req.query.locationId;
   q.doctorId = req.query.doctorId || (req.member.role === 'doctor' ? req.user._id : undefined);
   if (!q.doctorId) delete q.doctorId;
-  const appts = await populate(M.Appointment.find(q).sort({ tokenNo: 1 }));
+  const appts = await withPayments(await populate(M.Appointment.find(q).sort({ tokenNo: 1 })));
   const ids = appts.map((a) => a._id);
   const patientIds = appts.map((a) => a.patientId._id);
   const [vitals, docs, briefs] = await Promise.all([
@@ -251,8 +266,11 @@ r.get('/queue', async (req, res) => {
     };
   });
   const count = (s) => appts.filter((a) => a.status === s).length;
+  // No front desk here: the doctor checks patients in and collects fees from the queue.
+  const hasDesk = await require('../services/notify').hasDesk(req.practiceId, req.query.locationId || undefined);
   res.json({
     updatedAt: new Date(),
+    hasDesk,
     stats: {
       all: appts.length, notArrived: count('booked') + count('confirmed'), waiting: count('waiting'), inConsultation: count('in_consultation'),
       completed: count('completed'), missed: count('missed'), avgWaitMin: waitTimes.length ? Math.round(usualWait) : null,
@@ -267,7 +285,7 @@ r.get('/staff/today', async (req, res) => {
   const locIds = req.member.allLocations ? undefined : req.member.locationIds;
   const q = { practiceId: req.practiceId, date: today, status: { $nin: ['cancelled', 'rescheduled'] }, ...(locIds?.length ? { locationId: { $in: locIds } } : {}) };
   const [appts, requests, unreadConvos] = await Promise.all([
-    populate(M.Appointment.find(q).sort({ startAt: 1 })),
+    populate(M.Appointment.find(q).sort({ startAt: 1 })).then(withPayments),
     M.AppointmentRequest.find({ practiceId: req.practiceId, status: 'pending' }).sort({ createdAt: 1 }).populate('patientId', 'name').populate('doctorId', 'name'),
     M.Conversation.countDocuments({ practiceId: req.practiceId, participants: { $elemMatch: { userId: req.user._id, unreadCount: { $gt: 0 } } } }),
   ]);
@@ -313,10 +331,23 @@ r.get('/payments', async (req, res) => {
 r.post('/payments/:id/mark-paid', async (req, res) => {
   const p = ownPractice(req, await M.Payment.findById(req.params.id), 'Payment');
   if (!E.PAYMENT_METHODS.includes(req.body.method)) throw badRequest('Choose how it was paid');
+  // Already paid (online, or by someone else at the desk): not taken twice.
+  if (p.status !== 'pending') throw conflict(p.status === 'paid' ? 'This fee is already paid' : 'This fee is not due', 'NOT_PENDING');
   Object.assign(p, { status: 'paid', method: req.body.method, paidAt: new Date(), markedPaidBy: req.user._id });
   await p.save();
-  if (p.appointmentId) await M.Appointment.updateOne({ _id: p.appointmentId }, { feeStatus: 'paid' });
+  if (p.appointmentId) {
+    await M.Appointment.updateOne({ _id: p.appointmentId }, { feeStatus: 'paid', payAt: 'clinic' });
+    await require('../services/payments').feeReceipt(p).catch((err) => console.warn('[fee receipt]', err.message));
+  }
   res.json(p);
+});
+
+// Give a visit fee back: retry an online refund, or "handed back" at the desk.
+r.post('/payments/:id/refund', async (req, res) => {
+  const p = ownPractice(req, await M.Payment.findById(req.params.id), 'Payment');
+  if (p.status !== 'paid') throw conflict(p.status === 'refunded' ? 'Already refunded' : 'Nothing was paid', 'NOT_PAID');
+  const out = await require('../services/payments').refundFee(p, { by: req.user._id, handedBack: req.body.handedBack === true });
+  res.json(out);
 });
 
 r.post('/payments/:id/link', async (req, res) => {

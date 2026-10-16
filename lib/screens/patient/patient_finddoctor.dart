@@ -1598,12 +1598,65 @@ class _DoctorSheetState extends State<_DoctorSheet> {
 
   static const _wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+  /// A day picked from the calendar beyond the online-booking window (or not open
+  /// online): sent as a request for that day; the clinic confirms a time.
+  DateTime? _laterDate;
+
+  /// "More dates": any day in the next 3 months.
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 90)),
+      initialDate: _laterDate ?? DateTime.tryParse(_date ?? '') ?? today,
+      helpText: tr(context, 'Pick a day'),
+    );
+    if (picked == null || !mounted) return;
+    final key = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+    final inStrip = _days.where((x) => x.str('date') == key).firstOrNull;
+    if (inStrip != null && inStrip.numOr('free') > 0) {
+      setState(() => _laterDate = null);
+      await _load(locationId: _locId, date: key);
+      return;
+    }
+    // Full / closed, or beyond what's open online: a request for that day.
+    setState(() {
+      _laterDate = picked;
+      _slot = null;
+    });
+  }
+
+  Widget _moreDates() => Semantics(
+        button: true,
+        label: 'More dates',
+        child: P2Box(
+          onTap: _pickDate,
+          width: 64,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          radius: 14,
+          color: _laterDate != null ? MP.primarySoft : MP.white,
+          border: _laterDate != null ? MP.primary : MP.lineStrong,
+          borderWidth: _laterDate != null ? 1.5 : 1,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Ico(I.calendar, size: 22, color: MP.primary),
+              const Gap(6),
+              Text(_laterDate == null ? 'More' : '${_laterDate!.day} ${_monthShort(_laterDate!)}', style: tx(12, w: w700, c: MP.primary)),
+              Text(_laterDate == null ? 'dates' : 'request', style: tx(11, c: MP.ink3)),
+            ],
+          ),
+        ),
+      );
+
   Widget _dayTile(Map<String, dynamic> d) {
     final at = DateTime.tryParse(d.str('date'));
     if (at == null) return const SizedBox.shrink();
     final now = DateTime.now();
     final free = d.numOr('free').toInt();
-    final on = d.str('date') == _date;
+    final on = d.str('date') == _date && _laterDate == null;
     final top = F.sameDay(at, now) ? 'Today' : F.sameDay(at, now.add(const Duration(days: 1))) ? 'Tmrw' : _wd[at.weekday - 1];
     final sub = free > 0 ? '$free free' : d.str('reason') == 'full' ? 'Full' : 'Closed';
     return Padding(
@@ -1611,9 +1664,14 @@ class _DoctorSheetState extends State<_DoctorSheet> {
       child: Opacity(
         opacity: free > 0 ? 1 : 0.5,
         child: P2Box(
-          onTap: free > 0 && !on ? () => _load(locationId: _locId, date: d.str('date')) : null,
+          onTap: free > 0 && !on
+              ? () {
+                  setState(() => _laterDate = null);
+                  _load(locationId: _locId, date: d.str('date'));
+                }
+              : null,
           label: '${F.dateLong(at)} · $sub',
-          width: 72,
+          width: 64,
           padding: const EdgeInsets.symmetric(vertical: 10),
           radius: 14,
           color: on ? MP.primarySoft : MP.white,
@@ -1711,24 +1769,34 @@ class _DoctorSheetState extends State<_DoctorSheet> {
         if ((_locId ?? d.locationId) != null) 'locationId': _locId ?? d.locationId,
         'visitType': d.mine ? 'follow_up' : 'new',
         'mode': 'in_clinic',
-        if (slot != null) 'slot': _startAt[slot],
-        if (slot == null) 'preferredTime': 'Any time the clinic suggests',
+        if (slot != null && _laterDate == null) 'slot': _startAt[slot],
+        if (_laterDate != null) 'preferredTime': '${F.dateLong(_laterDate!)} · any time',
+        if (slot == null && _laterDate == null) 'preferredTime': 'Any time the clinic suggests',
       }),
       busy: _busy,
     );
     if (res is! Map || !mounted) return;
     final appt = (res['appointment'] as Map?)?.cast<String, dynamic>();
     final token = appt?['tokenNo'];
-    // Booked with a fee: pay now in the app, or at the clinic.
+    // Booked with a fee: pay now in the app, or at the clinic (kept, so the desk knows to collect it).
+    var payNote = '';
     if (appt != null && (appt['fee'] as num? ?? 0) > 0 && appt['feeStatus'] == 'pending') {
-      await Checkout.pay(context, kind: 'fee', id: '${appt['id'] ?? appt['_id']}', laterLabel: 'Pay at the clinic', optional: true);
+      final id = '${appt['id'] ?? appt['_id']}';
+      final paid = await Checkout.pay(context, kind: 'fee', id: id, laterLabel: 'Pay at the clinic', optional: true);
       if (!mounted) return;
+      if (paid) {
+        payNote = ' · Paid';
+      } else {
+        await Api.I.post('/api/patient/appointments/$id/pay-at-clinic', const {}).catchError((_) => null);
+        if (!mounted) return;
+        payNote = ' · Pay ₹${(appt['fee'] as num).round()} at the clinic';
+      }
     }
     Navigator.pop(
       context,
       appt != null
-          ? 'Visit booked with ${d.name} for $slot${token == null ? '' : ' · Token ${'$token'.padLeft(2, '0')}'}'
-          : 'Request sent to ${d.name}${slot == null ? '' : ' for $slot'}. The clinic will confirm.',
+          ? 'Visit booked with ${d.name} for $slot${token == null ? '' : ' · Token ${'$token'.padLeft(2, '0')}'}$payNote'
+          : 'Request sent to ${d.name}${_laterDate != null ? ' for ${F.dateLong(_laterDate!)}' : slot == null ? '' : ' for $slot'}. The clinic will confirm.',
     );
   }
 
@@ -1778,7 +1846,7 @@ class _DoctorSheetState extends State<_DoctorSheet> {
               ),
             ],
           ),
-          if (d.about.isNotEmpty) ...[
+          if (d.about.isNotEmpty && d.about.trim() != d.title.trim()) ...[
             const Gap(14),
             Text(d.about, style: tx(15, h: 1.5)),
           ],
@@ -1788,7 +1856,14 @@ class _DoctorSheetState extends State<_DoctorSheet> {
             decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(16)),
             child: Column(
               children: [
-                MpKV('Clinic', _place.isEmpty ? where : [_place.str('name'), _place.str('area')].where((x) => x.isNotEmpty).join(', ')),
+                MpKV(
+                  'Clinic',
+                  _place.isEmpty
+                      ? where
+                      : [_place.str('name'), if (!_place.str('name').toLowerCase().contains(_place.str('area').toLowerCase())) _place.str('area')]
+                          .where((x) => x.isNotEmpty)
+                          .join(', '),
+                ),
                 if ((_place.isEmpty ? d.km : (_place['km'] as num?)?.toDouble()) case final km?) ...[
                   const MpDivider(),
                   MpKV('Distance', km < 0.05 ? 'Right here' : '${distanceLabel(km)} from you'),
@@ -1799,8 +1874,6 @@ class _DoctorSheetState extends State<_DoctorSheet> {
                 ],
                 const MpDivider(),
                 MpKV('Consult fee', _place['fee'] is num ? ((_place['fee'] as num) == 0 ? 'Free' : '₹${(_place['fee'] as num).toInt()}') : d.feeText),
-                const MpDivider(),
-                MpKV('Video visit', d.video ? 'Available' : 'Clinic visits only', vColor: d.video ? MP.green : MP.ink2),
               ],
             ),
           ),
@@ -1828,7 +1901,7 @@ class _DoctorSheetState extends State<_DoctorSheet> {
             const Gap(8),
             SizedBox(
               height: 96,
-              child: ListView(scrollDirection: Axis.horizontal, children: [for (final d in _days) _dayTile(d)]),
+              child: ListView(scrollDirection: Axis.horizontal, children: [for (final d in _days) _dayTile(d), _moreDates()]),
             ),
           ],
           const Gap(18),
@@ -1836,6 +1909,13 @@ class _DoctorSheetState extends State<_DoctorSheet> {
           const Gap(8),
           if (_live && !_online && !_loadingSlots)
             Text('This clinic takes bookings by phone or at the desk. Send a request and they will suggest a time.', style: tx(14, c: MP.ink2, h: 1.45))
+          else if (_live && _laterDate != null)
+            Text(
+              tr(context, 'Online booking is open for the next #1 days. Send a request for #2 and the clinic will confirm a time.')
+                  .replaceFirst('#1', '${_days.length}')
+                  .replaceFirst('#2', F.dateLong(_laterDate!)),
+              style: tx(14, c: MP.ink2, h: 1.45),
+            )
           else if (_live && _days.isNotEmpty && !_loadingSlots)
             _times()
           else if (_loadingSlots)

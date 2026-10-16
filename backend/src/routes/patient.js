@@ -58,6 +58,34 @@ const adhCount = (x) => (x?.total ? { taken: x.taken, total: x.total, since: x.s
  * the daily-log reminder when the patient switched it on, or — not chosen —
  * when their care team asked for a meal log. The phone schedules these.
  */
+/**
+ * The newest value of each measure the patient tracks (Profile → Latest
+ * readings): from a home reading, a device, the clinic or a confirmed lab
+ * report — with when and where it came from.
+ */
+async function latestReadings(p) {
+  const field = { blood_sugar: 'bloodSugar', blood_pressure: 'bpSystolic', heart_rate: 'pulse', weight: 'weightKg', spo2: 'spo2' };
+  const lab = { hba1c: /hba1c|glycated|glycosylated|a1c/i, ldl: /\bldl\b/i, creatinine: /creatinine/i };
+  const out = {};
+  for (const m of p.trackedMeasures || []) {
+    if (field[m]) {
+      const v = await M.Vitals.findOne({ patientId: p._id, [field[m]]: { $ne: null } }).sort({ recordedAt: -1 });
+      if (v) {
+        out[m] = {
+          value: v[field[m]], value2: m === 'blood_pressure' ? v.bpDiastolic : undefined,
+          sugarType: m === 'blood_sugar' ? v.sugarType || null : undefined, at: v.recordedAt, source: v.source,
+        };
+      }
+    } else if (lab[m]) {
+      const r = await M.LabResult.findOne({ patientId: p._id, 'values.analyte': lab[m] }, 'collectedAt values').sort({ collectedAt: -1 });
+      const x = r?.values.find((v) => lab[m].test(v.analyte || '') && !(m === 'ldl' && /ratio|hdl/i.test(v.analyte)) && !(m === 'creatinine' && /urine|ratio|clearance/i.test(v.analyte)));
+      const value = x ? (typeof x.value === 'number' ? x.value : parseFloat(x.valueText)) : NaN;
+      if (Number.isFinite(value)) out[m] = { value, unit: x.unit || null, flag: x.flag || null, at: r.collectedAt, source: 'lab' };
+    }
+  }
+  return out;
+}
+
 async function remindersOf(p) {
   const s = p.settings || {};
   const dailyLog = s.dailyLogReminderChosen ? s.dailyLogReminder !== false : await dailyLogUsed(p);
@@ -66,6 +94,7 @@ async function remindersOf(p) {
     dailyLogAt: /^\d{2}:\d{2}$/.test(s.dailyLogReminderAt || '') ? s.dailyLogReminderAt : '20:00',
     // Medicine alarms ring like an alarm (even on silent) unless switched off.
     ring: s.alarmRing !== false,
+    snoozeMin: s.snoozeMin || 10,
   };
 }
 
@@ -89,7 +118,7 @@ r.get('/me', async (req, res) => {
   const keys = new Set(asked.flatMap((t) => [...require('../services/advisedtests').keysOf(t.name)]));
   const suggestedMeasures = [...(keys.has('lipid') ? ['ldl'] : []), ...(keys.has('kft') ? ['creatinine'] : []), ...(keys.has('hba1c') ? ['hba1c'] : [])]
     .filter((m) => !(p.trackedMeasures || []).includes(m));
-  res.json({ ...meView(p, req.user), suggestedMeasures, reminders: await remindersOf(p) });
+  res.json({ ...meView(p, req.user), suggestedMeasures, reminders: await remindersOf(p), latestReadings: await latestReadings(p) });
 });
 
 r.patch('/me', async (req, res) => {
@@ -118,6 +147,11 @@ r.patch('/me', async (req, res) => {
     const next = p.settings.toObject();
     for (const k of ['medReminders', 'dailyLogReminder', 'visitReminders', 'alarmRing']) if (typeof s[k] === 'boolean') next[k] = s[k];
     if (typeof s.dailyLogReminder === 'boolean') next.dailyLogReminderChosen = true;
+    if (s.snoozeMin !== undefined) {
+      const m = Number(s.snoozeMin);
+      if (!Number.isInteger(m) || m < 5 || m > 60) throw badRequest('Choose a snooze time between 5 and 60 minutes');
+      next.snoozeMin = m;
+    }
     if (s.dailyLogReminderAt !== undefined) {
       if (!hhmm(s.dailyLogReminderAt)) throw badRequest('Choose a time like 20:00');
       next.dailyLogReminderAt = s.dailyLogReminderAt;
@@ -138,6 +172,21 @@ r.patch('/me', async (req, res) => {
   if (req.body.allergies) p.allergies = req.body.allergies.map((a) => (typeof a === 'string' ? { allergen: a } : a));
   const here = require('../lib/geo').pointFrom(req.body.lat, req.body.lng);
   if (here) p.geo = here;
+  // Home address (Profile / sign-up): typed, spoken, or from "Use my current location".
+  // Its map point is where distances to clinics are measured from.
+  if (req.body.address && typeof req.body.address === 'object') {
+    const a = req.body.address;
+    const line = String(a.line || '').trim().slice(0, 300);
+    if (!line) throw badRequest('Enter your address');
+    const point = require('../lib/geo').pointFrom(a.lat, a.lng);
+    const home = {
+      label: 'Home', line, area: a.area ? String(a.area).slice(0, 80) : undefined, city: a.city ? String(a.city).slice(0, 80) : undefined,
+      pincode: /^\d{6}$/.test(String(a.pincode || '')) ? String(a.pincode) : undefined, isDefault: true, ...(point ? { geo: point } : {}),
+    };
+    p.addresses = [home, ...(p.addresses || []).filter((x) => !x.isDefault).map((x) => ({ ...(x.toObject?.() || x), isDefault: false }))];
+    if (home.area) p.area = home.area;
+    if (point) p.geo = point;
+  }
   if (bodyChanged) p.bodyMeasuredAt = new Date();
   await p.save();
   if (bodyChanged) {
@@ -678,13 +727,14 @@ r.post('/visit-requests', async (req, res) => {
     appointment = await S.book({ practiceId: dl.practiceId, locationId: dl.locationId, doctorId, patientId: req.patient._id, startAt: slot, visitType, mode, reason, channel: 'app', bookedBy: req.user._id, requestId: request._id });
     Object.assign(request, { status: 'scheduled', appointmentId: appointment._id, handledAt: new Date() });
     await request.save();
-    const desk = await practiceStaff(dl.practiceId, { roles: ['front_desk', 'practice_manager'], locationId: dl.locationId });
+    const desk = await practiceStaff(dl.practiceId, { roles: require('../services/notify').DESK_ROLES, locationId: dl.locationId });
     await notify([...desk, doctorId], {
       type: 'appointment_booked', practiceId: dl.practiceId, title: `${req.patient.name} booked a visit`,
       body: `${T.dayKey(appointment.startAt)} · ${T.fmtTime(T.minuteOfDay(appointment.startAt))}`, screen: 'Appointments',
     });
   } else {
-    const desk = await practiceStaff(dl.practiceId, { roles: ['front_desk', 'practice_manager'], locationId: dl.locationId });
+    // The front desk confirms it; a clinic without one: the doctor does.
+    const desk = await require('../services/notify').deskOrDoctors(dl.practiceId, { locationId: dl.locationId, doctorId });
     await notify(desk, { type: 'visit_request', practiceId: dl.practiceId, title: `${req.patient.name} asked for a visit`, body: preferredTime || reason, screen: 'Appointments' });
   }
   res.status(201).json({ request, appointment });
@@ -703,6 +753,16 @@ const myAppointment = async (req) => {
   if (!a) throw notFound('Visit');
   return a;
 };
+
+// "Pay at the clinic": the patient's choice is kept, so the visit card, the desk and the
+// doctor all show "₹600 at the clinic" (and the patient can still pay online later).
+r.post('/appointments/:id/pay-at-clinic', async (req, res) => {
+  const a = await myAppointment(req);
+  if (a.feeStatus !== 'pending') throw conflict(a.feeStatus === 'paid' ? 'This visit is already paid' : 'Nothing to pay for this visit', 'NOT_PENDING');
+  a.payAt = 'clinic';
+  await a.save();
+  res.json({ ok: true, payAt: a.payAt, fee: a.fee, feeStatus: a.feeStatus });
+});
 
 r.post('/appointments/:id/todos/:todoId', async (req, res) => {
   const a = await myAppointment(req);
@@ -748,6 +808,13 @@ r.post('/appointments/:id/cancel', async (req, res) => {
 r.post('/appointments/:id/reschedule', async (req, res) => {
   const a = await myAppointment(req);
   const next = await S.reschedule(a, req.body.startAt, req.user._id);
+  // The desk (or, without one, the doctor) sees the visit moved.
+  const { deskOrDoctors } = require('../services/notify');
+  const staff = await deskOrDoctors(next.practiceId, { locationId: next.locationId, doctorId: next.doctorId });
+  await notify([...new Set([...staff.map(String), String(next.doctorId)])], {
+    type: 'appointment_rescheduled', push: false, practiceId: next.practiceId, title: `${req.patient.name} moved their visit`,
+    body: `${T.dayKey(next.startAt)} · ${T.fmtTime(T.minuteOfDay(next.startAt))}`, screen: 'Appointments',
+  });
   res.json(next);
 });
 
@@ -1128,7 +1195,9 @@ r.post('/device-sync', async (req, res) => {
   const source = String(req.body.source || 'device').slice(0, 40);
   // What the last sync brought in, and which watch / ring apps the data came from.
   const { classifyOrigins } = require('../services/devices');
-  const found = classifyOrigins(Array.isArray(req.body.origins) ? req.body.origins.slice(0, 50).map(String) : []);
+  // What each app wrote (heart rate / SpO₂ means a worn device) — see devices.js.
+  const kinds = req.body.originKinds && typeof req.body.originKinds === 'object' ? req.body.originKinds : {};
+  const found = classifyOrigins(Array.isArray(req.body.origins) ? req.body.origins.slice(0, 50).map(String) : [], kinds);
   const prev = p.deviceSync || {};
   const now = new Date();
   const devices = {
@@ -1208,6 +1277,83 @@ async function criticalAlert(patient, userIds, records) {
   }
 }
 
+/** A date read from a document: YYYY-MM-DD, not in the future, within 10 years. */
+function readDate(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) return null;
+  const d = T.parseDay(s);
+  return d && d <= new Date() && d > T.addDays(new Date(), -3650) ? d : null;
+}
+
+/**
+ * What an uploaded prescription says: doctor, clinic, date, diagnosis, tests
+ * and medicines. Names the record from it ("Prescription · Dr. Sen · Type 2
+ * diabetes") unless the patient named it; the patient can change any of it.
+ */
+function applyRxDetails(record, rx, givenTitle) {
+  record.extractedMedicines = (rx.medicines || []).filter((m) => m.name);
+  record.extractedDoctor = rx.doctor_name || undefined;
+  record.extractedClinic = rx.clinic_name || undefined;
+  record.extractedDiagnosis = rx.diagnosis || undefined;
+  record.extractedTests = (rx.tests_advised || []).map((s) => String(s).trim()).filter(Boolean).slice(0, 20);
+  const at = readDate(rx.prescribed_on);
+  if (at) record.recordDate = at;
+  if (rx.doctor_name || rx.clinic_name) record.sourceName = [rx.doctor_name, rx.clinic_name].filter(Boolean).join(' · ');
+  if (!givenTitle && rx.document_type !== 'lab_report') {
+    const why = rx.diagnosis ? String(rx.diagnosis).split(/[,;]/)[0].trim().slice(0, 60) : '';
+    record.title = ['Prescription', why].filter(Boolean).join(' · ');
+  }
+}
+
+/** For the app's "Check the details" sheet. */
+const rxDetected = (record, rx) => ({
+  kind: rx.document_type === 'lab_report' ? 'test_result' : 'prescription',
+  mismatch: rx.document_type === 'lab_report',
+  documentType: rx.document_type || null,
+  title: record.title, doctor: rx.doctor_name || '', clinic: rx.clinic_name || '', date: readDate(rx.prescribed_on),
+  diagnosis: rx.diagnosis || '', tests: record.extractedTests || [], medicines: record.extractedMedicines?.length || 0,
+});
+
+// The patient is the final say: rename a record, fix who it's from or its date,
+// or say it's a test report / prescription after all (it's read again as that).
+r.patch('/records/:id', async (req, res) => {
+  const rec = await M.MedicalRecord.findOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null });
+  if (!rec) throw notFound('Record');
+  if (req.body.title !== undefined) {
+    const t = String(req.body.title).trim().slice(0, 120);
+    if (!t) throw badRequest('Give it a name');
+    rec.title = t;
+  }
+  if (req.body.sourceName !== undefined) rec.sourceName = String(req.body.sourceName).trim().slice(0, 120) || rec.sourceName;
+  if (req.body.recordDate !== undefined) {
+    const d = T.parseDay(req.body.recordDate);
+    if (!d || d > new Date()) throw badRequest('Choose a date that has passed');
+    rec.recordDate = d;
+  }
+  let detected = null;
+  if (req.body.kind && req.body.kind !== rec.kind && ['prescription', 'test_result'].includes(req.body.kind)) {
+    rec.kind = req.body.kind;
+    if (rec.kind === 'test_result') {
+      rec.status = 'processing'; // read as a report on Check your report (…/extract)
+    } else {
+      rec.status = 'ready';
+      rec.testCheck = undefined;
+      rec.forTests = [];
+      const pages = [];
+      for (const f of rec.files.slice(0, 10)) {
+        const b = await storage.read(f.key).catch(() => null);
+        if (b) pages.push({ buffer: b, mimetype: f.mimeType || 'application/pdf' });
+      }
+      const rx = pages.length ? await assistant.extractPrescription(pages, null).catch(() => null) : null;
+      if (rx) {
+        applyRxDetails(rec, rx, null);
+        detected = rxDetected(rec, rx);
+      } else if (rec.title === 'Test report') rec.title = 'Prescription';
+    }
+  }
+  await rec.save();
+  res.json({ record: { ...rec.toJSON(), files: rec.files.map(storage.withUrl) }, detected, medicines: rec.extractedMedicines || [] });
+});
+
 r.post('/records', upload.array('files', 10), async (req, res) => {
   if (!req.files?.length) throw badRequest('Choose a file');
   const kind = req.body.kind === 'prescription' ? 'prescription' : 'test_result';
@@ -1223,12 +1369,13 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
     status: kind === 'test_result' ? 'processing' : 'ready', uploadedBy: req.user._id, flagLabel: 'New', flagTone: 'new',
   });
   let extracted = null;
+  let detected = null;
   if (kind === 'prescription') {
-    const rx = await assistant.extractPrescription(req.files[0].buffer, req.files[0].mimetype).catch((err) => { console.warn('[extract-rx]', err.message); return null; });
-    if (rx?.medicines?.length) {
-      record.extractedMedicines = rx.medicines.filter((m) => m.name);
-      record.extractedDoctor = rx.doctor_name || undefined;
+    const rx = await assistant.extractPrescription(req.files.map((f) => ({ buffer: f.buffer, mimetype: f.mimetype })), null).catch((err) => { console.warn('[extract-rx]', err.message); return null; });
+    if (rx) {
+      applyRxDetails(record, rx, req.body.title);
       await record.save();
+      detected = rxDetected(record, rx);
     }
   }
   if (kind === 'test_result') {
@@ -1248,8 +1395,10 @@ r.post('/records', upload.array('files', 10), async (req, res) => {
     await record.save();
     await notifyShared(req.patient, chosen.map((s) => s.userId), 1, kind);
   }
+  // Uploaded as a test report but it's a prescription (or the other way round): the app offers to switch.
+  if (kind === 'test_result' && extracted?.document_type === 'prescription' && !record.testCheck?.found?.length) detected = { kind: 'prescription', mismatch: true };
   res.status(201).json({
-    record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted, testCheck: record.testCheck || null, medicines: record.extractedMedicines || [],
+    record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted, testCheck: record.testCheck || null, medicines: record.extractedMedicines || [], detected,
     heldShare: held ? chosen.map((s) => String(s.userId)) : [],
   });
 });

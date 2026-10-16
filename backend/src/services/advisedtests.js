@@ -153,8 +153,14 @@ function relatedDiagnoses(name, summary) {
  */
 async function advisedTests(patient) {
   const since = T.addDays(T.dayStart(), -180);
-  const rxs = await M.Prescription.find({ patientId: patient._id, issuedAt: { $gte: since }, 'tests.0': { $exists: true } }, 'tests issuedAt doctorName doctorId diagnosisSummary followUpDate')
+  const issued = await M.Prescription.find({ patientId: patient._id, issuedAt: { $gte: since }, 'tests.0': { $exists: true } }, 'tests issuedAt doctorName doctorId diagnosisSummary followUpDate')
     .sort({ issuedAt: -1 }).populate('doctorId', 'name');
+  // Prescriptions from other doctors the patient uploaded: the tests read from them.
+  const uploaded = await M.MedicalRecord.find({ patientId: patient._id, kind: 'prescription', deletedAt: null, prescriptionId: null, recordDate: { $gte: since }, 'extractedTests.0': { $exists: true } }, 'extractedTests extractedDoctor extractedDiagnosis recordDate');
+  const rxs = [
+    ...issued,
+    ...uploaded.map((r) => ({ _id: r._id, tests: r.extractedTests, issuedAt: r.recordDate, doctorName: r.extractedDoctor, diagnosisSummary: r.extractedDiagnosis, uploaded: true })),
+  ].sort((a, b) => b.issuedAt - a.issuedAt);
   if (!rxs.length) return [];
   const recs = await M.MedicalRecord.find({ patientId: patient._id, kind: 'test_result', deletedAt: null, $or: [{ recordDate: { $gte: T.addDays(since, -1) } }, { 'forTests.0': { $exists: true } }] }).sort({ recordDate: -1 });
   const labs = recs.length ? await M.LabResult.find({ recordId: { $in: recs.map((r) => r._id) } }, 'recordId testName values.analyte') : [];

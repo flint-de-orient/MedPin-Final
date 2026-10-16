@@ -67,6 +67,8 @@ const appointmentSchema = new Schema(
     channel: enumOf(E.REQUEST_CHANNELS, { default: 'desk' }),
     fee: { ...rupees, default: 0 },
     feeStatus: enumOf(E.FEE_STATUSES, { default: 'pending' }),
+    // How the patient said they'll pay (Pay online / Pay at the clinic); paid → how it was paid.
+    payAt: enumOf(['online', 'clinic']),
     todos: [todoSchema], // patient's before-visit checklist
     patientNotifiedAt: Date,
     reminderSentAt: Date,
@@ -99,6 +101,11 @@ const paymentSchema = new Schema(
     razorpayOrderId: String,
     razorpayOrderAmount: Number, // the amount that Razorpay order was made for
     razorpayPaymentId: { type: String, sparse: true, unique: true },
+    // Money given back (a cancelled visit): online through Razorpay, or handed back at the desk.
+    refundedAt: Date,
+    refundedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    refundId: String,
+    refundDue: { type: Boolean, default: undefined }, // paid at the desk, visit cancelled: to hand back
     note: String,
     payoutId: ref('Payout'), // set once this online fee is paid out to the doctor
   },

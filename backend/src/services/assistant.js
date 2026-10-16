@@ -401,9 +401,15 @@ async function extractLabReport(buffer, mimeType) {
 const RX_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['doctor_name', 'medicines'],
+  required: ['document_type', 'doctor_name', 'clinic_name', 'prescribed_on', 'diagnosis', 'tests_advised', 'medicines'],
   properties: {
+    // What the file is: the app says so when a test report was uploaded as a prescription.
+    document_type: { type: 'string', enum: ['prescription', 'lab_report', 'other_medical', 'not_medical', 'unreadable'] },
     doctor_name: { type: 'string', description: 'Prescribing doctor as printed, or empty' },
+    clinic_name: { type: 'string', description: 'Clinic / hospital as printed, or empty' },
+    prescribed_on: { type: 'string', description: 'Date of the prescription, YYYY-MM-DD, or empty' },
+    diagnosis: { type: 'string', description: 'Diagnosis / complaint as written (short), or empty' },
+    tests_advised: { type: 'array', items: { type: 'string' }, description: 'Investigations the doctor advised, as written' },
     medicines: {
       type: 'array',
       items: {
@@ -431,12 +437,16 @@ const RX_SCHEMA = {
  */
 async function extractPrescription(buffer, mimeType) {
   if (!ai.enabled()) return null;
-  const block = mimeType === 'application/pdf'
-    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') } }
-    : { type: 'image', source: { type: 'base64', media_type: mimeType, data: buffer.toString('base64') } };
+  // One file, or the pages of one prescription photographed one by one.
+  const files = Array.isArray(buffer) ? buffer.slice(0, 10) : [{ buffer, mimetype: mimeType }];
+  const blocks = files.map((f) => (f.mimetype === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.buffer.toString('base64') } }
+    : { type: 'image', source: { type: 'base64', media_type: f.mimetype, data: f.buffer.toString('base64') } }));
   const out = await ai.completeJson({
-    system: 'You transcribe Indian doctor prescriptions. List every medicine exactly as written: name, strength, how many to take in the morning / afternoon / night (1-0-1 means 1 morning and 1 night), food relation and duration. Do not add, remove, change or recommend anything. If a field is not written, leave it empty or 0.',
-    messages: [{ role: 'user', content: [block, { type: 'text', text: 'Transcribe the medicines on this prescription.' }] }],
+    system: 'You transcribe Indian doctor prescriptions. List every medicine exactly as written: name, strength, how many to take in the morning / afternoon / night (1-0-1 means 1 morning and 1 night), food relation and duration. '
+      + 'Also copy the doctor\'s name, the clinic / hospital, the date, the diagnosis and the advised tests as written. Do not add, remove, change or recommend anything. If a field is not written, leave it empty or 0. '
+      + 'Set document_type to what the file is; when it is a lab report, not medical or unreadable, return no medicines.',
+    messages: [{ role: 'user', content: [...blocks, { type: 'text', text: 'Transcribe this prescription.' }] }],
     schema: RX_SCHEMA,
     effort: 'medium',
     vision: true,

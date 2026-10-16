@@ -7,10 +7,12 @@ import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/med_alarms.dart';
+import 'address_sheet.dart';
 import 'alarm_check.dart';
 import '../../data/photo.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import 'p1_sheets.dart' show P1ReadingSheet;
 import '../../widgets/i18n.dart';
 
 /// Patient app · Profile tab ("My profile"). Not an artboard in the design
@@ -195,6 +197,18 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
 
   List<Map<String, dynamic>> get _team => data?.list('team') ?? const [];
 
+  /// The default (Home) address, where distances to clinics are measured from.
+  Map<String, dynamic>? get _home {
+    final all = _p.list('addresses');
+    return all.where((a) => a['isDefault'] == true).firstOrNull ?? all.firstOrNull;
+  }
+
+  /// Home address sheet: it saves itself, then the row shows the new address.
+  Future<void> _editAddress() async {
+    final saved = await openSheet<bool>(context, (_) => AddressSheet(initial: _home));
+    if (saved == true && mounted && data != null) reload(quiet: true);
+  }
+
   List<(_Viewer, String)> get _viewerRows {
     if (data == null) return [for (var i = 0; i < _viewers.length; i++) (_viewers[i], _sharing[i])];
     return [
@@ -218,6 +232,94 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
   // As it really works (GET /me reminders): chosen by the patient, else on only when a meal log was asked for.
   bool get _logR => data == null ? _logReminder : (_p.obj('reminders')['dailyLog'] as bool? ?? _settings['dailyLogReminder'] != false);
   bool get _ringR => data == null ? true : (_p.obj('reminders')['ring'] as bool? ?? _settings['alarmRing'] != false);
+  int get _snooze => data == null ? 10 : ((_p.obj('reminders')['snoozeMin'] ?? _settings['snoozeMin']) as num? ?? 10).toInt();
+
+  // ── Latest readings: what the patient tracks, newest value each (readings have a time,
+  // so they're added as readings — not typed into the profile) ──
+  static const _measures = {
+    'blood_sugar': ('Blood sugar', 'mg/dL'),
+    'blood_pressure': ('Blood pressure', 'mmHg'),
+    'heart_rate': ('Heart rate', 'bpm'),
+    'weight': ('Weight', 'kg'),
+    'spo2': ('SpO₂', '%'),
+    'hba1c': ('HbA1c', '%'),
+    'ldl': ('LDL cholesterol', 'mg/dL'),
+    'creatinine': ('Creatinine', 'mg/dL'),
+  };
+  static const _labOnly = {'hba1c', 'ldl', 'creatinine'};
+  static const _sourceLabel = {'lab': 'lab report', 'device': 'watch', 'clinic': 'clinic', 'home': 'you'};
+
+  Widget _readingsSection() {
+    final latest = _p.obj('latestReadings');
+    final tracked = [for (final m in (_p['trackedMeasures'] as List? ?? const [])) '$m'].where(_measures.containsKey);
+    String n(Object? x) => x is num ? (x % 1 == 0 ? '${x.toInt()}' : x.toStringAsFixed(1)) : '';
+    return _section('Latest readings', [
+      for (final m in tracked)
+        () {
+          final r = latest.obj(m);
+          final (label, unit) = _measures[m]!;
+          final at = F.date(r['at']);
+          final value = r.isEmpty ? '' : (m == 'blood_pressure' ? '${n(r['value'])}/${n(r['value2'])}' : n(r['value']));
+          final sub = r.isEmpty
+              ? (_labOnly.contains(m) ? tr(context, 'From your next lab report') : tr(context, 'No reading yet'))
+              : [
+                  '$value ${r.str('unit', unit)}',
+                  if (r.str('sugarType') == 'fasting') tr(context, 'fasting'),
+                  if (r.str('sugarType') == 'post_meal') tr(context, 'after food'),
+                  if (_sourceLabel[r.str('source')] != null) tr(context, _sourceLabel[r.str('source')]!),
+                  if (at != null) F.sameDay(at, DateTime.now()) ? F.time(at) : F.dayMonth(at),
+                ].join(' · ');
+          return _Row(
+            icon: I.activity,
+            title: label,
+            sub: sub,
+            subColor: r.isEmpty ? MP.ink3 : MP.ink2,
+            trailing: _Action(_labOnly.contains(m) ? 'Records' : 'Add'),
+            onTap: () async {
+              if (_labOnly.contains(m)) return Nav.tab(context, 'Patient-Records', args: const {'filter': 'tests'});
+              final saved = await openSheet<bool>(context, (_) => P1ReadingSheet(measure: m));
+              if (saved == true && mounted) reload(quiet: true);
+            },
+          );
+        }(),
+      _Row(
+        icon: I.edit,
+        title: 'Change what you track',
+        trailing: const _Action('Change'),
+        onTap: () async {
+          final saved = await Nav.go<bool>(context, 'Patient-Track');
+          if (saved == true && mounted) reload(quiet: true);
+        },
+      ),
+    ], caption: 'Readings have a time, so add them here or on Home — your doctor sees them with the date.');
+  }
+
+  /// Snooze time on medicine alarms (the alarm's Snooze button).
+  Future<void> _pickSnooze() async {
+    const options = [5, 10, 15, 30];
+    final picked = await openSheet<int>(
+      context,
+      (c) => MpSheet(
+        title: 'Snooze for',
+        subtitle: 'When you tap Snooze on a medicine alarm, it rings again after this long.',
+        showClose: true,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final m in options) MpChip(tr(context, '#1 min').replaceFirst('#1', '$m'), selected: m == _snooze, tonal: true, onTap: () => Navigator.pop(c, m)),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null || picked == _snooze || !mounted) return;
+    if (data == null) return;
+    final ok = await _save({'settings': {'snoozeMin': picked}});
+    if (ok && mounted) MedAlarms.I.sync();
+  }
 
   /// Left out of battery saving (Android), so alarms ring on time.
   bool? _alarmsOk;
@@ -410,6 +512,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
               children: [
                 _identity(me),
                 _ConsentCard(live: data != null, onLinked: () => reload(quiet: true)),
+                if (data != null && (_p['trackedMeasures'] as List? ?? const []).isNotEmpty) _readingsSection(),
                 _section('Health details', [
                   _Row(
                     icon: I.activity,
@@ -470,6 +573,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                     trailing: me.emergencyName == null ? const _Action('Add') : const _Chevron(),
                     onTap: () => _edit(_Focus.emergency),
                   ),
+                  _homeRow(),
                 ]),
                 if (viewers.isNotEmpty)
                   _section(
@@ -503,6 +607,14 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                       sub: _ringR ? 'Alarm sound, on the lock screen' : 'A normal notification',
                       trailing: MpSwitch(value: _ringR, onChanged: (v) => _setReminder('alarmRing', v)),
                       onTap: () => _setReminder('alarmRing', !_ringR),
+                    ),
+                  if (_medR)
+                    _Row(
+                      icon: I.clock,
+                      title: 'Snooze for',
+                      sub: tr(context, '#1 min · on the alarm’s Snooze button').replaceFirst('#1', '$_snooze'),
+                      trailing: const _Action('Change'),
+                      onTap: _pickSnooze,
                     ),
                   if (_medR && isLive && _alarmsOk == false)
                     _Row(
@@ -701,6 +813,25 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
           ],
         ),
       );
+
+  Widget _homeRow() {
+    final h = _home;
+    final line = '${h?['line'] ?? ''}'.trim();
+    // Area / city only when the address line doesn't already say them.
+    final extra = [
+      for (final k in ['area', 'city'])
+        if ('${h?[k] ?? ''}'.trim() case final v when v.isNotEmpty && !line.toLowerCase().contains(v.toLowerCase())) v,
+    ];
+    final text = [if (line.isNotEmpty) line, ...extra].join(', ');
+    return _Row(
+      icon: I.home,
+      title: 'Home address',
+      sub: text.isEmpty ? 'Add your address · for distances to clinics' : text,
+      subColor: text.isEmpty ? MP.ink3 : MP.ink2,
+      trailing: text.isEmpty ? const _Action('Add') : const _Chevron(),
+      onTap: _editAddress,
+    );
+  }
 
   Widget _section(String label, List<Widget> rows, {String? caption}) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

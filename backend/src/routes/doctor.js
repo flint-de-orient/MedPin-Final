@@ -318,7 +318,7 @@ r.post('/doctor/leaves', async (req, res) => {
     body: `${T.dayKey(startDate)}${+endDate !== +startDate ? ` to ${T.dayKey(endDate)}` : ''}. Please choose another time for your visit.`, screen: 'Patient-Doctors', whatsapp: true,
   });
   if (affected.length) {
-    const desk = await practiceStaff(req.practiceId, { roles: ['front_desk', 'practice_manager'] });
+    const desk = await require('../services/notify').deskOrDoctors(req.practiceId, { doctorId: req.user._id });
     await notify(desk, { type: 'doctor_leave', practiceId: req.practiceId, title: `${affected.length} visit${affected.length === 1 ? '' : 's'} to move`, body: `${who} is on leave ${T.dayKey(startDate)}${+endDate !== +startDate ? `–${T.dayKey(endDate)}` : ''}`, screen: 'Appointments' });
   }
   res.status(201).json({ ...leave.toJSON(), patientsTold: affected.length });

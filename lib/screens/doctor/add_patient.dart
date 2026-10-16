@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/voice.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
 import '../../widgets/i18n.dart';
@@ -77,12 +78,29 @@ class AddPatientScreen extends StatefulWidget {
   State<AddPatientScreen> createState() => _AddPatientScreenState();
 }
 
-/// (label, value, unit, keyboard)
+/// (label, value, unit, keyboard). Two per row; an odd last one (blood sugar)
+/// takes the full row so its Fasting / Random / After food choice fits under it.
 const _vitals = [
   ('Blood pressure', '128/84', 'mmHg', TextInputType.datetime),
   ('Pulse', '78', 'bpm', TextInputType.number),
-  ('Weight', '62', 'kg', TextInputType.number),
-  ('Fasting sugar', '112', 'mg/dL', TextInputType.number),
+  ('SpO₂', '98', '%', TextInputType.number),
+  ('Temperature', '98.6', '°F', TextInputType.numberWithOptions(decimal: true)),
+  ('Weight', '62', 'kg', TextInputType.numberWithOptions(decimal: true)),
+  ('Height', '160', 'cm', TextInputType.number),
+  ('Blood sugar', '112', 'mg/dL', TextInputType.number),
+];
+
+// Indexes into [_vitals] / the vitals controllers.
+const _bp = 0, _pulse = 1, _spo2 = 2, _temp = 3, _weight = 4, _height = 5, _sugar = 6;
+
+/// When the sugar was taken: label shown → the API's sugarType.
+const _sugarTypes = [('Fasting', 'fasting'), ('Random', 'random'), ('After food', 'post_meal')];
+
+/// Tap-to-add complaints the desk hears most; added to the text, comma separated.
+const _commonComplaints = [
+  'Fever', 'Cough', 'Cold', 'Headache', 'Body ache', 'Stomach pain', 'Loose motions',
+  'Vomiting', 'Breathlessness', 'Chest pain', 'Dizziness', 'Weakness', 'Burning urination',
+  'Joint pain', 'Back pain', 'Skin rash', 'Sugar check', 'BP check', 'Follow-up',
 ];
 
 /// Numbers that already have a MedPin account (digits only).
@@ -216,8 +234,17 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
   final _complaint = TextEditingController();
   final _vitalCtrls = [for (final v in _vitals) TextEditingController(text: isLive ? '' : v.$2)];
   int _gender = 0;
+  int _sugarType = 0;
   bool _vitalsOpen = true;
   bool _complaintsOpen = false;
+
+  /// Address search: suggestions for what's typed, and the one picked
+  /// ({lat, lng, area, city, pincode}, sent as `place`). The pick is kept only
+  /// while the address still reads as its label.
+  Timer? _addrTimer;
+  List<Map<String, dynamic>> _addrHits = const [];
+  Map<String, dynamic>? _place;
+  String? _placeLabel;
 
   /// Live: the code sent to the patient's phone (checked when registering).
   String? _otpCode;
@@ -227,11 +254,113 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
   String get _digits => _phone.text.replaceAll(RegExp(r'\D'), '');
 
   @override
+  void initState() {
+    super.initState();
+    // The complaint chips show as selected while their word is in the text.
+    _complaint.addListener(_onComplaintChanged);
+  }
+
+  void _onComplaintChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _addrTimer?.cancel();
+    _complaint.removeListener(_onComplaintChanged);
     for (final c in [_phone, _name, _age, _address, _complaint, ..._vitalCtrls]) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  // ---- Complaints ----
+
+  List<String> get _complaintParts => [
+    for (final s in _complaint.text.split(',')) if (s.trim().isNotEmpty) s.trim(),
+  ];
+
+  bool _hasComplaint(String c) => _complaintParts.any((s) => s.toLowerCase() == c.toLowerCase());
+
+  /// Chip tap: adds the complaint to the end of the text, or takes it out again.
+  void _toggleComplaint(String c) {
+    final parts = _complaintParts;
+    if (_hasComplaint(c)) {
+      parts.removeWhere((s) => s.toLowerCase() == c.toLowerCase());
+    } else {
+      parts.add(c);
+    }
+    _complaint.text = parts.join(', ');
+    _complaint.selection = TextSelection.collapsed(offset: _complaint.text.length);
+  }
+
+  /// Mic on the complaints: Voice.dictate with the 'symptoms' purpose (so the
+  /// words are read as symptoms), added after what's already there — as
+  /// [dictateInto] does, which has no purpose of its own.
+  Future<void> _speakComplaint() async {
+    final said = await Voice.dictate(context, title: 'Complaints', purpose: 'symptoms');
+    if (said == null || said.trim().isEmpty) return;
+    final before = _complaint.text.trimRight();
+    _complaint.text = before.isEmpty ? said.trim() : (before.endsWith(',') ? '$before ${said.trim()}' : '$before, ${said.trim()}');
+    _complaint.selection = TextSelection.collapsed(offset: _complaint.text.length);
+  }
+
+  // ---- Address ----
+
+  /// Typing in the address: a changed text drops the picked place (its map
+  /// point no longer matches), and suggestions follow ~400 ms after typing stops.
+  void _onAddressChanged(String text) {
+    _addrTimer?.cancel();
+    final q = text.trim();
+    setState(() {
+      if (_place != null && q != _placeLabel) {
+        _place = null;
+        _placeLabel = null;
+      }
+      if (q.length < 3) _addrHits = const [];
+    });
+    if (q.length < 3 || !isLive) return;
+    _addrTimer = Timer(const Duration(milliseconds: 400), () => _searchAddress(q));
+  }
+
+  Future<void> _searchAddress(String q) async {
+    try {
+      final r = await Api.I.get('/api/geo/search', query: {'q': q}) as Map;
+      // A reply for older text (they kept typing) is dropped.
+      if (!mounted || _address.text.trim() != q) return;
+      final items = [
+        for (final x in (r['items'] as List? ?? const []))
+          if (x is Map && x['lat'] is num && x['lng'] is num && '${x['label'] ?? ''}'.trim().isNotEmpty) x.cast<String, dynamic>(),
+      ];
+      setState(() => _addrHits = items.take(5).toList());
+    } catch (_) {
+      // Offline, or address search is down (503): just no suggestions.
+      if (mounted && _addrHits.isNotEmpty) setState(() => _addrHits = const []);
+    }
+  }
+
+  void _pickAddress(Map<String, dynamic> hit) {
+    _addrTimer?.cancel();
+    final label = '${hit['label']}'.trim();
+    setState(() {
+      _address.text = label;
+      _address.selection = TextSelection.collapsed(offset: label.length);
+      _placeLabel = label;
+      _place = {
+        'lat': hit['lat'],
+        'lng': hit['lng'],
+        for (final k in const ['area', 'city', 'pincode'])
+          if ('${hit[k] ?? ''}'.trim().isNotEmpty) k: '${hit[k]}'.trim(),
+      };
+      _addrHits = const [];
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _speakAddress() async {
+    final said = await dictateInto(context, _address, title: 'Address');
+    if (said == null || !mounted) return;
+    _onAddressChanged(_address.text);
   }
 
   Future<void> _verify() async {
@@ -285,19 +414,43 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
   }
 
   Map<String, dynamic> _vitalsJson() {
-    num? n(int i) => num.tryParse(_vitalCtrls[i].text.trim());
-    final bp = RegExp(r'^(\d{2,3})\s*/\s*(\d{2,3})$').firstMatch(_vitalCtrls[0].text.trim());
+    final n = _num;
+    final bp = RegExp(r'^(\d{2,3})\s*/\s*(\d{2,3})$').firstMatch(_vitalCtrls[_bp].text.trim());
     final note = _complaint.text.trim();
     return {
       if (bp != null) 'bpSystolic': int.parse(bp.group(1)!),
       if (bp != null) 'bpDiastolic': int.parse(bp.group(2)!),
-      if (n(1) != null) 'pulse': n(1),
-      if (n(2) != null) 'weightKg': n(2),
-      if (n(3) != null) 'bloodSugar': n(3),
-      if (n(3) != null) 'sugarType': 'fasting',
+      if (n(_pulse) != null) 'pulse': n(_pulse),
+      if (n(_spo2) != null) 'spo2': n(_spo2),
+      if (n(_temp) != null) 'temperatureF': n(_temp),
+      if (n(_weight) != null) 'weightKg': n(_weight),
+      if (n(_height) != null) 'heightCm': n(_height),
+      if (n(_sugar) != null) 'bloodSugar': n(_sugar),
+      if (n(_sugar) != null) 'sugarType': _sugarTypes[_sugarType].$2,
       // The complaint travels with the vitals as their note.
       if (note.isNotEmpty) 'note': note,
     };
+  }
+
+  /// The number in vital [i] (a decimal comma counts as a point), null when empty.
+  num? _num(int i) => num.tryParse(_vitalCtrls[i].text.trim().replaceAll(',', '.'));
+
+  /// First vital that's not a plausible reading, as the message to show.
+  String? _vitalsProblem() {
+    final bp = _vitalCtrls[_bp].text.trim();
+    if (bp.isNotEmpty && !RegExp(r'^\d{2,3}\s*/\s*\d{2,3}$').hasMatch(bp)) return 'Enter the blood pressure like 120/80';
+    // (index, min, max, message) — a typo like 9.8 °F or 1600 cm is caught here.
+    const ranges = [
+      (_spo2, 50, 100, 'Enter SpO₂ between 50 and 100%'),
+      (_temp, 90, 110, 'Enter the temperature in °F, between 90 and 110'),
+      (_height, 30, 250, 'Enter the height in cm, between 30 and 250'),
+    ];
+    for (final (i, lo, hi, msg) in ranges) {
+      if (_vitalCtrls[i].text.trim().isEmpty) continue;
+      final v = _num(i);
+      if (v == null || v < lo || v > hi) return msg;
+    }
+    return null;
   }
 
   Future<void> _submit() async {
@@ -310,23 +463,29 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
       Nav.back(context);
       return;
     }
-    final bp = _vitalCtrls[0].text.trim();
-    if (bp.isNotEmpty && !RegExp(r'^\d{2,3}\s*/\s*\d{2,3}$').hasMatch(bp)) {
-      toast(context, 'Enter the blood pressure like 120/80');
+    final problem = _vitalsProblem();
+    if (problem != null) {
+      // Open the vitals so the field to fix is in view.
+      setState(() => _vitalsOpen = true);
+      toast(context, problem);
       return;
     }
     if (_busy) return;
     _busy = true;
     try {
       final vitals = _vitalsJson();
+      final complaint = _complaint.text.trim();
       final p = await Api.I.post('/api/patients', {
         'name': _name.text.trim(),
         'phone': _digits,
         'gender': const ['female', 'male', 'other'][_gender],
         if (_age.text.trim().isNotEmpty) 'ageYears': int.tryParse(_age.text.trim()),
         if (_address.text.trim().isNotEmpty) 'address': _address.text.trim(),
+        // A searched address: its map point (and the patient's geo for distance).
+        if (_place != null && _address.text.trim() == _placeLabel) 'place': _place,
         if (_otpCode != null) 'otpCode': _otpCode,
         if (vitals.isNotEmpty) 'vitals': vitals,
+        if (complaint.isNotEmpty) 'complaint': complaint,
       });
       if (!mounted) return;
       final id = '${(p as Map)['id']}';
@@ -372,18 +531,31 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
             open: _vitalsOpen,
             onToggle: () => setState(() => _vitalsOpen = !_vitalsOpen),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (var r = 0; r < _vitals.length; r += 2) ...[
                   if (r > 0) const Gap(16),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: _VitalField(_vitals[r], controller: _vitalCtrls[r])),
-                      const Gap(12),
-                      Expanded(child: _VitalField(_vitals[r + 1], controller: _vitalCtrls[r + 1])),
-                    ],
-                  ),
+                  if (r + 1 < _vitals.length)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: _VitalField(_vitals[r], controller: _vitalCtrls[r])),
+                        const Gap(12),
+                        Expanded(child: _VitalField(_vitals[r + 1], controller: _vitalCtrls[r + 1])),
+                      ],
+                    )
+                  else
+                    _VitalField(_vitals[r], controller: _vitalCtrls[r]),
                 ],
+                // When the sugar was taken (the doctor reads 140 differently fasting vs after food).
+                const Gap(8),
+                MpSegmented(
+                  options: [for (final t in _sugarTypes) t.$1],
+                  index: _sugarType,
+                  height: 36,
+                  fontSize: 14,
+                  onChanged: (i) => setState(() => _sugarType = i),
+                ),
               ],
             ),
           ),
@@ -392,7 +564,26 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
             subtitle: 'Optional · what brings them in today',
             open: _complaintsOpen,
             onToggle: () => setState(() => _complaintsOpen = !_complaintsOpen),
-            child: MpInput(controller: _complaint, hint: 'Describe the complaints, e.g. fever for 3 days', maxLines: 3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final c in _commonComplaints)
+                      MpChip(c, selected: _hasComplaint(c), tonal: true, height: 36, onTap: () => _toggleComplaint(c)),
+                  ],
+                ),
+                const Gap(12),
+                MpInput(
+                  controller: _complaint,
+                  hint: 'Describe the complaints, e.g. fever for 3 days',
+                  maxLines: 3,
+                  trailing: _MicButton(label: 'Speak the complaints', onTap: _speakComplaint),
+                ),
+              ],
+            ),
           ),
           Padding(padding: const EdgeInsets.only(top: 8), child: MpButton('Add patient', onTap: _submit)),
         ],
@@ -479,11 +670,77 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
               ],
             ],
           ),
-          MpInput(label: 'Address', controller: _address, maxLines: 2, height: 80),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MpInput(
+                label: 'Address',
+                controller: _address,
+                maxLines: 2,
+                height: 80,
+                onChanged: _onAddressChanged,
+                trailing: _MicButton(label: 'Speak the address', onTap: _speakAddress),
+              ),
+              // Matches from address search; picking one also saves its map point.
+              if (_addrHits.isNotEmpty) ...[
+                const Gap(8),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: MP.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: MP.line),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final h in _addrHits)
+                        Tap(
+                          onTap: () => _pickAddress(h),
+                          radius: 10,
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(padding: EdgeInsets.only(top: 2), child: Ico(I.pin, size: 16, color: MP.ink3)),
+                              const Gap(8),
+                              Expanded(child: Text('${h['label']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: tx(14, h: 1.35))),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_place != null) ...[
+                const Gap(8),
+                Row(
+                  children: [
+                    const Ico(I.check, size: 16, color: MP.green, stroke: 2.25),
+                    const Gap(6),
+                    Expanded(child: Text('Address found on the map', style: tx(13, c: MP.ink3))),
+                  ],
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );
   }
+}
+
+/// Mic in the top-right of a multi-line field (as on D5MicField).
+class _MicButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _MicButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(0, 6, 6, 6),
+    child: MpIconButton(I.mic, label: label, iconSize: 20, color: MP.primary, background: MP.primarySoft, onTap: onTap),
+  );
 }
 
 /// Optional section. Expanded: card (padding 20) whose 48px header button has

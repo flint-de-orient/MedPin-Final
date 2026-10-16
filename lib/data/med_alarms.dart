@@ -50,6 +50,21 @@ class MedAlarms with WidgetsBindingObserver {
     // Alarms at the exact dose time need permission on Android 12+.
     // Then the server knows whether this phone rings them (or it should push them).
     LocalNotes.I.requestPermission(exactAlarms: true).then((_) => Push.I.refresh()).catchError((_) {});
+    LocalNotes.I.onTaken = _taken;
+    sync();
+  }
+
+  /// "Taken" on a medicine alarm: every dose it was for is marked taken.
+  Future<void> _taken(Map<String, dynamic> payload) async {
+    final ids = [for (final id in (payload['doseIds'] as List? ?? const [])) '$id'].where((s) => s.isNotEmpty);
+    var n = 0;
+    for (final id in ids) {
+      try {
+        await Api.I.post('/api/patient/doses/$id', const {'status': 'taken'});
+        n++;
+      } on ApiException catch (_) {}
+    }
+    if (n > 0) LiveBus.changed();
     sync();
   }
 
@@ -112,6 +127,8 @@ class MedAlarms with WidgetsBindingObserver {
       final logOn = rem['dailyLog'] == true;
       final logAt = '${rem['dailyLogAt'] ?? settings['dailyLogReminderAt'] ?? '20:00'}';
       final ring = rem['ring'] ?? settings['alarmRing'] != false;
+      // Snooze on the alarm: the patient's choice (Profile), 10 min unless set.
+      final snooze = ((rem['snoozeMin'] ?? settings['snoozeMin']) as num?)?.toInt() ?? 10;
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final days = [for (var i = 0; i < 7; i++) today.add(Duration(days: i))];
@@ -143,7 +160,8 @@ class MedAlarms with WidgetsBindingObserver {
           final title = names.length <= 1 ? 'Time for ${names.isEmpty ? 'your medicine' : names.first}' : 'Time for ${names.length} medicines';
           final body = [if (names.length > 1) names.join(', '), if (how.isNotEmpty) how].join(' · ');
           final stamp = g.key.millisecondsSinceEpoch;
-          const payload = {'screen': 'Patient-Medicines'};
+          // Taken marks these doses; Snooze rings again after the patient's snooze time.
+          final payload = {'screen': 'Patient-Medicines', 'snooze': snooze, 'doseIds': [for (final m in g.value) '${m['id'] ?? m['_id']}']};
           if (g.key.isAfter(now)) wanted[idFor('t$stamp')] = (at: g.key, title: title, body: body, payload: payload, kind: ring == true ? 'ring' : 'dose');
           final again = g.key.add(const Duration(minutes: 30));
           if (again.isAfter(now)) {

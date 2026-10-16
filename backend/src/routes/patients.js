@@ -133,7 +133,10 @@ r.post('/patients/phone-otp', async (req, res) => {
 
 r.post('/patients', async (req, res) => {
   const phone = normalizePhone(req.body.phone);
-  const { name, gender, ageYears, dateOfBirth, address, otpCode, vitals } = req.body;
+  const { name, gender, ageYears, dateOfBirth, address, otpCode, vitals, complaint } = req.body;
+  // A place picked from the address search: its map point and parts (for "km from you").
+  const place = req.body.place && typeof req.body.place === 'object' ? req.body.place : null;
+  const point = place ? require('../lib/geo').pointFrom(place.lat, place.lng) : null;
   if (!name || !String(name).trim()) throw badRequest('Enter the patient name', 'NAME_REQUIRED');
   if (!E.GENDERS.includes(gender)) throw badRequest('Choose a gender', 'GENDER_REQUIRED');
   if (ageYears == null && !dateOfBirth) throw badRequest('Enter the age', 'AGE_REQUIRED');
@@ -148,7 +151,12 @@ r.post('/patients', async (req, res) => {
   const patient = await M.Patient.create({
     name: String(name).trim(), phone, gender, ageYears, ageRecordedAt: ageYears != null ? new Date() : undefined,
     dateOfBirth, userId: user?._id, phoneVerifiedAt: new Date(),
-    addresses: address ? [{ line: address, isDefault: true }] : [], createdByPracticeId: req.practiceId, createdBy: req.user._id,
+    addresses: address ? [{
+      line: String(address).trim(), isDefault: true,
+      ...(place ? { area: place.area || undefined, city: place.city || undefined, pincode: place.pincode || undefined } : {}), ...(point ? { geo: point } : {}),
+    }] : [],
+    ...(point ? { geo: point } : {}), ...(place?.area ? { area: place.area } : {}),
+    createdByPracticeId: req.practiceId, createdBy: req.user._id,
   });
   await M.PatientEnrolment.create({ patientId: patient._id, practiceId: req.practiceId, status: 'linked', linkedBy: req.user._id, linkedAt: new Date(), homeLocationId: await registrationBranch(req) });
   if (req.member.role === 'doctor') {
@@ -157,7 +165,8 @@ r.post('/patients', async (req, res) => {
   if (vitals && Object.keys(vitals).length) {
     await M.Vitals.create({ ...vitals, patientId: patient._id, practiceId: req.practiceId, recordedBy: req.user._id, recordedByRole: req.member.role, source: 'clinic' });
   }
-  res.status(201).json(listRow(patient));
+  // What brings them in: the walk-in's reason (the doctor sees it in the queue and the consult).
+  res.status(201).json({ ...listRow(patient), complaint: complaint ? String(complaint).trim().slice(0, 500) : undefined });
 });
 
 // Add-Patient-Existing: link with the 6-digit code from the patient's app.

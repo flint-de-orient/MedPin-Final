@@ -36,7 +36,7 @@ async function notifyPharmacy(order, pharmacy, patient, token) {
   if (pharmacy.phone) await sendWhatsApp(pharmacy.phone, text, { template: 'pharmacy_order', params: [patient.name, lines, `₹${order.total}`, link] });
   if (pharmacy.email) await sendEmail({ to: pharmacy.email, subject: `New MedPin order · ${patient.name}`, text });
   if (pharmacy.practiceId) {
-    const desk = await practiceStaff(pharmacy.practiceId, { roles: ['front_desk', 'practice_manager'] });
+    const desk = await require('./notify').deskOrDoctors(pharmacy.practiceId);
     await notify(desk, { type: 'pharmacy_order', practiceId: pharmacy.practiceId, title: `Pharmacy order from ${patient.name}`, body: lines });
   }
   order.pharmacyNotifiedAt = new Date();

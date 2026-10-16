@@ -10,6 +10,7 @@ import '../../data/rx_pdf.dart';
 import '../../data/downloads.dart';
 import '../../widgets/i18n.dart';
 import '../../widgets/file_view.dart';
+import 'record_details_sheet.dart';
 
 /// Design: Patient-Records.dc.html — "Patient · Health records".
 class PatientRecordsScreen extends StatefulWidget {
@@ -799,6 +800,14 @@ class _RecordSheetState extends State<_RecordSheet> with LiveData {
               },
             ),
             const Gap(20),
+          ],
+          // The patient has the final say on the name, who it's from and the date.
+          if (data != null) ...[
+            MpButton('Edit details', kind: MpBtn.secondary, onTap: () async {
+              final saved = await openSheet<Map<String, dynamic>>(context, (_) => RecordDetailsSheet(record: data!));
+              if (saved != null && mounted) reload(quiet: true);
+            }),
+            const Gap(10),
           ],
           MpButton('Delete record', kind: MpBtn.dangerSoft, onTap: _delete),
         ],

@@ -87,6 +87,28 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
     Nav.go(context, screen, args: {'patientId': id});
   }
 
+  Widget _infoRow(String icon, String title, String sub, VoidCallback onTap) => MpCard(
+        onTap: onTap,
+        radius: 16,
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            MpIconTile(icon, size: 40, iconSize: 20, radius: 12),
+            const Gap(12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: tx(15, w: w700)),
+                  if (sub.isNotEmpty) ...[const Gap(2), Text(sub, style: tx(13, c: MP.ink2))],
+                ],
+              ),
+            ),
+            const Ico(I.chevronRight, size: 18, color: MP.ink3),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final placeholder = livePlaceholder();
@@ -185,6 +207,28 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                     ),
                 ],
               ),
+
+              // Visit requests waiting for a time (the doctor confirms them when there's no front desk).
+              if (data != null && data!.obj('requests').numOr('pending') > 0)
+                _infoRow(
+                  I.calendar,
+                  tr(context, data!.obj('requests').numOr('pending') == 1 ? '1 visit request waiting' : '#1 visit requests waiting')
+                      .replaceFirst('#1', '${data!.obj('requests').numOr('pending').toInt()}'),
+                  data!['hasDesk'] == false ? tr(context, 'No front desk here: confirm a time for each') : tr(context, 'Your front desk confirms these'),
+                  () => Nav.go(context, 'Appointments'),
+                ),
+              // Today's fees: collected (online / at the clinic) and still to collect.
+              if (data != null && (data!.obj('fees').numOr('collected') > 0 || data!.obj('fees').numOr('toCollect') > 0))
+                _infoRow(
+                  I.wallet,
+                  tr(context, 'Fees today · ₹#1 collected').replaceFirst('#1', F.count(data!.obj('fees').numOr('collected'))),
+                  [
+                    if (data!.obj('fees').numOr('online') > 0) tr(context, '₹#1 online').replaceFirst('#1', F.count(data!.obj('fees').numOr('online'))),
+                    if (data!.obj('fees').numOr('atClinic') > 0) tr(context, '₹#1 at the clinic').replaceFirst('#1', F.count(data!.obj('fees').numOr('atClinic'))),
+                    if (data!.obj('fees').numOr('toCollect') > 0) tr(context, '₹#1 to collect').replaceFirst('#1', F.count(data!.obj('fees').numOr('toCollect'))),
+                  ].join(' · '),
+                  () => Nav.go(context, 'Report-Fees'),
+                ),
 
               // Emergency (only while one is open)
               if (emergency != null) Tap(

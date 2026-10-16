@@ -55,7 +55,7 @@ class AlarmCheck {
           child: VGap(
             gap: 12,
             children: [
-              MpButton('Allow MedPin to run in the background', onTap: () async {
+              MpButton('Allow background alarms', onTap: () async {
                 final s = await Permission.ignoreBatteryOptimizations.request();
                 if (!c.mounted) return;
                 if (s.isGranted) {
