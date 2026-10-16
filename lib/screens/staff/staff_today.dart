@@ -346,101 +346,116 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
     // The visit fee: paid (and how), to collect at the desk, or a refund to hand back.
     final appt = data?.list('items').where((x) => x.str('id') == a.$5).firstOrNull;
     final fee = appt == null ? null : VisitFee.of(appt);
+    final at = appt == null ? null : F.date(appt['startAt']);
+    // Status (tap to change it: arrived, with doctor, done, missed, cancel).
+    final statusChip = Tap(
+      onTap: appt == null
+          ? null
+          : () async {
+              if (await changeVisitStatus(context, appointmentId: appt.str('id'), status: appt.str('status'), patientName: a.$2) && mounted) {
+                reload(quiet: true);
+              }
+            },
+      radius: 999,
+      child: Container(
+        height: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(status, maxLines: 1, style: tx(12, w: w600, c: fg, h: 1)),
+            if (appt != null) ...[const Gap(3), Ico(I.chevronDown, size: 12, color: fg, stroke: 2.2)],
+          ],
+        ),
+      ),
+    );
+    Widget link(String label, Future<void> Function() go) => Tap(
+          onTap: go,
+          radius: 6,
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Text(tr(context, label), style: tx(13, w: w600, c: MP.primary, h: 1.2)),
+        );
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
-      child: Row(
-        children: [
-          Expanded(
-            child: Tap(
-              onTap: () => _openAppointment(i),
-              radius: 8,
-              child: Row(
+      child: Tap(
+        onTap: () => _openAppointment(i),
+        radius: 8,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Time, with AM / PM under it (a 6:20 could be morning or evening).
+            SizedBox(
+              width: 48,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(width: 44, child: Text(a.$1, style: tx(15, w: w600, tab: true, h: _lh))),
-                  const Gap(12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _line(a.$2, tx(16, w: w600, h: _lh)),
-                        const Gap(4),
-                        Row(
-                          children: [
-                            // Tap the status to change it: arrived, with doctor, done, missed, cancel.
-                            Flexible(
-                              child: Tap(
-                                onTap: appt == null
-                                    ? null
-                                    : () async {
-                                        if (await changeVisitStatus(context, appointmentId: appt.str('id'), status: appt.str('status'), patientName: a.$2) && mounted) {
-                                          reload(quiet: true);
-                                        }
-                                      },
-                                radius: 999,
-                                child: Container(
-                                  height: 22,
-                                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Flexible(child: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(12, w: w600, c: fg, h: 1))),
-                                      if (appt != null) ...[const Gap(3), Ico(I.chevronDown, size: 12, color: fg, stroke: 2.2)],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const Gap(8),
-                            Flexible(child: _line(a.$4, tx(13, c: MP.ink3, h: _lh))),
-                          ],
-                        ),
-                        if (fee != null && fee.status != 'free') ...[
-                          const Gap(6),
-                          Row(
-                            children: [
-                              Flexible(child: FeeChip(fee)),
-                              if (fee.due && status != 'Missed') ...[
-                                const Gap(10),
-                                Tap(
-                                  onTap: () async {
-                                    if (await collectFee(context, fee, patientName: a.$2) && mounted) reload(quiet: true);
-                                  },
-                                  radius: 6,
-                                  child: Text(tr(context, 'Collect'), style: tx(13, w: w600, c: MP.primary)),
-                                ),
-                              ],
-                              if (fee.refundDue) ...[
-                                const Gap(10),
-                                Tap(
-                                  onTap: () async {
-                                    if (await handBackFee(context, fee) && mounted) reload(quiet: true);
-                                  },
-                                  radius: 6,
-                                  child: Text(tr(context, 'Refund'), style: tx(13, w: w600, c: MP.primary)),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
+                  Text(a.$1, style: tx(15, w: w600, tab: true, h: _lh)),
+                  if (at != null) Text(at.hour < 12 ? 'AM' : 'PM', style: tx(12, w: w600, c: MP.ink3, h: 1.3)),
                 ],
               ),
             ),
-          ),
-          if (status == 'Upcoming') ...[
             const Gap(12),
-            Semantics(
-              label: 'Check in ${a.$2}',
-              button: true,
-              excludeSemantics: true,
-              child: MpButton.small('Check in', expand: false, onTap: () => _checkIn(i)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: _line(a.$2, tx(16, w: w600, h: _lh)),
+                        ),
+                      ),
+                      if (status == 'Upcoming') ...[
+                        const Gap(10),
+                        Semantics(
+                          label: 'Check in ${a.$2}',
+                          button: true,
+                          excludeSemantics: true,
+                          child: MpButton.small('Check in', expand: false, onTap: () => _checkIn(i)),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const Gap(8),
+                  // Status · doctor, then the fee: wraps to a new line instead of cutting words off.
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      statusChip,
+                      if (a.$4.isNotEmpty) Text(a.$4, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(13, c: MP.ink3, h: _lh)),
+                    ],
+                  ),
+                  if (fee != null && fee.status != 'free') ...[
+                    const Gap(8),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        FeeChip(fee),
+                        if (fee.due && status != 'Missed')
+                          link('Collect', () async {
+                            if (await collectFee(context, fee, patientName: a.$2) && mounted) reload(quiet: true);
+                          }),
+                        if (fee.refundDue)
+                          link('Refund', () async {
+                            if (await handBackFee(context, fee) && mounted) reload(quiet: true);
+                          }),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }

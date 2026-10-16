@@ -260,6 +260,7 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
   /// Live: the location shown, and the Queue-Select cards (for its header).
   String? _locId;
   Map<String, dynamic>? _locs;
+  DateTime? _locsAt;
   Timer? _clock;
 
   @override
@@ -281,15 +282,32 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
   @override
   Future<Object?> fetch() async {
     final argId = (await d1Args(this))['locationId'] as String?;
-    final locs = _locs ?? await d1QueueLocations();
+    // The places (with today's counts) are fetched again each minute, so the
+    // "patients today at …" hint and the default place stay right.
+    final stale = _locsAt == null || DateTime.now().difference(_locsAt!) > const Duration(minutes: 1);
+    final locs = _locs == null || stale ? await d1QueueLocations() : _locs!;
+    if (!identical(locs, _locs)) _locsAt = DateTime.now();
     _locs = locs;
     var id = _locId ?? argId;
     if (id == null || id.isEmpty) {
       final items = locs.list('items');
       final def = locs.str('defaultLocationId');
       Map<String, dynamic>? pick;
+      int n(Map<String, dynamic> m, String k) => m.numOr(k).round();
+      // Where the patients are: someone arrived or with the doctor, then the place
+      // open now with visits, the place chosen for today, the next place with
+      // visits still to come today (an evening clinic seen at night), then any open one.
+      for (final m in items) {
+        if (n(m, 'waiting') + n(m, 'inConsult') > 0) pick ??= m;
+      }
+      for (final m in items) {
+        if (m['openNow'] == true && n(m, 'pending') > 0) pick ??= m;
+      }
       for (final m in items) {
         if (m.str('locationId') == def) pick ??= m;
+      }
+      for (final m in items) {
+        if (n(m, 'pending') > 0) pick ??= m;
       }
       for (final m in items) {
         if (m['openNow'] == true) pick ??= m;
@@ -306,6 +324,11 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
   }
 
   Map<String, dynamic> get _queue => data!.obj('queue');
+
+  /// Other places with patients still to be seen today (shown under an empty queue).
+  List<Map<String, dynamic>> get _elsewhere => data == null
+      ? const []
+      : [for (final m in _locs?.list('items') ?? const <Map<String, dynamic>>[]) if (m.str('locationId') != _locId && m.numOr('pending') > 0) m];
 
   D1Location get _location {
     if (data == null) return D1Location.all[_loc];
@@ -500,6 +523,25 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Text(_filter == 0 ? 'No patients in this queue yet' : 'No patients here right now', style: tx(14, c: MP.ink2)),
               ),
+              // Patients booked today at another place: one tap to that queue.
+              for (final m in _elsewhere)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
+                  child: Tap(
+                    onTap: () {
+                      setState(() => _locId = m.str('locationId'));
+                      reload();
+                    },
+                    radius: 8,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Text(
+                      tr(context, m.numOr('pending').round() == 1 ? '1 patient today at #1 · Open' : '#2 patients today at #1 · Open')
+                          .replaceFirst('#1', D1Location.fromApi(m).name)
+                          .replaceFirst('#2', '${m.numOr('pending').round()}'),
+                      style: tx(14, w: w600, c: MP.primary),
+                    ),
+                  ),
+                ),
             ],
           ],
         ),

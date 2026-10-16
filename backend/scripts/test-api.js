@@ -1844,6 +1844,52 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await ctx.desk('PATCH', '/api/me', { language: before || 'en' }));
   });
 
+  await step('chat notices by role: doctors not buzzed per message, desk one notice per chat, settled on reply; history; payment links reused', async () => {
+    const deskUser = String(ok(await ctx.desk('GET', '/api/me')).user.id);
+    const convo = ctx.convoId;
+    const notices = (uid) => M.Notification.find({ userId: uid, type: 'message', 'params.conversationId': new mongoose.Types.ObjectId(String(convo)), readAt: null });
+    const settle = () => new Promise((r) => setTimeout(r, 400));
+    await M.Notification.deleteMany({ type: 'message' });
+    // The doctor hasn't written here for 2 h: a routine message is no notice for them at all.
+    await M.Message.collection.updateMany({ conversationId: new mongoose.Types.ObjectId(String(convo)), senderId: new mongoose.Types.ObjectId(String(ctx.doctorUserId)) }, { $set: { createdAt: new Date(Date.now() - 3 * 3600e3) } });
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'When should I come for the sugar test?' }), 201);
+    await settle();
+    assert.equal((await notices(ctx.doctorUserId)).length, 0, 'no notice for the doctor on a routine message');
+    assert.equal((await notices(deskUser)).length, 1, 'the desk gets one');
+    // A second message soon after: still one notice for the desk, with the latest text.
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Fasting or not?' }), 201);
+    await settle();
+    const deskNotices = await notices(deskUser);
+    assert.equal(deskNotices.length, 1, 'one notice per chat');
+    assert.equal(deskNotices[0].body, 'Fasting or not?');
+    // The doctor answers (now in the conversation) → the desk's notice is settled …
+    ok(await ctx.doc('POST', `/api/conversations/${convo}/messages`, { text: 'Fasting, please.' }), 201);
+    await settle();
+    assert.equal((await notices(deskUser)).length, 0, "someone answered: the desk's notice is read");
+    // … and the patient's reply now reaches the doctor (they're in the middle of it).
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Okay, thank you doctor.' }), 201);
+    await settle();
+    assert.equal((await notices(ctx.doctorUserId)).length, 1, 'a reply in an active conversation reaches the doctor');
+    // A doctor without a front desk gets a summary at most every 2 h in reply hours, not a buzz per message.
+    const jobs = require('../src/services/jobs');
+    await jobs.chatRollup(new Date(new Date().setMinutes(0, 0, 0)));
+    // (With a desk at this clinic there's no summary.)
+    assert.equal(await M.Notification.countDocuments({ userId: ctx.doctorUserId, type: 'message_digest' }), 0, 'clinic with a desk: no summary');
+
+    // History lists direct consultations too (no appointment) without failing.
+    const hist = await ctx.doc('GET', '/api/history?period=last_3_months');
+    assert.equal(hist.status, 200, `history: ${hist.status}`);
+
+    // A payment link asked for twice is the same link (one per fee), re-sent.
+    const due = ok(await ctx.doc('GET', '/api/payments?status=pending')).find((p) => p.amount > 0);
+    if (due) {
+      const a = ok(await ctx.desk('POST', `/api/payments/${due.id}/link`));
+      const b = ok(await ctx.desk('POST', `/api/payments/${due.id}/link`));
+      assert.equal(a.paymentLinkUrl, b.paymentLinkUrl, 'same link re-sent');
+      assert.ok(['app', 'sms'].includes(b.sentTo));
+    }
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

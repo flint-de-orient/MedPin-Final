@@ -337,6 +337,52 @@ async function noShows(now) {
  * Older than a day: left alone (nobody is paged about yesterday's alert).
  */
 const ESCALATE_AFTER_MIN = 15;
+/**
+ * Doctors with no front desk: instead of a push for every patient message, one
+ * summary at most every 2 hours inside their reply hours (Chat settings), naming who
+ * wrote since the last one. Doctors with a desk aren't sent this (the desk answers
+ * first); urgent messages always come through at once (care.postMessage).
+ */
+async function chatRollup(now) {
+  if (T.minuteOfDay(now) % 10 !== 0) return;
+  const since = new Date(now.getTime() - 2 * 3600e3);
+  const convos = await M.Conversation.find(
+    { type: { $in: ['care', 'nutrition'] }, 'lastMessage.senderType': 'patient', 'lastMessage.at': { $gte: since }, isUrgent: { $ne: true } },
+    'practiceId patientId participants lastMessage',
+  ).populate('patientId', 'name').lean();
+  const byDoctor = new Map(); // doctorId → { practiceId, names[] }
+  for (const c of convos) {
+    for (const p of c.participants || []) {
+      if (!['doctor', 'dietician'].includes(p.role) || !(p.unreadCount > 0)) continue;
+      const key = `${p.userId}:${c.practiceId}`;
+      const e = byDoctor.get(key) || { doctorId: p.userId, practiceId: c.practiceId, names: [] };
+      e.names.push(c.patientId?.name || 'A patient');
+      byDoctor.set(key, e);
+    }
+  }
+  if (!byDoctor.size) return;
+  const { hasDesk } = require('./notify');
+  const desk = new Map();
+  const bucket = Math.floor(T.minuteOfDay(now) / 120);
+  for (const e of byDoctor.values()) {
+    const pid = String(e.practiceId);
+    if (!desk.has(pid)) desk.set(pid, await hasDesk(e.practiceId));
+    if (desk.get(pid)) continue;
+    const prof = await M.DoctorProfile.findOne({ userId: e.doctorId }, 'chatSettings');
+    const from = T.hhmmToMin(prof?.chatSettings?.replyHours?.from || '09:00');
+    const to = T.hhmmToMin(prof?.chatSettings?.replyHours?.to || '20:00');
+    const m = T.minuteOfDay(now);
+    if (!(from <= to ? m >= from && m < to : m >= from || m < to)) continue;
+    const names = [...new Set(e.names)];
+    await once(`chatRollup:${e.doctorId}:${e.practiceId}:${T.dayKey(now)}:${bucket}`, () => notify([e.doctorId], {
+      type: 'message_digest', practiceId: e.practiceId,
+      title: names.length === 1 ? `${names[0]} is waiting for a reply` : `${names.length} patients are waiting for a reply`,
+      body: names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3}` : ''),
+      screen: 'Doctor-Messages',
+    }));
+  }
+}
+
 async function escalateEmergencies(now) {
   const { deskFor, clinicians, assistantsOf, patientPlace } = require('./notify');
   const { shortName } = require('./care');
@@ -377,7 +423,7 @@ async function tick() {
   const since = last;
   last = now;
   for (const [name, job] of [
-    ['escalate', () => escalateEmergencies(now)], ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)], ['morning', () => morningSummary(now)], ['appLock', () => appLockOffForPatients()], ['deviceSync', () => deviceSyncNudge(now)],
+    ['escalate', () => escalateEmergencies(now)], ['chatRollup', () => chatRollup(now)], ['prepareDoses', () => prepareDoses(now)], ['doses', () => doseReminders(now, since)], ['visits', () => visitReminders(now)], ['morning', () => morningSummary(now)], ['appLock', () => appLockOffForPatients()], ['deviceSync', () => deviceSyncNudge(now)],
     ['followUps', () => followUpReminders(now)], ['lowStock', () => lowStock(now)], ['dailyLog', () => dailyLogReminders(now)], ['digest', () => dailyDigest(now)],
     ['scores', () => healthScores(now)], ['noShows', () => noShows(now)],
     ['payouts', () => payouts(now)],
@@ -404,4 +450,4 @@ function stop() {
   timer = null;
 }
 
-module.exports = { escalateEmergencies, noShows, start, stop, tick, morningSummary, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };
+module.exports = { chatRollup, escalateEmergencies, noShows, start, stop, tick, morningSummary, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };

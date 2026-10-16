@@ -43,6 +43,8 @@ me.post('/photo', photoUpload.single('file'), async (req, res) => {
 me.delete('/photo', async (req, res) => {
   req.user.photo = undefined;
   await req.user.save();
+  // A doctor's public profile shows the same photo: removed there too (patients stop seeing it).
+  await M.DoctorProfile.updateOne({ userId: req.user._id }, { $unset: { photo: 1 } });
   res.json(await accountSummary(req.user));
 });
 

@@ -50,7 +50,10 @@ async function withPayments(appts) {
   }
   return appts;
 }
-const populate = (q) => q.populate('patientId', 'name gender ageYears ageRecordedAt dateOfBirth phone conditions createdAt userId').populate('doctorId', 'name').populate('locationId', 'name shortName').populate('cancelledByUser', 'name');
+// Patient, doctor and place: shared by appointments and consultations (History lists both).
+const populateCore = (q) => q.populate('patientId', 'name gender ageYears ageRecordedAt dateOfBirth phone conditions createdAt userId').populate('doctorId', 'name').populate('locationId', 'name shortName');
+// Appointments also carry who cancelled them (Consultation has no such field — populating it there throws).
+const populate = (q) => populateCore(q).populate('cancelledByUser', 'name');
 
 /**
  * What this staff member looks after: their locations (null = every one) and,
@@ -354,7 +357,8 @@ r.post('/appointments/walk-in', async (req, res) => {
   // The doctor sees a new patient waiting (unless they added them themselves).
   if (String(dl.doctorId._id) !== String(req.user._id)) {
     const patient = await M.Patient.findById(patientId, 'name');
-    await notify([dl.doctorId._id], { type: 'queue_update', practiceId: req.practiceId, title: `Walk-in: ${patient?.name || 'patient'} · token ${appt.tokenNo}`, body: `Waiting at ${dl.locationId.name}`, screen: 'Queue-List' }).catch(() => {});
+    // In-app only: the doctor's open queue updates at once (a buzz for every walk-in in a busy clinic is noise).
+    await notify([dl.doctorId._id], { type: 'queue_update', push: false, practiceId: req.practiceId, title: `Walk-in: ${patient?.name || 'patient'} · token ${appt.tokenNo}`, body: `Waiting at ${dl.locationId.name}`, screen: 'Queue-List' }).catch(() => {});
   }
   res.status(201).json(view(await populate(M.Appointment.findById(appt._id))));
 });
@@ -479,6 +483,9 @@ r.get('/queue/locations', async (req, res) => {
       opensAt: open ? sessions.find((s) => s.startMin > now)?.startMin ?? null : null,
       closedReason: open ? null : reason, nextSession,
       booked: Object.values(by).reduce((a, b) => a + b, 0), waiting: by.waiting || 0, slotsLeft: slots.filter((s) => s.available).length,
+      // Still to be seen today here (booked, arrived, with the doctor): the queue opens where these are.
+      inConsult: by.in_consultation || 0,
+      pending: (by.booked || 0) + (by.confirmed || 0) + (by.waiting || 0) + (by.in_consultation || 0),
     });
   }
   const def = profile?.defaultQueueLocation;
@@ -611,7 +618,7 @@ r.get('/history', async (req, res) => {
     populate(M.Appointment.find(q).sort({ startAt: -1 }).limit(upTo)),
     M.Appointment.aggregate([{ $match: { ...q, status: { $exists: true } } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
     withConsults
-      ? populate(M.Consultation.find(cq).sort({ startedAt: -1 }).limit(upTo)).populate('prescriptionId', 'rxNumber diagnosisSummary')
+      ? populateCore(M.Consultation.find(cq).sort({ startedAt: -1 }).limit(upTo)).populate('prescriptionId', 'rxNumber diagnosisSummary')
       : [],
     // Counted like the appointment totals above (whatever status filter is set).
     M.Consultation.countDocuments(cq),
@@ -719,9 +726,11 @@ r.post('/payments/:id/link', async (req, res) => {
   assertCovers(req, (await paymentScope(p)).scope);
   if (p.status !== 'pending') throw conflict('This fee is not pending');
   const patient = await M.Patient.findById(p.patientId, 'name phone userId');
+  if (!patient?.userId && !patient?.phone) throw badRequest('This patient has no phone number or MedPin app to send a link to. Collect the fee at the counter.', 'NO_CONTACT');
   const url = await require('../services/payments').feeLink(p, patient);
   if (patient.userId) await notify([patient.userId], { type: 'payment_link', practiceId: req.practiceId, title: `Pay ₹${p.amount} for your visit`, body: url, whatsapp: true });
-  res.json(p);
+  // Where it went, for the toast ("on the MedPin app" / "by SMS").
+  res.json({ ...p.toJSON(), sentTo: patient.userId ? 'app' : 'sms' });
 });
 
 module.exports = r;

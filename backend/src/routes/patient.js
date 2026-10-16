@@ -740,10 +740,14 @@ r.post('/visit-requests', async (req, res) => {
     await request.save();
     // The desk at that branch (assistants only of this doctor) and the doctor.
     const desk = await require('../services/notify').deskFor(dl.practiceId, { locationId: dl.locationId, doctorId });
-    await notify([...desk, doctorId], {
+    const booked = {
       type: 'appointment_booked', practiceId: dl.practiceId, title: `${req.patient.name} booked a visit`,
       body: `${T.dayKey(appointment.startAt)} · ${T.fmtTime(T.minuteOfDay(appointment.startAt))}`, screen: 'Appointments',
-    });
+    };
+    // Nothing to do for a confirmed booking: the desk is told (push); the doctor finds it
+    // in their notifications and day list, without a buzz for every one.
+    if (desk.length) await notify(desk, booked);
+    await notify([doctorId], { ...booked, push: false });
   } else {
     // The front desk confirms it; a clinic without one: the doctor does.
     const desk = await require('../services/notify').deskOrDoctors(dl.practiceId, { locationId: dl.locationId, doctorId });

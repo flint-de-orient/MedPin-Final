@@ -277,10 +277,14 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
     if (appt.cancelledBy === 'patient') {
       const desk = await require('./notify').deskFor(appt.practiceId, { locationId: appt.locationId, doctorId: appt.doctorId });
       const who = await M.Patient.findById(appt.patientId, 'name');
-      await notify([...desk, appt.doctorId], {
+      const cancelled = {
         type: 'appointment_cancelled', practiceId: appt.practiceId, title: `${who?.name || 'A patient'} cancelled a visit`,
         body: `${T.dayKey(appt.startAt)} · ${T.fmtTime(T.minuteOfDay(appt.startAt))}`, screen: 'Appointments',
-      });
+      };
+      if (desk.length) await notify(desk, cancelled);
+      // The doctor: a buzz only with no desk and a visit today (their day changed); else just listed.
+      const today = T.dayKey(appt.startAt) === T.dayKey(new Date());
+      await notify([appt.doctorId], { ...cancelled, push: !desk.length && today });
     }
   }
   await visitsChanged(appt);

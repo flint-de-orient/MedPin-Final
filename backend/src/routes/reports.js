@@ -595,6 +595,9 @@ r.get('/dashboard', async (req, res) => {
     hasDesk: desk,
     requests: { pending: waitingRequests },
     fees: {
+      // Shown to a doctor who handles money: no front desk (they collect it themselves) or the
+      // owner (they reconcile the day). A doctor in a clinic with a desk doesn't need it on Home.
+      show: !desk || Boolean(req.member.isOwner),
       collected: sum(todayPays.filter((p) => p.status === 'paid')),
       online: sum(todayPays.filter((p) => p.status === 'paid' && p.method === 'online')),
       atClinic: sum(todayPays.filter((p) => p.status === 'paid' && p.method !== 'online')),

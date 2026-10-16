@@ -99,6 +99,8 @@ const paymentSchema = new Schema(
     markedPaidBy: ref('User'),
     paymentLinkUrl: String,
     paymentLinkSentAt: Date,
+    paymentLinkExpiresAt: Date, // a link asked for again before this is the same link, re-sent
+    paymentLinkAmount: Number,
     razorpayOrderId: String,
     razorpayOrderAmount: Number, // the amount that Razorpay order was made for
     razorpayPaymentId: { type: String, sparse: true, unique: true },

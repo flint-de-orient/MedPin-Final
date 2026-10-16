@@ -226,7 +226,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
                   () => Nav.go(context, 'Appointments'),
                 ),
               // Today's fees: collected (online / at the clinic) and still to collect.
-              if (data != null && (data!.obj('fees').numOr('collected') > 0 || data!.obj('fees').numOr('toCollect') > 0))
+              if (data != null && data!.obj('fees')['show'] != false && (data!.obj('fees').numOr('collected') > 0 || data!.obj('fees').numOr('toCollect') > 0))
                 _infoRow(
                   I.wallet,
                   tr(context, 'Fees today · ₹#1 collected').replaceFirst('#1', F.count(data!.obj('fees').numOr('collected'))),

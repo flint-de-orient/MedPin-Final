@@ -126,3 +126,11 @@ Future<bool> handBackFee(BuildContext context, VisitFee fee) async {
   toast(context, 'Refund recorded');
   return true;
 }
+
+/// The toast after "Send payment link" (POST /api/payments/:id/link → `sentTo`):
+/// in the patient's MedPin app (and WhatsApp), or by SMS when they don't use the app.
+String linkSentNote(BuildContext context, String patient, Object? res) {
+  final to = res is Map ? res['sentTo'] : null;
+  final s = to == 'sms' ? 'Payment link sent to #1 by SMS' : to == 'app' ? 'Payment link sent to #1 in the MedPin app' : 'Payment link sent to #1';
+  return tr(context, s).replaceFirst('#1', patient);
+}

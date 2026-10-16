@@ -35,6 +35,9 @@ class _Pay {
   final DateTime? visitAt;
   final DateTime? paidAt;
   final String location;
+
+  /// When a payment link was last sent (shown on the row; asking again re-sends the same link).
+  final DateTime? linkSentAt;
   const _Pay({
     this.id,
     required this.patient,
@@ -47,6 +50,7 @@ class _Pay {
     this.visitAt,
     this.paidAt,
     this.location = '',
+    this.linkSentAt,
   });
 
   factory _Pay.of(Map<String, dynamic> p) {
@@ -66,6 +70,7 @@ class _Pay {
       visitAt: F.date(appt['startAt']),
       paidAt: F.date(p['paidAt']),
       location: loc.str('shortName', loc.str('name')),
+      linkSentAt: F.date(p['paymentLinkSentAt']),
     );
   }
 
@@ -150,7 +155,7 @@ class _StaffPaymentsScreenState extends State<StaffPaymentsScreen> with LiveData
     if (!isLive) return toast(context, sent);
     final res = await runAction(context, () => Api.I.post('/api/payments/${p.id}/link'), busy: _busy);
     if (res == null || !mounted) return;
-    toast(context, sent);
+    toast(context, linkSentNote(context, p.patient, res));
     reload(quiet: true);
   }
 
@@ -162,6 +167,7 @@ class _StaffPaymentsScreenState extends State<StaffPaymentsScreen> with LiveData
     p.location,
     if (p.payAtClinic) tr(context, 'Pay at clinic'),
     if (p.missed) tr(context, 'Missed visit'),
+    if (p.linkSentAt != null) tr(context, 'Link sent #1').replaceFirst('#1', F.when(p.linkSentAt!)),
   ].where((s) => s.isNotEmpty).join(' · ');
 
   /// "Cash · paid Today, 8:52 AM · Salt Lake"

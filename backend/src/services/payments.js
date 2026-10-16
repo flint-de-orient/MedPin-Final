@@ -10,35 +10,66 @@ const { publicBase } = require('../lib/request-base');
 const configured = () => Boolean(env.razorpay.keyId && env.razorpay.keySecret);
 
 /** Creates a payment link; `notes` come back in the webhook. Returns the short URL. */
-async function createLink({ amount, description, customer, notes, devPath }) {
+// Links stay payable for a week; asking again within that time re-sends the same link.
+const LINK_DAYS = 7;
+
+async function createLink({ amount, description, customer, notes, devPath, sms = Boolean(customer?.contact), expireAt }) {
   if (!configured()) {
     if (env.isProd) throw Object.assign(conflict('Online payment is not set up yet. Please pay at the clinic.', 'PAYMENTS_OFF'), { status: 503 });
     return `${publicBase()}/dev/pay/${devPath}`;
   }
-  const resp = await fetch('https://api.razorpay.com/v1/payment_links', {
+  const call = () => fetch('https://api.razorpay.com/v1/payment_links', {
     method: 'POST',
     headers: { authorization: `Basic ${Buffer.from(`${env.razorpay.keyId}:${env.razorpay.keySecret}`).toString('base64')}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       amount: Math.round(amount * 100), currency: 'INR', description: String(description).slice(0, 2048),
       // Unique per link (a fee can be sent again), ≤ 40 chars.
       reference_id: `${String(notes.paymentId || notes.subscriptionId).slice(-16)}.${Date.now().toString(36)}`,
-      customer, notify: { sms: Boolean(customer?.contact) }, notes,
+      // Razorpay texts the link only when we can't reach the person ourselves (no MedPin app).
+      customer, notify: { sms: Boolean(sms && customer?.contact) }, notes,
+      ...(expireAt ? { expire_by: Math.floor(expireAt.getTime() / 1000) } : {}),
     }),
-  });
-  const body = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw conflict(`Razorpay: ${body.error?.description || resp.status}`, 'PAYMENT_LINK_FAILED');
+  }).catch(() => null);
+  let resp = await call();
+  // Razorpay busy (rate limit / a hiccup): one more try a moment later.
+  if (!resp || resp.status === 429 || resp.status >= 500) {
+    await new Promise((r) => setTimeout(r, 1500));
+    resp = await call();
+  }
+  const body = resp ? await resp.json().catch(() => ({})) : {};
+  if (!resp?.ok) {
+    console.warn('[razorpay link]', resp?.status, body.error?.description || '');
+    const msg = !resp || resp.status === 429 || resp.status >= 500
+      ? 'The payment service is busy right now. Try again in a minute, or collect the fee at the counter.'
+      : resp.status === 401
+        ? 'Online payment isn’t set up correctly for this clinic. Collect the fee at the counter for now.'
+        : 'Couldn’t make the payment link. Check the patient’s phone number, or collect the fee at the counter.';
+    throw Object.assign(conflict(msg, 'PAYMENT_LINK_FAILED'), { status: 503 });
+  }
   return body.short_url;
 }
 
 /** Link for a pending visit fee (saved on the payment). */
 async function feeLink(payment, patient) {
   if (payment.status !== 'pending') throw conflict('This fee is not pending', 'NOT_PENDING');
+  const now = new Date();
+  // The link sent earlier is still payable: send that one again (one link per fee, no duplicates).
+  const reuse = payment.paymentLinkUrl && payment.paymentLinkExpiresAt && payment.paymentLinkExpiresAt > new Date(now.getTime() + 3600e3)
+    && payment.paymentLinkAmount === payment.amount;
+  if (reuse) {
+    payment.paymentLinkSentAt = now;
+    await payment.save();
+    return payment.paymentLinkUrl;
+  }
+  const expireAt = new Date(now.getTime() + LINK_DAYS * 864e5);
   const url = await createLink({
     amount: payment.amount, description: 'Consultation fee',
     customer: patient ? { name: patient.name, contact: patient.phone ? `+91${patient.phone}` : undefined } : undefined,
-    notes: { kind: 'fee', paymentId: String(payment._id) }, devPath: String(payment._id),
+    // With the MedPin app the patient gets it there (and on WhatsApp); without, Razorpay texts it.
+    sms: !patient?.userId,
+    notes: { kind: 'fee', paymentId: String(payment._id) }, devPath: String(payment._id), expireAt,
   });
-  Object.assign(payment, { paymentLinkUrl: url, paymentLinkSentAt: new Date() });
+  Object.assign(payment, { paymentLinkUrl: url, paymentLinkSentAt: now, paymentLinkExpiresAt: expireAt, paymentLinkAmount: payment.amount });
   await payment.save();
   return url;
 }
@@ -53,6 +84,9 @@ async function feePaid(paymentId, razorpayPaymentId) {
   if (p?.appointmentId) {
     await M.Appointment.updateOne({ _id: p.appointmentId }, { feeStatus: 'paid', payAt: 'online' });
     await feeReceipt(p).catch((err) => console.warn('[fee receipt]', err.message));
+    // Paid from the link: the desk's Payments, Today and the doctor's queue / Fees update at once.
+    const appt = await M.Appointment.findById(p.appointmentId, 'practiceId locationId doctorId patientId');
+    if (appt) await require('./scheduling').visitsChanged(appt).catch(() => {});
   }
   return p;
 }

@@ -111,7 +111,7 @@ class _ReportFeesScreenState extends State<ReportFeesScreen> with LiveData, D3Fi
   Future<void> _sendLink(Map<String, dynamic> p) async {
     final res = await runAction(context, () => Api.I.post('/api/payments/${p['id']}/link'), busy: _busy);
     if (res == null || !mounted) return;
-    toast(context, 'Payment link sent to ${p.str('patient', 'the patient')}');
+    toast(context, linkSentNote(context, p.str('patient', 'the patient'), res));
     reload(quiet: true);
   }
 
@@ -274,6 +274,7 @@ class _ReportFeesScreenState extends State<ReportFeesScreen> with LiveData, D3Fi
       if (day != null) F.dayMonth(day),
       p.str('location'),
       if (p['mode'] != null) d3Mode(p.str('mode')).toLowerCase(),
+      if (F.date(p['linkSentAt']) != null) tr(context, 'Link sent #1').replaceFirst('#1', F.when(F.date(p['linkSentAt'])!)),
     ].where((s) => s.isNotEmpty).join(' · ');
     return D3RegisterRow(
       name: p.str('patient', 'Patient'),

@@ -15,7 +15,7 @@ async function raiseAlert({ practiceId, patientId, doctorId, severity, kind, tit
   const patient = await M.Patient.findById(patientId, 'name');
   const name = patient?.name || 'patient';
   await notify(team, {
-    type: `alert_${severity}`, practiceId,
+    type: `alert_${severity}`, practiceId, push: severity !== 'watch',
     title: `${severity === 'emergency' ? 'Emergency' : severity === 'urgent' ? 'Urgent' : 'Watch'}: ${name}`,
     body: detail, screen: 'Alerts', params: { alertId: alert._id, patientId, ...(conversationId ? { conversationId } : {}) },
   });
@@ -239,24 +239,99 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', qui
   }
   const base = { type: rest.isUrgent ? 'urgent_message' : 'message', practiceId: convo.practiceId, body: (text || '').slice(0, 120) };
   let toDesk = [];
+  let deskOpen = false;
   if (senderType === 'patient' && convo.type === 'care' && !quietForStaff) {
     // The clinic's shared inbox: the front desk covering this patient (their branch and
     // doctor) hears about it too — they answer most messages (visits, fees, reports).
     const place = await patientPlace(convo.practiceId, convo.patientId);
     toDesk = (await deskFor(convo.practiceId, place)).map(String).filter((id) => id !== senderId && !toStaff.map(String).includes(id));
+    deskOpen = toDesk.length > 0 && (await openNow(place?.locationId));
   }
   if (quietForStaff) toStaff = [];
   const staffTitle = rest.isUrgent ? `Urgent message from ${convo.lastMessage.senderLabel}` : `New message from ${convo.lastMessage.senderLabel}`;
-  if (toStaff.length) await notify(toStaff, { ...base, title: staffTitle, screen: 'Patient-Thread', params: { conversationId: convo._id } });
-  if (toDesk.length) await notify(toDesk, { ...base, title: staffTitle, screen: 'Patient-Thread', params: { conversationId: convo._id } });
+  const staffNotice = { ...base, title: staffTitle, screen: 'Patient-Thread', params: { conversationId: convo._id } };
+  let toldStaff = [];
+  if (senderType === 'patient' && !rest.isUrgent) {
+    // Routine patient messages (a doctor may have thousands of patients):
+    //  - doctors: no push and no bell item; the Messages badge shows it. Only a doctor who is in
+    //    the middle of this conversation (wrote here in the last 2 h) gets a push for the reply.
+    //    A doctor with no front desk gets a summary every 2 h in reply hours (jobs.chatRollup).
+    //  - front desk: a push while their clinic is open, otherwise it waits in their bell;
+    //    several messages in a row from one patient stay one notice.
+    const since = new Date(Date.now() - 2 * 3600e3);
+    const active = toStaff.length
+      ? (await M.Message.distinct('senderId', { conversationId: convo._id, senderId: { $in: toStaff }, 'meta.auto': { $ne: true }, createdAt: { $gte: since } })).map(String)
+      : [];
+    const activeDocs = toStaff.map(String).filter((id) => active.includes(id));
+    if (activeDocs.length) toldStaff.push(...(await chatNotice(activeDocs, staffNotice, convo._id)));
+    if (toDesk.length) toldStaff.push(...(await chatNotice(toDesk, staffNotice, convo._id, { push: deskOpen })));
+  } else {
+    // Urgent messages, and staff writing to staff: everyone named, at once.
+    if (toStaff.length) await notify(toStaff, staffNotice);
+    if (toDesk.length) await notify(toDesk, staffNotice);
+    toldStaff = [...toStaff, ...toDesk];
+  }
   if (toPatient.length) {
-    await notify(toPatient, { ...base, title: `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-DoctorChat', params: { conversationId: convo._id } });
+    // The patient is waiting for the clinic's answer: always told (a quick burst of replies is one notice).
+    await chatNotice(toPatient.map(String), { ...base, title: `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-DoctorChat', params: { conversationId: convo._id } }, convo._id);
+  }
+  if (senderType !== 'patient' && senderType !== 'system' && senderId) {
+    // Someone at the clinic answered: the others' "new message" notices for this chat are done.
+    await settleChatNotices(convo, senderId);
   }
   // Everyone else in the thread (staff who weren't notified, the sender's other phone): refresh now.
-  const told = new Set([...toPatient, ...toStaff, ...toDesk].map(String));
+  const told = new Set([...toPatient, ...toldStaff].map(String));
   await signal(convo.participants.map((p) => p.userId).filter((id) => !told.has(String(id))), { type: 'chat_changed', conversationId: convo._id });
   if (senderType === 'patient') await awayReply(convo).catch(() => {});
   return msg;
+}
+
+/** Is a clinic location open now (its weekly hours, 30 min either side for the desk arriving / closing up)? */
+async function openNow(locationId) {
+  if (!locationId) return true; // no branch known: treat as open (better a push than a missed message)
+  const loc = await M.Location.findById(locationId, 'weeklyHours');
+  if (!loc?.weeklyHours?.length) return true; // hours never set: open
+  const h = loc.weeklyHours.find((d) => d.weekday === T.weekday(new Date()));
+  if (!h || !h.isOpen || h.opensAt == null || h.closesAt == null) return false;
+  const now = T.minuteOfDay(new Date());
+  return now >= h.opensAt - 30 && now <= h.closesAt + 30;
+}
+
+/**
+ * One "new message" notice per person per chat: while they still have an unread one
+ * for this conversation from the last 10 minutes it is updated (latest text, no new
+ * buzz); otherwise a new one is sent (push unless [push] is false). Returns the ids told.
+ */
+async function chatNotice(ids, n, conversationId, { push = true } = {}) {
+  if (!ids.length) return [];
+  const recent = await M.Notification.find(
+    { userId: { $in: ids }, readAt: null, type: n.type, 'params.conversationId': conversationId, createdAt: { $gte: new Date(Date.now() - 10 * 60e3) } },
+    'userId',
+  );
+  const quiet = new Set(recent.map((x) => String(x.userId)));
+  if (quiet.size) {
+    await M.Notification.updateMany({ _id: { $in: recent.map((x) => x._id) } }, { body: n.body });
+    await signal([...quiet], { type: 'notifications_changed', ...(n.practiceId ? { practiceId: String(n.practiceId) } : {}) });
+  }
+  const fresh = ids.filter((id) => !quiet.has(String(id)));
+  if (fresh.length) {
+    // An older unread notice for this chat is replaced by the new one (the bell keeps one per chat).
+    await M.Notification.deleteMany({ userId: { $in: fresh }, readAt: null, type: n.type, 'params.conversationId': conversationId });
+    await notify(fresh, push ? n : { ...n, push: false });
+  }
+  return ids;
+}
+
+/** A reply from the clinic: everyone else's unread "new message" notices for that chat are read. */
+async function settleChatNotices(convo, byUserId) {
+  const q = { readAt: null, type: 'message', 'params.conversationId': convo._id, userId: { $ne: byUserId } };
+  const users = await M.Notification.distinct('userId', q);
+  if (!users.length) return;
+  const patientUsers = convo.participants.filter((p) => p.role === 'patient').map((p) => String(p.userId));
+  const staff = users.map(String).filter((id) => !patientUsers.includes(id));
+  if (!staff.length) return;
+  await M.Notification.updateMany({ ...q, userId: { $in: staff } }, { readAt: new Date() });
+  await signal(staff, { type: 'notifications_changed', ...(convo.practiceId ? { practiceId: String(convo.practiceId) } : {}) });
 }
 
 /**
