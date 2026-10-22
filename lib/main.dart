@@ -23,6 +23,7 @@ void main() {
       .init(); // SMS sign-in on Android; ready long before the Login screen
   // Push notifications start once someone is signed in (restored or new).
   Session.I.deviceToken = () => Push.I.token;
+  Session.I.ensureDeviceToken = Push.I.ensureToken;
   // Silent pushes while the app is in the background or closed (watch sync,
   // medicine alarms changed): data/push.dart pushBackground, no UI.
   if (Push.backgroundSupported) {

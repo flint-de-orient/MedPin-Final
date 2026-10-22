@@ -9,6 +9,7 @@
 //   low stock           a medicine with ≤ 3 days left, once a day
 //   daily log           at the patient's daily-log reminder time if nothing was logged
 //   daily summary       20:00 IST to doctors with "Daily summary" on
+const { liveDevices } = require('../lib/devicetokens');
 const M = require('../models');
 const T = require('../lib/time');
 const { notify } = require('./notify');
@@ -57,7 +58,7 @@ async function doseReminders(now, since) {
   // scheduled, still gets the push).
   const { phoneCovers } = require('./reminders');
   const phones = new Map();
-  for (const t of await M.DeviceToken.find({ userId: { $in: [...patients.values()].map((p) => p.userId).filter(Boolean) }, localAlarms: true })) {
+  for (const t of await liveDevices({ userId: { $in: [...patients.values()].map((p) => p.userId).filter(Boolean) }, localAlarms: true })) {
     if (!phones.has(String(t.userId))) phones.set(String(t.userId), []);
     phones.get(String(t.userId)).push(t);
   }
@@ -98,7 +99,7 @@ async function visitReminders(now) {
       const p = await M.Patient.findById(a.patientId, 'userId settings');
       if (!p?.userId || p.settings?.visitReminders === false) continue;
       // The patient's phone has this visit's reminders scheduled itself.
-      const devices = await M.DeviceToken.find({ userId: p.userId, localAlarms: true });
+      const devices = await liveDevices({ userId: p.userId, localAlarms: true });
       if (require('./reminders').phoneCovers(devices, a.updatedAt, a.startAt)) continue;
       const mins = Math.round((a.startAt - now) / 60000);
       const label = hours === 2
@@ -175,7 +176,7 @@ async function dailyLogReminders(now) {
     // On when the patient switched it on, or (not chosen) when their care team asked for a meal log.
     if (!p.settings?.dailyLogReminderChosen && !(await require('../routes/patient').dailyLogUsed(p))) continue;
     // Their phone rings it itself at this time.
-    const phone = await M.DeviceToken.exists({ userId: p.userId, localAlarms: true, dailyLogAt: at, remindersUntil: { $gte: now } });
+    const phone = (await liveDevices({ userId: p.userId, localAlarms: true, dailyLogAt: at, remindersUntil: { $gte: now } })).length > 0;
     if (phone) continue;
     await once(`log:${p._id}:${day}`, () =>
       notify([p.userId], { type: 'daily_log_reminder', title: "Log today's meals", body: 'A quick photo or a line is enough. Your care team sees it.', screen: 'Patient-Log' }),

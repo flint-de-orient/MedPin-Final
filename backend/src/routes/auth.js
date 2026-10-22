@@ -187,7 +187,9 @@ r.post('/refresh', async (req, res) => {
 
 r.post('/logout', async (req, res) => {
   if (typeof req.body.refreshToken === 'string' && req.body.refreshToken) {
-    await M.AuthSession.updateOne({ tokenHash: sha256(req.body.refreshToken) }, { revokedAt: new Date(), revokeReason: 'logout' });
+    const session = await M.AuthSession.findOneAndUpdate({ tokenHash: sha256(req.body.refreshToken) }, { revokedAt: new Date(), revokeReason: 'logout' });
+    // Every phone registered under this sign-in stops getting pushes, named or not.
+    if (session) await require('../lib/devicetokens').forgetSession(session._id);
   }
   if (typeof req.body.deviceToken === 'string' && req.body.deviceToken) await M.DeviceToken.deleteOne({ token: req.body.deviceToken });
   res.json({ ok: true });

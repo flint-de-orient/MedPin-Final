@@ -286,8 +286,12 @@ class Session extends ChangeNotifier {
   /// This phone's push token, sent on sign-out so the backend stops pushing to it.
   String? Function() deviceToken = () => null;
 
+  /// Fetches this phone's push token if it isn't known yet (set in main.dart).
+  Future<void> Function() ensureDeviceToken = () async {};
+
   Future<void> logout() async {
     final token = refreshToken;
+    await ensureDeviceToken();
     if (token != null) {
       try {
         await Api.I.post('/api/auth/logout', {'refreshToken': token, if (deviceToken() != null) 'deviceToken': deviceToken()});

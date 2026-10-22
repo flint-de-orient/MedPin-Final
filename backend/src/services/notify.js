@@ -69,7 +69,8 @@ async function notify(userIds, n) {
       const p = prefs.get(id);
       return !p || urgentFor(id) || (p.push !== false && typeOn(p) && !quiet(p, id));
     });
-    const devices = n.push === false ? [] : await M.DeviceToken.find({ userId: { $in: pushIds } }, 'userId token').lean();
+    // Only phones still signed in (a signed-out phone gets nothing).
+    const devices = n.push === false ? [] : await require('../lib/devicetokens').liveDevices({ userId: { $in: pushIds } }, 'userId token');
     const data = { screen: n.screen || '', type: n.type, notificationId: '', ...(n.practiceId ? { practiceId: String(n.practiceId) } : {}), ...Object.fromEntries(Object.entries(n.params || {}).map(([k, v]) => [k, String(v)])) };
     // One push per language, each phone once (in its owner's language).
     const byLang = new Map();
@@ -142,7 +143,7 @@ async function signal(userIds, data) {
   const ids = [...new Set((userIds || []).filter(Boolean).map(idOf))];
   if (!ids.length) return;
   try {
-    const tokens = await M.DeviceToken.find({ userId: { $in: ids } }).distinct('token');
+    const tokens = await require('../lib/devicetokens').liveTokens({ userId: { $in: ids } });
     await sendPush(tokens, { data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])) });
   } catch (err) {
     console.warn('[signal]', err.message);

@@ -1821,7 +1821,9 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       { phone: '9000071002', name: 'Hindi reader', language: 'hi' },
       { phone: '9000071003', name: 'English reader' },
     ]);
-    await M.DeviceToken.create([bn, hi, en].map((u, i) => ({ userId: u._id, token: `lang-test-${i}`, platform: 'android' })));
+    // Each phone is signed in (pushes go only to phones with an active session).
+    const sessions = await M.AuthSession.create([bn, hi, en].map((u, i) => ({ userId: u._id, tokenHash: `lang-test-session-${i}`, platform: 'android', expiresAt: new Date(Date.now() + 864e5) })));
+    await M.DeviceToken.create([bn, hi, en].map((u, i) => ({ userId: u._id, token: `lang-test-${i}`, platform: 'android', sessionId: sessions[i]._id })));
     // Pushes (FCM is off in tests: sendPush logs "[push:dev] n device(s): title").
     const pushed = [];
     const log = console.log;
@@ -1914,6 +1916,43 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
         console.log('    · payment card in chat checked');
       }
     }
+  });
+
+  await step('signed out = no more pushes, even when the phone never named its token', async () => {
+    const { liveTokens } = require('../src/lib/devicetokens');
+    const sec = require('../src/lib/security');
+    const user = await M.User.findOne({ phone: '9230592842' });
+    // A phone signed in to the patient account (a session as the OTP sign-in makes one).
+    const signIn = async () => {
+      const refreshToken = sec.randomToken();
+      const s = await M.AuthSession.create({ userId: user._id, tokenHash: sec.sha256(refreshToken), platform: 'android', expiresAt: new Date(Date.now() + 864e5) });
+      return { refreshToken, sessionId: s._id, call: api(sec.signAccess(user, s._id)) };
+    };
+    const a = await signIn();
+    ok(await a.call('POST', '/api/me/devices', { token: 'phone-to-sign-out', platform: 'android' }));
+    const row = await M.DeviceToken.findOne({ token: 'phone-to-sign-out' });
+    assert.equal(String(row.sessionId), String(a.sessionId), 'the token remembers its sign-in session');
+    assert.ok((await liveTokens({ userId: user._id })).includes('phone-to-sign-out'), 'signed-in phone is live');
+    // Sign out without the token (offline / the app didn't know it): that session's phones are dropped.
+    ok(await api()('POST', '/api/auth/logout', { refreshToken: a.refreshToken }));
+    assert.equal(await M.DeviceToken.exists({ token: 'phone-to-sign-out' }), null);
+    assert.ok(!(await liveTokens({ userId: user._id })).includes('phone-to-sign-out'));
+    // A session that ended another way (expired): skipped and removed when sending.
+    const b = await signIn();
+    ok(await b.call('POST', '/api/me/devices', { token: 'phone-expired', platform: 'android' }));
+    await M.AuthSession.updateOne({ _id: b.sessionId }, { expiresAt: new Date(Date.now() - 1000) });
+    assert.ok(!(await liveTokens({ userId: user._id })).includes('phone-expired'), 'expired session dropped');
+    assert.equal(await M.DeviceToken.exists({ token: 'phone-expired' }), null);
+    // Another phone that stays signed in keeps getting pushes.
+    const d = await signIn();
+    ok(await d.call('POST', '/api/me/devices', { token: 'phone-still-in', platform: 'android' }));
+    // An old-style row (no session recorded) stops once its user signs out after it was last seen.
+    await M.DeviceToken.create({ userId: user._id, token: 'phone-legacy', platform: 'android', lastSeenAt: new Date(Date.now() - 60000) });
+    const c = await signIn();
+    ok(await api()('POST', '/api/auth/logout', { refreshToken: c.refreshToken }));
+    const live = await liveTokens({ userId: user._id });
+    assert.ok(!live.includes('phone-legacy'), 'old-style row dropped after a later sign-out');
+    assert.ok(live.includes('phone-still-in'), 'a phone still signed in keeps its pushes');
   });
 
   server.close();

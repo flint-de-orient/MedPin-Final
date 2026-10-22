@@ -165,6 +165,16 @@ class Push {
     if (p != null) scheduleMicrotask(() => open(p));
   }
 
+  /// Before sign-out: this phone's token, so /api/auth/logout can name it (the
+  /// server also drops every phone of the ended session on its own).
+  Future<void> ensureToken() async {
+    if (token != null || !_supported) return;
+    try {
+      if (Firebase.apps.isEmpty) return;
+      token = await FirebaseMessaging.instance.getToken().timeout(const Duration(seconds: 3), onTimeout: () => null);
+    } catch (_) {}
+  }
+
   /// On sign-out: the backend forgets this phone (sent with /api/auth/logout).
   Future<void> forget() async {
     if (!_supported) return;

@@ -636,6 +636,7 @@ async function setSuspended(memberId, suspended) {
 async function signOutUnlessMember(m) {
   if (await M.Member.exists({ userId: m.userId, status: 'active', _id: { $ne: m._id } })) return;
   await M.AuthSession.updateMany({ userId: m.userId, revokedAt: null }, { revokedAt: new Date() });
+  await M.DeviceToken.deleteMany({ userId: m.userId }); // signed out everywhere: no more pushes
 }
 
 /** Tells the member their access changed (server checks use the new access from the next request). */

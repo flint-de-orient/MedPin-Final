@@ -68,6 +68,9 @@ const deviceTokenSchema = new Schema(
   {
     userId: ref('User', true),
     token: { type: String, required: true, unique: true },
+    // The sign-in session that registered this phone: once it ends (sign-out, expiry,
+    // signed out from another device) the phone gets no more pushes (lib/devicetokens.js).
+    sessionId: { type: Schema.Types.ObjectId, ref: 'AuthSession', index: true },
     platform: enumOf(E.PLATFORMS, { required: true }),
     // The app rings medicine alarms on this phone itself (so the server doesn't push them too).
     localAlarms: { type: Boolean, default: false },

@@ -65,7 +65,7 @@ me.post('/devices', async (req, res) => {
   const token = typeof req.body.token === 'string' ? req.body.token.trim() : '';
   const platform = String(req.body.platform || '');
   if (!token || token.length > 4096 || !E.PLATFORMS.includes(platform)) throw badRequest('token and platform are required');
-  await M.DeviceToken.findOneAndUpdate({ token }, { userId: req.user._id, platform, localAlarms: req.body.localAlarms === true, lastSeenAt: new Date() }, { upsert: true });
+  await M.DeviceToken.findOneAndUpdate({ token }, { userId: req.user._id, sessionId: req.sessionId || null, platform, localAlarms: req.body.localAlarms === true, lastSeenAt: new Date() }, { upsert: true });
   res.json({ ok: true });
 });
 
@@ -95,6 +95,7 @@ me.get('/sessions', async (req, res) => {
 me.post('/sessions/:id/revoke', async (req, res) => {
   const r = await M.AuthSession.updateOne({ _id: req.params.id, userId: req.user._id, revokedAt: null }, { revokedAt: new Date() });
   if (!r.modifiedCount) throw notFound('Device');
+  await require('../lib/devicetokens').forgetSession(req.params.id); // that phone stops getting pushes
   res.json({ ok: true });
 });
 
