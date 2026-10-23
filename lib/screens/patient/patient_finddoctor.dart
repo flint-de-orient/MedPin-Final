@@ -1807,14 +1807,20 @@ class _DoctorSheetState extends State<_DoctorSheet> {
     var payNote = '';
     if (appt != null && (appt['fee'] as num? ?? 0) > 0 && appt['feeStatus'] == 'pending') {
       final id = '${appt['id'] ?? appt['_id']}';
-      final paid = await Checkout.pay(context, kind: 'fee', id: id, laterLabel: 'Pay at the clinic', optional: true);
+      final how = await Checkout.payOutcome(context, kind: 'fee', id: id, laterLabel: 'Pay at the clinic', optional: true);
       if (!mounted) return;
-      if (paid) {
+      if (how == PayOutcome.paid) {
         payNote = ' · Paid';
-      } else {
+      } else if (how == PayOutcome.later) {
+        // Only when the patient chose it: the desk is told to collect it at the visit.
         await Api.I.post('/api/patient/appointments/$id/pay-at-clinic', const {}).catchError((_) => null);
         if (!mounted) return;
         payNote = ' · Pay ₹${(appt['fee'] as num).round()} at the clinic';
+      } else if (how == PayOutcome.unconfirmed) {
+        payNote = ' · Payment being checked';
+      } else {
+        // Closed or failed (nothing charged): still due — pay online later or at the clinic.
+        payNote = ' · Fee ₹${(appt['fee'] as num).round()} due';
       }
     }
     Navigator.pop(

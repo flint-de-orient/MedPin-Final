@@ -128,6 +128,8 @@ const orderSchema = new Schema(
     prescriptionRecordIds: [{ type: Schema.Types.ObjectId, ref: 'MedicalRecord' }], // prescription photos the patient uploaded
     deliveryAddress: { line: String, area: String, city: String, pincode: String },
     subtotal: rupees,
+    // Every line has a price (false: some are priced by the pharmacy at the counter — no online pay).
+    priced: { type: Boolean, default: true },
     deliveryFee: { ...rupees, default: 0 },
     total: { ...rupees, required: true },
     status: enumOf(E.ORDER_STATUSES, { default: 'placed' }),
@@ -142,6 +144,7 @@ const orderSchema = new Schema(
       method: enumOf(['cash', 'online'], { default: 'cash' }),
       status: enumOf(['due', 'paid', 'refund_pending', 'refunded'], { default: 'due' }),
       linkUrl: String,
+      linkId: String, // Razorpay's id for the link: cancelled when the order is paid, cancelled or delivered
       paidAt: Date,
       razorpayPaymentId: String,
       razorpayOrderId: String, // in-app Checkout (services/checkout.js)

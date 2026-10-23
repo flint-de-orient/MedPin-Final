@@ -45,6 +45,10 @@ async function subject(kind, id, patient) {
     if (order.pay?.status === 'paid') throw conflict('This order is already paid', 'ALREADY_PAID');
     if (order.status === 'cancelled') throw conflict('This order was cancelled', 'CANCELLED');
     if (['delivered', 'picked_up'].includes(order.status) && order.pay?.method !== 'online') throw conflict('This order was already paid at the pharmacy', 'ALREADY_PAID');
+    // Some medicines are priced at the counter: paying part online would leave the rest unpaid.
+    if (order.priced === false || !(order.total > 0)) throw conflict('The pharmacy prices this order at the counter. Pay there.', 'NOT_PRICED');
+    // Paying at delivery / the counter: online only until it is packed (not while the cash is being collected).
+    if (order.pay?.method !== 'online' && !['placed', 'confirmed'].includes(order.status)) throw conflict('Pay the pharmacy when you get your medicines.', 'PAY_AT_DELIVERY');
     return { kind, record: order, amount: order.total, title: 'Medicines', detail: order.pharmacyId?.name || 'Pharmacy' };
   }
   throw badRequest('Nothing to pay', 'BAD_KIND');
@@ -94,35 +98,69 @@ const safeEqual = (a, b) => {
 
 /** Checks Checkout's result and marks the fee / order paid (once). */
 async function confirm({ kind, id, orderId, paymentId, signature, patient }) {
-  const s = await subject(kind, id, patient).catch((err) => {
-    // Already paid (a webhook got there first) counts as success.
-    if (err.code === 'NOT_PENDING' || err.code === 'ALREADY_PAID') return null;
-    throw err;
-  });
-  if (!s) return { paid: true, already: true };
+  if (!/^[a-f\d]{24}$/i.test(String(id || ''))) throw badRequest('Nothing to pay', 'BAD_ID');
+  // The record this Razorpay order was made for — whatever its status is now (the fee may
+  // have been settled at the desk meanwhile: then this payment is refunded, not lost).
+  let record;
+  let amount;
+  if (kind === 'fee') {
+    const appt = await M.Appointment.findOne({ _id: id, patientId: patient._id }, '_id');
+    if (!appt) throw notFound('Appointment');
+    record = pay.configured()
+      ? await M.Payment.findOne({ appointmentId: appt._id, razorpayOrderId: orderId })
+      : await M.Payment.findOne({ appointmentId: appt._id }).sort({ createdAt: -1 });
+    amount = record?.razorpayOrderAmount ?? record?.amount;
+  } else if (kind === 'order') {
+    record = await M.Order.findOne({ _id: id, patientId: patient._id, ...(pay.configured() ? { 'pay.razorpayOrderId': orderId } : {}) });
+    amount = record?.pay?.razorpayOrderAmount ?? record?.total;
+  } else {
+    throw badRequest('Nothing to pay', 'BAD_KIND');
+  }
+  if (!record) throw badRequest('This payment is for a different order', 'ORDER_MISMATCH');
   if (!pay.configured()) {
     if (env.isProd) throw Object.assign(conflict('Online payment is not set up yet', 'PAYMENTS_OFF'), { status: 503 });
     if (orderId !== `order_test_${id}`) throw badRequest('This payment could not be verified', 'BAD_SIGNATURE');
-    paymentId = `pay_test_${Date.now().toString(36)}`;
+    // One test payment per test order (as Razorpay: confirming again carries the same payment).
+    paymentId = `pay_test_${String(id).slice(-12)}${String(record.razorpayOrderId || record.pay?.razorpayOrderId || '').slice(-4)}`;
   } else {
-    const expected = kind === 'fee' ? s.record.razorpayOrderId : s.record.pay?.razorpayOrderId;
-    if (!orderId || orderId !== expected) throw badRequest('This payment is for a different order', 'ORDER_MISMATCH');
     const want = crypto.createHmac('sha256', env.razorpay.keySecret).update(`${orderId}|${paymentId}`).digest('hex');
     if (!paymentId || !signature || !safeEqual(want, signature)) throw badRequest('This payment could not be verified', 'BAD_SIGNATURE');
   }
-  if (kind === 'fee') await pay.feePaid(s.record._id, paymentId);
-  else await pay.orderPaid(s.record._id, paymentId);
-  return { paid: true, paymentId, amount: s.amount };
+  const done = kind === 'fee' ? await pay.feePaid(record._id, paymentId) : await pay.orderPaid(record._id, paymentId);
+  if (done) return { paid: true, paymentId, amount };
+  // Not marked by this call: the same payment already counted (webhook first) → paid; a
+  // different one → it was already settled, and this payment goes back.
+  const already = kind === 'fee' ? (await M.Payment.findById(record._id))?.razorpayPaymentId : (await M.Order.findById(record._id))?.pay?.razorpayPaymentId;
+  if (already === paymentId) return { paid: true, already: true, paymentId, amount };
+  const stray = await M.StrayPayment.findOne({ razorpayPaymentId: paymentId });
+  return {
+    paid: false, refunded: true, amount,
+    message: stray?.status === 'refund_due'
+      ? `This was already paid. The clinic will give your ₹${amount} back.`
+      : `This was already paid, so your ₹${amount} is being refunded (usually 5–7 working days).`,
+  };
 }
 
 /** Webhook backup: payment.captured / order.paid carry the order's notes. */
 async function onWebhook(event, payload) {
-  const entity = payload?.payment?.entity || payload?.order?.entity || {};
-  const notes = entity.notes || payload?.order?.entity?.notes || {};
-  const paymentId = payload?.payment?.entity?.id;
   if (!['payment.captured', 'order.paid'].includes(event)) return false;
-  if (notes.kind === 'fee' && /^[a-f\d]{24}$/i.test(notes.paymentId || '')) await pay.feePaid(notes.paymentId, paymentId);
-  else if (notes.kind === 'order' && /^[a-f\d]{24}$/i.test(notes.orderId || '')) await pay.orderPaid(notes.orderId, paymentId);
+  const payment = payload?.payment?.entity || {};
+  const order = payload?.order?.entity || {};
+  const paymentId = payment.id;
+  const amountPaise = payment.amount;
+  const orderId = payment.order_id || order.id;
+  // A notes object that is empty comes as [] — use the first that has a kind.
+  const notes = [payment.notes, order.notes].find((n) => n && !Array.isArray(n) && n.kind) || {};
+  // 1. By the Razorpay order MedPin made (in-app Checkout).
+  if (orderId) {
+    const fee = await M.Payment.findOne({ razorpayOrderId: orderId }, '_id');
+    if (fee) return Boolean(await pay.feePaid(fee._id, paymentId, { amountPaise })) || true;
+    const med = await M.Order.findOne({ 'pay.razorpayOrderId': orderId }, '_id');
+    if (med) return Boolean(await pay.orderPaid(med._id, paymentId, { amountPaise })) || true;
+  }
+  // 2. By the notes (payment links carry them; handled by payment_link.paid too — same payment, once).
+  if (notes.kind === 'fee' && /^[a-f\d]{24}$/i.test(notes.paymentId || '')) await pay.feePaid(notes.paymentId, paymentId, { amountPaise });
+  else if (notes.kind === 'order' && /^[a-f\d]{24}$/i.test(notes.orderId || '')) await pay.orderPaid(notes.orderId, paymentId, { amountPaise });
   else return false;
   return true;
 }

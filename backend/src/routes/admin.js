@@ -27,12 +27,13 @@ r.post('/billing/webhook', async (req, res) => {
     const link = payload.payment_link?.entity || {};
     const notes = link.notes || {};
     const paymentId = payload.payment?.entity?.id;
+    const amountPaise = payload.payment?.entity?.amount;
     if (notes.kind === 'plan') await pay.planPaid(notes.subscriptionId, notes.planKey, paymentId);
-    else if (notes.kind === 'order') await pay.orderPaid(notes.orderId, paymentId);
+    else if (notes.kind === 'order') await pay.orderPaid(notes.orderId, paymentId, { amountPaise });
     else {
       // Fee links: notes.paymentId (older links: reference_id was the payment id).
       const ref = notes.paymentId || String(link.reference_id || '').split('.')[0];
-      if (/^[a-f\d]{24}$/i.test(ref)) await pay.feePaid(ref, paymentId);
+      if (/^[a-f\d]{24}$/i.test(ref)) await pay.feePaid(ref, paymentId, { amountPaise });
     }
   }
   if (String(event).startsWith('payout.')) await require('../services/payouts').onWebhook(event, payload.payout?.entity);
@@ -43,7 +44,9 @@ r.post('/billing/webhook', async (req, res) => {
   }
   if (event === 'subscription.charged') {
     const sub = await M.Subscription.findOne({ razorpaySubscriptionId: payload.subscription?.entity?.id });
-    if (sub) {
+    // Razorpay retries webhooks: one charge moves the plan on one month, once.
+    const chargeId = payload.payment?.entity?.id;
+    if (sub && !(chargeId && (await M.Invoice.exists({ razorpayPaymentId: chargeId })))) {
       const start = sub.currentPeriodEnd || new Date();
       if (sub.pendingPlanKey) {
         const plan = await M.Plan.findOne({ key: sub.pendingPlanKey });

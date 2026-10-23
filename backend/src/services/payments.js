@@ -13,7 +13,7 @@ const configured = () => Boolean(env.razorpay.keyId && env.razorpay.keySecret);
 // Links stay payable for a week; asking again within that time re-sends the same link.
 const LINK_DAYS = 7;
 
-async function createLink({ amount, description, customer, notes, devPath, sms = Boolean(customer?.contact), expireAt }) {
+async function createLink({ amount, description, customer, notes, devPath, sms = Boolean(customer?.contact), expireAt, out }) {
   if (!configured()) {
     if (env.isProd) throw Object.assign(conflict('Online payment is not set up yet. Please pay at the clinic.', 'PAYMENTS_OFF'), { status: 503 });
     return `${publicBase()}/dev/pay/${devPath}`;
@@ -46,7 +46,83 @@ async function createLink({ amount, description, customer, notes, devPath, sms =
         : 'Couldn’t make the payment link. Check the patient’s phone number, or collect the fee at the counter.';
     throw Object.assign(conflict(msg, 'PAYMENT_LINK_FAILED'), { status: 503 });
   }
+  if (out) out.id = body.id;
   return body.short_url;
+}
+
+const rzpAuth = () => `Basic ${Buffer.from(`${env.razorpay.keyId}:${env.razorpay.keySecret}`).toString('base64')}`;
+
+/** A payment link that must not be paid any more (the fee or order was settled another way). */
+async function cancelLink(linkId) {
+  if (!linkId || !configured()) return;
+  await fetch(`https://api.razorpay.com/v1/payment_links/${linkId}/cancel`, { method: 'POST', headers: { authorization: rzpAuth() } })
+    .then((r) => { if (!r.ok && r.status !== 400) console.warn('[razorpay link cancel]', r.status); })
+    .catch(() => {});
+}
+
+/** Refunds one Razorpay payment. True when Razorpay took the refund. */
+async function refundRazorpay(razorpayPaymentId, amount, notes) {
+  if (!configured()) return !env.isProd; // dev: nothing was charged
+  const resp = await fetch(`https://api.razorpay.com/v1/payments/${razorpayPaymentId}/refund`, {
+    method: 'POST',
+    headers: { authorization: rzpAuth(), 'content-type': 'application/json' },
+    body: JSON.stringify({ amount: Math.round(amount * 100), notes }),
+  }).catch(() => null);
+  const body = resp ? await resp.json().catch(() => ({})) : {};
+  return resp?.ok ? body.id || true : false;
+}
+
+/**
+ * Money that came in for something no longer payable: a link paid after the fee was
+ * taken in cash or waived, a second payment (link and in-app), a cancelled visit or
+ * order. It is refunded at once; if Razorpay can't, the desk is told to hand it back.
+ * The patient is told either way. Once per Razorpay payment (webhook retries).
+ */
+async function strayPayment({ kind, payment, order, razorpayPaymentId, amountPaise }) {
+  if (!razorpayPaymentId) return null;
+  const amount = amountPaise ? amountPaise / 100 : kind === 'fee' ? payment?.amount : order?.total;
+  let row;
+  try {
+    row = await M.StrayPayment.create({
+      razorpayPaymentId, kind, amount, paymentId: payment?._id, orderId: order?._id,
+      practiceId: payment?.practiceId, patientId: payment?.patientId || order?.patientId,
+      reason: kind === 'fee' ? `Fee was already ${payment?.status}` : `Order was already ${order?.status === 'cancelled' ? 'cancelled' : 'paid'}`,
+    });
+  } catch (err) {
+    if (err.code === 11000) return M.StrayPayment.findOne({ razorpayPaymentId }); // a webhook retry
+    throw err;
+  }
+  const refundId = await refundRazorpay(razorpayPaymentId, amount, { stray: String(row._id) });
+  row.status = refundId ? 'refunded' : 'refund_due';
+  if (typeof refundId === 'string') row.refundId = refundId;
+  await row.save();
+  const { notify, deskOrDoctors } = require('./notify');
+  const patient = row.patientId ? await M.Patient.findById(row.patientId, 'userId name') : null;
+  if (patient?.userId) {
+    await notify([patient.userId], {
+      type: 'fee_refunded', practiceId: row.practiceId,
+      title: row.status === 'refunded' ? `₹${amount} refunded` : `₹${amount} will be given back`,
+      body: row.status === 'refunded'
+        ? 'This was already paid, so the extra payment goes back to how you paid (usually 5–7 working days).'
+        : 'This was already paid. The clinic will give the extra payment back.',
+      screen: kind === 'fee' ? 'Patient-Doctors' : 'Patient-Medicines',
+    }).catch(() => {});
+  }
+  if (kind === 'fee' && payment) {
+    const a = payment.appointmentId ? await M.Appointment.findById(payment.appointmentId, 'practiceId locationId doctorId') : null;
+    if (a) {
+      const staff = await deskOrDoctors(a.practiceId, { locationId: a.locationId, doctorId: a.doctorId });
+      await notify(staff, {
+        type: row.status === 'refunded' ? 'fee_refunded' : 'refund_due', practiceId: a.practiceId, push: row.status !== 'refunded',
+        title: row.status === 'refunded'
+          ? `₹${amount} paid twice by ${patient?.name || 'a patient'} — refunded online`
+          : `Refund due: ₹${amount} paid twice by ${patient?.name || 'a patient'}`,
+        body: row.status === 'refunded' ? undefined : "Razorpay couldn't refund it. Hand it back at the desk.",
+        screen: 'Report-Fees', params: { appointmentId: a._id },
+      }).catch(() => {});
+    }
+  }
+  return row;
 }
 
 /** Link for a pending visit fee (saved on the payment). */
@@ -62,25 +138,39 @@ async function feeLink(payment, patient) {
     return payment.paymentLinkUrl;
   }
   const expireAt = new Date(now.getTime() + LINK_DAYS * 864e5);
+  const link = {};
   const url = await createLink({
+    out: link,
     amount: payment.amount, description: 'Consultation fee',
     customer: patient ? { name: patient.name, contact: patient.phone ? `+91${patient.phone}` : undefined } : undefined,
     // With the MedPin app the patient gets it there (and on WhatsApp); without, Razorpay texts it.
     sms: !patient?.userId,
     notes: { kind: 'fee', paymentId: String(payment._id) }, devPath: String(payment._id), expireAt,
   });
-  Object.assign(payment, { paymentLinkUrl: url, paymentLinkSentAt: now, paymentLinkExpiresAt: expireAt, paymentLinkAmount: payment.amount });
+  if (payment.paymentLinkId && payment.paymentLinkId !== link.id) await cancelLink(payment.paymentLinkId); // the older link
+  Object.assign(payment, { paymentLinkUrl: url, paymentLinkId: link.id, paymentLinkSentAt: now, paymentLinkExpiresAt: expireAt, paymentLinkAmount: payment.amount });
   await payment.save();
   return url;
 }
 
 /** A visit fee paid online (webhook or dev page); once only. */
-async function feePaid(paymentId, razorpayPaymentId) {
+async function feePaid(paymentId, razorpayPaymentId, { amountPaise } = {}) {
   const p = await M.Payment.findOneAndUpdate(
     { _id: paymentId, status: 'pending' },
     { status: 'paid', method: 'online', paidAt: new Date(), ...(razorpayPaymentId ? { razorpayPaymentId } : {}) },
     { new: true },
   );
+  if (!p) {
+    // Not pending any more: the same payment again (a webhook retry, Checkout and webhook)
+    // is fine; a different payment means the patient paid twice → refunded.
+    const now = await M.Payment.findById(paymentId);
+    if (now && razorpayPaymentId && now.razorpayPaymentId !== razorpayPaymentId) {
+      await strayPayment({ kind: 'fee', payment: now, razorpayPaymentId, amountPaise });
+    }
+    return null;
+  }
+  // Paid: the other way to pay it (a link sent earlier) is closed.
+  await cancelLink(p.paymentLinkId);
   if (p?.appointmentId) {
     await M.Appointment.updateOne({ _id: p.appointmentId }, { feeStatus: 'paid', payAt: 'online' });
     await feeReceipt(p).catch((err) => console.warn('[fee receipt]', err.message));
@@ -124,24 +214,38 @@ async function feeReceipt(p) {
 async function orderLink(order, patient, pharmacyName) {
   if (order.pay?.status === 'paid') throw conflict('This order is already paid', 'ALREADY_PAID');
   if (order.status === 'cancelled') throw conflict('This order was cancelled', 'CANCELLED');
+  if (order.priced === false || !(order.total > 0)) throw conflict('The pharmacy prices this order at the counter. Pay there.', 'NOT_PRICED');
+  // The link made earlier is still the one to pay (one link per order).
+  if (order.pay?.linkUrl && order.pay?.linkId) return order.pay.linkUrl;
+  const link = {};
   const url = await createLink({
+    out: link,
     amount: order.total, description: `Medicines from ${pharmacyName || 'the pharmacy'}`,
     customer: patient ? { name: patient.name, contact: patient.phone ? `+91${patient.phone}` : undefined } : undefined,
     notes: { kind: 'order', orderId: String(order._id), paymentId: String(order._id) }, devPath: `order/${order._id}`,
   });
-  order.pay = { ...(order.pay?.toObject?.() || {}), method: 'online', status: 'due', linkUrl: url };
+  order.pay = { ...(order.pay?.toObject?.() || {}), method: 'online', status: 'due', linkUrl: url, linkId: link.id };
   await order.save();
   return url;
 }
 
 /** A pharmacy order paid online (webhook or dev page); once only. Tells patient and pharmacy. */
-async function orderPaid(orderId, razorpayPaymentId) {
+async function orderPaid(orderId, razorpayPaymentId, { amountPaise } = {}) {
   const order = await M.Order.findOneAndUpdate(
-    { _id: orderId, 'pay.status': { $ne: 'paid' }, status: { $ne: 'cancelled' } },
+    { _id: orderId, 'pay.status': { $nin: ['paid', 'refunded', 'refund_pending'] }, status: { $ne: 'cancelled' } },
     { 'pay.method': 'online', 'pay.status': 'paid', 'pay.paidAt': new Date(), ...(razorpayPaymentId ? { 'pay.razorpayPaymentId': razorpayPaymentId } : {}) },
     { new: true },
   );
-  if (!order) return null;
+  if (!order) {
+    // Already paid with this payment (a retry) is fine; otherwise (paid twice, or the order
+    // was cancelled meanwhile) the money goes back.
+    const now = await M.Order.findById(orderId);
+    if (now && razorpayPaymentId && now.pay?.razorpayPaymentId !== razorpayPaymentId) {
+      await strayPayment({ kind: 'order', order: now, razorpayPaymentId, amountPaise });
+    }
+    return null;
+  }
+  await cancelLink(order.pay?.linkId);
   const patient = await M.Patient.findById(order.patientId, 'userId');
   if (patient?.userId) {
     await require('./notify').notify([patient.userId], { type: 'order_update', title: `Paid ₹${order.total} for your medicines`, body: 'The pharmacy can see it is paid.', screen: 'Patient-Medicines' }).catch(() => {});
@@ -157,6 +261,21 @@ async function orderPaid(orderId, razorpayPaymentId) {
  */
 async function refundFee(payment, { by, handedBack = false } = {}) {
   if (payment.status !== 'paid') return payment;
+  // Claim it: a second tap, or a cancel at the same moment, doesn't send a second refund.
+  const claimed = await M.Payment.findOneAndUpdate({ _id: payment._id, status: 'paid', refunding: { $ne: true } }, { $set: { refunding: true } }, { new: true });
+  if (!claimed) return (await M.Payment.findById(payment._id)) || payment;
+  // What the caller set on its copy (why it is refunded) goes with it.
+  if (payment.refundReason) claimed.refundReason = payment.refundReason;
+  try {
+    return await refundClaimed(claimed, { by, handedBack });
+  } finally {
+    await M.Payment.updateOne({ _id: payment._id }, { $unset: { refunding: 1 } });
+  }
+}
+
+async function refundClaimed(payment, { by, handedBack }) {
+  // An online payment whose refund failed, handed back in cash at the desk.
+  const cashForOnline = payment.method === 'online' && handedBack && payment.refundDue === true;
   // The desk hands it back or should know it went back: told in the app (not whoever did it).
   const tellDesk = async (n) => {
     const a = payment.appointmentId ? await M.Appointment.findById(payment.appointmentId, 'practiceId locationId doctorId patientId').populate('patientId', 'name') : null;
@@ -165,7 +284,8 @@ async function refundFee(payment, { by, handedBack = false } = {}) {
     const staff = (await deskOrDoctors(a.practiceId, { locationId: a.locationId, doctorId: a.doctorId })).map(String).filter((id) => id !== String(by || ''));
     await notify(staff, { practiceId: a.practiceId, screen: 'Report-Fees', params: { appointmentId: a._id }, ...n(a.patientId?.name || 'the patient') });
   };
-  if (payment.method === 'online') {
+  // An online refund that didn't go through can be handed back at the desk instead.
+  if (payment.method === 'online' && !(handedBack && payment.refundDue)) {
     if (configured() && payment.razorpayPaymentId) {
       const resp = await fetch(`https://api.razorpay.com/v1/payments/${payment.razorpayPaymentId}/refund`, {
         method: 'POST',
@@ -203,19 +323,19 @@ async function refundFee(payment, { by, handedBack = false } = {}) {
   if (payment.appointmentId) await M.Appointment.updateOne({ _id: payment.appointmentId }, { feeStatus: 'refunded' });
   const a = payment.appointmentId ? await M.Appointment.findById(payment.appointmentId).populate('patientId', 'userId') : null;
   if (a) {
-    if (payment.method === 'online') {
+    if (payment.method === 'online' && !cashForOnline) {
       await tellDesk((name) => ({ type: 'fee_refunded', push: false, title: `₹${payment.amount} refunded online to ${name}` })).catch(() => {});
     }
     await require('./care').chatNote(
       { practiceId: a.practiceId, patientId: a.patientId?._id || a.patientId, locationId: a.locationId, doctorId: a.doctorId, by },
-      payment.method === 'online' ? `Refund: ₹${payment.amount} is on its way back to how you paid (usually 5–7 working days).` : `Refund: ₹${payment.amount} handed back at the clinic.`,
+      payment.method === 'online' && !cashForOnline ? `Refund: ₹${payment.amount} is on its way back to how you paid (usually 5–7 working days).` : `Refund: ₹${payment.amount} handed back at the clinic.`,
       'fee_refunded',
     );
   }
   if (a?.patientId?.userId) {
     await require('./notify').notify([a.patientId.userId], {
       type: 'fee_refunded', practiceId: a.practiceId, title: `₹${payment.amount} refunded`,
-      body: payment.method === 'online' ? 'Back to how you paid, usually in 5–7 working days.' : 'Handed back at the clinic.',
+      body: payment.method === 'online' && !cashForOnline ? 'Back to how you paid, usually in 5–7 working days.' : 'Handed back at the clinic.',
       screen: 'Patient-Doctors',
     });
   }
@@ -261,4 +381,4 @@ async function planPaid(subscriptionId, planKey, razorpayPaymentId) {
   return sub;
 }
 
-module.exports = { feeReceipt, refundFee, configured, createLink, feeLink, feePaid, planLink, planPaid, orderLink, orderPaid, refundOrder };
+module.exports = { strayPayment, cancelLink, refundRazorpay, feeReceipt, refundFee, configured, createLink, feeLink, feePaid, planLink, planPaid, orderLink, orderPaid, refundOrder };

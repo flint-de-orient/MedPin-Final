@@ -107,22 +107,29 @@ Future<bool> collectFee(BuildContext context, VisitFee fee, {String? patientName
 /// A cancelled visit paid at the desk: the money was handed back. True when marked.
 Future<bool> handBackFee(BuildContext context, VisitFee fee) async {
   if (fee.paymentId == null) return false;
-  final yes = await openSheet<bool>(
+  // 'online': send the refund through Razorpay again; 'cash': handed back at the desk.
+  final how = await openSheet<String>(
     context,
     (c) => MpSheet(
       title: tr(context, 'Refund ₹#1').replaceFirst('#1', '${fee.amount}'),
       subtitle: fee.method == 'online'
-          ? 'The online refund didn’t go through. Try it again now.'
+          ? 'The online refund didn’t go through. Try it again, or give the money back at the desk.'
           : 'The visit was cancelled. Mark it once you have handed the money back.',
       showClose: true,
       child: Padding(
         padding: const EdgeInsets.only(top: 16),
-        child: MpButton(fee.method == 'online' ? 'Refund now' : 'Handed back', onTap: () => Navigator.pop(c, true)),
+        child: VGap(
+          gap: 8,
+          children: [
+            if (fee.method == 'online') MpButton('Refund online again', onTap: () => Navigator.pop(c, 'online')),
+            MpButton('Handed back at the desk', kind: fee.method == 'online' ? MpBtn.secondary : MpBtn.primary, onTap: () => Navigator.pop(c, 'cash')),
+          ],
+        ),
       ),
     ),
   );
-  if (yes != true || !context.mounted) return false;
-  final ok = await runAction(context, () => Api.I.post('/api/payments/${fee.paymentId}/refund', {'handedBack': fee.method != 'online'}));
+  if (how == null || !context.mounted) return false;
+  final ok = await runAction(context, () => Api.I.post('/api/payments/${fee.paymentId}/refund', {'handedBack': how == 'cash'}));
   if (ok == null || !context.mounted) return false;
   toast(context, 'Refund recorded');
   return true;

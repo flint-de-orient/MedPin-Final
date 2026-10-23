@@ -101,6 +101,7 @@ const paymentSchema = new Schema(
     paymentLinkSentAt: Date,
     paymentLinkExpiresAt: Date, // a link asked for again before this is the same link, re-sent
     paymentLinkAmount: Number,
+    paymentLinkId: String, // Razorpay's id for that link: cancelled once the fee is settled another way
     razorpayOrderId: String,
     razorpayOrderAmount: Number, // the amount that Razorpay order was made for
     razorpayPaymentId: { type: String, sparse: true, unique: true },
@@ -114,10 +115,33 @@ const paymentSchema = new Schema(
     waivedAt: Date,
     note: String,
     payoutId: ref('Payout'), // set once this online fee is paid out to the doctor
+    // Refunded after it was paid out: taken back from the doctor's next payout (that payout's id).
+    clawedBackIn: ref('Payout'),
+    // A refund is being sent (so a second tap or a cancel at the same moment doesn't send another).
+    refunding: { type: Boolean, default: undefined },
   },
   baseOptions,
 );
 paymentSchema.index({ practiceId: 1, status: 1, createdAt: -1 });
+paymentSchema.index({ razorpayOrderId: 1 }, { sparse: true });
+
+// Money that came in for something no longer payable (a link paid after the fee was taken in
+// cash, a second payment, a cancelled visit or order): refunded at once, or flagged for the desk.
+const strayPaymentSchema = new Schema(
+  {
+    razorpayPaymentId: { type: String, required: true, unique: true },
+    kind: enumOf(['fee', 'order'], { required: true }),
+    paymentId: ref('Payment'), // the visit fee it was meant for
+    orderId: ref('Order'),
+    practiceId: ref('Practice'),
+    patientId: ref('Patient'),
+    amount: rupees,
+    status: enumOf(['refunding', 'refunded', 'refund_due'], { default: 'refunding' }),
+    refundId: String,
+    reason: String,
+  },
+  baseOptions,
+);
 
 // Online fees paid out to a doctor (weekly, through RazorpayX when set up).
 const payoutSchema = new Schema(
@@ -134,6 +158,8 @@ const payoutSchema = new Schema(
     destination: String, // "arjun@okhdfc" / "HDFC ····6789"
     razorpayPayoutId: String,
     paidAt: Date,
+    // Fees refunded after an earlier payout, taken off this one.
+    deducted: rupees,
   },
   baseOptions,
 );
@@ -192,6 +218,7 @@ module.exports = {
   Appointment: model('Appointment', appointmentSchema),
   Payment: model('Payment', paymentSchema),
   Payout: model('Payout', payoutSchema),
+  StrayPayment: model('StrayPayment', strayPaymentSchema),
   FollowUp: model('FollowUp', followUpSchema),
   Referral: model('Referral', referralSchema),
 };

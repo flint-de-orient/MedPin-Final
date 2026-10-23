@@ -107,23 +107,45 @@ async function send(payout) {
 /** The weekly run: bundles fees older than the hold period into payouts and sends them. */
 async function run(now = new Date()) {
   const cutoff = T.addDays(now, -HOLD_DAYS);
-  const fees = await M.Payment.find({ status: 'paid', method: 'online', payoutId: null, paidAt: { $lte: cutoff } }).limit(5000);
+  // Only money that really came in through Razorpay (a Razorpay payment id), for a visit that
+  // happened (seen, or a no-show — the clinic keeps the fee) or whose date has passed and
+  // wasn't cancelled. A prepaid visit next week waits until it has happened.
+  const candidates = await M.Payment.find({ status: 'paid', method: 'online', razorpayPaymentId: { $exists: true, $ne: null }, payoutId: null, paidAt: { $lte: cutoff } }).limit(5000);
+  const visits = new Map((await M.Appointment.find({ _id: { $in: candidates.map((f) => f.appointmentId).filter(Boolean) } }, 'status startAt').lean()).map((a) => [String(a._id), a]));
+  const fees = candidates.filter((f) => {
+    const a = f.appointmentId && visits.get(String(f.appointmentId));
+    if (!a) return !f.appointmentId; // a fee without a visit (none today) is paid as before
+    if (['completed', 'missed'].includes(a.status)) return true;
+    return !['cancelled', 'rescheduled'].includes(a.status) && a.startAt < cutoff;
+  });
+  // Refunded after an earlier payout: taken off this doctor's next payout.
+  const clawbacks = await M.Payment.find({ status: 'refunded', payoutId: { $ne: null }, clawedBackIn: null }).limit(5000);
   const cache = new Map();
   const groups = new Map();
+  const groupOf = (f, payee) => {
+    const key = `${f.practiceId}:${payee}`;
+    if (!groups.has(key)) groups.set(key, { practiceId: f.practiceId, doctorId: payee, fees: [], back: [] });
+    return groups.get(key);
+  };
   for (const f of fees) {
     const payee = await payeeFor(f, cache);
-    if (!payee) continue;
-    const key = `${f.practiceId}:${payee}`;
-    if (!groups.has(key)) groups.set(key, { practiceId: f.practiceId, doctorId: payee, fees: [] });
-    groups.get(key).fees.push(f);
+    if (payee) groupOf(f, payee).fees.push(f);
+  }
+  for (const f of clawbacks) {
+    const earlier = await M.Payout.findById(f.payoutId, 'doctorId practiceId');
+    if (earlier) groupOf(f, String(earlier.doctorId)).back.push(f);
   }
   const out = [];
   for (const g of groups.values()) {
-    const amount = g.fees.reduce((n, f) => n + (f.amount || 0), 0);
-    if (amount <= 0) continue;
+    const gross = g.fees.reduce((n, f) => n + (f.amount || 0), 0);
+    const deducted = g.back.reduce((n, f) => n + (f.amount || 0), 0);
+    const amount = gross - deducted;
+    // Nothing (or less than what is owed back) to pay this week: the refunds wait for the next fees.
+    if (!g.fees.length || amount <= 0) continue;
     const dates = g.fees.map((f) => f.paidAt).sort((a, b) => a - b);
-    const payout = await M.Payout.create({ practiceId: g.practiceId, doctorId: g.doctorId, amount, count: g.fees.length, periodFrom: dates[0], periodTo: dates[dates.length - 1] });
+    const payout = await M.Payout.create({ practiceId: g.practiceId, doctorId: g.doctorId, amount, deducted: deducted || undefined, count: g.fees.length, periodFrom: dates[0], periodTo: dates[dates.length - 1] });
     await M.Payment.updateMany({ _id: { $in: g.fees.map((f) => f._id) }, payoutId: null }, { payoutId: payout._id });
+    if (g.back.length) await M.Payment.updateMany({ _id: { $in: g.back.map((f) => f._id) }, clawedBackIn: null }, { clawedBackIn: payout._id });
     await send(payout);
     await notify([g.doctorId], {
       type: 'payout', practiceId: g.practiceId,

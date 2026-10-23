@@ -100,7 +100,8 @@ class _MedPharmacyScreenState extends State<MedPharmacyScreen> with LiveData {
       ph.str('name'),
       priced ? p3Rupees(q.numOr('total')) : (q.numOr('total') > 0 ? '${p3Rupees(q.numOr('total'))}+' : 'At shop'),
       when.isEmpty ? (_tab == 0 ? 'Home delivery' : 'Pick up') : when,
-      missing.isEmpty ? (priced ? 'All items in stock' : 'Some prices are set at the shop') : 'Not in stock: ${missing.join(', ')}',
+      // Stock is confirmed by the pharmacy (MedPin doesn't know it beforehand).
+      missing.isEmpty ? (priced ? 'Stock confirmed by the pharmacy' : 'Some prices are set at the shop') : 'Not in stock: ${missing.join(', ')}',
       missing.isEmpty && priced,
     );
   }
@@ -140,8 +141,14 @@ class _MedPharmacyScreenState extends State<MedPharmacyScreen> with LiveData {
       (ctx) => MpSheet(
         title: 'How would you like to pay?',
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          MpButton('Pay ₹${q.numOr('total').round()} online now', onTap: () => Navigator.pop(ctx, 'online')),
-          const Gap(10),
+          // Online only when every medicine has a price (else the rest would be unpaid).
+          if (q['priced'] != false && q.numOr('total') > 0) ...[
+            MpButton('Pay ₹${q.numOr('total').round()} online now', onTap: () => Navigator.pop(ctx, 'online')),
+            const Gap(10),
+          ] else ...[
+            Text('Some medicines are priced at the pharmacy, so you pay there.', textAlign: TextAlign.center, style: tx(14, c: MP.ink2, h: 1.4)),
+            const Gap(10),
+          ],
           MpButton(cashLabel, kind: MpBtn.secondary, onTap: () => Navigator.pop(ctx, 'cash')),
           const Gap(8),
           Text('UPI, card or net banking through Razorpay. A paid order that is cancelled is refunded.', textAlign: TextAlign.center, style: tx(13, c: MP.ink3, h: 1.4)),

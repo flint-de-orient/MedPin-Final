@@ -1719,10 +1719,13 @@ async function quote(cart, pharmacy) {
     const unitPrice = mrp != null ? Math.round(mrp * (1 - (pharmacy.discountPct || 0) / 100)) : null;
     const lineTotal = unitPrice != null ? unitPrice * i.strips : null;
     subtotal += lineTotal || 0;
-    return { name: i.name, strength: i.strength, strips: i.strips, unitPrice, lineTotal, inStock: true };
+    // Stock is the pharmacy's to confirm (MedPin doesn't know it): null = not known yet.
+    return { name: i.name, strength: i.strength, strips: i.strips, unitPrice, lineTotal, inStock: null };
   });
-  const deliveryFee = pharmacy.type === 'online' && !(pharmacy.freeDeliveryAbove && subtotal >= pharmacy.freeDeliveryAbove) ? pharmacy.deliveryFee || 0 : 0;
-  return { lines, subtotal, deliveryFee, total: subtotal + deliveryFee, priced: lines.every((l) => l.unitPrice != null) };
+  const priced = lines.every((l) => l.unitPrice != null);
+  // Free delivery only when the whole order is priced (a partial total can't qualify).
+  const deliveryFee = pharmacy.type === 'online' && !(priced && pharmacy.freeDeliveryAbove && subtotal >= pharmacy.freeDeliveryAbove) ? pharmacy.deliveryFee || 0 : 0;
+  return { lines, subtotal, deliveryFee, total: subtotal + deliveryFee, priced };
 }
 
 r.get('/pharmacies/quotes', async (req, res) => {
@@ -1735,7 +1738,8 @@ r.get('/pharmacies/quotes', async (req, res) => {
   for (const ph of pharmacies) {
     out.push({ pharmacy: { id: ph._id, name: ph.name, type: ph.type, etaText: ph.deliveryEtaText, pickupEtaMin: ph.pickupEtaMin, km: haversineKm(origin, ph.geo?.coordinates) }, ...(await quote(cart, ph)) });
   }
-  out.sort((a, b) => a.total - b.total);
+  // Fully priced first (cheapest first), then those that price at the counter (nearest first).
+  out.sort((a, b) => (a.priced === b.priced ? (a.priced ? a.total - b.total : (a.pharmacy.km ?? 1e9) - (b.pharmacy.km ?? 1e9)) : a.priced ? -1 : 1));
   res.json({ mode, items: out, note: 'Final price depends on the pharmacy' });
 });
 
@@ -1793,14 +1797,15 @@ r.post('/orders', async (req, res) => {
       return { ...l, courseId: c?.courseId, unitsPerStrip: c?.unitsPerStrip || 10, unitPrice: l.unitPrice ?? undefined, lineTotal: l.lineTotal ?? undefined };
     }),
     prescriptionIds, prescriptionRecordIds, deliveryAddress: mode === 'delivery' ? pick(address, ['line', 'area', 'city', 'pincode']) : undefined,
-    subtotal: q.subtotal, deliveryFee: q.deliveryFee, total: q.total, statusHistory: [{ status: 'placed', at: new Date() }],
+    subtotal: q.subtotal, deliveryFee: q.deliveryFee, total: q.total, priced: q.priced, statusHistory: [{ status: 'placed', at: new Date() }],
     etaText: mode === 'delivery' ? pharmacy.deliveryEtaText : pharmacy.pickupEtaMin ? `Ready in ${pharmacy.pickupEtaMin} min` : undefined,
   });
   cart.items = [];
   await cart.save();
   // "Pay online now": the app opens Razorpay Checkout for it (POST /checkout);
   // otherwise cash on delivery / at the counter.
-  const online = req.body.payOnline === true || req.body.payOnline === 'true';
+  // Online only for an order with every medicine priced (else the pharmacy prices it at the counter).
+  const online = (req.body.payOnline === true || req.body.payOnline === 'true') && q.priced && q.total > 0;
   if (online) {
     order.pay = { ...(order.pay?.toObject?.() || {}), method: 'online', status: 'due' };
     await order.save();

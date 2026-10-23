@@ -656,13 +656,23 @@ r.get('/payments', async (req, res) => {
 });
 
 r.post('/payments/:id/mark-paid', async (req, res) => {
-  const p = ownPractice(req, await M.Payment.findById(req.params.id), 'Payment');
-  if (!E.PAYMENT_METHODS.includes(req.body.method)) throw badRequest('Choose how it was paid');
-  assertCovers(req, (await paymentScope(p)).scope);
-  // Already paid (online, or by someone else at the desk): not taken twice.
-  if (p.status !== 'pending') throw conflict(p.status === 'paid' ? 'This fee is already paid' : 'This fee is not due', 'NOT_PENDING');
-  Object.assign(p, { status: 'paid', method: req.body.method, paidAt: new Date(), markedPaidBy: req.user._id });
-  await p.save();
+  const found = ownPractice(req, await M.Payment.findById(req.params.id), 'Payment');
+  // Taken at the desk: cash, UPI or card. "Online" only ever comes from Razorpay itself
+  // (else the payout would send the doctor money that never came in).
+  if (!E.PAYMENT_METHODS.includes(req.body.method) || req.body.method === 'online') throw badRequest('Choose how it was paid: cash, UPI or card');
+  assertCovers(req, (await paymentScope(found)).scope);
+  // Atomic: if an online payment lands at the same moment, only one of them counts.
+  const p = await M.Payment.findOneAndUpdate(
+    { _id: found._id, status: 'pending' },
+    { status: 'paid', method: req.body.method, paidAt: new Date(), markedPaidBy: req.user._id },
+    { new: true },
+  );
+  if (!p) {
+    const now = await M.Payment.findById(found._id);
+    throw conflict(now?.status === 'paid' ? `This fee is already paid${now.method === 'online' ? ' online' : ''}` : 'This fee is not due', 'NOT_PENDING');
+  }
+  // The link sent earlier can't be paid any more.
+  await require('../services/payments').cancelLink(p.paymentLinkId);
   if (p.appointmentId) {
     await M.Appointment.updateOne({ _id: p.appointmentId }, { feeStatus: 'paid', payAt: 'clinic' });
     await require('../services/payments').feeReceipt(p).catch((err) => console.warn('[fee receipt]', err.message));
@@ -704,8 +714,10 @@ r.post('/payments/:id/waive', async (req, res) => {
   assertCovers(req, scope);
   if (p.status !== 'pending') throw conflict(p.status === 'paid' ? 'This fee is already paid. Refund it instead.' : 'This fee is not due', 'NOT_PENDING');
   const why = typeof req.body.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
-  Object.assign(p, { status: 'waived', waivedBy: req.user._id, waivedAt: new Date(), note: why || 'Fee waived' });
-  await p.save();
+  const waived = await M.Payment.findOneAndUpdate({ _id: p._id, status: 'pending' }, { status: 'waived', waivedBy: req.user._id, waivedAt: new Date(), note: why || 'Fee waived' }, { new: true });
+  if (!waived) throw conflict('This fee was just paid. Refund it instead.', 'NOT_PENDING');
+  Object.assign(p, waived.toObject());
+  await require('../services/payments').cancelLink(p.paymentLinkId);
   if (visit) {
     await M.Appointment.updateOne({ _id: visit._id }, { feeStatus: 'waived' });
     await require('../services/care').chatNote(

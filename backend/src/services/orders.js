@@ -67,8 +67,10 @@ async function setStatus(order, status, { by } = {}) {
     }
   }
   await order.save();
-  // A paid order that is cancelled is refunded.
+  // A paid order that is cancelled is refunded; a link sent for it can't be paid any more
+  // (nor once it is delivered / picked up and paid at the door).
   if (status === 'cancelled' && order.pay?.status === 'paid') await require('./payments').refundOrder(order);
+  if (['cancelled', 'delivered', 'picked_up'].includes(status) && order.pay?.status !== 'paid') await require('./payments').cancelLink(order.pay?.linkId);
   if (by !== 'patient') {
     const patient = await M.Patient.findById(order.patientId, 'userId');
     if (patient?.userId) {

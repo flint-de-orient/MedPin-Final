@@ -1479,8 +1479,12 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       assert.equal((await M.Appointment.findById(walk.id)).feeStatus, 'paid');
       assert.equal((await M.Payment.findById(fee._id)).method, 'online');
       assert.equal((await ctx.pat('POST', `/api/patient/appointments/${walk.id}/pay`)).status, 409, 'nothing left to pay');
-      // Payouts: after the 2-day hold the weekly run bundles the doctor's online fees.
+      // Payouts: after the 2-day hold the weekly run bundles the doctor's online fees — only
+      // money that really came in through Razorpay, for a visit that happened.
       await M.Payment.updateOne({ _id: fee._id }, { paidAt: new Date(Date.now() - 3 * 864e5) });
+      assert.equal((await require('../src/services/payouts').run(new Date())).filter((x) => String(x.doctorId) === String(ctx.doctorUserId)).length, 0, 'no Razorpay payment id, visit not done: not paid out');
+      await M.Payment.updateOne({ _id: fee._id }, { razorpayPaymentId: `pay_test_payout_${fee._id}` });
+      await M.Appointment.updateOne({ _id: walk.id }, { status: 'completed', completedAt: new Date() });
       const before = ok(await ctx.doc('GET', '/api/doctor/payouts'));
       assert.ok(before.waiting.amount >= fee.amount, 'the fee waits for the next payout');
       const made = await require('../src/services/payouts').run(new Date());
@@ -2211,6 +2215,48 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const row = (await M.Conversation.findById(convo)).participants.find((p) => String(p.userId) === String(deskId));
     assert.ok(row && row.unreadCount >= 1, 'the desk member is in the chat with it unread');
     await M.Conversation.updateOne({ _id: convo }, { aiEnabled: true });
+  });
+
+  await step('money: paid twice is refunded, desk cash vs online, one refund, unpriced orders, webhook by order', async () => {
+    const pay = require('../src/services/payments');
+    const patient = await M.Patient.findById(ctx.patientId);
+    const loc = await M.Location.findOne({ practiceId: ctx.practiceId });
+    const mk = async () => {
+      const a = await M.Appointment.create({ practiceId: ctx.practiceId, locationId: loc._id, doctorId: ctx.doctorUserId, patientId: patient._id, startAt: new Date(Date.now() + 864e5), endAt: new Date(Date.now() + 864e5 + 600e3), date: require('../src/lib/time').dayStart(new Date(Date.now() + 864e5)), status: 'booked', fee: 500, feeStatus: 'pending', channel: 'desk' });
+      const p = await M.Payment.create({ practiceId: ctx.practiceId, locationId: loc._id, patientId: patient._id, appointmentId: a._id, amount: 500, status: 'pending' });
+      return { a, p };
+    };
+    // The desk takes it in cash; the old link is paid afterwards → that payment goes back.
+    const one = await mk();
+    assert.equal((await ctx.desk('POST', `/api/payments/${one.p._id}/mark-paid`, { method: 'online' })).status, 400, 'online is never marked by hand');
+    ok(await ctx.desk('POST', `/api/payments/${one.p._id}/mark-paid`, { method: 'cash' }));
+    assert.equal(await pay.feePaid(one.p._id, 'pay_late_link_1', { amountPaise: 50000 }), null);
+    const stray = await M.StrayPayment.findOne({ razorpayPaymentId: 'pay_late_link_1' });
+    assert.equal(stray?.status, 'refunded', 'paid twice: the extra payment is refunded');
+    assert.equal(stray.amount, 500);
+    await pay.feePaid(one.p._id, 'pay_late_link_1', { amountPaise: 50000 }); // a webhook retry
+    assert.equal(await M.StrayPayment.countDocuments({ razorpayPaymentId: 'pay_late_link_1' }), 1, 'once per payment');
+    assert.equal((await M.Payment.findById(one.p._id)).method, 'cash', 'the cash payment stands');
+    // Two desks marking the same fee at once: one counts.
+    const two = await mk();
+    const both = await Promise.all([ctx.desk('POST', `/api/payments/${two.p._id}/mark-paid`, { method: 'cash' }), ctx.doc('POST', `/api/payments/${two.p._id}/mark-paid`, { method: 'upi' })]);
+    assert.deepEqual(both.map((r) => r.status).sort(), [200, 409]);
+    // Two refund taps: one refund.
+    const before = await M.Notification.countDocuments({ type: { $in: ['fee_refunded', 'refund_due'] } });
+    const taps = await Promise.all([ctx.doc('POST', `/api/payments/${two.p._id}/refund`, { handedBack: true, reason: 'Overcharged' }), ctx.doc('POST', `/api/payments/${two.p._id}/refund`, { handedBack: true, reason: 'Overcharged' })]);
+    assert.ok(taps.every((r) => r.status === 200));
+    assert.equal((await M.Payment.findById(two.p._id)).status, 'refunded');
+    assert.ok((await M.Notification.countDocuments({ type: { $in: ['fee_refunded', 'refund_due'] } })) - before <= 2, 'one refund, not two');
+    // The webhook finds an in-app payment by its Razorpay order (Checkout sends no notes).
+    const three = await mk();
+    await M.Payment.updateOne({ _id: three.p._id }, { razorpayOrderId: 'order_webhook_3', razorpayOrderAmount: 500 });
+    const handled = await require('../src/services/checkout').onWebhook('payment.captured', { payment: { entity: { id: 'pay_webhook_3', order_id: 'order_webhook_3', amount: 50000, notes: [] } } });
+    assert.equal(handled, true);
+    assert.equal((await M.Payment.findById(three.p._id)).status, 'paid', 'paid by the webhook backup');
+    // An order with medicines priced at the counter can't be paid online.
+    const order = await M.Order.create({ patientId: patient._id, pharmacyId: (await M.Pharmacy.findOne())._id, mode: 'pickup', items: [], total: 120, priced: false });
+    const co = await ctx.pat('POST', '/api/patient/checkout', { kind: 'order', id: String(order._id) });
+    assert.deepEqual([co.status, co.body?.error?.code], [409, 'NOT_PRICED']);
   });
 
   server.close();

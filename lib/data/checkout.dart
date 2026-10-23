@@ -7,7 +7,9 @@ import '../widgets/i18n.dart';
 import '../widgets/mp.dart';
 import 'api.dart';
 import 'format.dart';
-import 'live.dart';
+
+/// How an in-app payment ended (Checkout.payOutcome).
+enum PayOutcome { paid, later, notPaid, unconfirmed }
 
 /// In-app payments (Razorpay Checkout) for a visit fee or a medicine order.
 ///
@@ -30,19 +32,28 @@ class Checkout {
   ///
   /// [optional]: offered right after booking; if the clinic only takes cash
   /// or nothing is due, return quietly instead of showing an error.
-  static Future<bool> pay(BuildContext context, {required String kind, required String id, String? laterLabel, bool optional = false}) async {
+  static Future<bool> pay(BuildContext context, {required String kind, required String id, String? laterLabel, bool optional = false}) async =>
+      await payOutcome(context, kind: kind, id: id, laterLabel: laterLabel, optional: optional) == PayOutcome.paid;
+
+  /// How it went: paid; the patient chose [laterLabel] ("Pay at the clinic"); closed or
+  /// failed (nothing charged); or charged but not confirmed yet (the server checks it —
+  /// never treated as "pay at the clinic", so nobody is asked to pay twice).
+  static Future<PayOutcome> payOutcome(BuildContext context, {required String kind, required String id, String? laterLabel, bool optional = false}) async {
     Object? start;
     try {
       start = await Api.I.post('/api/patient/checkout', {'kind': kind, 'id': id});
     } on ApiException catch (e) {
       const skip = {'ONLINE_PAY_OFF', 'NOT_PENDING', 'NOTHING_DUE', 'PAYMENTS_OFF'};
       if (context.mounted && !(optional && skip.contains(e.code))) toast(context, e.message);
-      return false;
+      // Online pay isn't possible here: the fee is paid at the clinic (as the patient was going to).
+      return skip.contains(e.code) && optional ? PayOutcome.later : PayOutcome.notPaid;
     }
-    if (start is! Map || !context.mounted) return false;
+    if (start is! Map || !context.mounted) return PayOutcome.notPaid;
     final info = start.cast<String, dynamic>();
     final go = await openSheet<bool>(context, (_) => _PaySheet(info: info, laterLabel: laterLabel));
-    if (go != true || !context.mounted) return false;
+    if (!context.mounted) return PayOutcome.notPaid;
+    if (go == false) return PayOutcome.later; // tapped "Pay at the clinic"
+    if (go != true) return PayOutcome.notPaid; // closed the sheet
 
     final _Result? result;
     if (info['test'] == true) {
@@ -50,25 +61,44 @@ class Checkout {
     } else {
       result = await _razorpay(info);
     }
-    if (!context.mounted || result == null) return false;
+    if (!context.mounted || result == null) return PayOutcome.notPaid;
     final r = result;
     if (r.error != null) {
       toast(context, r.error!);
-      return false;
+      return PayOutcome.notPaid;
     }
-    final done = await runAction(
-      context,
-      () => Api.I.post('/api/patient/checkout/confirm', {
-        'kind': kind,
-        'id': id,
-        'orderId': r.orderId,
-        if (r.paymentId != null) 'paymentId': r.paymentId,
-        if (r.signature != null) 'signature': r.signature,
-      }),
-    );
-    if (done is! Map || !context.mounted) return false;
-    await openSheet<void>(context, (_) => _PaidSheet(info: info, reference: done['paymentId'] as String?));
-    return true;
+    // Razorpay took the money: confirm it with MedPin (a few tries on a weak network).
+    Map? done;
+    for (var i = 0; i < 3 && done == null; i++) {
+      try {
+        final res = await Api.I.post('/api/patient/checkout/confirm', {
+          'kind': kind,
+          'id': id,
+          'orderId': r.orderId,
+          if (r.paymentId != null) 'paymentId': r.paymentId,
+          if (r.signature != null) 'signature': r.signature,
+        });
+        done = res is Map ? res : const {};
+      } on ApiException catch (e) {
+        if (!e.isNetwork) {
+          if (context.mounted) toast(context, e.message);
+          return PayOutcome.notPaid;
+        }
+        await Future<void>.delayed(Duration(seconds: 2 * (i + 1)));
+      }
+    }
+    if (!context.mounted) return PayOutcome.unconfirmed;
+    if (done == null) {
+      toast(context, "We're checking your payment with the bank. It will show as paid in a few minutes — no need to pay again.");
+      return PayOutcome.unconfirmed;
+    }
+    // Already paid another way meanwhile: this payment is being refunded.
+    if (done['refunded'] == true) {
+      toast(context, '${done['message'] ?? 'This was already paid, so your payment is being refunded.'}');
+      return PayOutcome.paid;
+    }
+    await openSheet<void>(context, (_) => _PaidSheet(info: info, reference: done!['paymentId'] as String?));
+    return PayOutcome.paid;
   }
 
   /// Razorpay Checkout over the app; completes when it closes.

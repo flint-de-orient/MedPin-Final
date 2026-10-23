@@ -219,6 +219,9 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
     appt.cancelledBy = cancelledBy || 'desk';
     appt.cancelReason = reason;
     if (by) appt.cancelledByUser = by;
+    // Nothing to pay any more: links sent for it are closed (a late payment would be refunded anyway).
+    const open = await M.Payment.find({ appointmentId: appt._id, status: 'pending', paymentLinkId: { $ne: null } }, 'paymentLinkId');
+    for (const o of open) await require('./payments').cancelLink(o.paymentLinkId);
     await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { status: 'waived' });
     // Nothing to pay for a cancelled visit. Already paid: online → refunded at once;
     // at the desk → "refund due" until handed back (Fees / the visit's row).
@@ -317,6 +320,8 @@ async function reschedule(appt, startAt, by, locationId) {
     next.payAt = appt.payAt;
     await next.save();
   } else if (moved) {
+    const open = await M.Payment.find({ appointmentId: appt._id, status: 'pending', paymentLinkId: { $ne: null } }, 'paymentLinkId');
+    for (const o of open) await require('./payments').cancelLink(o.paymentLinkId);
     await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { status: 'waived', note: 'Moved to another branch' });
   } else if (await M.Payment.exists({ appointmentId: appt._id })) {
     await M.Payment.deleteMany({ appointmentId: next._id });
