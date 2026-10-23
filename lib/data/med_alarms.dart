@@ -264,6 +264,7 @@ class MedAlarms with WidgetsBindingObserver {
   /// Removes every reminder this phone scheduled (sign-out).
   Future<void> clear() async {
     if (!LocalNotes.I.supported) return;
+    await LocalNotes.I.init(); // also at launch, before anything else set it up
     for (final id in (await LocalNotes.I.scheduledIds()).where(_isAlarm)) {
       await LocalNotes.I.cancel(id);
     }

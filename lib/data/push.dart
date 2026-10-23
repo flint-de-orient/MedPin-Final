@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:isolate';
 import 'dart:ui' show DartPluginRegistrant, IsolateNameServer;
 
@@ -177,8 +176,11 @@ class Push {
 
   /// On sign-out: the backend forgets this phone (sent with /api/auth/logout).
   Future<void> forget() async {
-    if (!_supported) return;
+    if (!_supported || Session.I.signedIn) return;
     try {
+      if (Firebase.apps.isEmpty) await Firebase.initializeApp();
+      // Someone signed in meanwhile: keep the token they now use.
+      if (Session.I.signedIn) return;
       await FirebaseMessaging.instance.deleteToken();
     } catch (_) {}
     token = null;
@@ -254,17 +256,4 @@ Future<bool> _handToApp(String type) async {
 /// can't sign the patient out from the background). Read afresh every time:
 /// this isolate can outlive an app run that has since rotated the tokens.
 /// Expired tokens refresh through Api as usual and are saved for the app.
-Future<bool> _restoreSaved() async {
-  final s = Session.I;
-  Map<String, dynamic>? data;
-  try {
-    final raw = await s.store.read();
-    if (raw != null) data = jsonDecode(raw) as Map<String, dynamic>;
-  } catch (_) {
-    data = null;
-  }
-  s.accessToken = data?['accessToken'] as String?;
-  s.refreshToken = data?['refreshToken'] as String?;
-  s.account = (data?['account'] as Map?)?.cast<String, dynamic>();
-  return s.signedIn;
-}
+Future<bool> _restoreSaved() => Session.I.loadSaved();

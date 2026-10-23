@@ -74,8 +74,14 @@ class Api {
       throw const ApiException(0, 'NETWORK', "Can't reach MedPin. Check your internet connection.");
     }
     if (res.statusCode == 401 && !retried && session.refreshToken != null) {
-      if (await session.refresh()) return upload(path, files: files, fields: fields, method: method, retried: true);
-      await session.expire();
+      switch (await session.refreshSession()) {
+        case RefreshResult.ok:
+          return upload(path, files: files, fields: fields, method: method, retried: true);
+        case RefreshResult.signedOut:
+          await session.expire();
+        case RefreshResult.unavailable:
+          throw _unavailable;
+      }
     }
     dynamic json;
     try {
@@ -111,6 +117,12 @@ class Api {
   void Function()? onCountsChanged;
   static final _alarmPaths = RegExp(r'^/api/patient/(doses|medicines|me$|records/[^/]+/add-medicines)');
 
+  /// Sign-in calls that must not refresh-and-retry themselves.
+  static final _noRefresh = RegExp(r'^/api/auth/(otp|refresh|logout)');
+
+  /// The token couldn't be refreshed right now (the user stays signed in).
+  static const _unavailable = ApiException(0, 'UNAVAILABLE', "MedPin can't be reached right now. Please try again in a moment.");
+
   /// Calls that change nothing others see: sign-in, exports, voice clean-up, AI drafts, typing, devices.
   static final _quietPaths = RegExp(r'^/api/(auth/|exports|me/voice/|me/devices|ai/|.*/typing$|.*/presence|patient/device-sync)');
 
@@ -133,10 +145,17 @@ class Api {
       throw const ApiException(0, 'NETWORK', "Can't reach MedPin. Check your internet connection.");
     }
 
-    // Expired access token: refresh once and retry.
-    if (res.statusCode == 401 && !retried && !path.startsWith('/api/auth/') && session.refreshToken != null) {
-      if (await session.refresh()) return _send(method, path, body: body, query: query, retried: true);
-      await session.expire();
+    // Expired access token: refresh once and retry (the launch check /api/auth/session
+    // too). Signed out only when the server ends the sign-in, never on a busy server.
+    if (res.statusCode == 401 && !retried && !_noRefresh.hasMatch(path) && session.refreshToken != null) {
+      switch (await session.refreshSession()) {
+        case RefreshResult.ok:
+          return _send(method, path, body: body, query: query, retried: true);
+        case RefreshResult.signedOut:
+          await session.expire();
+        case RefreshResult.unavailable:
+          throw _unavailable;
+      }
     }
 
     if (res.statusCode < 300 && method != 'GET' && _alarmPaths.hasMatch(path)) onMedicinesChanged?.call();

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,10 @@ import 'live.dart';
 import 'nav_counts.dart';
 
 /// Where the session is kept between launches.
+/// What a token refresh gave: a fresh token; the server ended the sign-in;
+/// or the server couldn't be asked right now (no internet, restarting, busy).
+enum RefreshResult { ok, signedOut, unavailable }
+
 abstract class SessionStore {
   Future<String?> read();
   Future<void> write(String value);
@@ -149,18 +154,26 @@ class Session extends ChangeNotifier {
   Future<bool> restore() async {
     try {
       final raw = await store.read();
-      if (raw == null) return false;
+      if (raw == null) {
+        _forgetLeftoverPush();
+        return false;
+      }
       final data = jsonDecode(raw) as Map<String, dynamic>;
       accessToken = data['accessToken'] as String?;
       refreshToken = data['refreshToken'] as String?;
       account = (data['account'] as Map?)?.cast<String, dynamic>();
       chosenPracticeId = data['practiceId'] as String?;
+      _savedAt = (data['savedAt'] as num?)?.toInt() ?? 0;
     } catch (_) {
       await _clearLocal();
       return false;
     }
-    if (refreshToken == null) return false;
+    if (refreshToken == null) {
+      _forgetLeftoverPush();
+      return false;
+    }
     try {
+      // An expired access token (they last 15 minutes) is refreshed by Api first.
       final fresh = await Api.I.get('/api/auth/session');
       account = (fresh as Map).cast<String, dynamic>();
       await _save();
@@ -168,15 +181,34 @@ class Session extends ChangeNotifier {
       notifyListeners();
       return true;
     } on ApiException catch (e) {
-      // Offline: keep the saved account so the app still opens.
-      if (e.isNetwork && account != null) {
+      // Only the server saying this sign-in is over (401 / 403) signs out. Offline,
+      // the server restarting or busy: keep the saved account so the app still opens.
+      if (!_rejected(e) && account != null) {
         restoredAtLaunch = true;
         notifyListeners();
         return true;
       }
-      await _clearLocal();
+      await _signedOutHere();
       return false;
     }
+  }
+
+  /// Not signed in on this phone at launch: drop any push token left from an
+  /// earlier sign-in, in the background (the splash screen doesn't wait).
+  void _forgetLeftoverPush() => unawaited(onSignedOutHere().catchError((_) {}));
+
+  /// The server ended this sign-in (signed out, revoked, expired, account closed).
+  static bool _rejected(ApiException e) => e.status == 401 || e.status == 403;
+
+  /// Called when this phone stops being signed in without the user signing out
+  /// (main.dart: forget the push token, so nothing more is shown here).
+  Future<void> Function() onSignedOutHere = () async {};
+
+  Future<void> _signedOutHere() async {
+    await _clearLocal();
+    try {
+      await onSignedOutHere();
+    } catch (_) {}
   }
 
   /// Saves the result of a successful OTP verification.
@@ -237,40 +269,57 @@ class Session extends ChangeNotifier {
     return {'platform': kIsWeb ? 'web' : p, 'deviceName': kIsWeb ? 'Web browser' : 'MedPin on $name'};
   }
 
-  Future<bool>? _refreshing;
+  Future<RefreshResult>? _refreshing;
 
-  /// Gets a new access token with the refresh token. Returns false if signed out.
+  /// Gets a new access token with the refresh token.
   ///
   /// Only one refresh runs at a time: screens often fire several requests at
   /// once, and each would otherwise spend the same (single-use) refresh token.
-  Future<bool> refresh() => _refreshing ??= _refresh().whenComplete(() => _refreshing = null);
+  Future<RefreshResult> refreshSession() => _refreshing ??= _refresh().whenComplete(() => _refreshing = null);
 
-  Future<bool> _refresh() async {
+  /// True when there is a fresh access token to use.
+  Future<bool> refresh() async => await refreshSession() == RefreshResult.ok;
+
+  Future<RefreshResult> _refresh() async {
+    // A background push or an alarm button (its own copy of the app) may have
+    // rotated the token already and saved the new one: use that. Sending the old
+    // one would look like a stolen token to the server, which ends the sign-in.
+    if (await _adoptNewerSaved(refreshToken)) return RefreshResult.ok;
     final token = refreshToken;
-    if (token == null) return false;
+    if (token == null) return RefreshResult.signedOut;
     try {
       final body = await Api.I.post('/api/auth/refresh', {'refreshToken': token}) as Map;
       accessToken = body['accessToken'] as String?;
       refreshToken = body['refreshToken'] as String?;
       await _save();
-      return true;
+      return RefreshResult.ok;
     } on ApiException catch (e) {
-      if (e.code == 'REFRESH_RACE') return _adoptSavedToken(token);
-      return e.isNetwork; // a network blip shouldn't sign the user out
+      if (e.code == 'REFRESH_RACE') {
+        // Another request rotated it a moment ago: wait for it to save the new token.
+        for (var i = 0; i < 8; i++) {
+          if (await _adoptNewerSaved(token)) return RefreshResult.ok;
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+        }
+        return RefreshResult.unavailable;
+      }
+      // Only the server saying the sign-in is over signs out; no internet, a
+      // restart (502/503) or a busy server is temporary.
+      return _rejected(e) ? RefreshResult.signedOut : RefreshResult.unavailable;
     }
   }
 
-  /// Another request already rotated the token: use the one it saved.
-  Future<bool> _adoptSavedToken(String spent) async {
-    if (refreshToken != null && refreshToken != spent) return true;
+  /// The saved refresh token, when it is newer than [mine] (rotated elsewhere): adopt it.
+  Future<bool> _adoptNewerSaved(String? mine) async {
     try {
       final raw = await store.read();
       if (raw == null) return false;
       final data = jsonDecode(raw) as Map<String, dynamic>;
       final saved = data['refreshToken'] as String?;
-      if (saved == null || saved == spent) return false;
+      final at = (data['savedAt'] as num?)?.toInt() ?? 0;
+      if (saved == null || saved == mine || at <= _savedAt) return false;
       accessToken = data['accessToken'] as String?;
       refreshToken = saved;
+      _savedAt = at;
       return true;
     } catch (_) {
       return false;
@@ -279,7 +328,7 @@ class Session extends ChangeNotifier {
 
   /// The server no longer accepts this session.
   Future<void> expire() async {
-    await _clearLocal();
+    await _signedOutHere();
     notifyListeners();
   }
 
@@ -303,12 +352,36 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// When the tokens in memory were saved (or loaded): a saved copy is adopted
+  /// only when it is newer — another part of the app rotated it — never older.
+  int _savedAt = 0;
+
   Future<void> _save() async {
+    final at = DateTime.now().millisecondsSinceEpoch;
     try {
-      await store.write(jsonEncode({'accessToken': accessToken, 'refreshToken': refreshToken, 'account': account, 'practiceId': chosenPracticeId}));
+      await store.write(jsonEncode({'accessToken': accessToken, 'refreshToken': refreshToken, 'account': account, 'practiceId': chosenPracticeId, 'savedAt': at}));
+      _savedAt = at;
     } catch (e) {
       debugPrint('Session not saved: $e');
     }
+  }
+
+  /// Loads the saved sign-in without asking the server (a background push,
+  /// an alarm button). False when nobody is signed in on this phone.
+  Future<bool> loadSaved() async {
+    try {
+      final raw = await store.read();
+      if (raw == null) return false;
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      accessToken = data['accessToken'] as String?;
+      refreshToken = data['refreshToken'] as String?;
+      account = (data['account'] as Map?)?.cast<String, dynamic>();
+      chosenPracticeId = data['practiceId'] as String?;
+      _savedAt = (data['savedAt'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return false;
+    }
+    return signedIn;
   }
 
   Future<void> _clearLocal() async {

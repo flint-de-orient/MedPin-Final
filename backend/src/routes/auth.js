@@ -167,7 +167,9 @@ r.post('/refresh', async (req, res) => {
   const fresh = randomToken();
   const session = await M.AuthSession.findOneAndUpdate(
     { tokenHash: hash, revokedAt: null, expiresAt: { $gt: now } },
-    { $set: { tokenHash: sha256(fresh), prevTokenHash: hash, rotatedAt: now, lastUsedAt: now, ip: req.ip } },
+    // Sliding: each refresh extends the sign-in, so someone using the app stays signed in;
+    // only JWT_REFRESH_TTL (30 days) without opening it signs them out.
+    { $set: { tokenHash: sha256(fresh), prevTokenHash: hash, rotatedAt: now, lastUsedAt: now, ip: req.ip, expiresAt: new Date(now.getTime() + ttlMs(env.jwt.refreshTtl)) } },
     { new: true },
   );
   if (!session) {

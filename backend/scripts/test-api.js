@@ -174,8 +174,13 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ctx.practiceId = out.practice.id;
     ctx.locationId = out.location.id;
     assert.equal(out.landing, 'Doctor-Dashboard');
+    // A sign-in that is being used doesn't run out: each refresh extends it.
+    const sec = require('../src/lib/security');
+    await M.AuthSession.updateOne({ tokenHash: sec.sha256(ctx.docRefresh) }, { expiresAt: new Date(Date.now() + 864e5) });
     const refreshed = ok(await api()('POST', '/api/auth/refresh', { refreshToken: ctx.docRefresh }));
     assert.ok(refreshed.accessToken);
+    const slid = await M.AuthSession.findOne({ tokenHash: sec.sha256(refreshed.refreshToken) });
+    assert.ok(slid.expiresAt > new Date(Date.now() + 20 * 864e5), 'refresh extends the sign-in (sliding)');
     const late = await api()('POST', '/api/auth/refresh', { refreshToken: ctx.docRefresh });
     assert.equal(late.status, 401, 'refresh tokens rotate');
     assert.equal(late.body.error.code, 'REFRESH_RACE', 'a late duplicate is a race, not a theft');

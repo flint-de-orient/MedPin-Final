@@ -24,6 +24,12 @@ void main() {
   // Push notifications start once someone is signed in (restored or new).
   Session.I.deviceToken = () => Push.I.token;
   Session.I.ensureDeviceToken = Push.I.ensureToken;
+  // Signed out by the server (or found signed out at launch): this phone's push
+  // token is dropped too, so a signed-out phone shows nothing.
+  Session.I.onSignedOutHere = () async {
+    await Push.I.forget();
+    if (!Session.I.signedIn) await MedAlarms.I.clear(); // and no medicine alarms ring on a signed-out phone
+  };
   // Silent pushes while the app is in the background or closed (watch sync,
   // medicine alarms changed): data/push.dart pushBackground, no UI.
   if (Push.backgroundSupported) {
