@@ -10,6 +10,8 @@ import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/voice.dart';
+import '../../widgets/chat_photo.dart';
+import '../../widgets/file_view.dart';
 import '../../widgets/chat_tools.dart';
 import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
@@ -248,7 +250,14 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       final time = at == null ? '' : F.time(at);
       final text = m['deleted'] == true ? 'This message was deleted' : m.str('text');
       final kind = m.str('kind');
-      if (kind == 'record' || kind == 'attachment') {
+      if (kind == 'attachment' && m['deleted'] != true && m.obj('record').isEmpty && (ReportFile.fromApi(m['attachment'])?.isImage ?? false)) {
+        // A photo: the picture itself (tap for full screen), with what was written with it.
+        final file = m.obj('attachment');
+        out.add(Align(
+          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+          child: ChatPhoto(url: file.str('url'), name: file.str('name'), mime: file.str('mimeType'), mine: mine, caption: text),
+        ));
+      } else if (kind == 'record' || kind == 'attachment') {
         final rec = m.obj('record');
         final file = m.obj('attachment');
         final recAt = F.date(rec['date']);

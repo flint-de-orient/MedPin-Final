@@ -1,6 +1,7 @@
 // MedPin AI: patient chat replies (grounded in the practice knowledge base and
 // flagged for doctor review), the doctor assistant, patient "Ask AI",
 // daily chat summaries, and reading lab reports into structured results.
+const storage = require('./storage');
 const M = require('../models');
 const T = require('../lib/time');
 const ai = require('./ai');
@@ -14,6 +15,44 @@ const EMERGENCY_WORDS = [
 ];
 const isEmergencyText = (text) => EMERGENCY_WORDS.some((w) => String(text).toLowerCase().includes(w));
 const AI_PAUSE_MIN = 10;
+// The clinic is "in the thread" while its open screen keeps refreshing (every 4 s).
+const AI_VIEWING_MIN = 2;
+
+/** Is MedPin AI quiet in this thread: a clinic reply in the last 10 min, or someone at the clinic has it open. */
+function aiPaused(convo, now = new Date()) {
+  return Boolean(
+    (convo.aiPausedAt && convo.aiPausedAt > T.addMinutes(now, -AI_PAUSE_MIN))
+    || (convo.staffViewingAt && convo.staffViewingAt > T.addMinutes(now, -AI_VIEWING_MIN)),
+  );
+}
+
+// Photos / PDFs the patient sends with a question (a medicine strip, a report):
+// up to 3 from the message being answered, sent to the model to read.
+const AI_MAX_FILES = 3;
+const AI_MAX_BYTES = 8 * 1024 * 1024;
+
+/** The patient's files since the clinic or MedPin AI last wrote, as model blocks (photos shrunk to 1280 px). */
+async function patientFiles(history) {
+  const turn = [];
+  for (let i = history.length - 1; i >= 0 && history[i].senderType === 'patient'; i -= 1) turn.unshift(history[i]);
+  const files = turn.filter((m) => m.kind === 'attachment' && m.attachment?.key && /^image\/|^application\/pdf$/.test(m.attachment.mimeType || '')).slice(-AI_MAX_FILES);
+  const blocks = [];
+  for (const m of files) {
+    try {
+      let buf = await storage.read(m.attachment.key);
+      if (!buf || buf.length > AI_MAX_BYTES) continue;
+      let type = m.attachment.mimeType;
+      if (type.startsWith('image/')) {
+        buf = await require('sharp')(buf).rotate().resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
+        type = 'image/jpeg';
+      }
+      blocks.push({ type: type === 'application/pdf' ? 'document' : 'image', source: { type: 'base64', media_type: type, data: buf.toString('base64') } });
+    } catch (err) {
+      console.warn('[ai photo]', err.message);
+    }
+  }
+  return blocks;
+}
 
 // What MedPin AI may and may not do when talking to a patient.
 const PATIENT_SAFETY_RULES = [
@@ -103,8 +142,7 @@ const pickVitals = (v) => ({ bp: v.bpSystolic && `${v.bpSystolic}/${v.bpDiastoli
 /** Called after a patient posts in a care thread. Returns the AI message or null. */
 /** Will MedPin AI answer in this thread now? (Quick: no AI call.) */
 async function willReplyInCareThread(convo) {
-  const paused = convo.aiPausedAt && convo.aiPausedAt > T.addMinutes(new Date(), -AI_PAUSE_MIN);
-  if (!ai.enabled() || !convo.aiEnabled || paused || convo.type !== 'care') return false;
+  if (!ai.enabled() || !convo.aiEnabled || aiPaused(convo) || convo.type !== 'care') return false;
   const primary = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true });
   if (primary) {
     const prof = await M.DoctorProfile.findOne({ userId: primary.userId }, 'chatSettings');
@@ -121,8 +159,9 @@ async function replyInCareThread(convo, patientMessage) {
       detail: patientMessage.text.slice(0, 300), sourceModel: 'Message', sourceId: patientMessage._id, conversationId: convo._id,
     });
   }
-  const paused = convo.aiPausedAt && convo.aiPausedAt > T.addMinutes(new Date(), -AI_PAUSE_MIN);
-  if (!ai.enabled() || !convo.aiEnabled || paused || convo.type !== 'care') return null;
+  // Fresh state: the clinic may have opened the thread since the patient's message came in.
+  const now = await M.Conversation.findById(convo._id, 'aiPausedAt staffViewingAt');
+  if (!ai.enabled() || !convo.aiEnabled || aiPaused(now || convo) || convo.type !== 'care') return null;
   // The patient's main doctor can turn MedPin AI replies off (Chat settings).
   const primary = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true });
   if (primary) {
@@ -142,21 +181,27 @@ async function replyInCareThread(convo, patientMessage) {
     `Rules:\n- ${PATIENT_SAFETY_RULES}\n- Questions about doses, new symptoms, test needs or changing treatment: say the doctor will confirm, and set needs_doctor true.`,
     'Ground medical guidance in the clinic knowledge entries below and cite their ids. If the answer is not covered there, keep it general, say the care team will follow up, and set reason to outside_knowledge_base.',
     'Set urgency high and needs_doctor true for anything that could be an emergency, and tell the patient to call 108 or go to the nearest emergency department.',
+    'Photos and PDFs the patient sent are attached to their message. Read what is printed on them. A medicine strip, box or bottle: give the name and strength you can read; if it matches a medicine in the patient record, say so and repeat how their doctor prescribed it (dose, times, with or without food); if it is not on their list, say so, tell them not to take it until their doctor confirms, and set needs_doctor true. You may say in plain words what that kind of medicine is generally used for. A prescription or report: say briefly what it shows without interpreting results as a diagnosis; their doctor will review it. A photo of the body (rash, wound, swelling): do not describe a cause; say the doctor will look at it and set needs_doctor true. If the photo is blurred or the label is not visible, ask for a clear photo of the label. Never guess a name you cannot read.',
     `Patient record (JSON): ${patientContext(summary)}`,
     `Clinic knowledge entries (JSON): ${JSON.stringify(kb.map((k) => ({ id: String(k._id), title: k.title, content: k.content })))}`,
   ].join('\n\n');
+  const fileLabel = (m) => (m.kind === 'attachment' ? (/^image\//.test(m.attachment?.mimeType || '') ? '[photo]' : '[file]') : m.kind === 'voice' ? '[voice message]' : m.kind === 'record' ? '[shared record]' : '');
   const messages = [];
   for (const m of history) {
     const role = m.senderType === 'patient' ? 'user' : 'assistant';
-    const content = m.senderType === 'patient' ? m.text || '[attachment]' : `${m.senderType === 'ai' ? '' : `[${m.senderType}] `}${m.text || ''}`;
+    const content = m.senderType === 'patient' ? [fileLabel(m), m.text].filter(Boolean).join(' ') || '[attachment]' : `${m.senderType === 'ai' ? '' : `[${m.senderType}] `}${m.text || ''}`;
     if (messages.length && messages[messages.length - 1].role === role) messages[messages.length - 1].content += `\n${content}`;
     else messages.push({ role, content });
   }
   while (messages.length && messages[0].role !== 'user') messages.shift();
   if (!messages.length) return null;
+  // The photos / PDFs of the message being answered go with it, for the model to read.
+  const files = await patientFiles(history);
+  const last = messages[messages.length - 1];
+  if (files.length && last.role === 'user') last.content = [{ type: 'text', text: last.content }, ...files];
 
   // Chat replies are short: low effort keeps them quick.
-  const out = await ai.completeJson({ system, messages, schema: REPLY_SCHEMA, effort: 'low' });
+  const out = await ai.completeJson({ system, messages, schema: REPLY_SCHEMA, effort: 'low', vision: files.length > 0 });
   if (!out || out.refused || !out.data) return null;
   const d = out.data;
   const flagged = d.needs_doctor || d.reason !== 'none' || ['medium', 'high'].includes(d.urgency) || urgentByWords;
@@ -455,4 +500,5 @@ async function extractPrescription(buffer, mimeType) {
   return out?.data || null;
 }
 
-module.exports = { willReplyInCareThread, replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };
+module.exports = {
+  aiPaused, willReplyInCareThread, replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };

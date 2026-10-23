@@ -64,12 +64,16 @@ async function urgentAlertOf(convo, viewer) {
   };
 }
 
+// Photos keep the same link all day, so a chat that refreshes every few
+// seconds shows them from the phone's cache instead of downloading them again.
+const fileView = (f) => (f?.key && /^image\//.test(f.mimeType || '') ? { ...(f.toObject ? f.toObject() : f), url: storage.stableUrl(f.key) } : storage.withUrl(f));
+
 const messageView = (m, userId) => ({
   ...m.toJSON(),
   auto: Boolean(m.meta?.auto), // an automatic note (visit booked, fee paid…) sent from this person's account
   text: m.deletedForEveryoneAt ? null : m.text,
   deleted: Boolean(m.deletedForEveryoneAt),
-  attachment: storage.withUrl(m.attachment),
+  attachment: m.deletedForEveryoneAt ? undefined : fileView(m.attachment),
   voice: m.voice?.file ? { ...m.voice.toJSON?.(), file: storage.withUrl(m.voice.file) } : undefined,
   mine: String(m.senderId?._id || m.senderId) === String(userId), // senderId may be populated
 });
@@ -84,6 +88,12 @@ threads.get('/:id/messages', async (req, res) => {
   const q = { conversationId: convo._id, hiddenFor: { $ne: req.user._id } };
   if (req.query.before) q.createdAt = { $lt: new Date(req.query.before) };
   const msgs = (await M.Message.find(q).sort({ createdAt: -1 }).limit(limit).populate('senderId', 'name')).reverse();
+  // Someone at the clinic has the thread open: MedPin AI stays quiet meanwhile (one write a minute at most).
+  const inThread = convo.participants.find((p) => String(p.userId) === String(req.user._id));
+  if (inThread && inThread.role !== 'patient' && !req.query.before && !(convo.staffViewingAt > T.addMinutes(new Date(), -1))) {
+    convo.staffViewingAt = new Date();
+    await M.Conversation.updateOne({ _id: convo._id }, { staffViewingAt: convo.staffViewingAt });
+  }
   const pinned = convo.pinnedMessageId ? await M.Message.findById(convo.pinnedMessageId) : null;
   const patient = convo.patientId ? await M.Patient.findById(convo.patientId, 'name userId') : null;
   const lastSeen = patient?.userId ? convo.participants.find((p) => String(p.userId) === String(patient.userId))?.lastReadAt : null;
@@ -116,7 +126,7 @@ threads.get('/:id/messages', async (req, res) => {
   res.json({
     conversation: {
       ...convo.toJSON(),
-      aiPaused: Boolean(convo.aiPausedAt && convo.aiPausedAt > T.addMinutes(new Date(), -10)),
+      aiPaused: assistant.aiPaused(convo),
       patient: patient && {
         id: patient._id, name: patient.name, lastSeenAt: lastSeen,
         photo: patient.userId ? (await require('../services/photos').photosFor([patient.userId])).get(String(patient.userId)) || null : null,

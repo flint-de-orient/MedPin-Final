@@ -31,6 +31,9 @@ const conversationSchema = new Schema(
     aiEnabled: { type: Boolean, default: true },
     aiPausedBy: ref('User'), // "AI assistant is paused while you're in this thread"
     aiPausedAt: Date,
+    // Someone at the clinic has the thread open (its screen refreshes every few
+    // seconds): MedPin AI stays quiet while they are there (services/assistant.js).
+    staffViewingAt: Date,
     pinnedMessageId: ref('Message'),
     lastMessage: {
       text: String,

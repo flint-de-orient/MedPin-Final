@@ -1960,6 +1960,50 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(live.includes('phone-still-in'), 'a phone still signed in keeps its pushes');
   });
 
+  await step('chat photos: shown as photos, read by MedPin AI; AI quiet while the doctor has the thread open', async () => {
+    const convo = ctx.convoId;
+    await M.Conversation.updateOne({ _id: convo }, { aiEnabled: true, aiPausedAt: null, staffViewingAt: null });
+    // A photo of a medicine strip: its link stays the same between refreshes (the phone caches it).
+    const photo = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, undefined, { form: fileForm('file', tinyPng(), 'strip.png', 'image/png') }), 201);
+    assert.equal(photo.message.kind, 'attachment');
+    const urlOf = async () => ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).items.find((m) => m.id === photo.message.id).attachment.url;
+    assert.equal(await urlOf(), await urlOf(), 'a photo keeps its link across refreshes');
+    // MedPin AI answers the question about it with the photo attached (AI stubbed: nothing is sent anywhere).
+    const aiMod = require('../src/services/ai');
+    const saved = { enabled: aiMod.enabled, completeJson: aiMod.completeJson };
+    let seen = null;
+    aiMod.enabled = () => true;
+    aiMod.completeJson = async ({ messages, vision }) => {
+      seen = { messages, vision };
+      return { model: 'stub', data: { reply: 'The strip reads Telmisartan 40 mg — on your list from Dr. Sen: 1 in the morning after food.', urgency: 'none', needs_doctor: false, reason: 'none', cited_entry_ids: [] } };
+    };
+    try {
+      const ask = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Give me details about this medicine' }), 201);
+      assert.equal(ask.aiPending, true, 'nobody from the clinic is in the thread: MedPin AI answers');
+      for (let i = 0; i < 30 && !seen; i += 1) await new Promise((r) => setTimeout(r, 100));
+      assert.ok(seen, 'MedPin AI was asked');
+      assert.equal(seen.vision, true, 'with vision');
+      const last = seen.messages[seen.messages.length - 1];
+      assert.ok(Array.isArray(last.content) && last.content.some((b) => b.type === 'image' && b.source.media_type === 'image/jpeg'), 'the photo goes with the question');
+      assert.match(last.content[0].text, /\[photo\][\s\S]*Give me details about this medicine/);
+      // The doctor opens the thread: MedPin AI stays quiet while they are there.
+      seen = null;
+      const opened = ok(await ctx.doc('GET', `/api/conversations/${convo}/messages`));
+      assert.equal(opened.conversation.aiPaused, true, 'the banner tells the truth');
+      const again = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'And is it safe with my sugar tablet?' }), 201);
+      assert.equal(again.aiPending, false, 'AI does not answer while the doctor is in the thread');
+      await new Promise((r) => setTimeout(r, 300));
+      assert.equal(seen, null, 'MedPin AI was not asked');
+      // Two minutes after the doctor left, MedPin AI answers again.
+      await M.Conversation.updateOne({ _id: convo }, { staffViewingAt: new Date(Date.now() - 3 * 60e3), aiPausedAt: null });
+      const later = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Thank you' }), 201);
+      assert.equal(later.aiPending, true);
+    } finally {
+      Object.assign(aiMod, saved);
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

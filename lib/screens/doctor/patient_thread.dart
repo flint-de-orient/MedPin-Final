@@ -7,6 +7,8 @@ import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
 import '../../data/voice.dart';
+import '../../widgets/chat_photo.dart';
+import '../../widgets/file_view.dart';
 import '../../widgets/chat_tools.dart';
 import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
@@ -390,6 +392,14 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
       return Align(
         alignment: align,
         child: _liveVoice(v['durationSec'] is num ? _dur(v['durationSec'] as num) : '', time, v.obj('file').str('url')),
+      );
+    }
+    // A photo: the picture itself (tap for full screen), with what was written with it.
+    if (m['kind'] == 'attachment' && m['deleted'] != true && (ReportFile.fromApi(m['attachment'])?.isImage ?? false)) {
+      final f = m.obj('attachment');
+      return Align(
+        alignment: align,
+        child: ChatPhoto(url: f.str('url'), name: f.str('name'), mime: f.str('mimeType'), mine: align == Alignment.centerRight, meta: time, caption: m.str('text')),
       );
     }
     if (m['kind'] == 'attachment' || m['kind'] == 'record') {
