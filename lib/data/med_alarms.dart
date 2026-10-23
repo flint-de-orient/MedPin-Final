@@ -8,6 +8,7 @@ import 'live.dart';
 import 'local_notes.dart';
 import 'push.dart';
 import 'session.dart';
+import '../widgets/i18n.dart';
 
 /// Reminders rung by the phone itself (work offline, survive reboots), for
 /// the next 7 days:
@@ -108,6 +109,9 @@ class MedAlarms with WidgetsBindingObserver {
     }
   }
 
+  /// Alarm text in the patient's app language (the alarm rings with no screen open).
+  static String _t(String s) => I18n.tr(s, '${Session.I.user['language'] ?? 'en'}');
+
   static String _day(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   static String _clock(DateTime d) {
@@ -134,6 +138,7 @@ class MedAlarms with WidgetsBindingObserver {
       final days = [for (var i = 0; i < 7; i++) today.add(Duration(days: i))];
       final until = today.add(const Duration(days: 7));
       final wanted = <int, ({DateTime at, String title, String body, Map<String, dynamic> payload, String kind})>{};
+      final dueIds = <String>{}; // doses still to take (a snooze for anything else is cancelled)
 
       // ── Medicines ──
       if (medsOn == true) {
@@ -146,6 +151,7 @@ class MedAlarms with WidgetsBindingObserver {
           for (final dose in (r['items'] as List? ?? const [])) {
             final m = (dose as Map).cast<String, dynamic>();
             if (m['status'] != 'due') continue;
+            dueIds.add('${m['id'] ?? m['_id']}');
             final at = DateTime.tryParse('${m['at']}')?.toLocal();
             if (at == null || at.add(const Duration(minutes: 30)).isBefore(now)) continue;
             groups.putIfAbsent(DateTime(at.year, at.month, at.day, at.hour, at.minute), () => []).add(m);
@@ -156,8 +162,8 @@ class MedAlarms with WidgetsBindingObserver {
             for (final m in g.value)
               [(m['medicine'] as Map?)?['name'], (m['medicine'] as Map?)?['strength']].where((x) => x != null && '$x'.isNotEmpty).join(' '),
           ].where((s) => s.isNotEmpty).toList();
-          final how = {for (final m in g.value) _how(m)}.whereType<String>().join(' / ');
-          final title = names.length <= 1 ? 'Time for ${names.isEmpty ? 'your medicine' : names.first}' : 'Time for ${names.length} medicines';
+          final how = {for (final m in g.value) _how(m)}.whereType<String>().map(_t).join(' / ');
+          final title = names.length <= 1 ? '${_t('Time for')} ${names.isEmpty ? _t('your medicine') : names.first}' : _t('Time for ${names.length} medicines');
           final body = [if (names.length > 1) names.join(', '), if (how.isNotEmpty) how].join(' · ');
           final stamp = g.key.millisecondsSinceEpoch;
           // Taken marks these doses; Snooze rings again after the patient's snooze time.
@@ -167,8 +173,8 @@ class MedAlarms with WidgetsBindingObserver {
           if (again.isAfter(now)) {
             wanted[idFor('f$stamp')] = (
               at: again,
-              title: names.length <= 1 ? 'Still to take: ${names.isEmpty ? 'your medicine' : names.first}' : 'Still to take: ${names.length} medicines',
-              body: 'Tap to mark them taken${body.isEmpty ? '' : ' · $body'}',
+              title: names.length <= 1 ? '${_t('Still to take:')} ${names.isEmpty ? _t('your medicine') : names.first}' : _t('Still to take: ${names.length} medicines'),
+              body: '${_t('Tap to mark them taken')}${body.isEmpty ? '' : ' · $body'}',
               payload: payload,
               kind: 'dose', // the follow-up is gentler: an ordinary alarm notification
             );
@@ -188,19 +194,19 @@ class MedAlarms with WidgetsBindingObserver {
           final doctor = (v['doctorId'] is Map) ? '${(v['doctorId'] as Map)['name'] ?? ''}' : '';
           final place = (v['locationId'] is Map) ? '${(v['locationId'] as Map)['shortName'] ?? (v['locationId'] as Map)['name'] ?? ''}' : '';
           final body = [
-            '${_clock(start)}${doctor.isEmpty ? '' : ' with $doctor'}',
+            '${_clock(start)}${doctor.isEmpty ? '' : ' · $doctor'}',
             if (place.isNotEmpty) place,
-            if (v['token'] != null) 'token ${v['token']}',
+            if (v['token'] != null) '${_t('Token')} ${v['token']}',
           ].join(' · ');
           final payload = {'screen': 'Patient-DoctorDetail', if (v['doctorId'] is Map) 'doctorId': '${(v['doctorId'] as Map)['_id'] ?? (v['doctorId'] as Map)['id']}'};
           // Booked only shortly before: the confirmation was enough (the server's rule too).
           final dayBefore = start.subtract(const Duration(hours: 24));
           if (dayBefore.isAfter(now) && (made == null || start.difference(made).inHours >= 12)) {
-            wanted[idFor('v24${v['id'] ?? v['_id']}')] = (at: dayBefore, title: 'Your visit is tomorrow', body: body, payload: payload, kind: 'reminder');
+            wanted[idFor('v24${v['id'] ?? v['_id']}')] = (at: dayBefore, title: _t('Your visit is tomorrow'), body: body, payload: payload, kind: 'reminder');
           }
           final twoBefore = start.subtract(const Duration(hours: 2));
           if (twoBefore.isAfter(now) && (made == null || start.difference(made).inHours >= 2)) {
-            wanted[idFor('v2${v['id'] ?? v['_id']}')] = (at: twoBefore, title: 'Your visit is in about 2 hours', body: body, payload: payload, kind: 'reminder');
+            wanted[idFor('v2${v['id'] ?? v['_id']}')] = (at: twoBefore, title: _t('Your visit is in about 2 hours'), body: body, payload: payload, kind: 'reminder');
           }
         }
       }
@@ -224,8 +230,8 @@ class MedAlarms with WidgetsBindingObserver {
           if (!at.isAfter(now) || (loggedToday && at.day == now.day && at.month == now.month)) continue;
           wanted[idFor('log${_day(d)}')] = (
             at: at,
-            title: "Log today's meals",
-            body: 'A quick photo or a line is enough.',
+            title: _t("Log today's meals"),
+            body: _t('A quick photo or a line is enough.'),
             payload: const {'screen': 'Patient-Log'},
             kind: 'reminder',
           );
@@ -235,6 +241,10 @@ class MedAlarms with WidgetsBindingObserver {
       final existing = (await LocalNotes.I.scheduledIds()).where(_isAlarm).toSet();
       for (final id in existing.difference(wanted.keys.toSet())) {
         await LocalNotes.I.cancel(id);
+      }
+      // A snoozed alarm whose doses were marked (or whose medicine stopped) doesn't ring again.
+      for (final s in await LocalNotes.I.snoozes()) {
+        if (medsOn != true || !s.doseIds.any(dueIds.contains)) await LocalNotes.I.cancel(s.id);
       }
       for (final e in wanted.entries) {
         await LocalNotes.I.schedule(id: e.key, at: e.value.at, title: e.value.title, body: e.value.body, payload: e.value.payload, kind: e.value.kind);
@@ -265,7 +275,7 @@ class MedAlarms with WidgetsBindingObserver {
   Future<void> clear() async {
     if (!LocalNotes.I.supported) return;
     await LocalNotes.I.init(); // also at launch, before anything else set it up
-    for (final id in (await LocalNotes.I.scheduledIds()).where(_isAlarm)) {
+    for (final id in (await LocalNotes.I.scheduledIds()).where((id) => _isAlarm(id) || LocalNotes.isSnooze(id))) {
       await LocalNotes.I.cancel(id);
     }
   }

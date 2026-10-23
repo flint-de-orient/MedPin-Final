@@ -56,6 +56,11 @@ const LINES = {
     bn: 'এটা গুরুতর হতে পারে। এখনই 108-এ ফোন করুন বা কাছের ইমার্জেন্সিতে যান, আর অ্যাপের Emergency দিয়ে ডাক্তারকে জানান।',
     hi: 'यह गंभीर हो सकता है। अभी 108 पर कॉल करें या नज़दीकी इमरजेंसी में जाएँ, और ऐप में Emergency से अपने डॉक्टर को बताएँ।',
   },
+  failed: {
+    en: "MedPin AI couldn't answer just now. Please try again, or message your doctor from the Doctors tab.",
+    bn: 'MedPin AI এই মুহূর্তে উত্তর দিতে পারেনি। আবার চেষ্টা করুন, বা Doctors ট্যাব থেকে ডাক্তারকে মেসেজ করুন।',
+    hi: 'MedPin AI अभी जवाब नहीं दे सका। फिर कोशिश करें, या Doctors टैब से अपने डॉक्टर को संदेश भेजें।',
+  },
   cantAnswer: {
     en: "I can't answer that safely here. Please ask your doctor — you can message them from the Doctors tab.",
     bn: 'এটার উত্তর এখানে নিরাপদে দিতে পারছি না। আপনার ডাক্তারকে জিজ্ঞাসা করুন — Doctors ট্যাব থেকে মেসেজ করতে পারেন।',
@@ -422,7 +427,7 @@ async function doctorAnswer(session, question, practiceId, { excludeId } = {}) {
     languageRule((await M.User.findById(session.userId, 'language'))?.language, { clinician: true }),
   ].filter(Boolean).join('\n') + context;
   const out = await ai.complete({ system, messages, effort: 'medium' });
-  if (out.refused) return { text: "I can't help with that request.", refused: true, ...out };
+  if (!out || out.refused) return { ...(out || {}), text: "I can't help with that request.", refused: true };
   memory.afterAnswer(session, { ownerType: 'doctor', userId: session.userId }, { question, answer: out.text, practiceId });
   return out;
 }
@@ -456,7 +461,8 @@ async function patientAnswer(session, question, patient, { excludeId } = {}) {
   const out = await ai.completeJson({ system, messages, schema: PATIENT_ANSWER_SCHEMA, effort: 'low' });
   const emergencyWords = isEmergencyText(question);
   const fallback = emergencyWords ? line('emergency', lang) : line('cantAnswer', lang);
-  if (!out?.data || out.refused) return { text: fallback, refused: true, emergency: emergencyWords, ...(out || {}) };
+  // The model's raw output (its `text`) never reaches the patient: the safe line does.
+  if (!out?.data || out.refused) return { ...(out || {}), text: fallback, refused: true, emergency: emergencyWords };
   const d = out.data;
   // Self-check failed: don't show an answer that diagnoses or prescribes.
   const text = d.breaks_rules ? fallback : d.reply;
@@ -599,9 +605,11 @@ const RX_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['name', 'strength', 'morning', 'afternoon', 'night', 'food', 'duration_days', 'instructions'],
+        required: ['name', 'strength', 'morning', 'afternoon', 'night', 'frequency', 'food', 'duration_days', 'instructions'],
         properties: {
           name: { type: 'string' },
+          // SOS / "when needed" / "if pain" → as_needed; "once a week" → weekly; not written → unclear.
+          frequency: { type: 'string', enum: ['daily', 'weekly', 'as_needed', 'unclear'] },
           strength: { type: 'string', description: 'e.g. "500 mg"; empty if not printed' },
           morning: { type: 'number' },
           afternoon: { type: 'number' },
@@ -627,7 +635,7 @@ async function extractPrescription(buffer, mimeType) {
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.buffer.toString('base64') } }
     : { type: 'image', source: { type: 'base64', media_type: f.mimetype, data: f.buffer.toString('base64') } }));
   const out = await ai.completeJson({
-    system: 'You transcribe Indian doctor prescriptions. List every medicine exactly as written: name, strength, how many to take in the morning / afternoon / night (1-0-1 means 1 morning and 1 night), food relation and duration. '
+    system: 'You transcribe Indian doctor prescriptions. List every medicine exactly as written: name, strength, how many to take in the morning / afternoon / night (1-0-1 means 1 morning and 1 night; ½ is 0.5), how often (SOS, "when needed", "if fever / pain" = as_needed; "once a week" = weekly; when no timing is written = unclear), food relation and duration. '
       + 'Also copy the doctor\'s name, the clinic / hospital, the date, the diagnosis and the advised tests as written. Do not add, remove, change or recommend anything. If a field is not written, leave it empty or 0. '
       + 'Set document_type to what the file is; when it is a lab report, not medical or unreadable, return no medicines.',
     messages: [{ role: 'user', content: [...blocks, { type: 'text', text: 'Transcribe this prescription.' }] }],
@@ -640,5 +648,5 @@ async function extractPrescription(buffer, mimeType) {
 }
 
 module.exports = {
-  languageRule, patientLanguage,
+  line, languageRule, patientLanguage,
   aiPaused, aiLimitReached, threadClinician, willReplyInCareThread, replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };

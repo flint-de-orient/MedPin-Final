@@ -141,7 +141,11 @@ class UserText extends StatelessWidget {
   final TextOverflow? overflow;
   const UserText(this.data, {super.key, this.style, this.textAlign, this.maxLines, this.overflow});
 
-  static const _appPhrases = {'This message was deleted', 'Message deleted', 'Sent a file', 'Attachment', 'Voice message'};
+  static const _appPhrases = {
+    'This message was deleted', 'Message deleted', 'Sent a file', 'Attachment', 'Voice message',
+    // The clinic's automatic safety reply to an urgent message out of hours (care.js awayReply).
+    'The clinic is closed now. If this is an emergency, call 108 or go to the nearest emergency department. Your doctor has been told.',
+  };
 
   @override
   Widget build(BuildContext context) => m.Text(

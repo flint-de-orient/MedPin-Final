@@ -47,9 +47,23 @@ async function liveTokens(filter) {
   return [...new Set((await liveDevices(filter, 'token')).map((r) => r.token))];
 }
 
-/** A session ended (sign-out, "sign out other devices", expiry): forget its phones. */
-async function forgetSession(sessionId) {
-  if (sessionId) await M.DeviceToken.deleteMany({ sessionId });
+/**
+ * Phones that are being signed out (matching [filter]): first a silent "signed_out" push, so
+ * the app removes its medicine and visit alarms (a phone signed out from another device
+ * would otherwise keep ringing them), then they get no more pushes.
+ */
+async function signOutPhones(filter) {
+  const tokens = await M.DeviceToken.distinct('token', filter);
+  if (tokens.length) {
+    const { sendPush } = require('../services/push');
+    await Promise.resolve(sendPush(tokens, { data: { type: 'signed_out' } })).catch((err) => console.warn('[signed out push]', err.message));
+  }
+  await M.DeviceToken.deleteMany(filter);
 }
 
-module.exports = { liveDevices, liveTokens, forgetSession };
+/** A session ended (sign-out, "sign out other devices", expiry): forget its phones. */
+async function forgetSession(sessionId) {
+  if (sessionId) await signOutPhones({ sessionId });
+}
+
+module.exports = { liveDevices, liveTokens, forgetSession, signOutPhones };

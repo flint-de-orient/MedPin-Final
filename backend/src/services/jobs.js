@@ -38,10 +38,21 @@ const visitText = async (a) => {
 
 // ── Each job ─────────────────────────────────────────────
 
-/** Makes sure today's (and tomorrow's) dose rows exist for every patient taking medicines. */
+/**
+ * Makes sure today's (and tomorrow's) dose rows exist for every patient taking medicines.
+ * First, courses whose last day has passed are completed (no longer "current"), and those
+ * patients' phones drop their alarms.
+ */
 async function prepareDoses(now) {
   const day = T.dayKey(now);
   await once(`doses-ready:${day}`, async () => {
+    const done = { status: 'active', endDate: { $ne: null, $lt: T.dayStart(now) } };
+    const finished = await M.MedicationCourse.distinct('patientId', done);
+    if (finished.length) {
+      await M.MedicationCourse.updateMany(done, { status: 'completed' });
+      const { remindersChanged } = require('./reminders');
+      for (const id of finished) remindersChanged(id);
+    }
     const ids = await M.MedicationCourse.distinct('patientId', { status: 'active', trackingEnabled: true });
     const patients = await M.Patient.find({ _id: { $in: ids } });
     for (const p of patients) await ensureDoses(p, now, T.addDays(now, 1)).catch(() => {});
@@ -52,7 +63,8 @@ async function doseReminders(now, since) {
   const doses = await M.DoseLog.find({ status: 'due', scheduledAt: { $gt: since, $lte: now } }).limit(2000);
   if (!doses.length) return;
   const patients = new Map((await M.Patient.find({ _id: { $in: doses.map((d) => d.patientId) } }, 'userId settings')).map((p) => [String(p._id), p]));
-  const courses = new Map((await M.MedicationCourse.find({ _id: { $in: doses.map((d) => d.courseId) } }, 'name strength foodRelation dose')).map((c) => [String(c._id), c]));
+  // Only medicines still being taken: a course stopped or finished since its doses were made rings nothing.
+  const courses = new Map((await M.MedicationCourse.find({ _id: { $in: doses.map((d) => d.courseId) }, status: 'active' }, 'name strength foodRelation dose endDate stoppedAt')).map((c) => [String(c._id), c]));
   // Phones that ring alarms themselves don't need the server's push too — for the doses
   // they have scheduled (a dose changed after the phone last synced, or beyond what it
   // scheduled, still gets the push).
@@ -118,19 +130,22 @@ async function visitReminders(now) {
 async function followUpReminders(now) {
   if (T.minuteOfDay(now) < 10 * 60) return; // from 10:00 IST
   const today = T.dayStart(now);
-  const due = await M.FollowUp.find({ status: 'not_booked', dueDate: { $gte: today, $lt: T.addDays(today, 31) } }).limit(2000);
+  // Only when the doctor left "Remind the patient" on.
+  const due = await M.FollowUp.find({ status: 'not_booked', remindPatient: { $ne: false }, dueDate: { $gte: today, $lt: T.addDays(today, 31) } }).limit(2000);
   for (const f of due) {
     const prof = await M.DoctorProfile.findOne({ userId: f.doctorId }, 'followUpReminder displayName');
     const days = prof?.followUpReminder?.daysBefore ?? 3;
     const channels = prof?.followUpReminder?.channels || ['whatsapp', 'app'];
     const left = Math.round((T.dayStart(f.dueDate) - today) / 864e5);
-    if (left !== days) continue;
+    // From that many days before (a day the server was down, or a follow-up set closer than
+    // that, still gets it) — once per follow-up.
+    if (left > days || left < 0 || f.remindersSent > 0) continue;
     const p = await M.Patient.findById(f.patientId, 'userId phone');
     if (!p) continue;
-    await once(`followup:${f._id}:${days}`, async () => {
+    await once(`followup:${f._id}`, async () => {
       if (p.userId && channels.includes('app')) {
         await notify([p.userId], {
-          type: 'follow_up_reminder', practiceId: f.practiceId, title: `Follow-up due ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}`,
+          type: 'follow_up_reminder', practiceId: f.practiceId, title: `Follow-up due ${left === 0 ? 'today' : left === 1 ? 'tomorrow' : `in ${left} days`}`,
           body: `${prof?.displayName || 'Your doctor'} asked you to come back on ${T.dayKey(f.dueDate)}. Book a time in the app.`,
           screen: 'Patient-Doctors', whatsapp: channels.includes('whatsapp'),
         });
@@ -149,7 +164,7 @@ async function lowStock(now) {
   const day = T.dayKey(now);
   const courses = await M.MedicationCourse.find({ status: 'active', stockUnits: { $ne: null } }).limit(5000);
   for (const c of courses) {
-    const perDay = c.frequency === 'weekly' ? dosesPerDay(c.dose) / 7 : dosesPerDay(c.dose);
+    const perDay = require('./clinical').stockPerDay(c);
     if (!perDay) continue;
     const daysLeft = Math.floor(c.stockUnits / perDay);
     if (daysLeft > 3) continue;
@@ -370,7 +385,18 @@ async function chatRollup(now) {
     return set === null || set.has(String(patientId?._id || patientId));
   };
   const byDoctor = new Map(); // doctorId → { practiceId, names[] }
+  // A branch with its own front desk: the desk handles those chats (the doctor isn't rolled up);
+  // a branch without one: its doctors are, even when another branch has a desk.
+  const { hasDesk, patientPlace } = require('./notify');
+  const branchDesk = new Map();
+  const deskHandles = async (c) => {
+    const place = await patientPlace(c.practiceId, c.patientId?._id || c.patientId).catch(() => ({}));
+    const k = `${c.practiceId}:${place.locationId || ''}`;
+    if (!branchDesk.has(k)) branchDesk.set(k, await hasDesk(c.practiceId, place.locationId || undefined));
+    return branchDesk.get(k);
+  };
   for (const c of convos) {
+    if (await deskHandles(c)) continue;
     for (const p of c.participants || []) {
       if (p.role !== 'doctor' || !(p.unreadCount > 0)) continue;
       if (!(await myPatient(p.userId, c.patientId, c.practiceId))) continue;
@@ -381,13 +407,8 @@ async function chatRollup(now) {
     }
   }
   if (!byDoctor.size) return;
-  const { hasDesk } = require('./notify');
-  const desk = new Map();
   const bucket = Math.floor(T.minuteOfDay(now) / 120);
   for (const e of byDoctor.values()) {
-    const pid = String(e.practiceId);
-    if (!desk.has(pid)) desk.set(pid, await hasDesk(e.practiceId));
-    if (desk.get(pid)) continue;
     const prof = await M.DoctorProfile.findOne({ userId: e.doctorId }, 'chatSettings');
     const from = T.hhmmToMin(prof?.chatSettings?.replyHours?.from || '09:00');
     const to = T.hhmmToMin(prof?.chatSettings?.replyHours?.to || '20:00');

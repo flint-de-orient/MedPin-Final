@@ -103,6 +103,7 @@ const consultationSchema = new Schema(
     startedAt: { type: Date, default: Date.now },
     completedAt: Date,
     durationSec: Number,
+    issuingAt: Date, // Generate in progress (a second tap waits for this one)
     chiefComplaint: String,
     complaintLanguage: enumOf(E.LANGUAGES),
     vitalsId: ref('Vitals'),
@@ -240,6 +241,9 @@ const medicationCourseSchema = new Schema(
     unitsPerStrip: { type: Number, default: 10 },
     status: enumOf(E.COURSE_STATUSES, { default: 'active' }),
     stoppedAt: Date,
+    // Why it stopped: "Replaced by Dr. Rina Mitra's prescription", "Stopped by the doctor"…
+    stoppedReason: String,
+    replacedById: ref('MedicationCourse'),
   },
   baseOptions,
 );

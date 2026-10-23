@@ -148,6 +148,20 @@ class _P1ReadingSheetState extends State<P1ReadingSheet> with LiveData {
     final res = await runAction(context, () => Api.I.post('/api/patient/readings', body), busy: _busy);
     if (res == null || !mounted) return;
     final alerted = res is Map && res['alerted'] == true;
+    // A dangerous reading: what to do now (from the server), and for an emergency straight to
+    // the Emergency sheet (call 108, or an urgent message to their doctor).
+    final danger = res is Map && res['danger'] is Map ? (res['danger'] as Map).cast<String, dynamic>() : null;
+    if (danger != null) {
+      final advice = tr(context, danger.str('advice'));
+      final told = alerted ? ' ${tr(context, 'Your doctor has been told.')}' : '';
+      if (danger['severity'] == 'emergency') {
+        toast(context, '$advice$told');
+        P1.closeThen(context, 'Patient-Emergency');
+        return;
+      }
+      P1.closeWithToast(context, '$advice$told', true);
+      return;
+    }
     P1.closeWithToast(context, alerted ? 'Saved. This reading is outside your range, your doctor has been told.' : 'Reading saved', true);
   }
 

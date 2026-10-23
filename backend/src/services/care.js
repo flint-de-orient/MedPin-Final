@@ -35,20 +35,60 @@ async function raiseAlert({ practiceId, patientId, doctorId, severity, kind, tit
   return alert;
 }
 
-const DEFAULT_LIMITS = { bpSystolicMax: 160, bpDiastolicMax: 100, sugarFastingMax: 250, pulseMin: 45, pulseMax: 120, spo2Min: 92 };
+const DEFAULT_LIMITS = { bpSystolicMax: 160, bpDiastolicMax: 100, sugarFastingMax: 250, sugarRandomMax: 300, pulseMin: 45, pulseMax: 120, spo2Min: 92 };
 
-/** Raises alerts for a home reading outside the patient's limits, in every linked practice. */
-async function checkReading(vitals, patient) {
+/** What is wrong with a reading (for the clinic's alert) and what the patient should do now. */
+function readingFindings(vitals, patient) {
   const L = { ...DEFAULT_LIMITS, ...(patient.alertLimits?.toObject ? patient.alertLimits.toObject() : patient.alertLimits || {}) };
+  for (const k of Object.keys(L)) if (L[k] == null) L[k] = DEFAULT_LIMITS[k];
   const out = [];
   if (vitals.bpSystolic && (vitals.bpSystolic >= L.bpSystolicMax || vitals.bpDiastolic >= L.bpDiastolicMax)) {
     const severe = vitals.bpSystolic >= 180 || vitals.bpDiastolic >= 120;
-    out.push({ severity: severe ? 'emergency' : 'urgent', detail: `Home BP reading ${vitals.bpSystolic}/${vitals.bpDiastolic} mmHg, above the alert limit.` });
+    out.push({ severity: severe ? 'emergency' : 'urgent', detail: `Home BP reading ${vitals.bpSystolic}/${vitals.bpDiastolic} mmHg, above the alert limit.`, advice: severe ? 'bp_severe' : 'high' });
   }
-  if (vitals.spo2 && vitals.spo2 < L.spo2Min) out.push({ severity: vitals.spo2 < 88 ? 'emergency' : 'urgent', detail: `SpO₂ ${vitals.spo2}%, below ${L.spo2Min}%.` });
-  if (vitals.pulse && (vitals.pulse < L.pulseMin || vitals.pulse > L.pulseMax)) out.push({ severity: 'watch', detail: `Heart rate ${vitals.pulse} bpm, outside ${L.pulseMin}–${L.pulseMax}.` });
-  if (vitals.bloodSugar && vitals.sugarType === 'fasting' && vitals.bloodSugar >= L.sugarFastingMax) out.push({ severity: 'urgent', detail: `Fasting sugar ${vitals.bloodSugar} mg/dL.` });
-  if (vitals.bloodSugar && vitals.bloodSugar < 70) out.push({ severity: vitals.bloodSugar < 54 ? 'emergency' : 'urgent', detail: `Low blood sugar ${vitals.bloodSugar} mg/dL.` });
+  if (vitals.spo2 && vitals.spo2 < L.spo2Min) out.push({ severity: vitals.spo2 < 88 ? 'emergency' : 'urgent', detail: `SpO₂ ${vitals.spo2}%, below ${L.spo2Min}%.`, advice: vitals.spo2 < 88 ? 'emergency' : 'high' });
+  if (vitals.pulse && (vitals.pulse < L.pulseMin || vitals.pulse > L.pulseMax)) {
+    const severe = vitals.pulse < 40 || vitals.pulse > 150;
+    out.push({ severity: severe ? 'emergency' : 'watch', detail: `Heart rate ${vitals.pulse} bpm, outside ${L.pulseMin}–${L.pulseMax}.`, advice: severe ? 'emergency' : 'recheck' });
+  }
+  const sugar = vitals.bloodSugar;
+  if (sugar && sugar >= 400) {
+    // Very high whenever it was taken (risk of DKA / a hyperglycaemic emergency).
+    const detail = vitals.sugarType === 'fasting' ? `Very high blood sugar ${sugar} mg/dL (fasting).`
+      : vitals.sugarType === 'post_meal' ? `Very high blood sugar ${sugar} mg/dL (post-meal).` : `Very high blood sugar ${sugar} mg/dL.`;
+    out.push({ severity: 'emergency', detail, advice: 'sugar_very_high' });
+  } else if (sugar && vitals.sugarType === 'fasting' && sugar >= L.sugarFastingMax) {
+    out.push({ severity: 'urgent', detail: `Fasting sugar ${sugar} mg/dL.`, advice: 'high' });
+  } else if (sugar && vitals.sugarType !== 'fasting' && sugar >= L.sugarRandomMax) {
+    out.push({ severity: 'urgent', detail: vitals.sugarType === 'post_meal' ? `After-meal sugar ${sugar} mg/dL.` : `Random sugar ${sugar} mg/dL.`, advice: 'high' });
+  }
+  if (sugar && sugar < 70) out.push({ severity: sugar < 54 ? 'emergency' : 'urgent', detail: `Low blood sugar ${sugar} mg/dL.`, advice: 'sugar_low' });
+  return out;
+}
+
+// What the patient is told at once (the app shows it; Bengali / Hindi in the app's word lists).
+const PATIENT_ADVICE = {
+  sugar_low: 'Low sugar: take 3 teaspoons of sugar or glucose in water, or a sweet drink, now. Check again in 15 minutes. If you feel faint or confused, call 108.',
+  sugar_very_high: 'Your sugar is very high. Drink water and check again. If you feel very thirsty, sleepy, are vomiting or breathing fast, call 108 or go to the nearest emergency now.',
+  bp_severe: 'Your BP is very high. Sit and rest for 5 minutes, then check again. If you have chest pain, a bad headache, weakness or trouble speaking or seeing, call 108 now.',
+  emergency: 'This reading is dangerous. If you feel unwell, call 108 or go to the nearest emergency now.',
+  high: 'This reading is high. Rest, check again later today, and contact your clinic if it stays high.',
+  recheck: 'This reading is outside your usual range. Rest and check again.',
+};
+const RANK = { watch: 1, urgent: 2, emergency: 3 };
+/** The most serious finding, as the patient's message ({ severity, advice } or null). */
+function patientAdvice(findings) {
+  if (!findings.length) return null;
+  const worst = [...findings].sort((a, b) => RANK[b.severity] - RANK[a.severity])[0];
+  // Low sugar is acted on first whatever else is off (it is the one that can't wait).
+  const low = findings.find((f) => f.advice === 'sugar_low');
+  const pick = low && RANK[low.severity] >= RANK[worst.severity] - 1 ? low : worst;
+  return { severity: worst.severity, advice: PATIENT_ADVICE[pick.advice] || PATIENT_ADVICE.recheck };
+}
+
+/** Raises alerts for a home reading outside the patient's limits, in every linked practice. */
+async function checkReading(vitals, patient, findings = readingFindings(vitals, patient)) {
+  const out = findings.map(({ severity, detail }) => ({ severity, detail }));
   if (!out.length) return [];
   const practices = await M.PatientEnrolment.find({ patientId: patient._id, status: 'linked' }).distinct('practiceId');
   const alerts = [];
@@ -357,7 +397,7 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', qui
   // Everyone else in the thread (staff who weren't notified, the sender's other phone): refresh now.
   const told = new Set([...toPatient, ...toldStaff].map(String));
   await signal(convo.participants.map((p) => p.userId).filter((id) => !told.has(String(id))), { type: 'chat_changed', conversationId: convo._id });
-  if (senderType === 'patient') await awayReply(convo).catch(() => {});
+  if (senderType === 'patient') await awayReply(convo, msg).catch(() => {});
   return msg;
 }
 
@@ -413,7 +453,12 @@ async function settleChatNotices(convo, byUserId) {
  * Chat settings → "Reply hours" and "Away message": a patient writing outside
  * the primary doctor's reply hours gets the away message once (per 12 h).
  */
-async function awayReply(convo) {
+const URGENT_AWAY = 'The clinic is closed now. If this is an emergency, call 108 or go to the nearest emergency department. Your doctor has been told.';
+
+async function awayReply(convo, patientMsg) {
+  // Urgent (marked, or emergency words): not the routine "I'll reply in the morning" but
+  // what to do now — the urgent alert already went to the doctor.
+  const urgent = Boolean(patientMsg?.isUrgent || require('./assistant').isEmergencyText(patientMsg?.text || ''));
   const team = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true });
   const profile = team && (await M.DoctorProfile.findOne({ userId: team.userId }, 'chatSettings displayName'));
   const cs = profile?.chatSettings;
@@ -423,9 +468,9 @@ async function awayReply(convo) {
   const to = T.hhmmToMin(cs.replyHours.to);
   const inHours = from <= to ? now >= from && now < to : now >= from || now < to;
   if (inHours) return;
-  const recent = await M.Message.exists({ conversationId: convo._id, senderType: 'system', 'meta.away': true, createdAt: { $gte: new Date(Date.now() - 12 * 3600e3) } });
+  const recent = await M.Message.exists({ conversationId: convo._id, senderType: 'system', 'meta.away': true, ...(urgent ? { 'meta.urgent': true } : {}), createdAt: { $gte: new Date(Date.now() - 12 * 3600e3) } });
   if (recent) return;
-  const msg = await M.Message.create({ conversationId: convo._id, senderType: 'system', kind: 'text', text: cs.awayMessage, meta: { away: true } });
+  const msg = await M.Message.create({ conversationId: convo._id, senderType: 'system', kind: 'text', text: urgent ? URGENT_AWAY : cs.awayMessage, meta: { away: true, ...(urgent ? { urgent: true } : {}) } });
   await M.Conversation.updateOne(
     { _id: convo._id },
     { $set: { lastMessage: previewOf(msg, null) }, $inc: { 'participants.$[p].unreadCount': 1 } },
@@ -635,4 +680,4 @@ async function adherence(patient, days = 30, acc) {
 
 module.exports = {
   openNow, CARE_ROLES, markDelivered, addParticipants,
-  paymentRequestNote, chatNote, shortName, doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };
+  paymentRequestNote, chatNote, shortName, doseMinute, MEALS, raiseAlert, checkReading, readingFindings, patientAdvice, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };

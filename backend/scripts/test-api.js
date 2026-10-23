@@ -2460,6 +2460,107 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal((await ctx.desk('GET', '/api/colleagues')).status, 403, 'for clinical staff');
   });
 
+  await step('medicines and safety: issued once, replaces across doctors, stopped lines, finished courses, uploads never guess times, dangerous readings, urgent chats, reminders', async () => {
+    const T = require('../src/lib/time');
+    const jobs = require('../src/services/jobs');
+    const pid = ctx.patientId;
+    const today = T.dayStart();
+    // Another doctor's metformin and this doctor's statin are running.
+    const other = await M.MedicationCourse.create({ patientId: pid, doctorId: ctx.doc2Id, prescriberName: 'Dr. Rina Mitra', name: 'metformin ', dose: { morning: 1, night: 1 }, startDate: today });
+    await M.MedicationCourse.create({ patientId: pid, doctorId: ctx.doctorUserId, name: 'Atorvastatin', dose: { night: 1 }, startDate: today });
+    const started = await ctx.doc('POST', '/api/consultations', { patientId: pid });
+    assert.ok([200, 201].includes(started.status), JSON.stringify(started.body));
+    const c = started.body.id || started.body._id;
+    ok(await ctx.doc('PATCH', `/api/consultations/${c}`, {
+      chiefComplaint: 'Sugar review', diagnoses: [{ name: 'Type 2 diabetes mellitus', source: 'custom' }],
+      medications: [
+        { name: 'Metformin', strength: '500 mg', dose: { morning: 1, afternoon: 0, night: 1 }, frequency: 'daily', change: 'changed', duration: { value: 30, unit: 'days' } },
+        { name: 'Atorvastatin', strength: '10 mg', dose: { morning: 0, afternoon: 0, night: 1 }, frequency: 'daily', change: 'stopped' },
+      ],
+    }));
+    // Generate tapped twice at once: one prescription.
+    const both = await Promise.all([ctx.doc('POST', `/api/consultations/${c}/issue`), ctx.doc('POST', `/api/consultations/${c}/issue`)]);
+    assert.deepEqual(both.map((x) => x.status).sort(), [200, 409], 'issued once');
+    assert.equal(await M.Prescription.countDocuments({ consultationId: c }), 1);
+    const rx = await M.Prescription.findOne({ consultationId: c });
+    // The other doctor's metformin is replaced (not taken twice); they're told.
+    const old = await M.MedicationCourse.findById(other._id);
+    assert.equal(old.status, 'stopped');
+    assert.match(old.stoppedReason, /Replaced by/);
+    assert.ok(await M.Notification.exists({ userId: ctx.doc2Id, type: 'medicine_replaced' }));
+    assert.equal(await M.MedicationCourse.countDocuments({ patientId: pid, name: /^\s*metformin\s*$/i, status: 'active' }), 1, 'one metformin running');
+    // A "stopped" line: no new course, the running one stops.
+    assert.equal(await M.MedicationCourse.countDocuments({ prescriptionId: rx._id, name: 'Atorvastatin' }), 0);
+    assert.equal(await M.MedicationCourse.countDocuments({ patientId: pid, name: 'Atorvastatin', status: 'active' }), 0);
+    // Today's doses exist at once.
+    assert.ok(await M.DoseLog.exists({ courseId: (await M.MedicationCourse.findOne({ prescriptionId: rx._id }))._id }));
+
+    // A course past its last day is completed by the morning job.
+    const ended = await M.MedicationCourse.create({ patientId: pid, name: 'Azithromycin', dose: { morning: 1 }, startDate: T.addDays(today, -5), endDate: T.addDays(today, -1) });
+    await M.ReminderLog.deleteMany({ key: `doses-ready:${T.dayKey(new Date())}` });
+    await jobs.prepareDoses(new Date());
+    assert.equal((await M.MedicationCourse.findById(ended._id)).status, 'completed');
+
+    // Weekly medicine: 4 tablets last 4 weeks, not 4 days.
+    const weekly = await M.MedicationCourse.create({ patientId: pid, name: 'Vitamin D3', dose: { morning: 1 }, frequency: 'weekly', stockUnits: 4, startDate: today });
+    const meds = ok(await ctx.pat('GET', '/api/patient/medicines'));
+    assert.equal(meds.items.find((m) => String(m.id) === String(weekly._id))?.stock?.daysLeft, 28);
+
+    // An uploaded prescription: times are never guessed; already-taken medicines aren't added twice; added once.
+    const rec = await M.MedicalRecord.create({
+      patientId: pid, kind: 'prescription', title: 'Old prescription', recordDate: today, origin: 'shared_by_patient',
+      extractedMedicines: [
+        { name: 'Paracetamol', strength: '650 mg', morning: 0, afternoon: 0, night: 0, frequency: 'as_needed', food: 'after_food', duration_days: 0, instructions: 'SOS for fever' },
+        { name: 'Unknown tonic', strength: '', morning: 0, afternoon: 0, night: 0, frequency: 'unclear', food: 'any', duration_days: 5, instructions: '' },
+        { name: 'Metformin', strength: '500 mg', morning: 1, afternoon: 0, night: 1, frequency: 'daily', food: 'after_food', duration_days: 0, instructions: '' },
+      ],
+    });
+    const two = await Promise.all([ctx.pat('POST', `/api/patient/records/${rec._id}/add-medicines`, {}), ctx.pat('POST', `/api/patient/records/${rec._id}/add-medicines`, {})]);
+    assert.deepEqual(two.map((x) => x.status).sort(), [201, 409], 'added once');
+    const added = two.find((x) => x.status === 201).body;
+    assert.deepEqual(added.skipped, ['Metformin'], 'already taking it');
+    assert.deepEqual(added.unclear, ['Unknown tonic']);
+    const sos = await M.MedicationCourse.findOne({ patientId: pid, name: 'Paracetamol' });
+    assert.equal(sos.frequency, 'as_needed', 'SOS stays when-needed (no alarm)');
+    const tonic = await M.MedicationCourse.findOne({ patientId: pid, name: 'Unknown tonic' });
+    assert.equal(tonic.frequency, 'as_needed', 'no times on the paper: no alarm at a guessed time');
+    assert.equal(T.dayKey(tonic.endDate), T.dayKey(T.addDays(today, 4)), '5 days = today and the next 4');
+
+    // Dangerous readings: the patient is told what to do; a high after-meal sugar alerts too.
+    const low = ok(await ctx.pat('POST', '/api/patient/readings', { bloodSugar: 48, sugarType: 'random' }), 201);
+    assert.equal(low.danger.severity, 'emergency');
+    assert.match(low.danger.advice, /sugar/i);
+    const high = ok(await ctx.pat('POST', '/api/patient/readings', { bloodSugar: 330, sugarType: 'post_meal' }), 201);
+    assert.equal(high.danger.severity, 'urgent');
+    assert.ok(await M.Alert.exists({ patientId: pid, detail: 'After-meal sugar 330 mg/dL.' }));
+    assert.equal(ok(await ctx.pat('POST', '/api/patient/readings', { bloodSugar: 110, sugarType: 'fasting' }), 201).danger, null);
+
+    // Urgent chat out of hours: safety guidance, not the routine away text; pressing again doesn't re-alert.
+    const m0 = T.minuteOfDay(new Date());
+    const hh = (m) => `${String(Math.floor(((m + 1440) % 1440) / 60)).padStart(2, '0')}:${String(((m + 1440) % 1440) % 60).padStart(2, '0')}`;
+    await M.DoctorProfile.updateOne({ userId: ctx.doctorUserId }, { 'chatSettings.awayMessage': 'Back in the morning', 'chatSettings.replyHours': { from: hh(m0 + 60), to: hh(m0 + 61) } });
+    const u1 = ok(await ctx.pat('POST', '/api/patient/urgent', { doctorId: ctx.doctorUserId, text: 'Chest pain since an hour' }), 201);
+    const u2 = ok(await ctx.pat('POST', '/api/patient/urgent', { doctorId: ctx.doctorUserId, text: 'Still there' }), 201);
+    assert.equal(u2.again, true);
+    assert.equal(String(u2.alertId), String(u1.alertId), 'one emergency');
+    const away = await M.Message.findOne({ conversationId: u1.conversationId, senderType: 'system', 'meta.away': true }).sort({ createdAt: -1 });
+    assert.match(away?.text || '', /call 108/);
+    await M.Alert.updateMany({ conversationId: u1.conversationId }, { status: 'resolved' });
+
+    // Follow-up reminders: only when the doctor left "Remind the patient" on.
+    const fuOff = await M.FollowUp.create({ practiceId: ctx.practiceId, patientId: pid, doctorId: ctx.doctorUserId, dueDate: T.addDays(today, 1), remindPatient: false });
+    const fuOn = await M.FollowUp.create({ practiceId: ctx.practiceId, patientId: pid, doctorId: ctx.doctorUserId, dueDate: T.addDays(today, 2) });
+    await jobs.followUpReminders(T.atMinute(today, 11 * 60));
+    assert.ok(!(await M.ReminderLog.exists({ key: `followup:${fuOff._id}` })), 'not reminded');
+    assert.ok(await M.ReminderLog.exists({ key: `followup:${fuOn._id}` }), 'reminded');
+    await M.FollowUp.deleteMany({ _id: { $in: [fuOff._id, fuOn._id] } });
+
+    // The bell in a clinic also shows the notices that belong to no clinic.
+    await M.Notification.create({ userId: ctx.doctorUserId, type: 'account', title: 'Account notice for the test' });
+    const bell = ok(await ctx.doc('GET', `/api/notifications?practiceId=${ctx.practiceId}`));
+    assert.ok(bell.items.some((n) => n.title === 'Account notice for the test'));
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

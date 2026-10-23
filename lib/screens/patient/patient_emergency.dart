@@ -59,6 +59,15 @@ class _PatientEmergencySheetState extends State<PatientEmergencySheet> with Live
   }
 
   List<Map<String, dynamic>> get _raw => data?.list('items') ?? const [];
+
+  /// The clinics of these doctors that have a phone number (one button each, at most 2).
+  List<({String name, String phone})> get _clinics {
+    final seen = <String>{};
+    return [
+      for (final d in _raw)
+        if (d.str('clinicPhone').isNotEmpty && seen.add(d.str('clinicPhone'))) (name: d.str('clinic', 'the clinic'), phone: d.str('clinicPhone')),
+    ].take(2).toList();
+  }
   List<_Doctor> get _list => data == null ? (isLive ? const [] : _doctors) : [for (final d in _raw) _from(d)];
 
   Future<void> _choose(int i) async {
@@ -138,6 +147,11 @@ class _PatientEmergencySheetState extends State<PatientEmergencySheet> with Live
                 ),
               ),
             ),
+            // Or ring the clinic now (its phone, once per clinic).
+            for (final c in _clinics) ...[
+              const Gap(10),
+              pad(MpButton('${tr(context, 'Call')} ${c.name}', kind: MpBtn.secondary, height: 48, icon: I.phone, onTap: () => P1.dial(context, c.phone))),
+            ],
           ],
         ),
       ),

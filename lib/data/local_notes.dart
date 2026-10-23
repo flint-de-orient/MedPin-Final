@@ -224,4 +224,23 @@ class LocalNotes {
     if (!supported) return {};
     return {for (final p in await _plugin.pendingNotificationRequests()) p.id};
   }
+
+  /// Snoozed medicine alarms live in their own id range (see [snooze]).
+  static bool isSnooze(int id) => id >= 900000000 && id < 1000000000;
+
+  /// Scheduled snoozes with the doses they ring for.
+  Future<List<({int id, List<String> doseIds})>> snoozes() async {
+    if (!supported) return const [];
+    final out = <({int id, List<String> doseIds})>[];
+    for (final p in await _plugin.pendingNotificationRequests()) {
+      if (!isSnooze(p.id)) continue;
+      var ids = const <String>[];
+      try {
+        final m = (jsonDecode(p.payload ?? '{}') as Map).cast<String, dynamic>();
+        ids = [for (final x in (m['doseIds'] as List? ?? const [])) '$x'];
+      } catch (_) {}
+      out.add((id: p.id, doseIds: ids));
+    }
+    return out;
+  }
 }

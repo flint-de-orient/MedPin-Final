@@ -670,7 +670,7 @@ r.get('/dashboard', async (req, res) => {
     date: today,
     practiceName: practice?.name,
     location: location && (location.shortName || location.name),
-    unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, practiceId: req.practiceId, readAt: null }),
+    unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, practiceId: { $in: [req.practiceId, null] }, readAt: null }),
     today: { total: todayAppts.length, pending: count('booked', 'confirmed', 'waiting', 'in_consultation'), waiting: count('waiting'), completed: count('completed') },
     actionQueue: { unreadMessages: unread, checkInsOverdue: appIds.filter((id) => !active.has(String(id))).length, pendingActions: alerts.length + reviews, nutritionReviewsDue: nutrition },
     alerts: alerts.map((a) => ({ id: a._id, severity: a.severity, kind: a.kind, patient: a.patientId?.name, patientId: a.patientId?._id, conversationId: a.conversationId, detail: a.detail, at: a.createdAt })),

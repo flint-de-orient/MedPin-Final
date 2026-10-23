@@ -604,8 +604,21 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
 
   Future<void> _addFromUpload(Map<String, dynamic> u) async {
     final r = await runAction(context, () => Api.I.post('/api/patient/records/${u['recordId']}/add-medicines', const {}));
-    if (r == null || !mounted) return;
-    toast(context, 'Added · reminders are on for them');
+    if (r is! Map || !mounted) return;
+    // What happened: added, already on the list, or added without times (no alarm until set).
+    final added = (r['added'] as num?)?.toInt() ?? 0;
+    final skipped = (r['skipped'] as List? ?? const []).length;
+    final unclear = (r['unclear'] as List? ?? const []).length;
+    toast(
+      context,
+      unclear > 0
+          ? tr(context, 'Added. Some times were not clear: check them with your doctor before setting reminders.')
+          : added == 0 && skipped > 0
+          ? tr(context, 'You already take these medicines')
+          : skipped > 0
+          ? tr(context, 'Added · the ones you already take were skipped')
+          : tr(context, 'Added · reminders are on for them'),
+    );
     reload(quiet: true);
   }
 

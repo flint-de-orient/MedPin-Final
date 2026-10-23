@@ -627,7 +627,7 @@ r.get('/staff/today', async (req, res) => {
     date: today,
     summary: { booked: appts.length, checkedIn: count('waiting', 'in_consultation', 'completed'), done: count('completed'), missed: count('missed'), doctors },
     unreadChats: unreadConvos,
-    unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, practiceId: req.practiceId, readAt: null }),
+    unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, practiceId: { $in: [req.practiceId, null] }, readAt: null }),
     userName: req.user.name,
     requests,
     items: appts.map(view),

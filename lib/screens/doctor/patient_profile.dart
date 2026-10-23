@@ -40,6 +40,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> with LiveDa
   bool _dxFilled = false;
   String? _consultationId;
   String? _issuedRxId;
+  bool _draftHasMeds = false;
   final _busy = ValueNotifier(false);
 
   @override
@@ -124,7 +125,10 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> with LiveDa
       final c = await Api.I.post('/api/consultations', {'patientId': r.id, if (today) 'appointmentId': visit.str('id')});
       id = '${(c as Map)['id'] ?? c['_id']}';
       _consultationId = id;
+      // A draft that already has medicines (written in the consultation screen) keeps them.
+      _draftHasMeds = (c['medications'] as List? ?? const []).isNotEmpty;
     }
+    final me = Session.I.user['id'] as String?;
     final follow = _parse(_date.text);
     final dx = [for (final d in _dx.text.split(RegExp(r'[;\n]'))) if (d.trim().isNotEmpty) d.trim()];
     await Api.I.patch('/api/consultations/$id', {
@@ -132,9 +136,10 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> with LiveDa
       'labOrders': [for (final i in _picked) {'testName': _tests[i], 'source': 'typed', 'selected': true}],
       'advice': {'items': const [], 'freeText': _advice.text.trim()},
       'followUp': follow == null ? {'enabled': false} : {'enabled': true, 'date': _day(follow), 'remindPatient': true},
-      'medications': [
+      // This doctor's own running medicines continue; another doctor's stay theirs.
+      if (!_draftHasMeds) 'medications': [
         for (final m in r.medicines)
-          if (_dose(m.str('pattern')).values.any((v) => v > 0) || m['frequency'] == 'weekly' || m['frequency'] == 'as_needed')
+          if ((m.str('doctorId').isEmpty || m.str('doctorId') == me) && (_dose(m.str('pattern')).values.any((v) => v > 0) || m['frequency'] == 'weekly' || m['frequency'] == 'as_needed'))
             {
               'name': m.str('name'),
               if (m.str('strength').isNotEmpty) 'strength': m.str('strength'),

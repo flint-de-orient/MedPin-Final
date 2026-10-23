@@ -123,6 +123,8 @@ class Push {
     LiveBus.changed(); // and whatever screen is open may now be out of date
     // Medicines or visits changed (a new prescription, a visit booked): re-schedule the phone's alarms.
     if (msg.data['type'] == 'reminders_changed') MedAlarms.I.sync();
+    // Signed out from another device: this phone's alarms go at once (the next call signs it out).
+    if (msg.data['type'] == 'signed_out') MedAlarms.I.clear();
     // My role / locations / access changed (Profile → People): menus and permissions follow at once.
     if (msg.data['type'] == 'membership_changed' || msg.data['type'] == 'member_access_changed') Session.I.reloadAccount().catchError((_) {});
     // The server's periodic nudge: send the watch / phone readings now.
@@ -196,11 +198,12 @@ class Push {
 const _appPortName = 'medpin.push.app';
 
 /// Silent pushes that do work in the background (nothing is shown).
-const _backgroundTypes = {'device_sync', 'reminders_changed'};
+const _backgroundTypes = {'device_sync', 'reminders_changed', 'signed_out'};
 
 /// The work itself, for a signed-in patient only: watch / phone readings up
 /// (DeviceSync keeps its 30-minute limit) or the medicine alarms re-scheduled.
 Future<void> _backgroundWork(String type) async {
+  if (type == 'signed_out') return MedAlarms.I.clear();
   if (!_backgroundTypes.contains(type) || !Session.I.signedIn || Session.I.landing != 'Main') return;
   if (type == 'device_sync') {
     await DeviceSync.sync(null);
@@ -218,6 +221,17 @@ Future<void> _backgroundWork(String type) async {
 Future<void> pushBackground(RemoteMessage msg) async {
   final type = msg.data['type']?.toString() ?? '';
   if (!_backgroundTypes.contains(type)) return; // notifications are shown by the system
+  // Signed out from another device: no session needed to remove this phone's alarms.
+  if (type == 'signed_out') {
+    try {
+      if (await _handToApp(type)) return;
+      DartPluginRegistrant.ensureInitialized();
+      await MedAlarms.I.clear();
+    } catch (e) {
+      debugPrint('Background sign-out: $e');
+    }
+    return;
+  }
   try {
     // The app is still in memory: it does the work with its session.
     if (await _handToApp(type)) return;

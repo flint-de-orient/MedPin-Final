@@ -14,7 +14,7 @@ const S = require('../services/scheduling');
 const care = require('../services/care');
 const assistant = require('../services/assistant');
 const { notify, practiceStaff } = require('../services/notify');
-const { patientSummary, doseText, dosesPerDay } = require('../services/clinical');
+const { patientSummary, doseText, dosesPerDay, stockPerDay } = require('../services/clinical');
 
 const { uploader } = require('../lib/uploads');
 const upload = uploader({ kinds: ['image', 'pdf'], maxMb: 10, maxFiles: 10 });
@@ -315,7 +315,7 @@ r.get('/home', async (req, res) => {
   ]);
   const refills = courses
     .filter((c) => c.stockUnits != null && dosesPerDay(c.dose) > 0 && c.frequency !== 'as_needed')
-    .map((c) => ({ courseId: c._id, name: `${c.name} ${c.strength || ''}`.trim(), tabletsLeft: c.stockUnits, daysLeft: Math.floor(c.stockUnits / dosesPerDay(c.dose)) }))
+    .map((c) => ({ courseId: c._id, name: `${c.name} ${c.strength || ''}`.trim(), tabletsLeft: c.stockUnits, daysLeft: stockPerDay(c) ? Math.floor(c.stockUnits / stockPerDay(c)) : Infinity }))
     .filter((x) => x.daysLeft <= 5)
     .sort((a, b) => a.daysLeft - b.daysLeft);
   const tasks = doses.map((d) => ({
@@ -910,7 +910,7 @@ r.get('/medicines', async (req, res) => {
   const adh = await care.adherence(req.patient, 30);
   const today = T.dayStart();
   const items = courses.map((c) => {
-    const perDay = c.frequency === 'weekly' ? (dosesPerDay(c.dose) || 1) / 7 : dosesPerDay(c.dose);
+    const perDay = stockPerDay(c);
     const day = Math.floor((today - T.dayStart(c.startDate)) / T.DAY_MS) + 1;
     const totalDays = c.endDate ? Math.floor((T.dayStart(c.endDate) - T.dayStart(c.startDate)) / T.DAY_MS) + 1 : null;
     const a = adh.perMedicine.find((m) => String(m.courseId) === String(c._id));
@@ -955,22 +955,43 @@ r.post('/records/:id/add-medicines', async (req, res) => {
   const all = record.extractedMedicines || [];
   if (!all.length) throw badRequest('No medicines were found on this prescription', 'NO_MEDICINES');
   const pickIdx = Array.isArray(req.body.indices) ? req.body.indices.filter((i) => Number.isInteger(i) && i >= 0 && i < all.length) : all.map((_, i) => i);
+  // Added once (a double tap, or two phones, doesn't add every medicine twice).
+  const claimed = await M.MedicalRecord.updateOne({ _id: record._id, medicinesAddedAt: null }, { medicinesAddedAt: new Date() });
+  if (!claimed.modifiedCount) throw conflict('These medicines were already added', 'ALREADY_ADDED');
+  const running = await M.MedicationCourse.find({ patientId: req.patient._id, status: 'active' }, 'name');
+  const have = new Set(running.map((c) => c.name.trim().toLowerCase()));
   const created = [];
+  const skipped = [];
+  const unclear = [];
   for (const i of pickIdx) {
     const m = all[i];
-    const dose = { morning: Number(m.morning) || 0, afternoon: Number(m.afternoon) || 0, night: Number(m.night) || 0 };
-    if (!dose.morning && !dose.afternoon && !dose.night) dose.morning = 1;
+    const name = String(m.name || '').trim().slice(0, 80);
+    if (!name) continue;
+    // Already taking it (from a doctor here or added before): not twice.
+    if (have.has(name.toLowerCase())) { skipped.push(name); continue; }
+    have.add(name.toLowerCase());
+    const n = (x) => Math.max(0, Math.min(10, Math.round((Number(x) || 0) * 2) / 2)); // ½ tablets allowed
+    const dose = { morning: n(m.morning), afternoon: n(m.afternoon), night: n(m.night) };
+    const anyDose = dose.morning + dose.afternoon + dose.night > 0;
+    // When to take it is never guessed: SOS stays "when needed" (no alarm), weekly stays weekly,
+    // and a medicine with no timing on the prescription is "when needed" until the patient or
+    // their doctor sets the times (an alarm at the wrong time is worse than none).
+    let frequency = ['daily', 'weekly', 'as_needed'].includes(m.frequency) ? m.frequency : anyDose ? 'daily' : 'as_needed';
+    if (frequency !== 'as_needed' && !anyDose) frequency = 'as_needed';
+    // "Not clear": no timing written (SOS / when needed is a clear instruction).
+    const notClear = m.frequency === 'unclear' || (!anyDose && m.frequency !== 'as_needed');
+    if (notClear) unclear.push(name);
     const days = Number(m.duration_days) || 0;
     created.push(await M.MedicationCourse.create({
-      patientId: req.patient._id, name: String(m.name).slice(0, 80), strength: m.strength || undefined, dose,
+      patientId: req.patient._id, name, strength: m.strength || undefined, dose, frequency,
       foodRelation: ['before_food', 'after_food', 'with_food', 'empty_stomach'].includes(m.food) ? m.food : undefined,
-      instructions: m.instructions || undefined, prescriberName: record.extractedDoctor || record.sourceName || undefined,
-      startDate: T.dayStart(), endDate: days ? T.addDays(T.dayStart(), days) : undefined,
+      instructions: [m.instructions, notClear ? 'Times not clear on the prescription — check with your doctor' : ''].filter(Boolean).join(' · ') || undefined,
+      prescriberName: record.extractedDoctor || record.sourceName || undefined,
+      // "5 days" from today is today and the next 4.
+      startDate: T.dayStart(), endDate: days ? T.addDays(T.dayStart(), days - 1) : undefined,
     }));
   }
-  record.medicinesAddedAt = new Date();
-  await record.save();
-  res.status(201).json({ added: created.length, items: created });
+  res.status(201).json({ added: created.length, items: created, skipped, unclear });
 });
 
 r.post('/medicines', async (req, res) => {
@@ -1232,8 +1253,10 @@ r.post('/readings', async (req, res) => {
     bmi: p.heightCm && v.weightKg ? +(v.weightKg / (p.heightCm / 100) ** 2).toFixed(1) : undefined,
   });
   if (v.weightKg) { p.weightKg = v.weightKg; await p.save(); }
-  const alerts = await care.checkReading(vitals, p);
-  res.status(201).json({ reading: vitals, alerted: alerts.length > 0 });
+  // The patient is told what to do now (even with no clinic linked to tell); their doctors get the alert.
+  const findings = care.readingFindings(vitals, p);
+  const alerts = await care.checkReading(vitals, p, findings);
+  res.status(201).json({ reading: vitals, alerted: alerts.length > 0, danger: care.patientAdvice(findings) });
 });
 
 // Watch / phone sync (Health Connect, Apple Health): daily steps and readings.
@@ -1680,7 +1703,7 @@ async function cartView(cart, patient) {
     ...cart.toJSON(),
     items: cart.items.map((i) => {
       const c = courses.find((x) => String(x._id) === String(i.courseId));
-      const perDay = c ? (c.frequency === 'weekly' ? (dosesPerDay(c.dose) || 1) / 7 : dosesPerDay(c.dose)) : 0;
+      const perDay = c ? stockPerDay(c) : 0;
       const units = (c?.stockUnits || 0) + i.strips * (i.unitsPerStrip || 10);
       return { ...i.toJSON(), lastsTill: perDay ? T.addDays(today, Math.floor(units / perDay) - 1) : null };
     }),
@@ -1699,13 +1722,15 @@ r.post('/cart/items', async (req, res) => {
   const name = course ? `${course.name}${course.strength ? ` ${course.strength}` : ''}` : req.body.name;
   if (!name) throw badRequest('Choose a medicine');
   let strips = Number(req.body.strips) || 1;
-  const per = course ? (course.frequency === 'weekly' ? (dosesPerDay(course.dose) || 1) / 7 : dosesPerDay(course.dose) || 1) : 1;
-  if (req.body.packOption === '1_month') strips = Math.ceil((30 * per) / 10);
-  if (req.body.packOption === '3_months') strips = Math.ceil((90 * per) / 10);
+  // Tablets a day (a "when needed" medicine: about one a day for sizing a pack), and the strip size.
+  const per = course ? stockPerDay(course) || 1 : 1;
+  const strip = course?.unitsPerStrip || 10;
+  if (req.body.packOption === '1_month') strips = Math.ceil((30 * per) / strip);
+  if (req.body.packOption === '3_months') strips = Math.ceil((90 * per) / strip);
   if (req.body.packOption === 'till_next_visit') {
     const next = await M.Appointment.findOne({ patientId: req.patient._id, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } }).sort({ startAt: 1 });
     const days = next ? Math.ceil((next.startAt - Date.now()) / T.DAY_MS) + 3 : 30;
-    strips = Math.max(1, Math.ceil((days * per - (course?.stockUnits || 0)) / 10));
+    strips = Math.max(1, Math.ceil((days * per - (course?.stockUnits || 0)) / strip));
   }
   strips = Math.min(99, Math.max(1, strips));
   const existing = cart.items.find((i) => (course && String(i.courseId) === String(course._id)) || i.name === name);
@@ -1923,6 +1948,10 @@ r.post('/urgent', async (req, res) => {
   await care.ensureParticipant(convo, req.user._id, 'patient');
   // The alert tells the doctor and the desk (one notification each, not two).
   const msg = await care.postMessage(convo, { sender: req.user, senderType: 'patient', text, isUrgent: true, quietForStaff: true });
+  // Pressed again (still waiting, or a double tap): the open emergency stands — the doctor and
+  // desk aren't alerted twice; the new message is in the chat they already have open.
+  const open = await M.Alert.findOne({ conversationId: convo._id, kind: 'urgent_chat', status: { $in: ['open', 'acknowledged'] }, createdAt: { $gte: new Date(Date.now() - 30 * 60e3) } });
+  if (open) return res.status(201).json({ conversationId: convo._id, messageId: msg._id, alertId: open._id, call: '108', again: true });
   const alert = await care.raiseAlert({ practiceId: access.practiceId, patientId: req.patient._id, doctorId: access.userId, severity: 'emergency', kind: 'urgent_chat', detail: text, sourceModel: 'Message', sourceId: msg._id, conversationId: convo._id });
   res.status(201).json({ conversationId: convo._id, messageId: msg._id, alertId: alert._id, call: '108' });
 });
@@ -1942,7 +1971,7 @@ r.post('/ai/ask', async (req, res) => {
   const question = await M.AiMessage.create({ sessionId: s._id, role: 'user', text, inputMode: req.body.inputMode, voiceLanguage: req.body.voiceLanguage });
   const out = await assistant.patientAnswer(s, text, req.patient, { excludeId: question._id }).catch((err) => {
     console.warn('[ai]', err.message);
-    return { text: "MedPin AI couldn't answer just now. Please try again, or message your doctor from the Doctors tab.", scripted: true };
+    return { text: assistant.line('failed', req.user.language), scripted: true };
   });
   const answer = await M.AiMessage.create({ sessionId: s._id, role: 'assistant', text: out.text, aiModel: out.model, latencyMs: out.latencyMs, payload: out.scripted ? { scripted: true } : undefined });
   s.lastAt = new Date();

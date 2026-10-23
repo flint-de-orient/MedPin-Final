@@ -109,7 +109,7 @@ me.post('/sessions/revoke-others', async (req, res) => {
   const keep = [];
   if (req.sessionId) keep.push({ sessionId: req.sessionId });
   if (typeof req.body?.keepToken === 'string' && req.body.keepToken) keep.push({ token: req.body.keepToken });
-  await M.DeviceToken.deleteMany({ userId: req.user._id, ...(keep.length ? { $nor: keep } : {}) });
+  await require('../lib/devicetokens').signOutPhones({ userId: req.user._id, ...(keep.length ? { $nor: keep } : {}) });
   res.json({ ok: true, signedOut: r.modifiedCount });
 });
 
@@ -260,8 +260,9 @@ function noteDelivered(userId) {
 notifications.get('/', async (req, res) => {
   noteDelivered(req.user._id);
   const { limit, skip } = paging(req.query);
-  // ?practiceId= : a staff member's bell shows only that clinic's notifications.
-  const scope = { userId: req.user._id, ...(isId(String(req.query.practiceId || '')) ? { practiceId: String(req.query.practiceId) } : {}) };
+  // ?practiceId= : a staff member's bell shows that clinic's notifications, and the ones that
+  // belong to no clinic (their account, MedPin support) — those show whichever clinic is open.
+  const scope = { userId: req.user._id, ...(isId(String(req.query.practiceId || '')) ? { practiceId: { $in: [String(req.query.practiceId), null] } } : {}) };
   const q = { ...scope, ...(req.query.unread === 'true' ? { readAt: null } : {}) };
   // urgent: unread emergencies (emergency alerts, urgent chats) turn the bell's dot red.
   const [items, unread, urgent] = await Promise.all([
@@ -278,7 +279,7 @@ notifications.get('/', async (req, res) => {
   res.json({ items, unread, urgent });
 });
 notifications.post('/read-all', async (req, res) => {
-  const scope = { userId: req.user._id, ...(isId(String(req.body.practiceId || '')) ? { practiceId: String(req.body.practiceId) } : {}) };
+  const scope = { userId: req.user._id, ...(isId(String(req.body.practiceId || '')) ? { practiceId: { $in: [String(req.body.practiceId), null] } } : {}) };
   await M.Notification.updateMany({ ...scope, readAt: null }, { readAt: new Date() });
   res.json({ ok: true });
 });

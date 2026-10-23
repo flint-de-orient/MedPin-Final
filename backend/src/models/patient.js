@@ -69,6 +69,7 @@ const patientSchema = new Schema(
       bpSystolicMax: Number,
       bpDiastolicMax: Number,
       sugarFastingMax: Number,
+      sugarRandomMax: Number, // random or after a meal
       pulseMin: Number,
       pulseMax: Number,
       spo2Min: Number,

@@ -15,6 +15,11 @@ const ALLERGY_CLASSES = {
 
 const doseText = (d = {}) => `${d.morning || 0}-${d.afternoon || 0}-${d.night || 0}`;
 const dosesPerDay = (d = {}) => (d.morning || 0) + (d.afternoon || 0) + (d.night || 0);
+/**
+ * Tablets used per day, for "runs out in N days": weekly = a seventh of a dose day; "when
+ * needed" has no daily use (no run-out date, no refill nag).
+ */
+const stockPerDay = (c) => (c.frequency === 'as_needed' ? 0 : c.frequency === 'weekly' ? (dosesPerDay(c.dose) || 1) / 7 : dosesPerDay(c.dose));
 const durationDays = ({ value, unit } = {}) => {
   if (!value || unit === 'ongoing') return null;
   return value * ({ days: 1, weeks: 7, months: 30 }[unit] || 1);
@@ -74,7 +79,10 @@ async function patientSummary(patient, practiceId, acc) {
     M.Alert.countDocuments({ patientId: patient._id, ...inPractice, status: { $ne: 'resolved' } }),
     M.AiSummary.findOne({ patientId: patient._id, audience: 'doctor', ...inPractice }).sort({ generatedAt: -1 }),
   ]);
-  const courses = acc ? allCourses.filter((c) => acc.courseVisible(c)) : allCourses;
+  // A course past its end date is finished (the daily job marks it; until then it isn't "current").
+  const today = T.dayStart();
+  const running = allCourses.filter((c) => !c.endDate || c.endDate >= today);
+  const courses = acc ? running.filter((c) => acc.courseVisible(c)) : running;
   const bmi = patient.heightCm && patient.weightKg ? +(patient.weightKg / (patient.heightCm / 100) ** 2).toFixed(1) : null;
   return {
     patient: {
@@ -137,17 +145,37 @@ function prescriptionFields(consult, now = new Date()) {
   };
 }
 
+/** Same medicine, whatever the case or spacing ("Metformin" = "metformin "). */
+const sameName = (names) => ({ $in: names.map((n) => new RegExp(`^\\s*${String(n).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i')) });
+
 async function issueConsultation(consult, doctorUser) {
   if (consult.status !== 'draft') throw conflict('This prescription was already generated', 'ALREADY_ISSUED');
   if (!consult.chiefComplaint && !consult.diagnoses.length) throw badRequest('Add a complaint or diagnosis first', 'EMPTY_CONSULTATION');
-  const patient = await M.Patient.findById(consult.patientId);
-  const now = new Date();
-  const fields = prescriptionFields(consult, now);
-  const { followUpDate } = fields;
   const doctor = await M.DoctorProfile.findOne({ userId: consult.doctorId });
   if (!doctor?.signature?.key) {
     throw conflict('Add your digital signature first — it is printed on every prescription', 'SIGNATURE_REQUIRED');
   }
+  // Generated once: a second tap (or a second device) while this one runs is refused, so
+  // the patient never gets two prescriptions and two sets of alarms. A Generate that
+  // crashed half-way frees the draft after 2 minutes.
+  const claimed = await M.Consultation.updateOne(
+    { _id: consult._id, status: 'draft', $or: [{ issuingAt: null }, { issuingAt: { $lt: new Date(Date.now() - 120e3) } }] },
+    { issuingAt: new Date() },
+  );
+  if (!claimed.modifiedCount) throw conflict('This prescription is already being generated', 'ALREADY_ISSUED');
+  try {
+    return await issueClaimed(consult, doctorUser, doctor);
+  } catch (err) {
+    await M.Consultation.updateOne({ _id: consult._id, status: 'draft' }, { $unset: { issuingAt: 1 } });
+    throw err;
+  }
+}
+
+async function issueClaimed(consult, doctorUser, doctor) {
+  const patient = await M.Patient.findById(consult.patientId);
+  const now = new Date();
+  const fields = prescriptionFields(consult, now);
+  const { followUpDate } = fields;
 
   const rx = await M.Prescription.create({
     ...fields,
@@ -155,8 +183,10 @@ async function issueConsultation(consult, doctorUser) {
     rxNumber: await M.Counter.next(`rx:${consult.practiceId}`),
   });
 
-  await M.MedicationCourse.insertMany(
-    rx.items.map((item) => ({
+  // A line marked "stopped" tells the patient to stop that medicine: no new course for it.
+  const taking = rx.items.filter((item) => item.change !== 'stopped');
+  const created = await M.MedicationCourse.insertMany(
+    taking.map((item) => ({
       patientId: consult.patientId,
       prescriptionId: rx._id,
       rxItemId: item._id,
@@ -174,15 +204,36 @@ async function issueConsultation(consult, doctorUser) {
       endDate: durationDays(item.duration) ? T.addDays(T.dayStart(now), durationDays(item.duration) - 1) : null,
     })),
   );
-  // A changed/continued medicine replaces the same running medicine from this doctor.
-  const names = rx.items.map((i) => i.name);
-  await M.MedicationCourse.updateMany(
-    { patientId: consult.patientId, doctorId: consult.doctorId, name: { $in: names }, status: 'active', prescriptionId: { $ne: rx._id } },
-    { status: 'stopped', stoppedAt: now },
-  );
+  // A new, changed or continued medicine replaces the same running medicine — from this
+  // doctor or another (taking both would double the dose). The other doctor is told.
+  const byName = new Map(created.map((c) => [c.name.trim().toLowerCase(), c]));
+  const replaced = taking.length
+    ? await M.MedicationCourse.find({ patientId: consult.patientId, name: sameName(taking.map((i) => i.name)), status: 'active', prescriptionId: { $ne: rx._id } })
+    : [];
+  for (const old of replaced) {
+    const by = byName.get(old.name.trim().toLowerCase());
+    await M.MedicationCourse.updateOne({ _id: old._id }, {
+      status: 'stopped', stoppedAt: now, replacedById: by?._id,
+      stoppedReason: String(old.doctorId) === String(consult.doctorId) ? 'Replaced by a new prescription' : `Replaced by ${rx.doctorName}'s prescription`,
+    });
+  }
   const stopped = consult.medications.filter((m) => m.change === 'stopped').map((m) => m.name);
   if (stopped.length) {
-    await M.MedicationCourse.updateMany({ patientId: consult.patientId, name: { $in: stopped }, status: 'active' }, { status: 'stopped', stoppedAt: now });
+    await M.MedicationCourse.updateMany(
+      { patientId: consult.patientId, name: sameName(stopped), status: 'active', prescriptionId: { $ne: rx._id } },
+      { status: 'stopped', stoppedAt: now, stoppedReason: `Stopped by ${rx.doctorName}` },
+    );
+  }
+  const otherDoctors = new Map();
+  for (const old of replaced.filter((o) => o.doctorId && String(o.doctorId) !== String(consult.doctorId))) {
+    otherDoctors.set(String(old.doctorId), [...(otherDoctors.get(String(old.doctorId)) || []), old.name]);
+  }
+  for (const [doctorId, meds] of otherDoctors) {
+    await require('./notify').notify([doctorId], {
+      type: 'medicine_replaced', push: false, practiceId: consult.practiceId,
+      title: `${rx.doctorName} changed ${patient?.name || 'a patient'}'s ${meds.join(', ')}`,
+      body: 'Their new prescription replaces yours for this medicine.', screen: 'PP-Summary', params: { patientId: consult.patientId },
+    }).catch((err) => console.warn('[replaced notice]', err.message));
   }
 
   if (followUpDate) {
@@ -205,7 +256,12 @@ async function issueConsultation(consult, doctorUser) {
   consult.prescriptionId = rx._id;
   consult.completedAt = now;
   consult.durationSec = Math.round((now - consult.startedAt) / 1000);
+  consult.issuingAt = undefined;
   await consult.save();
+  // Today's doses exist at once (Home shows them), and the patient's phone re-schedules
+  // its alarms now (bulk writes don't run the course's save hook).
+  if (patient) await require('./care').ensureDoses(patient, now, T.addDays(now, 1)).catch((err) => console.warn('[doses]', err.message));
+  require('./reminders').remindersChanged(consult.patientId);
   return rx;
 }
 
@@ -330,4 +386,4 @@ async function localizedPrescriptionPdf(rx, lang) {
   return rx.localized[lang].file;
 }
 
-module.exports = { checkItems, patientSummary, issueConsultation, buildPrescriptionPdf, ensurePrescriptionPdf, localizedPrescriptionPdf, previewPrescriptionPdf, doseText, dosesPerDay, durationDays, quantityFor };
+module.exports = { stockPerDay, checkItems, patientSummary, issueConsultation, buildPrescriptionPdf, ensurePrescriptionPdf, localizedPrescriptionPdf, previewPrescriptionPdf, doseText, dosesPerDay, durationDays, quantityFor };
