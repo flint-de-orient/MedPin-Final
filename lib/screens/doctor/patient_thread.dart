@@ -66,6 +66,16 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
   String? _convId;
   String? _patientIdArg;
   bool _readSent = false;
+  String? _readUpTo;
+
+  /// The server time of the last full load (sent back as ?since= on the 4-second check).
+  String? _at;
+
+  /// Older messages loaded with "Show earlier messages" (the server sends the newest 100).
+  List<Map<String, dynamic>> _older = const [];
+  bool _loadingOlder = false;
+  bool _noOlder = false;
+  String? _newestShown;
   Map<String, dynamic>? _contacts;
 
   /// Message with its action menu open (live), and the one being replied to.
@@ -97,16 +107,75 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
         _convId = (items.firstWhere((x) => x['isUrgent'] == true, orElse: () => items.first))['id']?.toString();
       }
     }
-    Push.I.openChat = _convId;
-    final res = ((await Api.I.get('/api/conversations/$_convId/messages')) as Map).cast<String, dynamic>();
+    if (!mounted) return data;
+    // On screen (not covered, app in front): this chat's notifications show in the chat, and
+    // new patient messages count as read.
+    final front = (ModalRoute.of(context)?.isCurrent ?? true) && (WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed) == AppLifecycleState.resumed;
+    if (front) {
+      Push.I.openChat = _convId;
+    } else if (Push.I.openChat == _convId) {
+      Push.I.openChat = null;
+    }
+    // The 4-second check: nothing changed since the last load → keep what's on screen.
+    final prev = data;
+    final res = ((await Api.I.get('/api/conversations/$_convId/messages', query: {if (_at != null && prev != null) 'since': _at!})) as Map).cast<String, dynamic>();
+    if (res['unchanged'] == true && prev != null) {
+      _at = '${res['at']}';
+      return prev;
+    }
+    if (res['at'] != null) _at = '${res['at']}';
     if (res.obj('conversation')['patient'] == null && _contacts == null) {
       _contacts = ((await Api.I.get('/api/inbox/contacts')) as Map).cast<String, dynamic>();
     }
-    if (!_readSent) {
+    final fresh = res.list('items');
+    if (_older.isNotEmpty) {
+      final ids = {for (final m in fresh) m.str('id')};
+      res['items'] = [for (final m in _older) if (!ids.contains(m.str('id'))) m, ...fresh];
+    }
+    final newest = fresh.isEmpty ? null : fresh.last.str('id');
+    if (front && (!_readSent || newest != _readUpTo)) {
       _readSent = true;
+      _readUpTo = newest;
       Api.I.post('/api/conversations/$_convId/read', const {}).catchError((_) => null);
     }
+    _keepPlace(newest);
     return res;
+  }
+
+  /// A new message arrived while you read older ones: keep what you're reading in place.
+  void _keepPlace(String? newest) {
+    final grew = _newestShown != null && newest != _newestShown;
+    _newestShown = newest;
+    if (!grew || !_scroll.hasClients || _scroll.offset < 24) return;
+    final before = _scroll.position.maxScrollExtent;
+    final offset = _scroll.offset;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final added = _scroll.position.maxScrollExtent - before;
+      if (added > 0) _scroll.jumpTo(offset + added);
+    });
+  }
+
+  /// "Show earlier messages": the page before the oldest one shown.
+  Future<void> _loadOlder() async {
+    final items = data?.list('items') ?? const [];
+    if (_loadingOlder || items.isEmpty || _convId == null) return;
+    setState(() => _loadingOlder = true);
+    try {
+      final res = ((await Api.I.get('/api/conversations/$_convId/messages', query: {'before': items.first.str('createdAt'), 'limit': '50'})) as Map).cast<String, dynamic>();
+      if (!mounted) return;
+      final page = res.list('items');
+      setState(() {
+        _older = [...page, ..._older];
+        _noOlder = page.length < 50;
+        data = {...data!, 'items': [...page, ...items]};
+        _loadingOlder = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingOlder = false);
+      toast(context, e.message);
+    }
   }
 
   Map<String, dynamic> get _conv => data!.obj('conversation');
@@ -549,6 +618,19 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     final items = data!.list('items');
     final byId = {for (final m in items) m.str('id'): m};
     final children = <Widget>[];
+    // The server sends the newest 100; older ones on request.
+    if (items.length >= 100 && !_noOlder) {
+      children.add(Center(
+        child: Tap(
+          onTap: _loadingOlder ? null : _loadOlder,
+          radius: 999,
+          color: MP.white,
+          border: MP.lineStrong,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Text(_loadingOlder ? 'Loading…' : 'Show earlier messages', style: tx(13, w: w600, c: MP.primary)),
+        ),
+      ));
+    }
     DateTime? lastDay;
     for (final m in items) {
       final at = F.date(m['createdAt']);

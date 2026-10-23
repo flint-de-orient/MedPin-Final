@@ -153,6 +153,7 @@ const alertSchema = new Schema(
   baseOptions,
 );
 alertSchema.index({ practiceId: 1, status: 1, severity: 1, createdAt: -1 });
+alertSchema.index({ conversationId: 1, updatedAt: -1 }, { partialFilterExpression: { conversationId: { $type: 'objectId' } } });
 
 module.exports = {
   MedicalRecord: model('MedicalRecord', medicalRecordSchema),

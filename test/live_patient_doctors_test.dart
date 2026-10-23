@@ -244,7 +244,9 @@ void main() {
     await t.enterText(find.byType(TextField), 'See you at 5');
     await t.pump();
     await _tap(t, find.bySemanticsLabel('Send'));
-    expect(_body('POST', '/api/conversations/$_conv/messages'), {'text': 'See you at 5'});
+    final sent = _body('POST', '/api/conversations/$_conv/messages') as Map;
+    expect(sent['text'], 'See you at 5');
+    expect('${sent['clientId']}', matches(RegExp(r'^[\w-]{8,64}$')), reason: 'each send has its own id (a retry is saved once)');
     expect(t.takeException(), isNull);
     await _tearDown(t);
   });

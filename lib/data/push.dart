@@ -145,6 +145,12 @@ class Push {
     }
     final spec = Nav.spec(screen);
     if (spec == null) return;
+    // That chat is already on screen: refresh it instead of opening a second copy.
+    final conv = data['conversationId']?.toString();
+    if (conv != null && conv == openChat && (screen == 'Patient-DoctorChat' || screen == 'Patient-Thread')) {
+      LiveBus.changed();
+      return;
+    }
     // Patients open patient-app screens only, staff only staff screens.
     final isPatient = Session.I.landing == 'Main';
     if (isPatient != (spec.panel == 'patient')) return;

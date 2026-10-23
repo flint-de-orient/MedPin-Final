@@ -302,6 +302,9 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', qui
       // The clinic's shared inbox: the front desk covering this patient (their branch and
       // doctor) hears about it too — they answer most messages (visits, fees, reports).
       toDesk = (await deskFor(convo.practiceId, place)).map(String).filter((id) => id !== senderId && !toStaff.map(String).includes(id));
+      // Desk staff who joined after the chat began: in it now, with this message unread.
+      const newDesk = toDesk.filter((id) => !convo.participants.some((p) => String(p.userId) === id));
+      if (newDesk.length) await addParticipants(convo._id, newDesk.map((id) => ({ userId: id, role: 'staff', unreadCount: 1 })));
     } else if (convo.type === 'nutrition') {
       // Nutrition chats are the dietician's inbox, as care chats are the desk's: one notice
       // per chat, pushed in clinic hours. Doctors on the thread follow the doctor rule.
@@ -342,7 +345,10 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', qui
   }
   if (toPatient.length) {
     // The patient is waiting for the clinic's answer: always told (a quick burst of replies is one notice).
-    await chatNotice(toPatient.map(String), { ...base, title: `New message from ${lastMessage.senderLabel}`, screen: 'Patient-DoctorChat', params: { conversationId: convo._id } }, convo._id);
+    await chatNotice(toPatient.map(String), {
+      ...base, title: `New message from ${lastMessage.senderLabel}`, screen: 'Patient-DoctorChat',
+      params: { conversationId: convo._id, ...(senderType === 'doctor' && senderId ? { doctorId: senderId } : {}) },
+    }, convo._id);
   }
   if (senderType !== 'patient' && senderType !== 'system' && senderId) {
     // Someone at the clinic answered: the others' "new message" notices for this chat are done.

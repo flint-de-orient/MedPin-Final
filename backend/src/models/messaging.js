@@ -80,6 +80,8 @@ const messageSchema = new Schema(
     conversationId: ref('Conversation', true),
     senderId: ref('User'), // null for AI / system
     senderType: enumOf(E.SENDER_TYPES, { required: true }),
+    // The sending phone's id for this message: a retry after a timeout returns the saved one.
+    clientId: String,
     kind: enumOf(E.MESSAGE_KINDS, { default: 'text' }),
     text: { type: String, maxlength: 4000 },
     meta: Schema.Types.Mixed, // e.g. { away: true } for the automatic away reply
@@ -99,6 +101,9 @@ const messageSchema = new Schema(
   baseOptions,
 );
 messageSchema.index({ conversationId: 1, createdAt: -1 });
+// "Anything new in this chat?" (the 4-second check) and retried sends.
+messageSchema.index({ conversationId: 1, updatedAt: -1 });
+messageSchema.index({ conversationId: 1, clientId: 1 }, { partialFilterExpression: { clientId: { $type: 'string' } } });
 messageSchema.index({ 'ai.flagged': 1, createdAt: -1 }, { partialFilterExpression: { 'ai.flagged': true } });
 
 // Flagged AI answers for a doctor to check (Chat-Review).

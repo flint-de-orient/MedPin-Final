@@ -347,14 +347,33 @@ const ESCALATE_AFTER_MIN = 15;
 async function chatRollup(now) {
   if (T.minuteOfDay(now) % 10 !== 0) return;
   const since = new Date(now.getTime() - 2 * 3600e3);
-  const convos = await M.Conversation.find(
-    { type: { $in: ['care', 'nutrition'] }, 'lastMessage.senderType': 'patient', 'lastMessage.at': { $gte: since }, isUrgent: { $ne: true } },
+  // Patients still waiting for a person: nobody at the clinic has written since their last
+  // message (MedPin AI's or an automatic note's answer doesn't count as a reply).
+  const recent = await M.Conversation.find(
+    { type: 'care', 'lastMessage.senderType': { $in: ['patient', 'ai', 'system', 'doctor', 'staff'] }, 'lastMessage.at': { $gte: since }, isUrgent: { $ne: true } },
     'practiceId patientId participants lastMessage',
   ).populate('patientId', 'name').lean();
+  const convos = [];
+  for (const c of recent) {
+    const lastHuman = await M.Message.findOne({ conversationId: c._id, senderType: { $in: ['patient', 'doctor', 'staff'] }, 'meta.auto': { $ne: true }, deletedForEveryoneAt: null }, 'senderType').sort({ createdAt: -1 }).lean();
+    if (lastHuman?.senderType === 'patient') convos.push(c);
+  }
+  // Each doctor hears about their own patients (care team), not every patient of the clinic.
+  const teamOf = new Map();
+  const myPatient = async (doctorId, patientId, practiceId) => {
+    const k = `${doctorId}:${practiceId}`;
+    if (!teamOf.has(k)) {
+      const doctors = await M.Member.countDocuments({ practiceId, status: 'active', role: 'doctor' });
+      teamOf.set(k, doctors <= 1 ? null : new Set((await M.CareTeamAccess.find({ userId: doctorId, practiceId, accessLevel: { $ne: 'not_shared' } }, 'patientId').lean()).map((x) => String(x.patientId))));
+    }
+    const set = teamOf.get(k);
+    return set === null || set.has(String(patientId?._id || patientId));
+  };
   const byDoctor = new Map(); // doctorId → { practiceId, names[] }
   for (const c of convos) {
     for (const p of c.participants || []) {
-      if (!['doctor', 'dietician'].includes(p.role) || !(p.unreadCount > 0)) continue;
+      if (p.role !== 'doctor' || !(p.unreadCount > 0)) continue;
+      if (!(await myPatient(p.userId, c.patientId, c.practiceId))) continue;
       const key = `${p.userId}:${c.practiceId}`;
       const e = byDoctor.get(key) || { doctorId: p.userId, practiceId: c.practiceId, names: [] };
       e.names.push(c.patientId?.name || 'A patient');

@@ -54,7 +54,23 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
   // Sent instantly: the message shows at once ("Sending…"), the server
   // confirms it, and MedPin AI's reply arrives a moment later while
   // "MedPin AI is typing…" shows.
-  final _outbox = <({String text, bool failed})>[];
+  // Each with its own id (sent to the server, which saves a retried message once).
+  // Kept per chat for this session, so a failed message isn't lost on Back.
+  static final _outboxes = <String, List<({String id, String text, bool failed})>>{};
+  var _outbox = <({String id, String text, bool failed})>[];
+  static int _seq = 0;
+  static String _newId() => 'p${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}${(_seq++).toRadixString(36)}';
+
+  /// The server time of the last full load (sent back as ?since= on the 4-second check).
+  String? _at;
+
+  /// Older messages loaded with "Show earlier messages" (the server sends the newest 100).
+  List<Map<String, dynamic>> _older = const [];
+  bool _loadingOlder = false;
+  bool _noOlder = false;
+
+  /// The newest message id shown, to keep your place when a new one arrives while you read older ones.
+  String? _newestShown;
   bool _aiTyping = false;
   Timer? _aiWait;
   int _aiChecks = 0;
@@ -91,7 +107,8 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       final convId = args['conversationId'];
       bool isDoctor(Map<String, dynamic> d) => d.str('role') == 'doctor';
       // By doctor; else the doctor whose clinic thread this is (from a notification); else the first doctor.
-      _doctor = (doctorId != null ? mine.where((d) => d.str('doctorId') == doctorId).firstOrNull : null) ??
+      // A doctor named (a notification says who wrote): that doctor, never someone else.
+      _doctor = (doctorId != null ? mine.where((d) => d.str('doctorId') == doctorId).firstOrNull ?? const <String, dynamic>{'_missing': true} : null) ??
           (convId != null ? mine.where((d) => isDoctor(d) && d.str('conversationId') == convId).firstOrNull : null) ??
           (convId != null ? mine.where((d) => d.str('conversationId') == convId).firstOrNull : null) ??
           (convId == null ? mine.where(isDoctor).firstOrNull : null) ??
@@ -104,27 +121,90 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       final c = await Api.I.post('/api/patient/conversations', {'doctorId': id}) as Map;
       _convId = '${c['id'] ?? c['_id']}';
     }
-    Push.I.openChat = _convId;
-    final res = (await Api.I.get('/api/conversations/$_convId/messages') as Map).cast<String, dynamic>();
-    // Read receipt only when something new came in (not on every check).
-    final items = res['items'] is List ? res['items'] as List : const [];
-    final newest = items.isEmpty ? null : '${(items.last as Map)['id'] ?? (items.last as Map)['_id']}';
-    if (newest != _readUpTo) {
+    if (_outboxes[_convId!] != null && !identical(_outbox, _outboxes[_convId!])) _outbox = _outboxes[_convId!]!;
+    _outboxes[_convId!] = _outbox;
+    // On screen (not covered by another screen, app in front): this chat's notifications show
+    // in the chat itself, and reading it counts as "Seen".
+    if (!mounted) return data;
+    final route = ModalRoute.of(context);
+    final front = (route?.isCurrent ?? true) && (WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed) == AppLifecycleState.resumed;
+    if (front) {
+      Push.I.openChat = _convId;
+    } else if (Push.I.openChat == _convId) {
+      Push.I.openChat = null;
+    }
+    // The 4-second check: nothing changed since the last load → keep what's on screen.
+    final prev = data;
+    final res = (await Api.I.get('/api/conversations/$_convId/messages', query: {if (_at != null && prev != null) 'since': _at!}) as Map).cast<String, dynamic>();
+    if (res['unchanged'] == true && prev != null) {
+      _at = '${res['at']}';
+      return prev;
+    }
+    if (res['at'] != null) _at = '${res['at']}';
+    // Earlier pages the patient loaded stay above the newest messages.
+    final fresh = res.list('items');
+    if (_older.isNotEmpty) {
+      final ids = {for (final m in fresh) m.str('id')};
+      res['items'] = [for (final m in _older) if (!ids.contains(m.str('id'))) m, ...fresh];
+    }
+    // Messages the server has (a retry that was saved after all) leave the outbox.
+    final sentIds = {for (final m in fresh) if (m.str('clientId').isNotEmpty) m.str('clientId')};
+    _outbox.removeWhere((o) => sentIds.contains(o.id));
+    // Read receipt only when something new came in, and only while the chat is on screen.
+    final newest = fresh.isEmpty ? null : fresh.last.str('id');
+    if (front && newest != _readUpTo) {
       _readUpTo = newest;
       Api.I.post('/api/conversations/$_convId/read', const {}).catchError((_) => null);
     }
+    _keepPlace(newest);
     return res;
+  }
+
+  /// A new message arrived while the patient reads older ones: keep what they're reading in place.
+  void _keepPlace(String? newest) {
+    final grew = _newestShown != null && newest != _newestShown;
+    _newestShown = newest;
+    if (!grew || !_scroll.hasClients || _scroll.offset < 24) return;
+    final before = _scroll.position.maxScrollExtent;
+    final offset = _scroll.offset;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final added = _scroll.position.maxScrollExtent - before;
+      if (added > 0) _scroll.jumpTo(offset + added);
+    });
+  }
+
+  /// "Show earlier messages": the page before the oldest one shown.
+  Future<void> _loadOlder() async {
+    final items = data?.list('items') ?? const [];
+    if (_loadingOlder || items.isEmpty || _convId == null) return;
+    setState(() => _loadingOlder = true);
+    try {
+      final res = (await Api.I.get('/api/conversations/$_convId/messages', query: {'before': items.first.str('createdAt'), 'limit': '50'}) as Map).cast<String, dynamic>();
+      if (!mounted) return;
+      final page = res.list('items');
+      setState(() {
+        _older = [...page, ..._older];
+        _noOlder = page.length < 50;
+        data = {...data!, 'items': [...page, ...items]};
+        _loadingOlder = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingOlder = false);
+      toast(context, e.message);
+    }
   }
 
   String get _name =>
       data == null ? 'Dr. Arjun Sen' : _doctor.str('name', data!.obj('conversation').str('practiceName', 'Your clinic'));
   String get _short => data == null ? 'Dr. Sen' : p2ShortName(_name);
 
-  void _send(String message) {
+  void _send(String message, {bool fromField = false}) {
     final m = message.trim();
     if (m.isEmpty) return;
     if (data != null) {
-      _sendLive(m);
+      _sendLive(m, clearField: fromField);
       return;
     }
     setState(() {
@@ -134,29 +214,32 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
     });
   }
 
-  Future<void> _sendLive(String text, {bool retry = false}) async {
+  Future<void> _sendLive(String text, {String? retryId, bool clearField = false}) async {
+    final id = retryId ?? _newId();
     setState(() {
-      if (retry) _outbox.removeWhere((m) => m.text == text);
-      _outbox.add((text: text, failed: false));
+      _outbox.removeWhere((m) => m.id == id);
+      _outbox.add((id: id, text: text, failed: false));
       _showReplies = false;
-      _text.clear();
+      // A quick reply doesn't wipe what the patient was typing.
+      if (clearField) _text.clear();
     });
     _aiNoAnswer = false;
     if (_scroll.hasClients) _scroll.jumpTo(0); // the list is reversed: 0 is the newest
     try {
-      final res = await Api.I.post('/api/conversations/$_convId/messages', {'text': text});
+      final res = await Api.I.post('/api/conversations/$_convId/messages', {'text': text, 'clientId': id});
       if (!mounted) return;
+      _at = null; // load in full: our message is new
       await reload(quiet: true);
       if (!mounted) return;
       setState(() {
-        _outbox.removeWhere((m) => m.text == text);
+        _outbox.removeWhere((m) => m.id == id);
         if (res is Map && res['aiPending'] == true) _waitForAi();
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        final i = _outbox.indexWhere((m) => m.text == text && !m.failed);
-        if (i >= 0) _outbox[i] = (text: text, failed: true);
+        final i = _outbox.indexWhere((m) => m.id == id);
+        if (i >= 0) _outbox[i] = (id: id, text: text, failed: true);
       });
     }
   }
@@ -262,6 +345,20 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
     final out = <Widget>[];
     DateTime? lastDay;
     final msgs = data!.list('items');
+    // The server sends the newest 100; older ones on request.
+    if (msgs.length >= 100 && !_noOlder) {
+      out.add(Center(
+        child: P2Box(
+          onTap: _loadingOlder ? null : _loadOlder,
+          height: 36,
+          radius: 999,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          color: MP.white,
+          border: MP.lineStrong,
+          child: Text(_loadingOlder ? 'Loading…' : 'Show earlier messages', style: tx(13, w: w600, c: MP.primary)),
+        ),
+      ));
+    }
     for (final m in msgs) {
       final at = F.date(m['createdAt']);
       if (at != null && (lastDay == null || !F.sameDay(lastDay, at))) {
@@ -354,7 +451,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
               alignment: Alignment.centerRight,
               child: MpHitSlop(
                 child: Tap(
-                  onTap: () => _sendLive(m.text, retry: true),
+                  onTap: () => _sendLive(m.text, retryId: m.id),
                   radius: 8,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -474,12 +571,12 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
                 fill: MP.bg,
                 action: TextInputAction.send,
                 onChanged: (_) => setState(() {}),
-                onSubmitted: _send,
+                onSubmitted: (v) => _send(v, fromField: true),
               ),
             ),
             const Gap(8),
             P2Box(
-              onTap: typing ? () => _send(_text.text) : _voiceNote,
+              onTap: typing ? () => _send(_text.text, fromField: true) : _voiceNote,
               label: typing ? 'Send' : 'Record a voice message',
               width: 48,
               height: 48,

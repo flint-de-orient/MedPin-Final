@@ -13,6 +13,7 @@ import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import 'common_p2.dart';
 import '../../widgets/i18n.dart';
+import '../../data/push.dart';
 
 /// Design: Patient-Chat.dc.html — "Patient · urgent chat with doctor".
 ///
@@ -56,8 +57,11 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
   bool _showReplies = true;
   bool _hasText = false;
 
+  // New messages also arrive at once by a silent push; this is the backup.
   @override
-  Duration? get refreshEvery => const Duration(seconds: 15);
+  Duration? get refreshEvery => const Duration(seconds: 5);
+
+  String? _readUpTo;
 
   Map<String, dynamic> get _args => (Nav.args<Map>(context) ?? const {}).cast<String, dynamic>();
 
@@ -84,13 +88,27 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
           .where((d) => d['doctorId'] == a['doctorId'])
           .firstOrNull;
     }
-    // Opening the thread reads it.
-    Api.I.post('/api/conversations/$id/read').catchError((_) => null);
+    // On screen: this chat's notifications show in the chat itself, and new messages are read
+    // (only when something new came in, not on every check).
+    if (!mounted) return data;
+    final front = (ModalRoute.of(context)?.isCurrent ?? true) && (WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed) == AppLifecycleState.resumed;
+    if (front) {
+      Push.I.openChat = id;
+    } else if (Push.I.openChat == id) {
+      Push.I.openChat = null;
+    }
+    final items = thread.list('items');
+    final newest = items.isEmpty ? null : items.last.str('id');
+    if (front && newest != _readUpTo) {
+      _readUpTo = newest;
+      Api.I.post('/api/conversations/$id/read').catchError((_) => null);
+    }
     return {...thread, 'conversationId': id, 'doctor': doctor};
   }
 
   @override
   void dispose() {
+    if (Push.I.openChat != null && Push.I.openChat == data?['conversationId']) Push.I.openChat = null;
     _scroll.dispose();
     _input.dispose();
     _busy.dispose();
@@ -98,6 +116,20 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
   }
 
   String? get _conversationId => data?['conversationId'] as String?;
+
+  /// No chat with the clinic yet: start it with the doctor this screen is for (else say why not).
+  Future<String?> _startChat() async {
+    final doctorId = _args['doctorId'] as String?;
+    if (doctorId == null) {
+      toast(context, 'Choose a doctor in Emergency first');
+      return null;
+    }
+    final c = await runAction(context, () => Api.I.post('/api/patient/conversations', {'doctorId': doctorId}), busy: _busy);
+    if (c is! Map || !mounted) return null;
+    final id = '${c['id'] ?? c['_id']}';
+    setState(() => data = {...?data, 'conversationId': id});
+    return id;
+  }
 
   // ── Who the chat is with ──
 
@@ -206,8 +238,8 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
       });
       return;
     }
-    final id = _conversationId;
-    if (id == null) return;
+    final id = _conversationId ?? await _startChat();
+    if (id == null || !mounted) return;
     final ok = await runAction(context, () => Api.I.post('/api/conversations/$id/messages', {'text': t, 'isUrgent': true}), busy: _busy);
     if (ok == null || !mounted) return;
     setState(() {
@@ -252,8 +284,8 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
       toast(context, 'Attach a photo or report');
       return;
     }
-    final id = _conversationId;
-    if (id == null) return;
+    final id = _conversationId ?? await _startChat();
+    if (id == null || !mounted) return;
     final file = await Files.chooseSource(context, title: 'Send a photo or report');
     if (file == null || !mounted) return;
     final ok = await runAction(

@@ -2178,6 +2178,41 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     }
   });
 
+  await step('chat round 3: a retried send is saved once, the 4-second check, desk joining later, search, which doctor wrote', async () => {
+    const convo = ctx.convoId;
+    await M.Conversation.updateOne({ _id: convo }, { aiEnabled: false });
+    // A retry after a timeout returns the saved message instead of a second copy.
+    const a = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Is 5 PM fine?', clientId: 'phone-msg-0001' }), 201);
+    const b = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Is 5 PM fine?', clientId: 'phone-msg-0001' }), 201);
+    assert.equal(b.message.id, a.message.id);
+    assert.equal(await M.Message.countDocuments({ conversationId: convo, clientId: 'phone-msg-0001' }), 1, 'saved once');
+    // The 4-second check: nothing new → a tiny answer; a new message → the full thread.
+    const full = ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`));
+    assert.ok(full.at);
+    const same = ok(await ctx.pat('GET', `/api/conversations/${convo}/messages?since=${encodeURIComponent(full.at)}`));
+    assert.equal(same.unchanged, true);
+    await new Promise((r) => setTimeout(r, 20));
+    const reply = ok(await ctx.doc('POST', `/api/conversations/${convo}/messages`, { text: 'Yes, 5 PM is fine.' }), 201);
+    const changed = ok(await ctx.pat('GET', `/api/conversations/${convo}/messages?since=${encodeURIComponent(full.at)}`));
+    assert.equal(changed.unchanged, undefined);
+    assert.ok(changed.items.some((m) => m.id === reply.message.id));
+    // The patient's notice says which doctor wrote.
+    const patUser = (await M.Patient.findById(ctx.patientId)).userId;
+    const n = await M.Notification.findOne({ userId: patUser, type: 'message', 'params.conversationId': new (require('mongoose').Types.ObjectId)(String(convo)) }).sort({ createdAt: -1 });
+    assert.equal(String(n.params.doctorId), String(ctx.doctorUserId));
+    // Search finds the patient's chat by name.
+    const name = (await M.Patient.findById(ctx.patientId)).name.split(' ')[0];
+    const found = ok(await ctx.desk('GET', `/api/inbox?type=all&q=${encodeURIComponent(name)}`));
+    assert.ok(found.items.some((x) => String(x.id) === String(convo)));
+    // A front desk member who wasn't in the chat yet is added, with the patient's message unread.
+    const deskId = (await M.Member.findOne({ practiceId: ctx.practiceId, role: 'front_desk', status: 'active' })).userId;
+    await M.Conversation.updateOne({ _id: convo }, { $pull: { participants: { userId: deskId } } });
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Thank you' }), 201);
+    const row = (await M.Conversation.findById(convo)).participants.find((p) => String(p.userId) === String(deskId));
+    assert.ok(row && row.unreadCount >= 1, 'the desk member is in the chat with it unread');
+    await M.Conversation.updateOne({ _id: convo }, { aiEnabled: true });
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

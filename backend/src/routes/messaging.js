@@ -104,6 +104,27 @@ threads.use(requireAuth);
 
 threads.get('/:id/messages', async (req, res) => {
   const convo = await openConversation(req, req.params.id);
+  // ?since=<at from the last answer>: when neither the thread nor any of its messages
+  // (new, read, deleted, paid) changed since, say so and skip the full load.
+  const now = new Date();
+  if (req.query.since && !req.query.before) {
+    const since = new Date(String(req.query.since));
+    if (!Number.isNaN(+since)) {
+      const [lastMsg, lastAlert] = await Promise.all([
+        M.Message.findOne({ conversationId: convo._id }, 'updatedAt').sort({ updatedAt: -1 }).lean(),
+        // The emergency banner (acknowledged, desk notes) lives on the alert.
+        M.Alert.findOne({ conversationId: convo._id }, 'updatedAt').sort({ updatedAt: -1 }).lean(),
+      ]);
+      const staffSeen = convo.staffViewingAt && convo.staffViewingAt > since; // the clinic opening it changes the AI line only
+      if (convo.updatedAt <= since && (!lastMsg || lastMsg.updatedAt <= since) && (!lastAlert || lastAlert.updatedAt <= since) && !staffSeen) {
+        const inThreadNow = convo.participants.find((p) => String(p.userId) === String(req.user._id));
+        if (inThreadNow && inThreadNow.role !== 'patient' && !(convo.staffViewingAt > T.addMinutes(now, -1))) {
+          await M.Conversation.updateOne({ _id: convo._id }, { $set: { staffViewingAt: now } }, { timestamps: false });
+        }
+        return res.json({ unchanged: true, at: now });
+      }
+    }
+  }
   const { limit } = paging(req.query, 100);
   const q = { conversationId: convo._id, hiddenFor: { $ne: req.user._id } };
   if (req.query.before) q.createdAt = { $lt: new Date(req.query.before) };
@@ -112,7 +133,7 @@ threads.get('/:id/messages', async (req, res) => {
   const inThread = convo.participants.find((p) => String(p.userId) === String(req.user._id));
   if (inThread && inThread.role !== 'patient' && !req.query.before && !(convo.staffViewingAt > T.addMinutes(new Date(), -1))) {
     convo.staffViewingAt = new Date();
-    await M.Conversation.updateOne({ _id: convo._id }, { staffViewingAt: convo.staffViewingAt });
+    await M.Conversation.updateOne({ _id: convo._id }, { staffViewingAt: convo.staffViewingAt }, { timestamps: false });
   }
   const pinned = convo.pinnedMessageId ? await M.Message.findById(convo.pinnedMessageId) : null;
   const patient = convo.patientId ? await M.Patient.findById(convo.patientId, 'name userId') : null;
@@ -150,6 +171,7 @@ threads.get('/:id/messages', async (req, res) => {
   const payIds = msgs.filter((m) => m.meta?.event === 'payment_request' && /^[a-f\d]{24}$/i.test(String(m.meta.paymentId || ''))).map((m) => m.meta.paymentId);
   const payOf = new Map((payIds.length ? await M.Payment.find({ _id: { $in: payIds } }, 'amount status method appointmentId') : []).map((p) => [String(p._id), p]));
   res.json({
+    at: now, // the phone sends it back as ?since= on its next check
     conversation: {
       ...(isPatientView ? patientConvoView(convo) : convo.toJSON()),
       aiPaused: assistant.aiPaused(convo),
@@ -186,6 +208,12 @@ threads.get('/:id/messages', async (req, res) => {
 
 threads.post('/:id/messages', upload.single('file'), async (req, res) => {
   const convo = await openConversation(req, req.params.id);
+  // The same message sent again (the first try timed out but was saved): the saved one, once.
+  const clientId = typeof req.body.clientId === 'string' && /^[\w-]{8,64}$/.test(req.body.clientId) ? req.body.clientId : null;
+  if (clientId) {
+    const saved = await M.Message.findOne({ conversationId: convo._id, clientId, senderId: req.user._id });
+    if (saved) return res.status(201).json({ message: messageView(saved, req.user._id), aiReply: null, aiPending: false, duplicate: true });
+  }
   const senderType = await senderTypeFor(req, convo);
   const text = String(req.body.text || '').trim();
   const extra = {};
@@ -222,7 +250,7 @@ threads.post('/:id/messages', upload.single('file'), async (req, res) => {
     if (!isId(req.body.replyToId) || !(await M.Message.exists({ _id: req.body.replyToId, conversationId: convo._id }))) throw badRequest('That message is no longer in this chat');
     extra.replyToId = req.body.replyToId;
   }
-  const msg = await postMessage(convo, { sender: req.user, senderType, text: text || undefined, kind, isUrgent: req.body.isUrgent === true || req.body.isUrgent === 'true', ...extra });
+  const msg = await postMessage(convo, { sender: req.user, senderType, text: text || undefined, kind, isUrgent: req.body.isUrgent === true || req.body.isUrgent === 'true', ...(clientId ? { clientId } : {}), ...extra });
   // Staff replying pauses the AI in this thread for a while (atomic, like the message itself).
   if (senderType !== 'patient') {
     convo.aiPausedAt = new Date();
@@ -344,7 +372,13 @@ inbox.get('/', async (req, res) => {
   const q = type === 'direct'
     ? { type: 'direct', 'participants.userId': req.user._id, practiceId: { $in: [req.practiceId, null] } }
     : { practiceId: req.practiceId, type: { $in: type === 'all' ? ['care', 'nutrition'] : [type] } };
-  const convos = await M.Conversation.find(q).sort({ 'lastMessage.at': -1 }).limit(300).populate('patientId', 'name gender ageYears ageRecordedAt phone conditions userId');
+  if (req.query.q && type !== 'direct') {
+    // Searching: every chat of the patients whose name or phone matches, however old.
+    const re = new RegExp(escapeRegex(String(req.query.q)), 'i');
+    const pts = await M.Patient.find({ $or: [{ name: re }, { phone: re }] }, '_id').limit(500).lean();
+    q.$or = [{ patientId: { $in: pts.map((p) => p._id) } }, { 'lastMessage.text': re }];
+  }
+  const convos = await M.Conversation.find(q).sort({ 'lastMessage.at': -1 }).limit(Math.min(Number(req.query.limit) || 300, 500)).populate('patientId', 'name gender ageYears ageRecordedAt phone conditions userId');
   // Patients' profile photos for the avatars.
   const photos = await require('../services/photos').photosFor(convos.map((c) => c.patientId?.userId));
   const mine = (c) => c.participants.find((p) => String(p.userId) === String(req.user._id));
@@ -376,6 +410,16 @@ inbox.get('/', async (req, res) => {
   if (req.query.q) {
     const re = new RegExp(escapeRegex(req.query.q), 'i');
     rows = rows.filter((x) => re.test(x.patient?.name || '') || re.test(x.other?.name || '') || re.test(x.lastMessage?.text || '') || re.test(x.lastMessage?.senderLabel || ''));
+  }
+  // A doctor in a clinic with several doctors: unread counts their own patients (care team) and
+  // chats they have written in — not every patient of the clinic.
+  if (req.member.role === 'doctor' && type !== 'direct') {
+    const doctors = await M.Member.countDocuments({ practiceId: req.practiceId, status: 'active', role: 'doctor' });
+    if (doctors > 1) {
+      const mineP = new Set((await M.CareTeamAccess.find({ userId: req.user._id, practiceId: req.practiceId, accessLevel: { $ne: 'not_shared' } }, 'patientId').lean()).map((x) => String(x.patientId)));
+      const wrote = new Set((await M.Message.distinct('conversationId', { conversationId: { $in: rows.map((x) => x.id) }, senderId: req.user._id })).map(String));
+      rows = rows.map((x) => (x.unread > 0 && !mineP.has(String(x.patient?.id)) && !wrote.has(String(x.id)) && !x.isUrgent ? { ...x, unread: 0, otherDoctor: true } : x));
+    }
   }
   const unreadCount = rows.filter((x) => x.unread > 0).length;
   if (req.query.tab === 'unread') rows = rows.filter((x) => x.unread > 0);
