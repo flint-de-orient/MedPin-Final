@@ -41,6 +41,22 @@ r.post('/register', async (req, res) => {
 
 r.use(patientOnly);
 
+// Which staff member booked, checked in, cancelled or took a payment is the clinic's own
+// record: those internal ids are left out of everything sent to the patient's app.
+const STAFF_KEYS = new Set(['cancelledByUser', 'bookedBy', 'checkedInBy', 'handledBy', 'markedPaidBy', 'refundedBy']);
+const withoutStaff = (x) => {
+  if (Array.isArray(x)) return x.map(withoutStaff);
+  if (!x || typeof x !== 'object') return x;
+  const out = {};
+  for (const [k, v] of Object.entries(x)) if (!STAFF_KEYS.has(k)) out[k] = withoutStaff(v);
+  return out;
+};
+r.use((req, res, next) => {
+  const send = res.json.bind(res);
+  res.json = (body) => send(body && typeof body === 'object' ? withoutStaff(JSON.parse(JSON.stringify(body))) : body);
+  next();
+});
+
 // ── Profile (Patient-Me) ──
 const meView = (p, user) => ({
   ...p.toJSON(),
@@ -1634,10 +1650,15 @@ r.post('/records/:id/share', async (req, res) => {
 
 r.delete('/records/:id', async (req, res) => {
   const r0 = await M.MedicalRecord.updateOne({ _id: req.params.id, patientId: req.patient._id, deletedAt: null }, { deletedAt: new Date() });
-  // Its readings (sugar / BP from the report) go with it.
+  // The results read from it, and their readings (sugar / BP), go with it — so a deleted
+  // report no longer shows in the clinic's Tests tab, trends or MedPin AI. A result the
+  // clinic entered itself stays in the clinic's own record.
   if (r0.modifiedCount) {
-    const labs = await M.LabResult.find({ recordId: req.params.id, patientId: req.patient._id }).distinct('_id');
-    if (labs.length) await M.Vitals.deleteMany({ fromLabId: { $in: labs } });
+    const labs = await M.LabResult.find({ recordId: req.params.id, patientId: req.patient._id, practiceId: null }).distinct('_id');
+    if (labs.length) {
+      await M.Vitals.deleteMany({ fromLabId: { $in: labs } });
+      await M.LabResult.deleteMany({ _id: { $in: labs } });
+    }
   }
   res.json({ ok: true });
 });

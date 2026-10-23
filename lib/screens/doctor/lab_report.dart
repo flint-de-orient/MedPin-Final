@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../data/downloads.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
@@ -242,7 +243,7 @@ class _LabReportScreenState extends State<LabReportScreen> with LiveData {
                 ),
               if (reviewedAt != null)
                 Center(child: Text('Reviewed${reviewer.isEmpty ? '' : ' by $reviewer'} · ${F.dayMonth(reviewedAt)}, ${F.time(reviewedAt)}', style: tx(13, c: MP.ink2)))
-              else
+              else if (!isLive || Session.I.role == 'doctor') // a doctor's review (the patient is told)
                 MpButton(_busy ? 'Saving…' : 'Mark as reviewed', onTap: _busy ? null : _review),
             ],
           ),

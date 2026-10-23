@@ -168,8 +168,9 @@ const ROLE_PERMISSIONS = {
     viewPatients: true, clinical: true, prescribe: false, editRecords: true, labs: false, labReview: false, chats: true,
     alerts: false, manageAlerts: false, ai: true, reports: false, fees: false, billing: false, exports: false,
   },
+  // Lab staff enter results; "reviewed" means a doctor has seen it (the patient is told so).
   lab_manager: {
-    viewPatients: true, clinical: false, prescribe: false, editRecords: false, labs: true, labReview: true, chats: false,
+    viewPatients: true, clinical: false, prescribe: false, editRecords: false, labs: true, labReview: false, chats: false,
     alerts: false, manageAlerts: false, ai: false, reports: false, fees: false, billing: false, exports: false,
   },
   lab_technician: {

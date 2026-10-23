@@ -63,15 +63,19 @@ const SYSTEM = [
 
 const sha = (x) => crypto.createHash('sha1').update(JSON.stringify(x)).digest('hex');
 
-/** The consultation as the AI sees it (no names or phone numbers). */
-async function context(consult) {
+/**
+ * The consultation as the AI sees it (no names or phone numbers). With [acc] (what this
+ * doctor may see), only what the patient shares with this clinic goes to the AI.
+ */
+async function context(consult, acc) {
   const patient = await M.Patient.findById(consult.patientId);
-  const [vitals, courses, labs, past] = await Promise.all([
-    consult.vitalsId ? M.Vitals.findById(consult.vitalsId).lean() : M.Vitals.findOne({ patientId: consult.patientId }).sort({ recordedAt: -1 }).lean(),
-    M.MedicationCourse.find({ patientId: consult.patientId, status: 'active' }, 'name strength dose frequency').lean(),
-    M.LabResult.find({ patientId: consult.patientId, collectedAt: { $gte: T.addDays(new Date(), -365) } }, 'collectedAt values').sort({ collectedAt: -1 }).limit(6).lean(),
-    M.Consultation.find({ patientId: consult.patientId, _id: { $ne: consult._id }, status: { $ne: 'draft' } }, 'startedAt diagnoses').sort({ startedAt: -1 }).limit(3).lean(),
+  const [vitals, allCourses, labs, past] = await Promise.all([
+    consult.vitalsId ? M.Vitals.findById(consult.vitalsId).lean() : M.Vitals.findOne({ patientId: consult.patientId, ...(acc ? acc.vitalsFilter() : {}) }).sort({ recordedAt: -1 }).lean(),
+    M.MedicationCourse.find({ patientId: consult.patientId, status: 'active' }, 'name strength dose frequency doctorId').lean(),
+    M.LabResult.find({ patientId: consult.patientId, collectedAt: { $gte: T.addDays(new Date(), -365) }, ...(acc ? await acc.labFilter() : {}) }, 'collectedAt values').sort({ collectedAt: -1 }).limit(6).lean(),
+    M.Consultation.find({ patientId: consult.patientId, _id: { $ne: consult._id }, status: { $ne: 'draft' }, ...(acc ? acc.consultationFilter() : {}) }, 'startedAt diagnoses').sort({ startedAt: -1 }).limit(3).lean(),
   ]);
+  const courses = acc ? allCourses.filter((c) => acc.courseVisible(c)) : allCourses;
   const v = vitals || {};
   return {
     patient,
@@ -97,9 +101,9 @@ async function context(consult) {
 const FOOD = ['before_food', 'after_food', 'with_food', 'empty_stomach', 'bedtime'];
 
 /** Suggestions for [consult] (cached until the inputs change). */
-async function suggest(consult, { force = false } = {}) {
+async function suggest(consult, { force = false, acc } = {}) {
   if (!ai.enabled()) return { available: false, message: 'MedPin AI is off on this server.' };
-  const { patient, facts } = await context(consult);
+  const { patient, facts } = await context(consult, acc);
   if (!facts.complaint.trim() && !facts.vitals.length) return { available: true, needsComplaint: true, diagnoses: [], tests: [], medicines: [], redFlags: [] };
   const hash = sha(facts);
   if (!force && consult.aiSuggestions?.hash === hash) return { ...consult.aiSuggestions.data, cached: true };

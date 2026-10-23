@@ -4,7 +4,7 @@ const M = require('../models');
 const E = require('../models/enums');
 const T = require('../lib/time');
 const { requireAuth, staff } = require('../middleware/auth');
-const { pick, badRequest, notFound, conflict, unprocessable, isId } = require('../lib/http');
+const { pick, badRequest, notFound, conflict, unprocessable, isId, forbidden } = require('../lib/http');
 const storage = require('../services/storage');
 const { slotsFor, nextFreeSlot } = require('../services/scheduling');
 
@@ -13,6 +13,20 @@ const photoUpload = uploader({ kinds: ['image'], maxMb: 5, maxFiles: 1 });
 const proofUpload = uploader({ kinds: ['image', 'pdf'], maxMb: 10, maxFiles: 1 });
 const r = Router();
 r.use(requireAuth, staff());
+
+// A practitioner's own set-up — payouts, qualifications, signature, hours, leave, letterhead —
+// is for those who see patients (doctors, the dietician). Assistants in the doctor panel
+// keep their own notification and chat settings (PATCH /doctor/profile, below).
+const PRACTITIONERS = ['doctor', 'dietician'];
+const isPractitioner = (req) => PRACTITIONERS.includes(req.member?.role);
+const PRACTITIONER_ONLY = /^\/doctor\/(payouts|qualifications|profile\/signature|leaves|letterhead)(\/|$)|^\/doctor\/locations\/./;
+r.use((req, res, next) => {
+  const write = req.method !== 'GET';
+  if (PRACTITIONER_ONLY.test(req.path) && (write || /^\/doctor\/(payouts|leaves|letterhead)/.test(req.path)) && !isPractitioner(req)) {
+    throw forbidden('This is for doctors only', 'DOCTORS_ONLY');
+  }
+  next();
+});
 
 const profileOf = async (userId) => {
   let p = await M.DoctorProfile.findOne({ userId });
@@ -68,7 +82,8 @@ const dedupe = (list) => {
 
 r.patch('/doctor/profile', async (req, res) => {
   const p = await profileOf(req.user._id);
-  const body = pick(req.body, PROFILE_FIELDS);
+  // Others in the doctor panel (an assistant): only their own name and settings.
+  const body = pick(req.body, isPractitioner(req) ? PROFILE_FIELDS : ['displayName', 'chatSettings', 'notificationPrefs']);
   for (const k of ['specialisations', 'conditionsTreated', 'memberships']) if (body[k]) body[k] = dedupe(body[k]);
   if (body.registration) {
     body.registration = { ...(p.registration?.toObject?.() || {}), ...body.registration };

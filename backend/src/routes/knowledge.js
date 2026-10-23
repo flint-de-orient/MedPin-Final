@@ -2,7 +2,7 @@
 const { Router } = require('express');
 const M = require('../models');
 const E = require('../models/enums');
-const { requireAuth, staff, ownPractice } = require('../middleware/auth');
+const { requireAuth, staff, ownPractice, need } = require('../middleware/auth');
 const { pick, badRequest, notFound, conflict, escapeRegex } = require('../lib/http');
 const { careConversation, postMessage } = require('../services/care');
 
@@ -36,7 +36,7 @@ r.get('/knowledge/:id', async (req, res) => {
   res.json({ ...e.toJSON(), shared: !e.practiceId, adopted: Boolean(adopted), editable: Boolean(e.practiceId) && ['draft', 'pending'].includes(e.status) });
 });
 
-r.post('/knowledge', async (req, res) => {
+r.post('/knowledge', need('ai'), async (req, res) => {
   const body = pick(req.body, KB_FIELDS);
   if (!body.title || !body.content) throw badRequest('Add a title and the content');
   const e = await M.KnowledgeEntry.create({ ...body, tags: cleanTags(body.tags), practiceId: req.practiceId, status: 'draft', createdBy: req.user._id, updatedBy: req.user._id });
@@ -49,7 +49,7 @@ const ownEntry = async (req) => {
   return ownPractice(req, e, 'Entry');
 };
 
-r.patch('/knowledge/:id', async (req, res) => {
+r.patch('/knowledge/:id', need('ai'), async (req, res) => {
   const e = await ownEntry(req);
   if (!['draft', 'pending'].includes(e.status)) throw conflict('Approved entries can only be retired, not edited', 'NOT_EDITABLE');
   Object.assign(e, pick(req.body, KB_FIELDS));
@@ -60,7 +60,7 @@ r.patch('/knowledge/:id', async (req, res) => {
   res.json(e);
 });
 
-r.post('/knowledge/:id/submit', async (req, res) => {
+r.post('/knowledge/:id/submit', need('ai'), async (req, res) => {
   const e = await ownEntry(req);
   if (e.status !== 'draft') throw conflict('Only drafts can be submitted');
   e.status = 'pending';
@@ -89,7 +89,7 @@ r.post('/knowledge/:id/retire', staff({ roles: ['doctor'] }), async (req, res) =
 });
 
 // Knowledge-Options: copy an entry (own or shared) into a new draft.
-r.post('/knowledge/:id/duplicate', async (req, res) => {
+r.post('/knowledge/:id/duplicate', need('ai'), async (req, res) => {
   const e = await M.KnowledgeEntry.findById(req.params.id);
   if (!e || (e.practiceId && String(e.practiceId) !== String(req.practiceId))) throw notFound('Entry');
   const copy = await M.KnowledgeEntry.create({
@@ -99,21 +99,21 @@ r.post('/knowledge/:id/duplicate', async (req, res) => {
 });
 
 // Only drafts and entries waiting for approval can be deleted; approved ones are retired.
-r.delete('/knowledge/:id', async (req, res) => {
+r.delete('/knowledge/:id', need('ai'), async (req, res) => {
   const e = await ownEntry(req);
   if (!['draft', 'pending'].includes(e.status)) throw conflict('Approved entries can be retired, not deleted', 'NOT_DELETABLE');
   await e.deleteOne();
   res.json({ ok: true });
 });
 
-r.post('/knowledge/:id/adopt', async (req, res) => {
+r.post('/knowledge/:id/adopt', staff({ roles: ['doctor'] }), async (req, res) => {
   const e = await M.KnowledgeEntry.findOne({ _id: req.params.id, practiceId: null, status: 'approved' });
   if (!e) throw notFound('Shared entry');
   await M.KnowledgeAdoption.updateOne({ practiceId: req.practiceId, entryId: e._id }, { $setOnInsert: { adoptedBy: req.user._id, adoptedAt: new Date() } }, { upsert: true });
   res.json({ ok: true, adopted: true });
 });
 
-r.delete('/knowledge/:id/adopt', async (req, res) => {
+r.delete('/knowledge/:id/adopt', staff({ roles: ['doctor'] }), async (req, res) => {
   await M.KnowledgeAdoption.deleteOne({ practiceId: req.practiceId, entryId: req.params.id });
   res.json({ ok: true, adopted: false });
 });

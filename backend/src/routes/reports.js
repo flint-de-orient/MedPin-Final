@@ -8,11 +8,16 @@ const M = require('../models');
 const T = require('../lib/time');
 const { requireAuth, staff, need, patientInPractice } = require('../middleware/auth');
 const { list, escapeRegex } = require('../lib/http');
+const { accessFor } = require('../services/access');
 
 const r = Router();
 r.use(requireAuth, staff());
 r.use('/reports', need('reports'));
 r.use('/dashboard', need('clinical'));
+
+// Reports are also for the practice manager, who isn't clinical staff: they get the counts
+// and money, not each patient's diagnoses, medicines or conditions.
+const seesClinical = (req) => Boolean(req.member?.isOwner || req.perms?.clinical);
 
 const AGE_GROUPS = { under_18: [0, 17], '18_40': [18, 40], '41_60': [41, 60], over_60: [61, 200] };
 const ageGroupOf = (age) => Object.keys(AGE_GROUPS).find((k) => age != null && age >= AGE_GROUPS[k][0] && age <= AGE_GROUPS[k][1]);
@@ -267,15 +272,16 @@ r.get('/reports/consultations', async (req, res) => {
   // Completed visits and consults issued without one (started straight from the patient).
   let rows = await seenVisits(req, from, to, filtersOf(req.query));
   const cmap = await consultsOf(rows, 'diagnoses chiefComplaint');
+  const clinical = seesClinical(req);
   if (req.query.q) {
     const re = new RegExp(escapeRegex(req.query.q), 'i');
-    rows = rows.filter((a) => re.test(a.patientId?.name || '') || re.test(a.patientId?.phone || '') || (cmap.get(String(a._id))?.diagnoses || []).some((d) => re.test(d.name)));
+    rows = rows.filter((a) => re.test(a.patientId?.name || '') || re.test(a.patientId?.phone || '') || (clinical && (cmap.get(String(a._id))?.diagnoses || []).some((d) => re.test(d.name))));
   }
   const items = rows.sort((a, b) => new Date(b.startAt) - new Date(a.startAt)).map((a) => ({
     appointmentId: a.viaConsult ? a.apptId : a._id, consultationId: cmap.get(String(a._id))?._id || null, date: a.date, startAt: a.consultStartedAt || a.startAt,
     patient: { id: a.patientId?._id, name: a.patientId?.name, age: a.age, gender: a.patientId?.gender, phone: req.query.includeMobiles === 'true' ? a.patientId?.phone : undefined },
     visitType: a.visitType, mode: a.mode, location: a.locationId?.shortName || a.locationId?.name,
-    diagnoses: (cmap.get(String(a._id))?.diagnoses || []).map((d) => d.name),
+    diagnoses: clinical ? (cmap.get(String(a._id))?.diagnoses || []).map((d) => d.name) : [],
     durationMin: consultMin(a) != null ? Math.round(consultMin(a)) : null,
     fee: a.fee, feeStatus: a.feeStatus,
   }));
@@ -290,9 +296,10 @@ r.get('/reports/prescriptions', async (req, res) => {
   const { from, to } = rangeOf(req.query);
   const q = await rxScope(req, from, to, filtersOf(req.query));
   let rx = await M.Prescription.find(q).sort({ issuedAt: -1 }).populate('patientId', 'name').lean();
+  const clinical = seesClinical(req);
   if (req.query.q) {
     const re = new RegExp(escapeRegex(req.query.q), 'i');
-    rx = rx.filter((p) => re.test(p.patientId?.name || '') || p.items.some((i) => re.test(i.name)) || re.test(String(p.rxNumber).padStart(4, '0')));
+    rx = rx.filter((p) => re.test(p.patientId?.name || '') || (clinical && p.items.some((i) => re.test(i.name))) || re.test(String(p.rxNumber).padStart(4, '0')));
   }
   const meds = countBy(rx.flatMap((p) => p.items), (i) => `${i.name}${i.strength ? ` ${i.strength}` : ''}`);
   const tests = countBy(rx.flatMap((p) => p.tests.map((t) => ({ t }))), (x) => x.t);
@@ -300,7 +307,7 @@ r.get('/reports/prescriptions', async (req, res) => {
     totals: { prescriptions: rx.length, medicines: rx.reduce((s, p) => s + p.items.length, 0), labTests: rx.reduce((s, p) => s + p.tests.length, 0) },
     topMedicines: meds.slice(0, 10),
     topTests: tests.slice(0, 10),
-    items: rx.map((p) => ({ id: p._id, patientId: p.patientId?._id, rxNumber: String(p.rxNumber).padStart(4, '0'), issuedAt: p.issuedAt, patient: p.patientId?.name, medicines: p.items.map((i) => `${i.name} ${i.strength || ''}`.trim()), tests: p.tests })),
+    items: rx.map((p) => ({ id: p._id, patientId: p.patientId?._id, rxNumber: String(p.rxNumber).padStart(4, '0'), issuedAt: p.issuedAt, patient: p.patientId?.name, medicines: clinical ? p.items.map((i) => `${i.name} ${i.strength || ''}`.trim()) : [], tests: clinical ? p.tests : [] })),
   });
 });
 
@@ -392,7 +399,7 @@ const doctorSpecialty = (p, labels) => specialtiesFor([p.headline, ...(p.special
   || DEPARTMENT_OF[p.specialtyKeys?.[0]] || labels.get(p.specialtyKeys?.[0]) || null;
 
 // "Referred to / by": doctors on MedPin, at any clinic, by name, specialty or clinic.
-r.get('/reports/referral-doctors', async (req, res) => {
+r.get('/reports/referral-doctors', need('clinical'), async (req, res) => {
   const text = String(req.query.q || '').trim().replace(/^dr\.?\s*/i, '');
   if (text.length < 2) return res.json({ items: [] });
   // From the start of a word, so "ra" finds "Dr. Rina", not every "Sarkar".
@@ -446,15 +453,17 @@ function labReason(v, prev) {
 
 // Reason and specialty suggestions for "Add a referral", from the chosen patient's
 // record: abnormal lab values, out-of-range readings, recent diagnoses, conditions.
-r.get('/reports/referral-suggestions', async (req, res) => {
+r.get('/reports/referral-suggestions', need('clinical'), async (req, res) => {
   const reasons = [];
   const add = (text, kind) => reasons.push({ text, kind, specialties: specialtiesFor(text) });
   if (req.query.patientId) {
     const patient = await patientInPractice(req, req.query.patientId);
     const since = T.addDays(T.dayStart(), -365);
+    // Only what the patient shares with this clinic.
+    const acc = await accessFor({ userId: req.user._id, practiceId: req.practiceId }, patient);
     const [labs, vitals, consults] = await Promise.all([
-      M.LabResult.find({ patientId: patient._id, collectedAt: { $gte: since } }, 'values collectedAt ecgInterpretation ecgNote').sort({ collectedAt: -1 }).limit(60).lean(),
-      M.Vitals.find({ patientId: patient._id, recordedAt: { $gte: T.addDays(T.dayStart(), -90) } }).sort({ recordedAt: -1 }).limit(60).lean(),
+      M.LabResult.find({ patientId: patient._id, collectedAt: { $gte: since }, ...(await acc.labFilter()) }, 'values collectedAt ecgInterpretation ecgNote').sort({ collectedAt: -1 }).limit(60).lean(),
+      M.Vitals.find({ patientId: patient._id, recordedAt: { $gte: T.addDays(T.dayStart(), -90) }, ...acc.vitalsFilter() }).sort({ recordedAt: -1 }).limit(60).lean(),
       M.Consultation.find({ patientId: patient._id, practiceId: req.practiceId, status: { $ne: 'draft' } }, 'diagnoses startedAt').sort({ startedAt: -1 }).limit(5).lean(),
     ]);
     // Labs: each test's latest value, when it is out of range (critical first); the one before shows the trend.
@@ -534,7 +543,7 @@ r.get('/reports/follow-ups', async (req, res) => {
     onTimePct: decided.length ? Math.round((decided.filter((f) => outcome(f) === 'on_time').length / decided.length) * 100) : null,
     byCondition: Object.entries(byCondition).map(([condition, v]) => ({ condition, onTimePct: Math.round((v.onTime / v.total) * 100), total: v.total })).sort((a, b) => b.total - a.total),
     missedList: fus.filter((f) => outcome(f) === 'missed').map((f) => ({
-      id: f._id, patient: f.patientId && { id: f.patientId._id, name: f.patientId.name, phone: f.patientId.phone, age: T.ageFrom(f.patientId), gender: f.patientId.gender, condition: f.patientId.conditions?.[0]?.name },
+      id: f._id, patient: f.patientId && { id: f.patientId._id, name: f.patientId.name, phone: f.patientId.phone, age: T.ageFrom(f.patientId), gender: f.patientId.gender, condition: seesClinical(req) ? f.patientId.conditions?.[0]?.name : undefined },
       dueDate: f.dueDate, daysLate: Math.round((today - f.dueDate) / T.DAY_MS),
     })),
   });

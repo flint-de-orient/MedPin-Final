@@ -181,20 +181,25 @@ r.post('/patients/link', async (req, res) => {
   if (!/^\d{6}$/.test(code)) throw badRequest('Enter the 6-digit consent code', 'INVALID_CODE');
   const patient = await M.Patient.findOne({ phone });
   if (!patient) throw notFound('Patient');
-  const consent = await M.ConsentCode.findOne({ patientId: patient._id, usedAt: null, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
+  // Each try is counted before comparing (atomic): guesses sent at once can't pass 5.
+  const consent = await M.ConsentCode.findOneAndUpdate(
+    { patientId: patient._id, usedAt: null, expiresAt: { $gt: new Date() }, wrongTries: { $lt: 5 } },
+    { $inc: { wrongTries: 1 } },
+    { sort: { createdAt: -1 }, new: true },
+  );
   if (!consent || !safeEqual(consent.codeHash, hmac(`consent:${patient._id}:${code}`))) {
-    // Guessing: after 5 wrong tries the code stops working and the patient shows a new one.
-    if (consent && ++consent.wrongTries >= 5) {
-      consent.expiresAt = new Date();
-      await consent.save();
+    // Guessing: after 5 tries the code stops working and the patient shows a new one.
+    if (consent && consent.wrongTries >= 5) {
+      await M.ConsentCode.updateOne({ _id: consent._id }, { expiresAt: new Date() });
       throw badRequest('Too many wrong tries. Ask the patient to show a new code.', 'WRONG_CODE');
     }
-    if (consent) await consent.save();
     throw badRequest("That code isn't right or has expired. Ask the patient for the new code.", 'WRONG_CODE');
   }
-  consent.usedAt = new Date();
-  consent.usedByPracticeId = req.practiceId;
-  await consent.save();
+  // Used once (a second clinic with the same code at the same moment is refused).
+  const used = await M.ConsentCode.updateOne({ _id: consent._id, usedAt: null }, { usedAt: new Date(), usedByPracticeId: req.practiceId });
+  if (!used.modifiedCount) throw badRequest("That code isn't right or has expired. Ask the patient for the new code.", 'WRONG_CODE');
+  // The patient gave this code again: their earlier "stop sharing" with this clinic is lifted.
+  await M.CareTeamAccess.updateMany({ patientId: patient._id, practiceId: req.practiceId, accessLevel: 'not_shared' }, { accessLevel: 'full_record', since: new Date() });
   await M.PatientEnrolment.findOneAndUpdate(
     { patientId: patient._id, practiceId: req.practiceId },
     { status: 'linked', linkedBy: req.user._id, linkedAt: new Date(), revokedAt: null, $setOnInsert: { homeLocationId: await registrationBranch(req) } },
@@ -223,7 +228,8 @@ r.get('/patients/:id', async (req, res) => {
   const [summary, adh, careTeam, plan, enrolment] = await Promise.all([
     patientSummary(patient, req.practiceId, acc),
     adherence(patient, 30, acc),
-    M.CareTeamAccess.find({ patientId: patient._id, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name'),
+    // This clinic's care team only (not who the patient sees elsewhere).
+    M.CareTeamAccess.find({ patientId: patient._id, practiceId: req.practiceId, accessLevel: { $ne: 'not_shared' } }).populate('userId', 'name'),
     M.TreatmentPlan.findOne({ patientId: patient._id, practiceId: req.practiceId }).sort({ updatedAt: -1 }),
     M.PatientEnrolment.findOne({ patientId: patient._id, practiceId: req.practiceId }),
   ]);
@@ -296,7 +302,7 @@ r.delete('/patients/:id/allergies/:aid', async (req, res) => {
 });
 
 // ── Vitals (front desk can record them too) ──
-r.get('/patients/:id/vitals', async (req, res) => {
+r.get('/patients/:id/vitals', need('clinical', 'vitals'), async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
   const since = T.addDays(new Date(), -(Number(req.query.days) || 90));
   const acc = await viewer(req, patient);
@@ -407,7 +413,7 @@ r.post('/patients/:id/records', upload.array('files', 10), async (req, res) => {
   res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted });
 });
 
-r.get('/patients/:id/lab-results', async (req, res) => {
+r.get('/patients/:id/lab-results', need('clinical', 'labs'), async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
   const acc = await viewer(req, patient);
   const q = { patientId: patient._id, ...(await acc.labFilter()) };
@@ -421,7 +427,7 @@ r.get('/patients/:id/lab-results', async (req, res) => {
 });
 
 // HbA1c / LDL trends: one analyte over time.
-r.get('/patients/:id/trends/:analyte', async (req, res) => {
+r.get('/patients/:id/trends/:analyte', need('clinical', 'labs'), async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
   const name = new RegExp(`^${escapeRegex(req.params.analyte)}$`, 'i');
   const acc = await viewer(req, patient);
@@ -466,14 +472,14 @@ r.post('/patients/:id/lab-results', need('labs'), async (req, res) => {
 });
 
 // Lab-Report: one result with its file and each value's previous reading.
-r.get('/lab-results/:id', async (req, res) => {
+r.get('/lab-results/:id', need('clinical', 'labs'), async (req, res) => {
   const result = await M.LabResult.findById(req.params.id).populate('reviewed.by', 'name');
   if (!result) throw notFound('Result');
   const patient = await patientInPractice(req, result.patientId);
   const acc = await viewer(req, patient);
   const labQ = await acc.labFilter();
   if (!(await M.LabResult.exists({ _id: result._id, ...labQ }))) throw notFound('Result');
-  const record = result.recordId ? await M.MedicalRecord.findOne({ _id: result.recordId, ...(await acc.recordFilter()) }) : null;
+  const record = result.recordId ? await M.MedicalRecord.findOne({ _id: result.recordId, deletedAt: null, ...(await acc.recordFilter()) }) : null;
   const earlier = await M.LabResult.find({ patientId: patient._id, ...labQ, _id: { $ne: result._id }, collectedAt: { $lt: result.collectedAt } }).sort({ collectedAt: -1 }).limit(20);
   const previous = (analyte) => {
     for (const e of earlier) {
@@ -491,9 +497,13 @@ r.get('/lab-results/:id', async (req, res) => {
 });
 
 r.post('/lab-results/:id/reviewed', need('labReview'), async (req, res) => {
+  // "Dr. X has seen your report" — the patient is told a doctor looked at it.
+  if (req.member.role !== 'doctor') throw forbidden('Only a doctor can mark a result as reviewed', 'DOCTORS_ONLY');
   const result = await M.LabResult.findById(req.params.id);
   if (!result) throw notFound('Result');
-  await patientInPractice(req, result.patientId);
+  const patient = await patientInPractice(req, result.patientId);
+  const acc = await viewer(req, patient);
+  if (!(await M.LabResult.exists({ _id: result._id, ...(await acc.labFilter()) }))) throw notFound('Result');
   const first = !result.reviewed?.at;
   result.reviewed = { by: req.user._id, at: new Date() };
   await result.save();
@@ -549,7 +559,7 @@ r.post('/health-logs/:id/review', async (req, res) => {
   res.json(log);
 });
 
-r.get('/patients/:id/visits', async (req, res) => {
+r.get('/patients/:id/visits', need('clinical'), async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
   const consults = await M.Consultation.find({ patientId: patient._id, practiceId: req.practiceId, status: { $ne: 'draft' } }).sort({ startedAt: -1 }).limit(50).populate('vitalsId').populate('locationId', 'name shortName');
   // Each visit says which branch it was at.

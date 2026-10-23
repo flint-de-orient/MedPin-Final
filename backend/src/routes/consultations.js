@@ -152,7 +152,8 @@ r.get('/consultations/:id/preview', need('prescribe'), async (req, res) => {
 // MedPin AI: possible diagnoses, tests and medicine options for the doctor to pick from.
 r.post('/consultations/:id/ai-suggestions', need('prescribe'), async (req, res) => {
   const c = await getConsult(req);
-  res.json(await require('../services/consultai').suggest(c, { force: req.body?.refresh === true }));
+  const acc = await accessFor({ userId: req.user._id, practiceId: req.practiceId }, await M.Patient.findById(c.patientId));
+  res.json(await require('../services/consultai').suggest(c, { force: req.body?.refresh === true, acc }));
 });
 
 // "From your past prescriptions" and "Suggested for this diagnosis".
@@ -176,7 +177,7 @@ r.get('/consultations/:id/suggestions', need('prescribe'), async (req, res) => {
   res.json({ fromPastPrescriptions: pastItems, forDiagnosis, tests: tests.map((t) => ({ testName: t.name, panel: t.panel, source: 'panel' })) });
 });
 
-r.post('/consultations/:id/vitals', async (req, res) => {
+r.post('/consultations/:id/vitals', need('vitals'), async (req, res) => {
   const c = await getConsult(req);
   const v = pick(req.body, ['bpSystolic', 'bpDiastolic', 'pulse', 'spo2', 'temperatureF', 'weightKg', 'heightCm', 'bloodSugar', 'sugarType', 'note']);
   const patient = await M.Patient.findById(c.patientId);
@@ -221,18 +222,26 @@ r.post('/prescriptions/:id/send', staff({ perm: 'prescribe' }), async (req, res)
   res.json({ ...rx.toJSON(), file: storage.withUrl(rx.file) });
 });
 
-r.get('/prescriptions/:id', async (req, res) => {
+/** A prescription this person may open: their clinic's, or another clinic's the patient shares here. */
+async function visibleRx(req) {
   const rx = await M.Prescription.findById(req.params.id);
   if (!rx) throw notFound('Prescription');
-  await patientInPractice(req, rx.patientId);
+  const patient = await patientInPractice(req, rx.patientId);
+  if (String(rx.practiceId) !== String(req.practiceId)) {
+    const acc = await accessFor({ userId: req.user._id, practiceId: req.practiceId }, patient);
+    if (!acc.allows('prescriptions_and_tests')) throw notFound('Prescription');
+  }
+  return rx;
+}
+
+r.get('/prescriptions/:id', async (req, res) => {
+  const rx = await visibleRx(req);
   res.json({ ...rx.toJSON(), file: storage.withUrl(rx.file) });
 });
 
 // View / Download: a fresh link to the PDF (drawn again if it predates the current layout).
 r.get('/prescriptions/:id/pdf', async (req, res) => {
-  const rx = await M.Prescription.findById(req.params.id);
-  if (!rx) throw notFound('Prescription');
-  await patientInPractice(req, rx.patientId);
+  const rx = await visibleRx(req);
   await ensurePrescriptionPdf(rx);
   if (!rx.file?.key) throw notFound('Prescription PDF');
   res.json(storage.withUrl(rx.file));

@@ -78,7 +78,7 @@ r.patch('/follow-ups/:id', async (req, res) => {
 });
 
 // ── Referrals ──
-r.get('/referrals', async (req, res) => {
+r.get('/referrals', need('clinical'), async (req, res) => {
   const direction = req.query.direction || 'sent';
   // Optional period (range=… or from/to, like the reports); default = all time.
   // Location / doctor filters from the Reports filter sheet.
@@ -122,7 +122,7 @@ async function markReceivedSeen(practiceId) {
   }
 }
 
-r.post('/referrals', async (req, res) => {
+r.post('/referrals', need('clinical'), async (req, res) => {
   await patientInPractice(req, req.body.patientId);
   if (!E.REFERRAL_DIRECTIONS.includes(req.body.direction)) throw badRequest('Choose sent or received');
   const name = String(req.body.counterpartName || '').trim();
@@ -143,7 +143,7 @@ r.post('/referrals', async (req, res) => {
   res.status(201).json(ref);
 });
 
-r.post('/referrals/:id/cancel', async (req, res) => {
+r.post('/referrals/:id/cancel', need('clinical'), async (req, res) => {
   const ref = ownPractice(req, await M.Referral.findById(req.params.id), 'Referral');
   if (ref.status !== 'awaiting') throw conflict('Only an awaiting referral can be cancelled');
   ref.status = 'cancelled';
@@ -152,7 +152,7 @@ r.post('/referrals/:id/cancel', async (req, res) => {
   res.json(ref);
 });
 
-r.post('/referrals/:id/seen', async (req, res) => {
+r.post('/referrals/:id/seen', need('clinical'), async (req, res) => {
   const ref = ownPractice(req, await M.Referral.findById(req.params.id), 'Referral');
   if (ref.status === 'cancelled') throw conflict('This referral was cancelled');
   ref.status = 'seen';

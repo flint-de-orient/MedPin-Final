@@ -104,7 +104,12 @@ me.post('/sessions/revoke-others', async (req, res) => {
     { userId: req.user._id, revokedAt: null, ...(req.sessionId ? { _id: { $ne: req.sessionId } } : {}) },
     { revokedAt: new Date() },
   );
-  await M.DeviceToken.deleteMany({ userId: req.user._id, ...(typeof req.body.keepToken === 'string' && req.body.keepToken ? { token: { $ne: req.body.keepToken } } : {}) });
+  // The other phones stop getting pushes; this one keeps its token (registered by this
+  // session, or named in keepToken) so it still gets its notifications and alarms.
+  const keep = [];
+  if (req.sessionId) keep.push({ sessionId: req.sessionId });
+  if (typeof req.body?.keepToken === 'string' && req.body.keepToken) keep.push({ token: req.body.keepToken });
+  await M.DeviceToken.deleteMany({ userId: req.user._id, ...(keep.length ? { $nor: keep } : {}) });
   res.json({ ok: true, signedOut: r.modifiedCount });
 });
 

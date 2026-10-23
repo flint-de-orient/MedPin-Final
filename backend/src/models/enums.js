@@ -52,7 +52,7 @@ module.exports = {
   ],
   CANCELLED_BY: ['patient', 'desk', 'doctor', 'system'],
   REQUEST_CHANNELS: ['app', 'whatsapp', 'phone', 'desk'],
-  REQUEST_STATUSES: ['pending', 'scheduled', 'declined', 'cancelled'],
+  REQUEST_STATUSES: ['pending', 'scheduling', 'scheduled', 'declined', 'cancelled'], // scheduling: being booked (a moment)
   FEE_STATUSES: ['pending', 'paid', 'free', 'waived', 'refunded'],
 
   // Consultation (Consult-*, Prescriptions)

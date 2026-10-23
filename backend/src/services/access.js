@@ -24,8 +24,12 @@ const same = (a, b) => String(a) === String(b);
  * get the most the patient allows anyone at this clinic.
  */
 async function accessFor({ userId, practiceId }, patient) {
-  const members = await M.Member.find({ practiceId, status: 'active' }, 'userId');
+  const members = await M.Member.find({ practiceId, status: 'active' }, 'userId role');
   const memberIds = members.map((m) => m.userId);
+  const me = members.find((m) => same(m.userId, userId));
+  // Clinical staff (doctors, their assistants, the dietician) share their clinic's view;
+  // the front desk, practice manager and lab staff see only what is shared with them.
+  const clinical = Boolean(me && M.ROLE_PERMISSIONS[me.role]?.clinical);
   const rows = await M.CareTeamAccess.find({ patientId: patient._id, userId: { $in: [...memberIds, userId] } });
   const mine = rows.find((r) => same(r.userId, userId));
   let level;
@@ -35,10 +39,16 @@ async function accessFor({ userId, practiceId }, patient) {
     const enrolment = await M.PatientEnrolment.findOne({ patientId: patient._id, practiceId, status: 'linked' });
     level = enrolment?.shareScope === 'partial' ? 'prescriptions_and_tests' : 'full_record';
   }
+  // Staff without their own row don't inherit a doctor's full access: at most prescriptions and tests.
+  if (!mine && !clinical && RANK[level] > RANK.prescriptions_and_tests) level = 'prescriptions_and_tests';
   const allows = (min) => RANK[level] >= RANK[min];
   const memberSet = new Set(memberIds.map(String));
   const ownPractice = { practiceId };
-  const elsewhere = { practiceId: { $ne: practiceId } }; // also matches "no clinic" (patient's own)
+  // Another clinic's records (follow the sharing level). The patient's own uploads (no clinic)
+  // are NOT in here: those are seen only where the patient shared them.
+  const elsewhere = { practiceId: { $nin: [practiceId, null] } };
+  // "Shared with someone here": with this person; for clinical staff, with anyone at this clinic.
+  const sharedHere = clinical ? { 'sharedWith.userId': { $in: memberIds } } : { 'sharedWith.userId': userId };
 
   return {
     level,
@@ -48,7 +58,7 @@ async function accessFor({ userId, practiceId }, patient) {
 
     /** Medical records (uploads): own, shared with someone here, or allowed by level. */
     async recordFilter() {
-      const or = [ownPractice, { 'sharedWith.userId': { $in: memberIds } }];
+      const or = [ownPractice, sharedHere];
       if (allows('full_record')) or.push(elsewhere);
       else if (allows('prescriptions_and_tests')) or.push({ ...elsewhere, kind: { $in: ['prescription', 'test_result'] } });
       return { $or: or };
@@ -56,7 +66,7 @@ async function accessFor({ userId, practiceId }, patient) {
 
     /** Lab results: own, from a record shared here, or allowed by level. */
     async labFilter() {
-      const shared = await M.MedicalRecord.distinct('_id', { patientId: patient._id, 'sharedWith.userId': { $in: memberIds } });
+      const shared = await M.MedicalRecord.distinct('_id', { patientId: patient._id, deletedAt: null, ...sharedHere });
       const or = [ownPractice, { recordId: { $in: shared } }];
       if (allows('prescriptions_and_tests')) or.push(elsewhere);
       return { $or: or };
@@ -73,7 +83,8 @@ async function accessFor({ userId, practiceId }, patient) {
       if (allows('full_record')) or.push({ ...elsewhere, source: { $ne: 'home' } });
       // Readings taken from lab reports follow the lab results' rule ("prescriptions and tests").
       else if (allows('prescriptions_and_tests')) or.push({ ...elsewhere, source: 'lab' });
-      if (level === 'full_with_logs' || level === 'daily_log_only') or.push({ ...elsewhere, source: { $in: ['home', 'device'] } });
+      // Home and watch readings have no clinic: they follow the "daily logs" levels.
+      if (level === 'full_with_logs' || level === 'daily_log_only') or.push({ practiceId: { $ne: practiceId }, source: { $in: ['home', 'device'] } });
       return { $or: or };
     },
 

@@ -67,6 +67,7 @@ const api = (token, practiceId) => async (method, path, body, { form } = {}) => 
   try { json = text ? JSON.parse(text) : null; } catch { json = text; }
   return { status: res.status, body: json };
 };
+let clearRateLimit = () => {};
 const ok = (res, status = 200) => {
   if (res.status !== status) throw new Error(`Expected ${status}, got ${res.status}: ${JSON.stringify(res.body)}`);
   return res.body;
@@ -114,7 +115,9 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     { name: 'Salt Lake Medicals', type: 'nearby', pickupEtaMin: 30 },
   ]);
 
-  const server = createApp().listen(0);
+  const app = createApp();
+  clearRateLimit = () => app.locals.rateHits.clear();
+  const server = app.listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
   env.publicUrl = base;
@@ -1087,6 +1090,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const s = await login('9811100077');
     assert.equal(s.landing, 'Staff-Today', 'lab roles use the desk panel, not the doctor dashboard');
     const lab = api(s.accessToken);
+    ctx.lab = lab;
     ok(await lab('POST', `/api/patients/${ctx.patientId}/lab-results`, { testName: 'Fasting sugar', collectedAt: '2026-10-01', values: [{ analyte: 'Glucose', value: 98, unit: 'mg/dL', flag: 'normal' }] }), 201);
     for (const path of ['/api/reports/summary', '/api/billing', '/api/ai/sessions', '/api/alerts', '/api/inbox?type=all', '/api/payments']) {
       assert.equal((await lab('GET', path)).status, 403, `lab technician blocked: ${path}`);
@@ -2257,6 +2261,77 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const order = await M.Order.create({ patientId: patient._id, pharmacyId: (await M.Pharmacy.findOne())._id, mode: 'pickup', items: [], total: 120, priced: false });
     const co = await ctx.pat('POST', '/api/patient/checkout', { kind: 'order', id: String(order._id) });
     assert.deepEqual([co.status, co.body?.error?.code], [409, 'NOT_PRICED']);
+  });
+
+  await step('security: OTP guesses at once, branch-scoped lists, clinical gates, lab review, staff ids, this phone kept', async () => {
+    // Ten wrong guesses sent at once count as ten: the right code is refused after five.
+    clearRateLimit(); // earlier checks signed in many times this minute
+    const anon = api();
+    const sent = ok(await anon('POST', '/api/auth/otp/request', { phone: '9811155501' }));
+    const wrong = sent.devCode === '000000' ? '111111' : '000000';
+    const guesses = await Promise.all(Array.from({ length: 10 }, () => anon('POST', '/api/auth/otp/verify', { phone: '9811155501', code: wrong })));
+    assert.ok(guesses.every((g) => g.status === 400));
+    assert.ok(guesses.filter((g) => g.body?.error?.code === 'WRONG_CODE').length <= 5, 'at most five compared');
+    const right = await anon('POST', '/api/auth/otp/verify', { phone: '9811155501', code: sent.devCode, platform: 'android' });
+    assert.deepEqual([right.status, right.body?.error?.code], [400, 'TOO_MANY_ATTEMPTS']);
+    clearRateLimit(); // the guesses above used up this minute's sign-ins
+
+    // A desk member at one branch: another branch's visits and fees aren't theirs.
+    const deskUser = await M.User.findOne({ phone: { $regex: '9749681391$' } });
+    const member = await M.Member.findOne({ practiceId: ctx.practiceId, userId: deskUser._id });
+    const saved = { allLocations: member.allLocations, locationIds: member.locationIds };
+    await M.Member.updateOne({ _id: member._id }, { allLocations: false, locationIds: [ctx.locationId] });
+    const other = await M.Location.create({ practiceId: ctx.practiceId, name: 'Security test branch' });
+    const otherFee = await M.Payment.create({ practiceId: ctx.practiceId, locationId: other._id, patientId: ctx.patientId, amount: 300, status: 'pending' });
+    try {
+      const asked = await ctx.desk('GET', `/api/appointments?locationId=${other._id}`);
+      assert.deepEqual([asked.status, asked.body?.error?.code], [403, 'NOT_YOUR_LOCATION']);
+      const fees = ok(await ctx.desk('GET', '/api/payments?status=pending'));
+      assert.ok(!fees.some((p) => String(p.id || p._id) === String(otherFee._id)), "another branch's fee isn't listed");
+      // A visit request needs a reason when declined (the patient is told why).
+      const req0 = await M.AppointmentRequest.create({ practiceId: ctx.practiceId, patientId: ctx.patientId, status: 'pending', channel: 'app', visitType: 'follow_up' });
+      const bare = await ctx.desk('POST', `/api/appointment-requests/${req0._id}/decline`, {});
+      assert.deepEqual([bare.status, bare.body?.error?.code], [400, 'REASON_REQUIRED']);
+      ok(await ctx.desk('POST', `/api/appointment-requests/${req0._id}/decline`, { reason: 'Doctor away that week' }));
+    } finally {
+      await M.Member.updateOne({ _id: member._id }, saved);
+      await M.Payment.deleteOne({ _id: otherFee._id });
+      await M.Location.deleteOne({ _id: other._id });
+    }
+
+    // Clinical detail is for clinical staff; the desk still records and sees readings.
+    for (const path of [`/api/patients/${ctx.patientId}/lab-results`, `/api/patients/${ctx.patientId}/visits`, `/api/patients/${ctx.patientId}/trends/Glucose`, '/api/referrals']) {
+      assert.equal((await ctx.desk('GET', path)).status, 403, `front desk blocked: ${path}`);
+    }
+    ok(await ctx.desk('GET', `/api/patients/${ctx.patientId}/vitals`));
+    const { lab } = ctx;
+    assert.equal((await lab('GET', `/api/patients/${ctx.patientId}/visits`)).status, 403, 'lab technician: no visit history');
+    ok(await lab('GET', `/api/patients/${ctx.patientId}/lab-results`));
+    // Practitioner set-up: not for the desk.
+    assert.equal((await ctx.desk('GET', '/api/doctor/payouts')).status, 403);
+    assert.equal((await ctx.desk('POST', '/api/doctor/leaves', { from: '2026-12-01', to: '2026-12-02' })).status, 403);
+
+    // "Reviewed" is a doctor's (the patient is told the doctor saw it).
+    const res0 = ok(await ctx.doc('POST', `/api/patients/${ctx.patientId}/lab-results`, { testName: 'Security HbA1c', collectedAt: '2026-10-02', values: [{ analyte: 'HbA1c', value: 6.1, unit: '%', flag: 'normal' }] }), 201);
+    const rid = res0.id || res0._id;
+    assert.equal((await lab('POST', `/api/lab-results/${rid}/reviewed`)).status, 403, 'lab staff do not mark reviewed');
+    ok(await ctx.doc('POST', `/api/lab-results/${rid}/reviewed`));
+
+    // The patient's app never gets which staff member booked or cancelled a visit.
+    const visits = ok(await ctx.pat('GET', '/api/patient/appointments?when=past'));
+    assert.ok(!JSON.stringify(visits).match(/"(bookedBy|cancelledByUser|checkedInBy|handledBy)"/), 'no staff ids');
+
+    // "Sign out other devices" keeps this phone's notifications.
+    const me1 = await login('9811155502');
+    const p1 = api(me1.accessToken);
+    ok(await p1('POST', '/api/me/devices', { token: 'sec-this-phone', platform: 'android' }));
+    // The same person signed in on a second phone.
+    const mine = await M.AuthSession.findOne({ userId: me1.user.id, revokedAt: null });
+    const second = await M.AuthSession.create({ ...mine.toObject(), _id: undefined, tokenHash: `second-${Date.now()}`, prevTokenHash: undefined });
+    await M.DeviceToken.create({ userId: me1.user.id, token: 'sec-other-phone', sessionId: second._id, platform: 'android' });
+    ok(await p1('POST', '/api/me/sessions/revoke-others', {}));
+    assert.ok(await M.DeviceToken.exists({ token: 'sec-this-phone' }), 'this phone keeps its token');
+    assert.ok(!(await M.DeviceToken.exists({ token: 'sec-other-phone' })), 'the other phone is signed out of pushes');
   });
 
   server.close();

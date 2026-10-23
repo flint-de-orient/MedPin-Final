@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
 import '../../widgets/i18n.dart';
@@ -54,7 +55,8 @@ class _PpTestsScreenState extends State<PpTestsScreen> with LiveData {
   }
 
   Future<void> _openLive(BuildContext context, D6Rec rec, Map<String, dynamic> r) async {
-    if (r.obj('reviewed')['at'] == null) {
+    // Opening it is the doctor's review; others (an assistant) just open it.
+    if (r.obj('reviewed')['at'] == null && Session.I.role == 'doctor') {
       final ok = await runAction(context, () => Api.I.post('/api/lab-results/${r.str('id')}/reviewed'));
       if (ok == null || !context.mounted) return;
       toast(context, 'Marked as reviewed');

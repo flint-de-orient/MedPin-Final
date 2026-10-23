@@ -31,11 +31,15 @@ function createApp() {
 
   // Small in-memory limiter for the sign-in endpoints (per IP).
   const hits = new Map();
-  app.use('/api/auth/otp', (req, res, next) => {
+  app.locals.rateHits = hits; // tests clear it between checks
+  // Also the consent-code link (a code that guesses could try).
+  app.use(['/api/auth/otp', '/api/patients/link'], (req, res, next) => {
     const now = Date.now();
-    const list = (hits.get(req.ip) || []).filter((t) => now - t < 60_000);
+    // Counted per endpoint: a clinic's sign-ins don't use up its patient links (one IP, one office).
+    const key = `${req.baseUrl}:${req.ip}`;
+    const list = (hits.get(key) || []).filter((t) => now - t < 60_000);
     list.push(now);
-    hits.set(req.ip, list);
+    hits.set(key, list);
     if (list.length > 20) return res.status(429).json({ error: { code: 'RATE_LIMIT', message: 'Too many requests. Try again in a minute.' } });
     return next();
   });

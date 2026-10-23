@@ -98,7 +98,9 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        widget.child,
+        // While locked, the app underneath is hidden from screen readers and can't be
+        // tapped through (only the lock screen is there).
+        ExcludeSemantics(excluding: _locked, child: AbsorbPointer(absorbing: _locked, child: widget.child)),
         if (_locked)
           Positioned.fill(
             child: Material(

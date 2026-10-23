@@ -38,16 +38,19 @@ async function issueOtp(phone, purpose) {
 /** Checks a code; consumes it on success. */
 async function checkOtp(phone, purpose, code) {
   if (!/^\d{6}$/.test(String(code || ''))) throw badRequest('Enter the 6-digit code', 'INVALID_CODE');
-  const otp = await M.OtpRequest.findOne({ phone, purpose, consumedAt: null, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
-  if (!otp) throw badRequest('The code has expired. Ask for a new one.', 'CODE_EXPIRED');
-  if (otp.attempts >= 5) throw badRequest('Too many wrong tries. Ask for a new code.', 'TOO_MANY_ATTEMPTS');
-  if (!safeEqual(otp.codeHash, hmac(`${phone}:${code}`))) {
-    otp.attempts += 1;
-    await otp.save();
-    throw badRequest("That code isn't right", 'WRONG_CODE');
+  // Each try is counted in the database before the code is compared (atomic), so many
+  // guesses sent at once can't get past the 5-try limit.
+  const now = new Date();
+  const live = { phone, purpose, consumedAt: null, expiresAt: { $gt: now } };
+  const otp = await M.OtpRequest.findOneAndUpdate({ ...live, attempts: { $lt: 5 } }, { $inc: { attempts: 1 } }, { sort: { createdAt: -1 }, new: true });
+  if (!otp) {
+    if (await M.OtpRequest.exists(live)) throw badRequest('Too many wrong tries. Ask for a new code.', 'TOO_MANY_ATTEMPTS');
+    throw badRequest('The code has expired. Ask for a new one.', 'CODE_EXPIRED');
   }
-  otp.consumedAt = new Date();
-  await otp.save();
+  if (!safeEqual(otp.codeHash, hmac(`${phone}:${code}`))) throw badRequest("That code isn't right", 'WRONG_CODE');
+  // Used once: of two sign-ins with the same code at the same moment, one gets in.
+  const used = await M.OtpRequest.updateOne({ _id: otp._id, consumedAt: null }, { consumedAt: new Date() });
+  if (!used.modifiedCount) throw badRequest('The code has expired. Ask for a new one.', 'CODE_EXPIRED');
   return true;
 }
 
