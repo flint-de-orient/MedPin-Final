@@ -11,7 +11,7 @@ const { translate, LANGS } = require('../src/lib/notify_i18n');
 const SRC = path.join(__dirname, '..', 'src');
 
 // Words that may stay in Latin letters after translation: names, places, units, brands.
-const KEEP = new Set(['Rajat', 'Mondal', 'Priya', 'Sharma', 'Ananya', 'Sen', 'Dr', 'Salt', 'Lake', 'New', 'Town', 'MedPin', 'UPI', 'ID', 'mmHg', 'bpm', 'SpO', 'mg', 'dL', 'Metformin', 'Amlodipine', 'HbA', 'AM', 'PM', 'Complete', 'Blood', 'Count', 'MBBS', 'rajat', 'okaxis', 'Clinic']);
+const KEEP = new Set(['Rajat', 'Mondal', 'Priya', 'Sharma', 'Ananya', 'Sen', 'Dr', 'Salt', 'Lake', 'New', 'Town', 'MedPin', 'AI', 'UPI', 'ID', 'mmHg', 'bpm', 'SpO', 'mg', 'dL', 'Metformin', 'Amlodipine', 'HbA', 'AM', 'PM', 'Complete', 'Blood', 'Count', 'MBBS', 'rajat', 'okaxis', 'Clinic']);
 const leftover = (s) => (s.match(/[A-Za-z]{2,}/g) || []).filter((w) => !KEEP.has(w));
 /** Translated in both languages, with no English word left over. */
 const covered = (s) => LANGS.every((l) => {

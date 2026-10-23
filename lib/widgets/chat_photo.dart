@@ -77,7 +77,7 @@ class ChatPhoto extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 border: mine ? null : Border.all(color: MP.line),
               ),
-              child: Text(caption!, style: tx(15, h: 1.45, c: mine ? MP.white : MP.ink)),
+              child: UserText(caption!, style: tx(15, h: 1.45, c: mine ? MP.white : MP.ink)),
             ),
           ),
         ],

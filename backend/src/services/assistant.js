@@ -8,13 +8,70 @@ const ai = require('./ai');
 const { conflict } = require('../lib/http');
 const { patientSummary } = require('./clinical');
 const { postMessage, raiseAlert } = require('./care');
+const { notify, signal, clinicians } = require('./notify');
 
+// Emergency words in English, Bengali and Hindi (and how they are often typed in English letters).
 const EMERGENCY_WORDS = [
   'chest pain', 'chest tightness', "can't breathe", 'cannot breathe', 'not breathing', 'hard to breathe', 'faint',
   'unconscious', 'stroke', 'severe bleeding', 'heart attack', 'seizure', 'suicide', 'kill myself',
+  // Bengali
+  'বুকে ব্যথা', 'বুকে চাপ', 'শ্বাস নিতে পারছি না', 'শ্বাসকষ্ট', 'নিঃশ্বাস নিতে কষ্ট', 'অজ্ঞান', 'স্ট্রোক', 'খুব রক্ত', 'রক্তপাত', 'হার্ট অ্যাটাক', 'খিঁচুনি', 'আত্মহত্যা', 'মরে যেতে চাই',
+  // Hindi
+  'सीने में दर्द', 'छाती में दर्द', 'सांस नहीं', 'साँस नहीं', 'सांस लेने में', 'साँस लेने में', 'बेहोश', 'स्ट्रोक', 'बहुत खून', 'दिल का दौरा', 'हार्ट अटैक', 'दौरा पड़', 'आत्महत्या', 'मरना चाहता', 'मरना चाहती',
+  // In English letters
+  'seene me dard', 'seene mein dard', 'chhati me dard', 'saans nahi', 'sans nahi', 'behosh', 'buke byatha', 'shash nite parchi na',
 ];
-const isEmergencyText = (text) => EMERGENCY_WORDS.some((w) => String(text).toLowerCase().includes(w));
+const isEmergencyText = (text) => EMERGENCY_WORDS.some((w) => String(text || '').toLowerCase().includes(w));
 const AI_PAUSE_MIN = 10;
+
+// ── Languages (English, Bengali, Hindi) ──
+const LANG_NAMES = { en: 'English', bn: 'Bengali (বাংলা)', hi: 'Hindi (हिन्दी)' };
+/**
+ * How MedPin AI picks its language: the person's own latest message first
+ * (script included — Bengali or Hindi typed in English letters is answered the
+ * same way), their app language when that is unclear.
+ */
+function languageRule(appLang, { clinician = false } = {}) {
+  const fallback = LANG_NAMES[appLang] || 'English';
+  return [
+    'Language: reply in the language and script of the latest message you are answering — Bengali in Bengali script, Hindi in Devanagari, English in English.',
+    'If they wrote Bengali or Hindi in English letters (e.g. "amar sugar kom hoye geche", "mera sugar badh gaya hai"), reply in that language in the same English letters.',
+    `If the message is only a photo, a number or a word that could be any language, reply in ${fallback} (their app language).`,
+    'Keep medicine names, test names, units and numbers exactly as written (Metformin 500 mg, HbA1c 7.4%, BP 140/90). Never mix two languages in one sentence.',
+    clinician
+      ? 'Keep standard clinical terms in English where doctors use them.'
+      : 'Use the simple everyday words a patient uses at home, not textbook terms; address them politely (Bengali আপনি, Hindi आप).',
+  ].join(' ');
+}
+
+/** A short fixed line in the person's app language. */
+const LINES = {
+  aiOffPatient: {
+    en: 'MedPin AI is not available right now. You can message your doctor from the Doctors tab.',
+    bn: 'MedPin AI এখন চালু নেই। Doctors ট্যাব থেকে আপনার ডাক্তারকে মেসেজ করতে পারেন।',
+    hi: 'MedPin AI अभी उपलब्ध नहीं है। Doctors टैब से अपने डॉक्टर को संदेश भेज सकते हैं।',
+  },
+  emergency: {
+    en: 'This could be serious. Please call 108 or go to the nearest emergency department now, and use Emergency in the app to alert your doctor.',
+    bn: 'এটা গুরুতর হতে পারে। এখনই 108-এ ফোন করুন বা কাছের ইমার্জেন্সিতে যান, আর অ্যাপের Emergency দিয়ে ডাক্তারকে জানান।',
+    hi: 'यह गंभीर हो सकता है। अभी 108 पर कॉल करें या नज़दीकी इमरजेंसी में जाएँ, और ऐप में Emergency से अपने डॉक्टर को बताएँ।',
+  },
+  cantAnswer: {
+    en: "I can't answer that safely here. Please ask your doctor — you can message them from the Doctors tab.",
+    bn: 'এটার উত্তর এখানে নিরাপদে দিতে পারছি না। আপনার ডাক্তারকে জিজ্ঞাসা করুন — Doctors ট্যাব থেকে মেসেজ করতে পারেন।',
+    hi: 'इसका जवाब मैं यहाँ सुरक्षित रूप से नहीं दे सकता। कृपया अपने डॉक्टर से पूछें — Doctors टैब से संदेश भेज सकते हैं।',
+  },
+};
+const line = (key, lang) => LINES[key][['bn', 'hi'].includes(lang) ? lang : 'en'];
+/** A patient's app language (en | bn | hi). */
+async function patientLanguage(patient) {
+  if (!patient?.userId) return 'en';
+  return (await M.User.findById(patient.userId, 'language'))?.language || 'en';
+}
+// A burst of messages ("hi" / "my sugar is 250" / "what do I do") gets one reply: wait a moment.
+const gatherMs = () => Number(process.env.AI_GATHER_MS ?? 2500);
+// "Talk to the clinic": MedPin AI stays out for up to a day, or until the clinic replies.
+const AI_HUMAN_HOURS = 24;
 // The clinic is "in the thread" while its open screen keeps refreshing (every 4 s).
 const AI_VIEWING_MIN = 2;
 
@@ -22,8 +79,38 @@ const AI_VIEWING_MIN = 2;
 function aiPaused(convo, now = new Date()) {
   return Boolean(
     (convo.aiPausedAt && convo.aiPausedAt > T.addMinutes(now, -AI_PAUSE_MIN))
-    || (convo.staffViewingAt && convo.staffViewingAt > T.addMinutes(now, -AI_VIEWING_MIN)),
+    || (convo.staffViewingAt && convo.staffViewingAt > T.addMinutes(now, -AI_VIEWING_MIN))
+    || (convo.humanRequestedAt && convo.humanRequestedAt > T.addMinutes(now, -AI_HUMAN_HOURS * 60)),
   );
+}
+
+/** Would this month's AI chat limit be passed? (Checked before answering; counted only after.) */
+async function aiLimitReached(practiceId) {
+  if (!practiceId) return false;
+  const sub = await M.Subscription.findOne({ practiceId });
+  const plan = sub ? await M.Plan.findOne({ key: sub.planKey }) : null;
+  if (!plan) return false;
+  const periodStart = sub?.currentPeriodStart || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const usage = await M.UsageCounter.findOne({ practiceId, periodStart });
+  return Boolean(usage && usage.aiChats >= plan.aiChatsPerMonth);
+}
+
+/**
+ * Who the patient's chat is with, for MedPin AI to answer in that field: the
+ * nutrition chat's dietician; else the patient's main doctor here, else the
+ * doctor of their latest visit, else any doctor on their care team.
+ */
+async function threadClinician(convo) {
+  if (convo.type === 'nutrition') {
+    const diet = await M.Member.findOne({ practiceId: convo.practiceId, status: 'active', role: 'dietician', userId: { $in: convo.participants.map((p) => p.userId) } }, 'userId');
+    if (diet) return diet.userId;
+  }
+  const primary = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true, accessLevel: { $ne: 'not_shared' } }, 'userId');
+  if (primary) return primary.userId;
+  const visit = await M.Appointment.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, status: { $nin: ['cancelled', 'rescheduled'] } }, 'doctorId').sort({ startAt: -1 });
+  if (visit?.doctorId) return visit.doctorId;
+  const any = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, accessLevel: { $ne: 'not_shared' } }, 'userId');
+  return any?.userId || null;
 }
 
 // Photos / PDFs the patient sends with a question (a medicine strip, a report):
@@ -142,7 +229,8 @@ const pickVitals = (v) => ({ bp: v.bpSystolic && `${v.bpSystolic}/${v.bpDiastoli
 /** Called after a patient posts in a care thread. Returns the AI message or null. */
 /** Will MedPin AI answer in this thread now? (Quick: no AI call.) */
 async function willReplyInCareThread(convo) {
-  if (!ai.enabled() || !convo.aiEnabled || aiPaused(convo) || convo.type !== 'care') return false;
+  if (!ai.enabled() || !convo.aiEnabled || aiPaused(convo) || !['care', 'nutrition'].includes(convo.type)) return false;
+  if (await aiLimitReached(convo.practiceId)) return false;
   const primary = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true });
   if (primary) {
     const prof = await M.DoctorProfile.findOne({ userId: primary.userId }, 'chatSettings');
@@ -154,37 +242,61 @@ async function willReplyInCareThread(convo) {
 async function replyInCareThread(convo, patientMessage) {
   const urgentByWords = isEmergencyText(patientMessage.text);
   if (urgentByWords) {
-    await raiseAlert({
-      practiceId: convo.practiceId, patientId: convo.patientId, severity: 'emergency', kind: 'urgent_chat',
-      detail: patientMessage.text.slice(0, 300), sourceModel: 'Message', sourceId: patientMessage._id, conversationId: convo._id,
-    });
+    // One open emergency per chat: more messages with the same words don't raise more.
+    const open = await M.Alert.exists({ conversationId: convo._id, kind: 'urgent_chat', status: { $in: ['open', 'acknowledged'] } });
+    if (!open) {
+      await raiseAlert({
+        practiceId: convo.practiceId, patientId: convo.patientId, severity: 'emergency', kind: 'urgent_chat',
+        detail: patientMessage.text.slice(0, 300), sourceModel: 'Message', sourceId: patientMessage._id, conversationId: convo._id,
+      });
+    }
   }
-  // Fresh state: the clinic may have opened the thread since the patient's message came in.
-  const now = await M.Conversation.findById(convo._id, 'aiPausedAt staffViewingAt');
-  if (!ai.enabled() || !convo.aiEnabled || aiPaused(now || convo) || convo.type !== 'care') return null;
+  const done = () => signal(convo.participants.filter((p) => p.role === 'patient').map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id }).catch(() => {});
+  if (!ai.enabled() || !['care', 'nutrition'].includes(convo.type)) return null;
+  // A burst of messages gets one reply, to the newest of them.
+  if (gatherMs() > 0) await new Promise((r) => setTimeout(r, gatherMs()));
+  const newer = await M.Message.exists({ conversationId: convo._id, senderType: 'patient', createdAt: { $gt: patientMessage.createdAt }, deletedForEveryoneAt: null });
+  if (newer) return null; // that message's reply covers this one
+  // Fresh state: the clinic may have opened or answered the thread since; AI may be off for it.
+  const skip = async () => {
+    const now = await M.Conversation.findById(convo._id, 'aiPausedAt staffViewingAt humanRequestedAt aiEnabled');
+    if (!now || !now.aiEnabled || aiPaused(now)) return true;
+    return Boolean(await M.Message.exists({ conversationId: convo._id, senderType: { $in: ['doctor', 'staff'] }, 'meta.auto': { $ne: true }, createdAt: { $gt: patientMessage.createdAt } }));
+  };
+  if (await skip()) return done() && null;
   // The patient's main doctor can turn MedPin AI replies off (Chat settings).
   const primary = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true });
   if (primary) {
     const prof = await M.DoctorProfile.findOne({ userId: primary.userId }, 'chatSettings');
-    if (prof?.chatSettings?.aiReplies === false) return null;
+    if (prof?.chatSettings?.aiReplies === false) return done() && null;
   }
-  await useAiChat(convo.practiceId);
+  if (await aiLimitReached(convo.practiceId)) return done() && null;
+  // Answer in the field of the doctor (or dietician) this chat is with.
+  const clinicianId = await threadClinician(convo);
+  const who = clinicianId ? await doctorContext(clinicianId, convo.practiceId) : null;
 
   const patient = await M.Patient.findById(convo.patientId);
   const summary = await patientSummary(patient, convo.practiceId);
+  const lang = await patientLanguage(patient);
   const kb = await knowledgeFor(convo.practiceId, patientMessage.text);
   const history = (await M.Message.find({ conversationId: convo._id, deletedForEveryoneAt: null }).sort({ createdAt: -1 }).limit(20)).reverse();
   const practice = await M.Practice.findById(convo.practiceId, 'name');
 
+  const name = who?.parts?.name || null;
   const system = [
     `You are the MedPin assistant for ${practice?.name || 'the clinic'}, replying to a patient in their chat with the care team.`,
+    who && name
+      ? `This chat is with ${name}${who.field ? ` (${who.field})` : ''}${who.parts.conditions_they_treat?.length ? `, who treats ${[].concat(who.parts.conditions_they_treat).slice(0, 12).join(', ')}` : ''}. Answer as their clinic's assistant, within that field. A question outside it (another part of the body, another specialty): give only general safe guidance, say ${name} will advise or may refer them to the right doctor, and set needs_doctor true. Refer to them as ${name} or "your doctor".`
+      : '',
+    convo.type === 'nutrition' ? 'This is the nutrition chat: food, meals, diet plans and food logs. Keep to general, safe nutrition guidance from the clinic knowledge entries; the dietician sets the plan.' : '',
+    languageRule(lang),
     `Rules:\n- ${PATIENT_SAFETY_RULES}\n- Questions about doses, new symptoms, test needs or changing treatment: say the doctor will confirm, and set needs_doctor true.`,
     'Ground medical guidance in the clinic knowledge entries below and cite their ids. If the answer is not covered there, keep it general, say the care team will follow up, and set reason to outside_knowledge_base.',
     'Set urgency high and needs_doctor true for anything that could be an emergency, and tell the patient to call 108 or go to the nearest emergency department.',
     'Photos and PDFs the patient sent are attached to their message. Read what is printed on them. A medicine strip, box or bottle: give the name and strength you can read; if it matches a medicine in the patient record, say so and repeat how their doctor prescribed it (dose, times, with or without food); if it is not on their list, say so, tell them not to take it until their doctor confirms, and set needs_doctor true. You may say in plain words what that kind of medicine is generally used for. A prescription or report: say briefly what it shows without interpreting results as a diagnosis; their doctor will review it. A photo of the body (rash, wound, swelling): do not describe a cause; say the doctor will look at it and set needs_doctor true. If the photo is blurred or the label is not visible, ask for a clear photo of the label. Never guess a name you cannot read.',
     `Patient record (JSON): ${patientContext(summary)}`,
     `Clinic knowledge entries (JSON): ${JSON.stringify(kb.map((k) => ({ id: String(k._id), title: k.title, content: k.content })))}`,
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
   const fileLabel = (m) => (m.kind === 'attachment' ? (/^image\//.test(m.attachment?.mimeType || '') ? '[photo]' : '[file]') : m.kind === 'voice' ? '[voice message]' : m.kind === 'record' ? '[shared record]' : '');
   const messages = [];
   for (const m of history) {
@@ -202,7 +314,11 @@ async function replyInCareThread(convo, patientMessage) {
 
   // Chat replies are short: low effort keeps them quick.
   const out = await ai.completeJson({ system, messages, schema: REPLY_SCHEMA, effort: 'low', vision: files.length > 0 });
-  if (!out || out.refused || !out.data) return null;
+  // No answer (model down, refused): the patient's "typing…" stops; the clinic replies as usual.
+  if (!out || out.refused || !out.data) return done() && null;
+  // The clinic answered while the model was thinking: theirs stands.
+  if (await skip()) return done() && null;
+  await useAiChat(convo.practiceId).catch(() => {}); // counted only when an answer is sent
   const d = out.data;
   const flagged = d.needs_doctor || d.reason !== 'none' || ['medium', 'high'].includes(d.urgency) || urgentByWords;
   const citations = kb.filter((k) => d.cited_entry_ids.includes(String(k._id))).map((k) => ({ label: k.sourceCitation || k.title, knowledgeEntryId: k._id }));
@@ -216,11 +332,19 @@ async function replyInCareThread(convo, patientMessage) {
     },
   });
   if (flagged) {
-    await M.ChatReview.create({
+    const urgency = d.urgency === 'high' || urgentByWords ? 'high' : d.urgency === 'medium' ? 'medium' : 'low';
+    const review = await M.ChatReview.create({
       practiceId: convo.practiceId, patientId: convo.patientId, conversationId: convo._id, messageId: msg._id,
-      reason: d.reason === 'none' ? 'other' : d.reason, title: patientMessage.text.slice(0, 80), excerpt: d.reply.slice(0, 200),
-      urgency: d.urgency === 'high' || urgentByWords ? 'high' : d.urgency === 'medium' ? 'medium' : 'low',
+      reason: d.reason === 'none' ? 'other' : d.reason, title: (patientMessage.text || 'Photo').slice(0, 80), excerpt: d.reply.slice(0, 200),
+      urgency,
     });
+    // The doctor (dietician) the chat is with hears about it: a push when it's urgent, else the bell.
+    const toldIds = clinicianId ? [clinicianId] : await clinicians(convo.practiceId, convo.patientId);
+    await notify(toldIds, {
+      type: 'chat_review', practiceId: convo.practiceId, push: urgency === 'high',
+      title: `MedPin AI asked you to check a reply to ${patient?.name || 'a patient'}`,
+      body: (patientMessage.text || 'Photo').slice(0, 120), screen: 'Chat-Review-Detail', params: { reviewId: review._id, conversationId: convo._id },
+    }).catch((err) => console.warn('[chat review notice]', err.message));
   }
   return msg;
 }
@@ -288,6 +412,7 @@ async function doctorAnswer(session, question, practiceId, { excludeId } = {}) {
     `This clinic's records (JSON; use for questions across patients): ${JSON.stringify(brief)}`,
     kb.length ? `The clinic's approved knowledge base (prefer it when relevant): ${JSON.stringify(kb.map((e) => ({ title: e.title, text: e.summary || e.content })))}` : '',
     'If a question needs data that is not given here, say exactly what is missing instead of guessing.',
+    languageRule((await M.User.findById(session.userId, 'language'))?.language, { clinician: true }),
   ].join('\n') + context;
   const out = await ai.complete({ system, messages, effort: 'medium' });
   if (out.refused) return { text: "I can't help with that request.", refused: true, ...out };
@@ -296,8 +421,9 @@ async function doctorAnswer(session, question, practiceId, { excludeId } = {}) {
 
 /** Patient "Ask MedPin AI". */
 async function patientAnswer(session, question, patient, { excludeId } = {}) {
+  const lang = await patientLanguage(patient);
   if (!ai.enabled()) {
-    return { text: 'MedPin AI is not available right now. You can message your doctor from the Doctors tab.', scripted: true };
+    return { text: line('aiOffPatient', lang), scripted: true };
   }
   const practiceIds = await M.PatientEnrolment.find({ patientId: patient._id, status: 'linked' }).distinct('practiceId');
   if (practiceIds[0]) await useAiChat(practiceIds[0]);
@@ -311,13 +437,12 @@ async function patientAnswer(session, question, patient, { excludeId } = {}) {
     'If they ask which doctor to see, name the kind of specialist (put its key in specialist_key) and suggest Find a doctor in the app.',
     'Before answering, check your reply against the rules. Set breaks_rules true if it names a diagnosis, recommends a medicine or dose change, or recommends a test.',
     `Their record (JSON): ${patientContext(summary)}`,
+    languageRule(lang),
   ].join('\n');
   // Short answers for patients: low effort keeps them quick.
   const out = await ai.completeJson({ system, messages, schema: PATIENT_ANSWER_SCHEMA, effort: 'low' });
   const emergencyWords = isEmergencyText(question);
-  const fallback = emergencyWords
-    ? 'This could be serious. Please call 108 or go to the nearest emergency department now, and use Emergency in the app to alert your doctor.'
-    : "I can't answer that safely here. Please ask your doctor — you can message them from the Doctors tab.";
+  const fallback = emergencyWords ? line('emergency', lang) : line('cantAnswer', lang);
   if (!out?.data || out.refused) return { text: fallback, refused: true, emergency: emergencyWords, ...(out || {}) };
   const d = out.data;
   // Self-check failed: don't show an answer that diagnoses or prescribes.
@@ -501,4 +626,5 @@ async function extractPrescription(buffer, mimeType) {
 }
 
 module.exports = {
-  aiPaused, willReplyInCareThread, replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };
+  languageRule, patientLanguage,
+  aiPaused, aiLimitReached, threadClinician, willReplyInCareThread, replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };

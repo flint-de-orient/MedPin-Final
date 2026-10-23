@@ -128,3 +128,24 @@ class Text extends StatelessWidget {
     );
   }
 }
+
+/// Text someone wrote — a chat message, a caption, MedPin AI's reply — shown
+/// exactly as written, never run through the app's translations (a message
+/// "Thank you" or "Report" must not turn into different words). Only the
+/// app's own placeholders ("This message was deleted") are translated.
+class UserText extends StatelessWidget {
+  final String data;
+  final TextStyle? style;
+  final TextAlign? textAlign;
+  final int? maxLines;
+  final TextOverflow? overflow;
+  const UserText(this.data, {super.key, this.style, this.textAlign, this.maxLines, this.overflow});
+
+  static const _appPhrases = {'This message was deleted', 'Message deleted', 'Sent a file', 'Attachment', 'Voice message'};
+
+  @override
+  Widget build(BuildContext context) => m.Text(
+        _appPhrases.contains(data) ? I18n.tr(data, I18n.langOf(context)) : data,
+        style: style, textAlign: textAlign, maxLines: maxLines, overflow: overflow,
+      );
+}

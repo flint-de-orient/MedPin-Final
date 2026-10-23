@@ -689,11 +689,15 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
             ],
           ),
           const Gap(8),
-          Text.rich(
-            TextSpan(
+          // Who (translated) and what they wrote (exactly as written), at most 3 lines.
+          RichText(
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            textScaler: MediaQuery.textScalerOf(context),
+            text: TextSpan(
               style: tx(15, h: 1.5),
               children: [
-                TextSpan(text: '${data == null ? _short : _latestFrom}:', style: tx(15, w: w700, h: 1.5)),
+                TextSpan(text: '${tr(context, data == null ? _short : _latestFrom)}:', style: tx(15, w: w700, h: 1.5)),
                 TextSpan(text: text),
               ],
             ),

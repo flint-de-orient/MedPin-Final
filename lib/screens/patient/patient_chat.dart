@@ -456,14 +456,14 @@ class _PatientChatScreenState extends State<PatientChatScreen> with LiveData {
               children: [
                 Ico(I.fileText, size: 20, color: c),
                 const Gap(8),
-                Flexible(child: Text(text == 'Sent a file' || text == 'Attachment' ? f.str('name', 'Attachment') : text, style: tx(15, h: 1.45, c: c, w: w600))),
+                Flexible(child: UserText(text == 'Sent a file' || text == 'Attachment' ? f.str('name', 'Attachment') : text, style: tx(15, h: 1.45, c: c, w: w600))),
               ],
             ),
           ),
         );
       }
     }
-    return Text(text, style: tx(15, h: 1.45, c: c));
+    return UserText(text, style: tx(15, h: 1.45, c: c));
   }
 
   Widget _outgoing(String text, [Map<String, dynamic>? raw]) {

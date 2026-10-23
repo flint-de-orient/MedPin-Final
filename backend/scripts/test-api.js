@@ -7,6 +7,8 @@ const env = require('../src/config/env');
 
 env.mongo.dbName = `${env.mongo.dbName}_api_test`;
 env.port = 0;
+// MedPin AI answers at once in tests (no wait for a burst of messages).
+process.env.AI_GATHER_MS = '0';
 // Tests never send real SMS: force dev OTP mode even when MSG91 keys are set.
 env.msg91.authKey = '';
 env.exposeDevOtp = true;
@@ -2079,6 +2081,101 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal((await ctx.desk('GET', `/api/conversations/${convo}/messages`)).status === 200, false, 'no access after leaving the clinic');
     await M.Member.updateOne({ _id: deskMember._id }, { status: 'active' });
     void me;
+  });
+
+  await step('chat round 2: MedPin AI in the doctor\'s field, one reply per burst, never after the clinic, talk to a person, per-chat switch, emergencies in Bengali / Hindi', async () => {
+    const convo = ctx.convoId;
+    const convoOid = new (require('mongoose').Types.ObjectId)(String(convo));
+    await M.Conversation.updateOne({ _id: convo }, { aiEnabled: true, $unset: { aiPausedAt: 1, staffViewingAt: 1, humanRequestedAt: 1 } });
+    await M.Alert.updateMany({ conversationId: convo }, { status: 'resolved' });
+    const aiMod = require('../src/services/ai');
+    const saved = { enabled: aiMod.enabled, completeJson: aiMod.completeJson };
+    const calls = [];
+    let answer = { reply: 'Dr. Sen will confirm this at your visit.', urgency: 'none', needs_doctor: false, reason: 'none', cited_entry_ids: [] };
+    aiMod.enabled = () => true;
+    aiMod.completeJson = async ({ system, messages }) => {
+      calls.push({ system, messages });
+      return { model: 'stub', data: answer };
+    };
+    const settle = () => new Promise((r) => setTimeout(r, 400));
+    const aiCount = () => M.Message.countDocuments({ conversationId: convo, senderType: 'ai' });
+    try {
+      // Answers in the doctor's field: the prompt names the doctor and their specialty.
+      const n0 = await aiCount();
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Is my sugar ok?' }), 201);
+      await settle();
+      assert.equal(await aiCount(), n0 + 1);
+      assert.match(calls.at(-1).system, /This chat is with Dr\. Arjun Sen/, 'the AI knows whose chat it is');
+      assert.match(calls.at(-1).system, /within that field/);
+      // Multilingual: the AI is told to answer in the patient's language and script.
+      assert.match(calls.at(-1).system, /Language: reply in the language and script/);
+      assert.match(calls.at(-1).system, /English letters/);
+      // Quick replies send text in the patient's app language (Hindi here), gendered verbs included.
+      const patUserId = (await M.Patient.findById(ctx.patientId)).userId;
+      const prevLang = (await M.User.findById(patUserId)).language;
+      await M.User.updateOne({ _id: patUserId }, { language: 'bn' });
+      ok(await ctx.doc('POST', `/api/conversations/${convo}/messages`, { text: 'আজ সুগার কত?' }), 201);
+      const bnSug = ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).suggestions;
+      assert.ok(bnSug.length >= 1);
+      assert.match(bnSug.map((s) => s.text).join(' '), /[ঀ-৿]/, 'Bengali text for a Bengali patient');
+      assert.ok(bnSug.some((s) => /sugar/i.test(s.label)), 'the Bengali question about sugar is understood');
+      await M.User.updateOne({ _id: patUserId }, { language: prevLang });
+      await M.Conversation.updateOne({ _id: convo }, { $unset: { aiPausedAt: 1, staffViewingAt: 1 } }); // the doctor's message paused the AI
+      // A burst gets one reply, to the newest message.
+      process.env.AI_GATHER_MS = '250';
+      const before = await aiCount();
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'hello' }), 201);
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'what should I eat for breakfast?' }), 201);
+      await new Promise((r) => setTimeout(r, 900));
+      assert.equal(await aiCount(), before + 1, 'one reply for the burst');
+      // The clinic answers while the AI waits: the AI stays out.
+      const b2 = await aiCount();
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Can I come today?' }), 201);
+      ok(await ctx.desk('POST', `/api/conversations/${convo}/messages`, { text: 'Yes, at 5 PM.' }), 201);
+      await new Promise((r) => setTimeout(r, 700));
+      assert.equal(await aiCount(), b2, 'no AI reply after the clinic replied');
+      process.env.AI_GATHER_MS = '0';
+      await M.Conversation.updateOne({ _id: convo }, { $unset: { aiPausedAt: 1, staffViewingAt: 1 } });
+
+      // A flagged reply tells the doctor (bell; a push when urgent).
+      answer = { reply: 'Please check with Dr. Sen before changing the dose.', urgency: 'medium', needs_doctor: true, reason: 'dosage_question', cited_entry_ids: [] };
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Can I take two tablets tonight?' }), 201);
+      await settle();
+      for (let i = 0; i < 40 && !(await M.Notification.exists({ userId: ctx.doctorUserId, type: 'chat_review', 'params.conversationId': convoOid })); i += 1) await new Promise((r) => setTimeout(r, 50));
+      assert.ok(await M.Notification.exists({ userId: ctx.doctorUserId, type: 'chat_review', 'params.conversationId': convoOid }), 'the doctor is asked to check the flagged reply');
+      answer = { reply: 'OK.', urgency: 'none', needs_doctor: false, reason: 'none', cited_entry_ids: [] };
+
+      // Emergency words in Bengali raise one emergency, not one per message.
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'আমার বুকে ব্যথা হচ্ছে' }), 201);
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'এখনও বুকে ব্যথা' }), 201);
+      await settle();
+      assert.equal(await M.Alert.countDocuments({ conversationId: convo, kind: 'urgent_chat', status: { $in: ['open', 'acknowledged'] } }), 1);
+      await M.Alert.updateMany({ conversationId: convo }, { status: 'resolved' });
+      await M.Conversation.updateOne({ _id: convo }, { isUrgent: false });
+
+      // "Talk to the clinic": the AI stays out until someone replies; the clinic is told.
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/handoff`));
+      const b3 = await aiCount();
+      const asked = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'I want to speak to the doctor' }), 201);
+      assert.equal(asked.aiPending, false);
+      await settle();
+      assert.equal(await aiCount(), b3, 'no AI after asking for a person');
+      ok(await ctx.desk('POST', `/api/conversations/${convo}/messages`, { text: 'Hello, this is the desk.' }), 201);
+      assert.equal((await M.Conversation.findById(convo)).humanRequestedAt, undefined, 'the clinic replied: request done');
+      assert.equal((await ctx.desk('POST', `/api/conversations/${convo}/handoff`)).status, 403, 'only the patient asks for this');
+
+      // The doctor turns MedPin AI off for this chat; the front desk can't.
+      assert.equal((await ctx.desk('PATCH', `/api/conversations/${convo}/ai`, { on: false })).status, 403);
+      ok(await ctx.doc('PATCH', `/api/conversations/${convo}/ai`, { on: false }));
+      await M.Conversation.updateOne({ _id: convo }, { $unset: { aiPausedAt: 1, staffViewingAt: 1 } });
+      const off = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Anyone there?' }), 201);
+      assert.equal(off.aiPending, false, 'AI off for this chat');
+      ok(await ctx.doc('PATCH', `/api/conversations/${convo}/ai`, { on: true }));
+    } finally {
+      Object.assign(aiMod, saved);
+      process.env.AI_GATHER_MS = '0';
+      await settle();
+    }
   });
 
   server.close();

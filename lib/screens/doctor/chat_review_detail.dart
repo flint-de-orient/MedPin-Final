@@ -535,7 +535,7 @@ class _Bubble extends StatelessWidget {
                       : const BorderRadius.only(topLeft: r, topRight: r, bottomRight: r, bottomLeft: tail),
               border: bordered ? Border.all(color: MP.line) : null,
             ),
-            child: Text(text, style: tx(16, h: 1.5, c: mine ? MP.white : MP.ink)),
+            child: UserText(text, style: tx(16, h: 1.5, c: mine ? MP.white : MP.ink)),
           ),
         ),
       ],
@@ -594,7 +594,7 @@ class _FlaggedTurn extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     color: MP.fill,
-                    child: Text(text, style: tx(16, h: 1.5)),
+                    child: UserText(text, style: tx(16, h: 1.5)),
                   ),
                   Container(
                     padding: const EdgeInsets.all(14),

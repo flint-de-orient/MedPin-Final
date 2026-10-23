@@ -213,7 +213,7 @@ void main() {
     expect(find.text('Walk 30 minutes, 5 days a week. Come back with fasting sugar.'), findsOneWidget);
     expect(find.text('Visits with Dr. Sen'), findsOneWidget);
     expect(find.text('Full record, daily log and tracked vitals'), findsOneWidget);
-    expect(find.textContaining('Got your report, thanks.'), findsOneWidget);
+    expect(find.textContaining('Got your report, thanks.', findRichText: true), findsOneWidget);
 
     await _tap(t, find.text('Upload HbA1c report'));
     final todo = ((((_fx('doctor') as Map)['nextVisit'] as Map)['todos'] as List).first as Map)['_id'];

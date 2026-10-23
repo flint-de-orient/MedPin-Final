@@ -34,6 +34,8 @@ const conversationSchema = new Schema(
     // Someone at the clinic has the thread open (its screen refreshes every few
     // seconds): MedPin AI stays quiet while they are there (services/assistant.js).
     staffViewingAt: Date,
+    // The patient asked for a person ("Talk to the clinic"): MedPin AI stays out until the clinic replies.
+    humanRequestedAt: Date,
     pinnedMessageId: ref('Message'),
     lastMessage: {
       text: String,

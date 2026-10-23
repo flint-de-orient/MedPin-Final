@@ -59,6 +59,10 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
   Timer? _aiWait;
   int _aiChecks = 0;
 
+  /// MedPin AI said it would answer but nothing came: the clinic will.
+  bool _aiNoAnswer = false;
+  bool _handingOff = false;
+
   /// The doctor this chat is with (a row of my-doctors).
   Map<String, dynamic> _doctor = const {};
 
@@ -137,6 +141,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       _showReplies = false;
       _text.clear();
     });
+    _aiNoAnswer = false;
     if (_scroll.hasClients) _scroll.jumpTo(0); // the list is reversed: 0 is the newest
     try {
       final res = await Api.I.post('/api/conversations/$_convId/messages', {'text': text});
@@ -174,10 +179,27 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       if (!mounted) return t.cancel();
       if (_answered || _aiChecks >= 20) {
         t.cancel();
-        setState(() => _aiTyping = false);
+        setState(() {
+          _aiTyping = false;
+          _aiNoAnswer = !_answered;
+        });
       }
     });
   }
+
+  /// "Talk to the clinic": MedPin AI steps out of this chat and the clinic is told.
+  Future<void> _handoff() async {
+    if (_handingOff || _convId == null) return;
+    setState(() => _handingOff = true);
+    final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/handoff', const {}));
+    if (!mounted) return;
+    setState(() => _handingOff = false);
+    if (ok == null) return;
+    toast(context, 'The clinic has been told. Someone will reply here.');
+    await reload(quiet: true);
+  }
+
+  bool get _humanRequested => data?.obj('conversation')['humanRequested'] == true;
 
   Future<void> _voiceNote() async {
     if (data == null) return p2Missing(context, 'Voice recording');
@@ -286,8 +308,32 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
           child: kind == 'voice' && m['deleted'] != true
               ? _Bubble('', mine: mine, child: VoiceNoteChip(url: m.obj('voice').obj('file').str('url'), seconds: m.obj('voice')['durationSec'] as num?, color: mine ? MP.white : MP.ink))
-              : _Bubble(text, mine: mine),
+              : m.str('senderType') == 'ai' && m['deleted'] != true
+                  ? _AiBubble(text, escalated: m.obj('ai')['escalated'] == true, doctor: _short)
+                  : _Bubble(text, mine: mine),
         ));
+        // Under MedPin AI's latest answer: a person instead.
+        if (m.str('senderType') == 'ai' && m == msgs.lastWhere((x) => x.str('senderType') != 'system', orElse: () => m) && !_humanRequested) {
+          out.add(Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: P2Box(
+                onTap: _handingOff ? null : _handoff,
+                height: 36,
+                radius: 999,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                color: MP.white,
+                border: MP.lineStrong,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Ico(I.user, size: 14, color: MP.primary),
+                  const Gap(6),
+                  Flexible(child: Text(_handingOff ? 'Asking the clinic…' : 'Talk to the clinic instead', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(13, w: w600, c: MP.primary))),
+                ]),
+              ),
+            ),
+          ));
+        }
       }
       // "Please pay ₹600" from the clinic: pay right here; it turns Paid live.
       if (m['payment'] is Map) {
@@ -322,6 +368,8 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
     if (_aiTyping) {
       out.add(const Align(alignment: Alignment.centerLeft, child: _Typing()));
       out.add(_meta('MedPin AI is typing…'));
+    } else if (_aiNoAnswer && !_answered) {
+      out.add(_meta('The clinic will reply here soon'));
     }
     // Quick replies from the server: picked from the latest message and today's readings,
     // doses and visit (none while we're waiting on the clinic). Older servers: the fixed ones.
@@ -661,7 +709,7 @@ class _Attachment extends StatelessWidget {
           if (text != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Text(text!, style: tx(14, h: 1.45, c: fg)),
+              child: UserText(text!, style: tx(14, h: 1.45, c: fg)),
             ),
         ],
       ),
@@ -686,7 +734,42 @@ class _Bubble extends StatelessWidget {
         borderRadius: mine ? _mine : _theirs,
         border: mine ? null : Border.all(color: MP.line),
       ),
-      child: child ?? Text(text, style: tx(15, h: 1.45, c: mine ? MP.white : MP.ink)),
+      child: child ?? UserText(text, style: tx(15, h: 1.45, c: mine ? MP.white : MP.ink)),
+    ),
+  );
+}
+
+/// MedPin AI's answer: its own look, so it isn't mistaken for the doctor's own
+/// words; says when it has asked the doctor to check.
+class _AiBubble extends StatelessWidget {
+  final String text;
+  final bool escalated;
+  final String doctor;
+  const _AiBubble(this.text, {required this.escalated, required this.doctor});
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 310),
+    child: Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      decoration: BoxDecoration(color: MP.primarySoft, borderRadius: _theirs, border: Border.all(color: MP.line)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            const Ico(I.sparkle, size: 14, color: MP.primary),
+            const Gap(6),
+            Flexible(child: Text('MedPin AI · not your doctor', maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(12, w: w700, c: MP.primary))),
+          ]),
+          const Gap(6),
+          UserText(text, style: tx(15, h: 1.45, c: MP.ink)),
+          if (escalated) ...[
+            const Gap(8),
+            Text(tr(context, '#1 will check this').replaceFirst('#1', doctor), style: tx(13, w: w600, c: MP.ink2)),
+          ],
+        ],
+      ),
     ),
   );
 }

@@ -381,12 +381,12 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     final clinicSide = m['mine'] == true || type == 'doctor' || type == 'staff';
     final align = clinicSide ? Alignment.centerRight : Alignment.centerLeft;
     if (type == 'system') {
-      return Center(child: Text(m.str('text'), textAlign: TextAlign.center, style: tx(13, c: MP.ink3, h: 1.4)));
+      return Center(child: UserText(m.str('text'), textAlign: TextAlign.center, style: tx(13, c: MP.ink3, h: 1.4)));
     }
     if (m['deleted'] == true) {
       return Align(alignment: align, child: Text('Message deleted · $time', style: tx(14, c: MP.ink3)));
     }
-    if (type == 'ai') return _aiMessage(text: m.str('text'), time: time);
+    if (type == 'ai') return _aiMessage(text: m.str('text'), time: time, flagged: m.obj('ai')['flagged'] == true);
     if (m['kind'] == 'voice') {
       final v = m.obj('voice');
       return Align(
@@ -480,7 +480,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(m.str('text'), style: tx(16, h: 1.5)),
+                UserText(m.str('text'), style: tx(16, h: 1.5)),
                 const Gap(4),
                 Align(alignment: Alignment.centerRight, child: Text(time, style: tx(12, c: MP.ink3, tab: true))),
               ],
@@ -762,7 +762,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     final placeholder = livePlaceholder();
     final live = data != null;
     final pinned = live ? data!.obj('pinned') : const <String, dynamic>{};
-    final showAi = !live || (_conv['aiEnabled'] == true && _conv['type'] != 'direct');
+    // MedPin AI's state in a patient chat (not between colleagues).
+    final showAi = !live || (_conv['type'] == 'care' || _conv['type'] == 'nutrition');
     final showPinned = !live || pinned.isNotEmpty;
     return MpPage(
       header: _header(context),
@@ -773,7 +774,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
           // The patient's open emergency (staff only): what they wrote, who has seen it,
           // Call the patient · Doctor informed (desk) / Resolve (doctor).
           if (live && _conv['urgentAlert'] is Map) _urgentBanner(_conv.obj('urgentAlert')),
-          // AI paused notice
+          // MedPin AI in this chat: off, asked for a person, paused while you're here — and the
+          // doctor / dietician can switch it on or off for this patient.
           if (showAi) Container(
             color: MP.fill,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -781,9 +783,11 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
               children: [
                 const Ico(I.sparkle, size: 16, color: MP.ink2),
                 const Gap(8),
-                Expanded(
-                  child: Text("AI assistant is paused while you're in this thread", style: tx(14, c: MP.ink2, h: 1.45)),
-                ),
+                Expanded(child: Text(_aiState, style: tx(14, c: MP.ink2, h: 1.45))),
+                if (live && Session.I.can('clinical')) ...[
+                  const Gap(8),
+                  MpSwitch(value: _conv['aiEnabled'] != false, small: true, label: 'MedPin AI in this chat', onChanged: _aiBusy ? null : _setAi),
+                ],
               ],
             ),
           ),
@@ -1113,7 +1117,29 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     );
   }
 
-  Widget _aiMessage({String text = "Thanks, Priya. I've shared your report with Dr. Sen's team.", String time = '9:06 AM'}) {
+  /// What MedPin AI is doing in this chat, for the line above the messages.
+  String get _aiState {
+    if (data == null) return "AI assistant is paused while you're in this thread";
+    if (_conv['aiEnabled'] == false) return 'MedPin AI is off for this chat';
+    if (_conv['humanRequestedAt'] != null && DateTime.now().difference(F.date(_conv['humanRequestedAt']) ?? DateTime(2000)).inHours < 24) {
+      return 'The patient asked for a person · MedPin AI waits for your reply';
+    }
+    return _conv['aiPaused'] == true ? "AI assistant is paused while you're in this thread" : 'MedPin AI answers when nobody from the clinic is here';
+  }
+
+  bool _aiBusy = false;
+
+  Future<void> _setAi(bool on) async {
+    setState(() => _aiBusy = true);
+    final ok = await runAction(context, () => Api.I.patch('/api/conversations/$_convId/ai', {'on': on}));
+    if (!mounted) return;
+    setState(() => _aiBusy = false);
+    if (ok == null) return;
+    toast(context, on ? 'MedPin AI is on for this chat' : 'MedPin AI is off for this chat');
+    await reload(quiet: true);
+  }
+
+  Widget _aiMessage({String text = "Thanks, Priya. I've shared your report with Dr. Sen's team.", String time = '9:06 AM', bool flagged = false}) {
     return Align(
       alignment: Alignment.centerLeft,
       child: ConstrainedBox(
@@ -1133,7 +1159,22 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                   ],
                 ),
                 const Gap(4),
-                Text(text, style: tx(16, h: 1.5)),
+                UserText(text, style: tx(16, h: 1.5)),
+                // MedPin AI asked the doctor to check this answer: straight to the review.
+                if (flagged) ...[
+                  const Gap(8),
+                  Tap(
+                    onTap: () => Nav.go(context, 'Chat-Review-Detail', args: {'conversationId': '$_convId'}),
+                    radius: 999,
+                    color: MP.amberSoft,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Ico(I.alert, size: 14, color: MP.amber),
+                      const Gap(6),
+                      Text('Flagged for your review', style: tx(12, w: w600, c: MP.amber)),
+                    ]),
+                  ),
+                ],
                 const Gap(4),
                 Align(alignment: Alignment.centerRight, child: Text(time, style: tx(12, c: MP.ink3, tab: true))),
               ],
@@ -1188,7 +1229,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                   ),
                 ),
                 const Gap(6),
-                Text(text, style: tx(16, c: MP.white, h: 1.5)),
+                UserText(text, style: tx(16, c: MP.white, h: 1.5)),
                 const Gap(6),
                 Align(
                   alignment: Alignment.centerRight,
@@ -1216,7 +1257,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(color: MP.primary, borderRadius: BorderRadius.circular(16)),
-              child: Text(text, style: tx(16, c: MP.white, h: 1.5)),
+              child: UserText(text, style: tx(16, c: MP.white, h: 1.5)),
             ),
           ),
           const Gap(4),

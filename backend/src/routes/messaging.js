@@ -93,6 +93,8 @@ const patientConvoView = (convo) => {
   return {
     id: c.id || c._id, _id: c._id, type: c.type, practiceId: c.practiceId, patientId: c.patientId, isUrgent: c.isUrgent,
     aiEnabled: c.aiEnabled, pinnedMessageId: c.pinnedMessageId, lastMessage: c.lastMessage, createdAt: c.createdAt, updatedAt: c.updatedAt,
+    // They asked for a person ("Talk to the clinic") and nobody has replied yet.
+    humanRequested: Boolean(convo.humanRequestedAt && convo.humanRequestedAt > new Date(Date.now() - 24 * 3600e3)),
   };
 };
 
@@ -224,20 +226,66 @@ threads.post('/:id/messages', upload.single('file'), async (req, res) => {
   // Staff replying pauses the AI in this thread for a while (atomic, like the message itself).
   if (senderType !== 'patient') {
     convo.aiPausedAt = new Date();
-    await M.Conversation.updateOne({ _id: convo._id }, { $set: { aiPausedBy: req.user._id, aiPausedAt: convo.aiPausedAt } });
+    // The clinic answered: a "talk to the clinic" request is done too.
+    await M.Conversation.updateOne({ _id: convo._id }, { $set: { aiPausedBy: req.user._id, aiPausedAt: convo.aiPausedAt }, $unset: { humanRequestedAt: 1 } });
     await M.Conversation.updateOne({ _id: convo._id, triage: 'needs_attention' }, { $unset: { triage: 1 } });
   }
   // The message is saved: answer now. MedPin AI's reply (and the emergency
   // check) runs in the background and arrives in the thread a moment later;
   // aiPending tells the app to show "MedPin AI is typing…".
   let aiPending = false;
-  if (senderType === 'patient' && text) {
+  // A question, or a photo / PDF on its own (a medicine strip, a report): MedPin AI may answer
+  // (and the emergency check runs). Voice notes: the clinic listens.
+  if (senderType === 'patient' && (text || kind === 'attachment')) {
     aiPending = await assistant.willReplyInCareThread(convo).catch(() => false);
     setImmediate(() => {
       assistant.replyInCareThread(convo, msg).catch((err) => console.warn('[ai reply]', err.message));
     });
   }
   res.status(201).json({ message: messageView(msg, req.user._id), aiReply: null, aiPending });
+});
+
+// "Talk to the clinic": the patient wants a person, not MedPin AI. The AI stays out of this
+// chat until someone replies (or a day passes), and the clinic is told at once.
+threads.post('/:id/handoff', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  if (!convo.participants.some((p) => String(p.userId) === String(req.user._id) && p.role === 'patient')) throw forbidden('Only the patient can ask for this');
+  const already = convo.humanRequestedAt && convo.humanRequestedAt > T.addMinutes(new Date(), -60);
+  await M.Conversation.updateOne({ _id: convo._id }, { $set: { humanRequestedAt: new Date() } });
+  if (!already) {
+    const care = require('../services/care');
+    const notifier = require('../services/notify');
+    const patient = await M.Patient.findById(convo.patientId, 'name');
+    const place = await notifier.patientPlace(convo.practiceId, convo.patientId);
+    const desk = convo.type === 'care' ? await notifier.deskFor(convo.practiceId, place) : [];
+    const team = desk.length ? desk : await notifier.clinicians(convo.practiceId, convo.patientId, { roles: convo.type === 'nutrition' ? ['dietician', 'doctor'] : ['doctor'] });
+    await notifier.notify(team, {
+      type: 'message', practiceId: convo.practiceId, push: await care.openNow(place?.locationId),
+      title: `${patient?.name || 'A patient'} wants to talk to someone at the clinic`,
+      body: 'MedPin AI is paused in this chat until you reply.', screen: 'Patient-Thread', params: { conversationId: convo._id },
+    });
+    // The note is for the patient: in their app language.
+    const lang = await assistant.patientLanguage(await M.Patient.findById(convo.patientId, 'userId'));
+    const note = {
+      en: 'You asked to talk to the clinic. Someone will reply here soon.',
+      bn: 'আপনি ক্লিনিকের সঙ্গে কথা বলতে চেয়েছেন। শিগগিরই এখানে কেউ উত্তর দেবেন।',
+      hi: 'आपने क्लिनिक से बात करनी चाही है। जल्द ही यहाँ कोई जवाब देगा।',
+    }[['bn', 'hi'].includes(lang) ? lang : 'en'];
+    await care.chatNote({ practiceId: convo.practiceId, patientId: convo.patientId }, note, 'handoff').catch(() => null);
+  }
+  await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
+  res.json({ ok: true });
+});
+
+// MedPin AI on or off for one patient's chat (the doctor, dietician or their assistant).
+threads.patch('/:id/ai', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  const member = convo.practiceId ? await M.Member.findOne({ userId: req.user._id, practiceId: convo.practiceId, status: 'active' }, 'role') : null;
+  if (!member || !M.ROLE_PERMISSIONS[member.role]?.clinical) throw forbidden('Only the doctor or dietician can change MedPin AI for a chat');
+  const on = req.body.on === true;
+  await M.Conversation.updateOne({ _id: convo._id }, { $set: { aiEnabled: on } });
+  await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
+  res.json({ ok: true, aiEnabled: on });
 });
 
 threads.post('/:id/read', async (req, res) => {
