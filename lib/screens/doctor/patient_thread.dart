@@ -399,7 +399,34 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
       final f = m.obj('attachment');
       return Align(
         alignment: align,
-        child: ChatPhoto(url: f.str('url'), name: f.str('name'), mime: f.str('mimeType'), mine: align == Alignment.centerRight, meta: time, caption: m.str('text')),
+        child: ChatPhoto(
+          url: f.str('url'), name: f.str('name'), mime: f.str('mimeType'), mine: align == Alignment.centerRight, caption: m.str('text'),
+          // The clinic's photo to the patient: with its tick, like a text message.
+          meta: align == Alignment.centerRight ? '$time · ${m['deliveryStatus'] == 'seen' ? 'Read' : m['deliveryStatus'] == 'delivered' ? 'Delivered' : 'Sent'}' : time,
+        ),
+      );
+    }
+    // A record the patient shared from their records: its title, type, date and flag; opens the report.
+    if (m['kind'] == 'record' && m['deleted'] != true && m.obj('record').isNotEmpty) {
+      final rec = m.obj('record');
+      final at = F.date(rec['date']);
+      final kindLabel = switch (rec.str('kind')) { 'test_result' => 'Report', 'prescription' => 'Prescription', _ => 'Record' };
+      return Align(
+        alignment: align,
+        child: _attachment(
+          name: rec.str('title', 'Shared record'),
+          meta: [kindLabel, if (at != null) F.dayMonth(at), if (rec.str('flagLabel').isNotEmpty) rec.str('flagLabel'), time].join(' · '),
+          onTap: () {
+            final file = ReportFile.fromApi({'url': rec['url'], 'name': rec['name'], 'mimeType': rec['mimeType']});
+            if (file != null) {
+              openFileView(context, file, title: rec.str('title', 'Report'));
+            } else if (rec['prescriptionId'] != null) {
+              Nav.go(context, 'Prescriptions', args: {'prescriptionId': '${rec['prescriptionId']}', if (_patient.isNotEmpty) 'patientId': _patient.str('id')});
+            } else {
+              Nav.go(context, 'PP-Tests', args: _patient.isEmpty ? null : {'patientId': _patient.str('id')});
+            }
+          },
+        ),
       );
     }
     if (m['kind'] == 'attachment' || m['kind'] == 'record') {
@@ -435,7 +462,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
           time: time,
         );
       }
-      return _doctorMessage(m.str('text'), time, read: m['deliveryStatus'] == 'seen' || m['seenAt'] != null);
+      return _doctorMessage(m.str('text'), time, status: m.str('deliveryStatus', 'sent'));
     }
     // Patient text: a white bubble like the patient's voice note / file.
     return Align(
@@ -883,8 +910,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
       _attachment(),
       _aiMessage(),
       _quotedReply(),
-      _doctorMessage("I've pinned it at the top of our chat.", '9:24 AM', read: true),
-      for (final m in _sent) _doctorMessage(m.$1, m.$2, read: false),
+      _doctorMessage("I've pinned it at the top of our chat.", '9:24 AM', status: 'seen'),
+      for (final m in _sent) _doctorMessage(m.$1, m.$2, status: 'sent'),
     ];
     return SingleChildScrollView(
       controller: _scroll,
@@ -1175,7 +1202,9 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     );
   }
 
-  Widget _doctorMessage(String text, String time, {required bool read}) {
+  /// Sent → Delivered (the patient's app has it) → Read (the patient opened the chat).
+  Widget _doctorMessage(String text, String time, {required String status}) {
+    final read = status == 'seen';
     return Align(
       alignment: Alignment.centerRight,
       child: Column(
@@ -1198,7 +1227,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
               const Gap(4),
               Ico(I.check, size: 14, color: read ? MP.green : MP.ink3, stroke: 2.25),
               const Gap(4),
-              Text(read ? 'Read' : 'Sent', style: tx(12, c: MP.ink3, tab: true)),
+              Text(read ? 'Read' : status == 'delivered' ? 'Delivered' : 'Sent', style: tx(12, c: MP.ink3, tab: true)),
             ],
           ),
         ],

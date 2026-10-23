@@ -165,6 +165,12 @@ class _DoctorMessagesScreenState extends State<DoctorMessagesScreen> with LiveDa
         t.str('photo').isEmpty ? null : t.str('photo'));
   }
 
+  /// Another urgent chat (the first one has the red card): marked urgent in the list too.
+  _Chat _urgentChat(Map<String, dynamic> c) {
+    final p = _patientChat(c);
+    return _Chat(p.ini, p.name, 'Urgent · patient', p.msg, p.time, p.unread, p.team, p.id, p.photo);
+  }
+
   /// Live (urgent chat, other chats newest first, unread conversations, urgent count).
   (_Chat?, List<_Chat>, int, int) get _live {
     final d = data!;
@@ -173,7 +179,7 @@ class _DoctorMessagesScreenState extends State<DoctorMessagesScreen> with LiveDa
     final urgentRow = care.where((c) => c['isUrgent'] == true).firstOrNull;
     final rows = <(DateTime, _Chat)>[
       for (final c in care)
-        if (c != urgentRow) (F.date(c.obj('lastMessage')['at']) ?? DateTime(2000), _patientChat(c)),
+        if (c != urgentRow) (F.date(c.obj('lastMessage')['at']) ?? DateTime(2000), c['isUrgent'] == true ? _urgentChat(c) : _patientChat(c)),
       for (final c in d.obj('direct').list('items')) (F.date(c.obj('lastMessage')['at']) ?? DateTime(2000), _directChat(c, team)),
     ]..sort((a, b) => b.$1.compareTo(a.$1));
     final unread = d.obj('all').numOr('unread').toInt() + d.obj('direct').numOr('unread').toInt();

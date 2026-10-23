@@ -240,7 +240,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
 
               // Emergency (only while one is open)
               if (emergency != null) Tap(
-                onTap: () => Nav.go(context, 'Patient-Thread', args: emergency['conversationId']),
+                // The patient's urgent chat; a home reading (BP, sugar…) has no chat: its alert.
+                onTap: () => emergency['conversationId'] != null
+                    ? Nav.go(context, 'Patient-Thread', args: {'conversationId': '${emergency['conversationId']}'})
+                    : Nav.go(context, 'Alerts', args: {if (emergency['id'] != null) 'alertId': '${emergency['id']}', if (emergency['patientId'] != null) 'patientId': '${emergency['patientId']}'}),
                 radius: 20,
                 color: MP.redSoft,
                 border: MP.redLine,

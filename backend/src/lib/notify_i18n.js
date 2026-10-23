@@ -34,6 +34,7 @@ const WORDS = {
     Delivered: 'পৌঁছেছে', 'Picked up': 'নেওয়া হয়েছে', Cancelled: 'বাতিল',
     cash: 'নগদ', card: 'কার্ড', UPI: 'UPI',
     'Closed all day': 'সারা দিন বন্ধ', 'Closed part of the day': 'দিনের কিছু সময় বন্ধ',
+    'Urgent message': 'জরুরি মেসেজ', 'Voice message': 'ভয়েস মেসেজ', 'Photo or file': 'ছবি বা ফাইল', 'Message deleted': 'মেসেজ মুছে ফেলা হয়েছে',
   },
   hi: {
     'A patient': 'एक मरीज़', 'a patient': 'एक मरीज़', Patient: 'मरीज़', patient: 'मरीज़', 'the patient': 'मरीज़',
@@ -48,6 +49,7 @@ const WORDS = {
     Delivered: 'पहुंच गया', 'Picked up': 'ले लिया गया', Cancelled: 'रद्द',
     cash: 'नकद', card: 'कार्ड', UPI: 'UPI',
     'Closed all day': 'पूरे दिन बंद', 'Closed part of the day': 'दिन के कुछ समय बंद',
+    'Urgent message': 'ज़रूरी संदेश', 'Voice message': 'वॉइस संदेश', 'Photo or file': 'फ़ोटो या फ़ाइल', 'Message deleted': 'संदेश हटा दिया गया',
   },
 };
 

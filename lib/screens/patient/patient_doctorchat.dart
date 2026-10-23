@@ -257,7 +257,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
           child: ChatPhoto(url: file.str('url'), name: file.str('name'), mime: file.str('mimeType'), mine: mine, caption: text),
         ));
-      } else if (kind == 'record' || kind == 'attachment') {
+      } else if ((kind == 'record' || kind == 'attachment') && m['deleted'] != true) {
         final rec = m.obj('record');
         final file = m.obj('attachment');
         final recAt = F.date(rec['date']);
@@ -297,7 +297,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
         ));
       }
       out.add(mine
-          ? _meta('$time · ${m.str('deliveryStatus') == 'seen' ? 'Seen' : 'Sent'}', right: true)
+          ? _meta('$time · ${switch (m.str('deliveryStatus')) { 'seen' => 'Seen', 'delivered' => 'Delivered', _ => 'Sent' }}', right: true)
           : _clinicMeta(m, time));
     }
     // Not yet confirmed by the server: shown at once.

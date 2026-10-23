@@ -6,7 +6,8 @@ const T = require('../lib/time');
 const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
 const { badRequest, notFound, forbidden, conflict, escapeRegex, paging, isId } = require('../lib/http');
 const storage = require('../services/storage');
-const { careConversation, ensureParticipant, postMessage, messageDeleted, markRead } = require('../services/care');
+const { careConversation, ensureParticipant, postMessage, messageDeleted, markRead, CARE_ROLES } = require('../services/care');
+const { signal } = require('../services/notify');
 const { patientSuggestions } = require('../services/chatsuggest');
 const assistant = require('../services/assistant');
 
@@ -19,15 +20,23 @@ async function openConversation(req, id) {
   if (!isId(id)) throw notFound('Conversation');
   const convo = await M.Conversation.findById(id);
   if (!convo) throw notFound('Conversation');
-  if (convo.participants.some((p) => String(p.userId) === String(req.user._id))) return convo;
-  if (convo.practiceId) {
-    const member = await M.Member.findOne({ userId: req.user._id, practiceId: convo.practiceId, status: 'active' });
-    if (member && M.ROLE_PERMISSIONS[member.role]?.chats && convo.type !== 'direct') {
-      return ensureParticipant(convo, req.user._id, member.role === 'doctor' ? 'doctor' : member.role === 'dietician' ? 'dietician' : 'staff');
-    }
+  const rows = convo.participants.filter((p) => String(p.userId) === String(req.user._id));
+  const mine = rows[0];
+  // The patient of the thread is always in it (even if their account was once listed with
+  // another role too). Everyone else only while they still work at that clinic (someone who
+  // left loses its chats), and nutrition chats are for the dietician and doctors only.
+  if (rows.some((p) => p.role === 'patient') || (mine && !convo.practiceId)) return convo;
+  const member = convo.practiceId ? await M.Member.findOne({ userId: req.user._id, practiceId: convo.practiceId, status: 'active' }) : null;
+  const allowed = member && M.ROLE_PERMISSIONS[member.role]?.chats && (convo.type !== 'nutrition' || CARE_ROLES.nutrition.includes(member.role));
+  if (mine && (allowed || (convo.type === 'direct' && member))) return convo;
+  if (!mine && allowed && convo.type !== 'direct') {
+    return ensureParticipant(convo, req.user._id, roleInThread(member.role));
   }
   throw notFound('Conversation');
 }
+
+/** A clinic member's role in a thread. */
+const roleInThread = (role) => (role === 'doctor' ? 'doctor' : role === 'dietician' ? 'dietician' : 'staff');
 
 const senderTypeFor = async (req, convo) => {
   const mine = convo.participants.filter((x) => String(x.userId) === String(req.user._id));
@@ -74,9 +83,18 @@ const messageView = (m, userId) => ({
   text: m.deletedForEveryoneAt ? null : m.text,
   deleted: Boolean(m.deletedForEveryoneAt),
   attachment: m.deletedForEveryoneAt ? undefined : fileView(m.attachment),
-  voice: m.voice?.file ? { ...m.voice.toJSON?.(), file: storage.withUrl(m.voice.file) } : undefined,
+  voice: m.voice?.file && !m.deletedForEveryoneAt ? { ...m.voice.toJSON?.(), file: { ...(m.voice.file.toObject ? m.voice.file.toObject() : m.voice.file), url: storage.stableUrl(m.voice.file.key) } } : undefined,
   mine: String(m.senderId?._id || m.senderId) === String(userId), // senderId may be populated
 });
+
+/** The thread as the patient's app needs it (no staff ids, unread counts or triage). */
+const patientConvoView = (convo) => {
+  const c = convo.toJSON();
+  return {
+    id: c.id || c._id, _id: c._id, type: c.type, practiceId: c.practiceId, patientId: c.patientId, isUrgent: c.isUrgent,
+    aiEnabled: c.aiEnabled, pinnedMessageId: c.pinnedMessageId, lastMessage: c.lastMessage, createdAt: c.createdAt, updatedAt: c.updatedAt,
+  };
+};
 
 // ── Shared thread endpoints (staff + patient) ──
 const threads = Router();
@@ -96,6 +114,7 @@ threads.get('/:id/messages', async (req, res) => {
   }
   const pinned = convo.pinnedMessageId ? await M.Message.findById(convo.pinnedMessageId) : null;
   const patient = convo.patientId ? await M.Patient.findById(convo.patientId, 'name userId') : null;
+  const isPatientView = Boolean(patient?.userId) && String(patient.userId) === String(req.user._id) && inThread?.role === 'patient';
   const lastSeen = patient?.userId ? convo.participants.find((p) => String(p.userId) === String(patient.userId))?.lastReadAt : null;
   const patientIsOnlyPatient = Boolean(patient?.userId) && !(convo.practiceId && (await M.Member.exists({ userId: patient.userId, practiceId: convo.practiceId, status: 'active' })));
   // The thread's own patient gets quick replies picked from the latest message and their day.
@@ -105,10 +124,15 @@ threads.get('/:id/messages', async (req, res) => {
   const nextVisit = convo.patientId ? await M.Appointment.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting'] } }).sort({ startAt: 1 }) : null;
   // Shared records show as cards ("HbA1c · 7.4%, shared report · 30 Sep").
   const recIds = msgs.filter((m) => m.recordId).map((m) => m.recordId);
-  const recs = recIds.length ? await M.MedicalRecord.find({ _id: { $in: recIds } }, 'kind title recordDate sourceName flagLabel') : [];
+  const recs = recIds.length ? await M.MedicalRecord.find({ _id: { $in: recIds }, deletedAt: null }, 'kind title recordDate sourceName flagLabel files prescriptionId') : [];
   const recordOf = (m) => {
     const x = m.recordId && recs.find((r) => String(r._id) === String(m.recordId));
-    return x ? { id: x._id, kind: x.kind, title: x.title, date: x.recordDate, sourceName: x.sourceName, flagLabel: x.flagLabel } : undefined;
+    // With its file, so the card opens the report itself.
+    const file = x?.files?.[0];
+    return x ? {
+      id: x._id, kind: x.kind, title: x.title, date: x.recordDate, sourceName: x.sourceName, flagLabel: x.flagLabel,
+      prescriptionId: x.prescriptionId || null, url: file?.key ? storage.signedUrl(file.key) : null, mimeType: file?.mimeType || null, name: file?.name || null,
+    } : undefined;
   };
   // Who wrote each message, with their profile photo (a doctor's public photo first).
   const senderPhotos = await require('../services/photos').doctorPhotos(msgs.map((m) => m.senderId?._id || m.senderId));
@@ -125,7 +149,7 @@ threads.get('/:id/messages', async (req, res) => {
   const payOf = new Map((payIds.length ? await M.Payment.find({ _id: { $in: payIds } }, 'amount status method appointmentId') : []).map((p) => [String(p._id), p]));
   res.json({
     conversation: {
-      ...convo.toJSON(),
+      ...(isPatientView ? patientConvoView(convo) : convo.toJSON()),
       aiPaused: assistant.aiPaused(convo),
       patient: patient && {
         id: patient._id, name: patient.name, lastSeenAt: lastSeen,
@@ -135,10 +159,16 @@ threads.get('/:id/messages', async (req, res) => {
       // Staff only: the patient's open emergency (urgent chat, or one the desk was asked to pass on).
       urgentAlert: viewer && convo.type === 'care' ? await urgentAlertOf(convo, viewer) : undefined,
     },
-    pinned: pinned && !pinned.deletedForEveryoneAt ? messageView(pinned, req.user._id) : null,
+    pinned: pinned && !pinned.deletedForEveryoneAt && !(pinned.hiddenFor || []).some((u) => String(u) === String(req.user._id)) ? messageView(pinned, req.user._id) : null,
     suggestions,
     items: msgs.map((m) => {
-      const v = { ...messageView(m, req.user._id), record: recordOf(m), senderPhoto: senderPhotos.get(String(m.senderId?._id || m.senderId)) || null };
+      const v = { ...messageView(m, req.user._id), record: m.deletedForEveryoneAt ? undefined : recordOf(m), senderPhoto: senderPhotos.get(String(m.senderId?._id || m.senderId)) || null };
+      if (isPatientView) {
+        // The patient's app: no review flags, staff ids or who hid what.
+        v.ai = m.ai ? { escalated: Boolean(m.ai.escalated) } : undefined;
+        delete v.hiddenFor;
+        v.meta = m.meta ? { auto: m.meta.auto, event: m.meta.event, away: m.meta.away } : undefined;
+      }
       if (m.meta?.event === 'payment_request') {
         const p = payOf.get(String(m.meta.paymentId));
         if (p) v.payment = { id: p._id, amount: p.amount, status: p.status, method: p.method || null, appointmentId: m.meta.appointmentId || (p.appointmentId ? String(p.appointmentId) : null) };
@@ -162,32 +192,40 @@ threads.post('/:id/messages', upload.single('file'), async (req, res) => {
     const f = await storage.save(req.file.buffer, { folder: 'chat', name: req.file.originalname, mimeType: req.file.mimetype });
     if (req.file.mimetype.startsWith('audio/')) {
       kind = 'voice';
-      extra.voice = { file: f, durationSec: Number(req.body.durationSec) || undefined };
+      const sec = Number(req.body.durationSec);
+      extra.voice = { file: f, durationSec: Number.isFinite(sec) && sec > 0 ? Math.min(Math.round(sec), 3600) : undefined };
     } else {
       kind = 'attachment';
       extra.attachment = f;
     }
   }
-  if (req.body.recordId) {
-    const rec = await M.MedicalRecord.findOne({ _id: req.body.recordId, patientId: convo.patientId });
+  if (req.body.recordId && !req.file) {
+    const rec = isId(req.body.recordId) ? await M.MedicalRecord.findOne({ _id: req.body.recordId, patientId: convo.patientId, deletedAt: null }) : null;
     if (!rec) throw notFound('Record');
     kind = 'record';
     extra.recordId = rec._id;
-    // Sharing a record in chat shares it with the care team in this thread.
-    const staffIds = convo.participants.filter((p) => p.role !== 'patient').map((p) => String(p.userId));
+    // Sharing a record in chat shares it with this thread's clinical team (doctors, their
+    // assistants, the dietician) — not the front desk or the practice manager.
+    const staffIds = convo.participants.filter((p) => p.role !== 'patient').map((p) => p.userId);
+    const clinical = convo.practiceId
+      ? (await M.Member.find({ practiceId: convo.practiceId, status: 'active', userId: { $in: staffIds } }, 'userId role')).filter((m) => M.ROLE_PERMISSIONS[m.role]?.clinical).map((m) => String(m.userId))
+      : [];
     const already = new Set(rec.sharedWith.map((s) => String(s.userId)));
-    for (const id of staffIds) if (!already.has(id)) rec.sharedWith.push({ userId: id });
+    for (const id of clinical) if (!already.has(id)) rec.sharedWith.push({ userId: id });
     await rec.save();
   }
   if (!text && kind === 'text') throw badRequest('Type a message', 'EMPTY_MESSAGE');
-  if (req.body.replyToId) extra.replyToId = req.body.replyToId;
+  if (req.body.replyToId) {
+    // A reply quotes a message of this chat (not one from someone else's).
+    if (!isId(req.body.replyToId) || !(await M.Message.exists({ _id: req.body.replyToId, conversationId: convo._id }))) throw badRequest('That message is no longer in this chat');
+    extra.replyToId = req.body.replyToId;
+  }
   const msg = await postMessage(convo, { sender: req.user, senderType, text: text || undefined, kind, isUrgent: req.body.isUrgent === true || req.body.isUrgent === 'true', ...extra });
-  // Staff replying pauses the AI in this thread for a while.
+  // Staff replying pauses the AI in this thread for a while (atomic, like the message itself).
   if (senderType !== 'patient') {
-    convo.aiPausedBy = req.user._id;
     convo.aiPausedAt = new Date();
-    if (convo.triage === 'needs_attention') convo.triage = undefined;
-    await convo.save();
+    await M.Conversation.updateOne({ _id: convo._id }, { $set: { aiPausedBy: req.user._id, aiPausedAt: convo.aiPausedAt } });
+    await M.Conversation.updateOne({ _id: convo._id, triage: 'needs_attention' }, { $unset: { triage: 1 } });
   }
   // The message is saved: answer now. MedPin AI's reply (and the emergency
   // check) runs in the background and arrives in the thread a moment later;
@@ -207,37 +245,44 @@ threads.post('/:id/read', async (req, res) => {
   await markRead(convo, req.user._id);
   const isStaff = convo.participants.find((p) => String(p.userId) === String(req.user._id))?.role !== 'patient';
   if (isStaff && req.body.pauseAi !== false) {
-    convo.aiPausedBy = req.user._id;
-    convo.aiPausedAt = new Date();
-    await convo.save();
+    await M.Conversation.updateOne({ _id: convo._id }, { $set: { aiPausedBy: req.user._id, aiPausedAt: new Date() } });
   }
   res.json({ ok: true });
 });
 
 threads.post('/:id/pin', async (req, res) => {
   const convo = await openConversation(req, req.params.id);
+  // The pinned message is the clinic's note for everyone in a patient chat.
+  if (convo.type !== 'direct' && convo.participants.find((p) => String(p.userId) === String(req.user._id))?.role === 'patient') {
+    throw forbidden('Only the clinic can pin a message');
+  }
   if (req.body.messageId) {
-    const msg = await M.Message.findOne({ _id: req.body.messageId, conversationId: convo._id });
+    const msg = isId(req.body.messageId) ? await M.Message.findOne({ _id: req.body.messageId, conversationId: convo._id, deletedForEveryoneAt: null }) : null;
     if (!msg) throw notFound('Message');
   }
-  convo.pinnedMessageId = req.body.messageId || undefined;
-  await convo.save();
-  res.json({ ok: true, pinnedMessageId: convo.pinnedMessageId || null });
+  await M.Conversation.updateOne({ _id: convo._id }, req.body.messageId ? { $set: { pinnedMessageId: req.body.messageId } } : { $unset: { pinnedMessageId: 1 } });
+  await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
+  res.json({ ok: true, pinnedMessageId: req.body.messageId || null });
 });
 
 threads.post('/:id/messages/:messageId/hide', async (req, res) => {
   const convo = await openConversation(req, req.params.id);
+  if (!isId(req.params.messageId)) throw notFound('Message');
   await M.Message.updateOne({ _id: req.params.messageId, conversationId: convo._id }, { $addToSet: { hiddenFor: req.user._id } });
+  await signal([req.user._id], { type: 'chat_changed', conversationId: convo._id }); // the person's other phone
   res.json({ ok: true });
 });
 
 threads.delete('/:id/messages/:messageId', async (req, res) => {
   const convo = await openConversation(req, req.params.id);
-  const msg = await M.Message.findOne({ _id: req.params.messageId, conversationId: convo._id });
+  const msg = isId(req.params.messageId) ? await M.Message.findOne({ _id: req.params.messageId, conversationId: convo._id }) : null;
   if (!msg) throw notFound('Message');
   if (String(msg.senderId) !== String(req.user._id)) throw forbidden('You can only delete your own messages');
-  msg.deletedForEveryoneAt = new Date();
-  await msg.save();
+  if (msg.deletedForEveryoneAt) return res.json({ ok: true }); // already deleted (a second tap)
+  // Atomic: of two taps at once, only one counts.
+  const done = await M.Message.updateOne({ _id: msg._id, deletedForEveryoneAt: null }, { deletedForEveryoneAt: new Date() });
+  if (!done.modifiedCount) return res.json({ ok: true });
+  if (String(convo.pinnedMessageId || '') === String(msg._id)) await M.Conversation.updateOne({ _id: convo._id }, { $unset: { pinnedMessageId: 1 } });
   await messageDeleted(convo, msg);
   res.json({ ok: true });
 });
@@ -249,7 +294,7 @@ inbox.use(requireAuth, staff({ perm: 'chats' }));
 inbox.get('/', async (req, res) => {
   const type = req.query.type || 'care';
   const q = type === 'direct'
-    ? { type: 'direct', 'participants.userId': req.user._id }
+    ? { type: 'direct', 'participants.userId': req.user._id, practiceId: { $in: [req.practiceId, null] } }
     : { practiceId: req.practiceId, type: { $in: type === 'all' ? ['care', 'nutrition'] : [type] } };
   const convos = await M.Conversation.find(q).sort({ 'lastMessage.at': -1 }).limit(300).populate('patientId', 'name gender ageYears ageRecordedAt phone conditions userId');
   // Patients' profile photos for the avatars.
@@ -264,9 +309,25 @@ inbox.get('/', async (req, res) => {
     },
     participants: c.participants.map((p) => ({ userId: p.userId, role: p.role })),
   }));
+  if (type === 'direct') {
+    // Chats with colleagues: who the other person is (name, role here, photo).
+    const otherIds = [...new Set(convos.flatMap((c) => c.participants.map((p) => String(p.userId)).filter((id) => id !== String(req.user._id))))];
+    const [users, members, faces] = await Promise.all([
+      M.User.find({ _id: { $in: otherIds } }, 'name').lean(),
+      M.Member.find({ practiceId: req.practiceId, userId: { $in: otherIds } }, 'userId role').lean(),
+      require('../services/photos').doctorPhotos(otherIds),
+    ]);
+    const nameOf = new Map(users.map((u) => [String(u._id), u.name]));
+    const roleOf = new Map(members.map((m) => [String(m.userId), m.role]));
+    rows = rows.map((x) => {
+      const id = x.participants.map((p) => String(p.userId)).find((u) => u !== String(req.user._id));
+      const role = roleOf.get(id);
+      return { ...x, other: id ? { id, name: nameOf.get(id) || 'Colleague', role: role || null, roleLabel: role ? ROLE_LABEL[role] || null : 'Another clinic', photo: faces.get(id) || null } : null };
+    });
+  }
   if (req.query.q) {
     const re = new RegExp(escapeRegex(req.query.q), 'i');
-    rows = rows.filter((x) => re.test(x.patient?.name || '') || re.test(x.lastMessage?.text || '') || re.test(x.lastMessage?.senderLabel || ''));
+    rows = rows.filter((x) => re.test(x.patient?.name || '') || re.test(x.other?.name || '') || re.test(x.lastMessage?.text || '') || re.test(x.lastMessage?.senderLabel || ''));
   }
   const unreadCount = rows.filter((x) => x.unread > 0).length;
   if (req.query.tab === 'unread') rows = rows.filter((x) => x.unread > 0);
@@ -278,9 +339,10 @@ inbox.get('/', async (req, res) => {
 inbox.post('/', async (req, res) => {
   if (req.body.patientId) {
     await patientInPractice(req, req.body.patientId);
-    const convo = await careConversation(req.body.patientId, req.practiceId, req.body.type === 'nutrition' ? 'nutrition' : 'care');
-    await ensureParticipant(convo, req.user._id, req.member.role === 'doctor' ? 'doctor' : 'staff');
-    return res.json(convo);
+    const type = req.body.type === 'nutrition' || (req.body.type == null && req.member.role === 'dietician') ? 'nutrition' : 'care';
+    if (type === 'nutrition' && !CARE_ROLES.nutrition.includes(req.member.role)) throw forbidden('Nutrition chats are for the dietician and doctors');
+    const convo = await careConversation(req.body.patientId, req.practiceId, type);
+    return res.json(await ensureParticipant(convo, req.user._id, roleInThread(req.member.role)));
   }
   const otherId = req.body.userId;
   if (!otherId || String(otherId) === String(req.user._id)) throw badRequest('Choose who to message');
@@ -291,7 +353,7 @@ inbox.post('/', async (req, res) => {
     const otherMember = await M.Member.findOne({ userId: other._id, practiceId: req.practiceId });
     convo = await M.Conversation.create({
       type: 'direct', practiceId: req.practiceId,
-      participants: [{ userId: req.user._id, role: req.member.role === 'doctor' ? 'doctor' : 'staff' }, { userId: other._id, role: otherMember ? (otherMember.role === 'doctor' ? 'doctor' : 'staff') : 'colleague' }],
+      participants: [{ userId: req.user._id, role: roleInThread(req.member.role) }, { userId: other._id, role: otherMember ? roleInThread(otherMember.role) : 'colleague' }],
     });
   }
   return res.status(201).json(convo);

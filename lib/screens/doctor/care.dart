@@ -6,6 +6,7 @@ import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
 import '../../widgets/i18n.dart';
+import 'team_chats.dart';
 
 /// Design: Care.dc.html — "Care" (Clinician · tabs): the care inbox.
 class CareScreen extends StatefulWidget {
@@ -84,7 +85,16 @@ class _CareScreenState extends State<CareScreen> with LiveData {
   int _shown = _page;
 
   @override
-  Future<Object?> fetch() => Api.I.get('/api/inbox', query: {'type': 'care'});
+  Future<Object?> fetch() async {
+    // The list, and the unread chats with colleagues (the Team tab).
+    final r = await Future.wait([
+      Api.I.get('/api/inbox', query: {'type': 'care'}),
+      Api.I.get('/api/inbox', query: {'type': 'direct', 'tab': 'unread'}).catchError((_) => const <String, dynamic>{}),
+    ]);
+    return {...(r[0] as Map).cast<String, dynamic>(), 'teamUnread': (r[1] as Map)['unread'] ?? 0};
+  }
+
+  int get _teamUnread => data == null ? 0 : data!.numOr('teamUnread').toInt();
 
   @override
   Duration? get refreshEvery => const Duration(seconds: 60);
@@ -159,7 +169,7 @@ class _CareScreenState extends State<CareScreen> with LiveData {
                 container: true,
                 label: 'Filter conversations',
                 child: MpSegmented(
-                  options: ['Unread ($_unreadCount)', 'All'],
+                  options: ['Unread ($_unreadCount)', 'All', if (data != null) _teamUnread > 0 ? 'Team ($_teamUnread)' : 'Team'],
                   index: _filter,
                   onChanged: (i) => setState(() {
                     _filter = i;
@@ -175,6 +185,8 @@ class _CareScreenState extends State<CareScreen> with LiveData {
                 }),
               ),
               if (_pending > 0) _enrolmentBanner(context),
+              // Team: chats with colleagues at this clinic.
+              if (_filter == 2) TeamChats(query: _query) else ...[
               MpCard(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 child: Column(
@@ -190,6 +202,7 @@ class _CareScreenState extends State<CareScreen> with LiveData {
                 ),
               ),
               MpButton('Show more', kind: MpBtn.secondary, onTap: _showMore),
+              ],
             ],
           ),
         ],

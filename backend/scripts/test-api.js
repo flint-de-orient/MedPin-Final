@@ -2004,6 +2004,83 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     }
   });
 
+  await step('chat round 1: ticks per side, delivered, bell clears on read, colleague messages, deletes, access, urgent', async () => {
+    const convo = ctx.convoId;
+    const convoOid = new (require('mongoose').Types.ObjectId)(String(convo));
+    const me = async (call) => ok(await call('GET', '/api/me')).user?.id || ok(await call('GET', '/api/me')).id;
+    const deskId = String((await M.Member.findOne({ practiceId: ctx.practiceId, role: 'front_desk', status: 'active' })).userId);
+    const patUser = String((await M.Patient.findById(ctx.patientId)).userId);
+    await M.Conversation.updateOne({ _id: convo }, { aiEnabled: false });
+
+    // "Seen" belongs to the other side: the desk opening the thread doesn't mark the doctor's reply seen.
+    const reply = ok(await ctx.doc('POST', `/api/conversations/${convo}/messages`, { text: 'Please come fasting tomorrow.' }), 201);
+    ok(await ctx.desk('POST', `/api/conversations/${convo}/read`));
+    assert.notEqual((await M.Message.findById(reply.message.id)).deliveryStatus, 'seen', "a colleague reading isn't the patient seeing it");
+    // The patient's app polls its badges: the reply is delivered; reading it makes it seen.
+    // (The badge poll does this at most once a minute; earlier steps already polled, so call it here.)
+    ok(await ctx.pat('GET', '/api/notifications?limit=1'));
+    await require('../src/services/care').markDelivered(patUser);
+    assert.equal((await M.Message.findById(reply.message.id)).deliveryStatus, 'delivered');
+    assert.ok(await M.Notification.exists({ userId: patUser, readAt: null, 'params.conversationId': convoOid }), 'the patient has a new-message notice');
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/read`));
+    assert.equal((await M.Message.findById(reply.message.id)).deliveryStatus, 'seen');
+    assert.equal(await M.Notification.exists({ userId: patUser, readAt: null, type: 'message', 'params.conversationId': convoOid }), null, 'reading the chat clears its bell notice');
+    // The patient's message: seen once the clinic reads it.
+    const q = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'OK, what time?' }), 201);
+    ok(await ctx.desk('POST', `/api/conversations/${convo}/read`));
+    assert.equal((await M.Message.findById(q.message.id)).deliveryStatus, 'seen');
+    // The patient's app sees no review flags or staff unread counts.
+    const pv = ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`));
+    assert.equal(pv.conversation.participants, undefined, 'no staff list for the patient');
+    assert.equal(pv.conversation.triage, undefined);
+
+    // Staff only ever mark their own messages urgent: never.
+    const staffUrgent = ok(await ctx.doc('POST', `/api/conversations/${convo}/messages`, { text: 'Calling you now', isUrgent: true }), 201);
+    assert.equal(staffUrgent.message.isUrgent, false);
+    // A patient's urgent message always has an emergency behind it, raised once.
+    await M.Alert.updateMany({ conversationId: convo, kind: 'urgent_chat' }, { status: 'resolved' });
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Feeling very dizzy', isUrgent: true }), 201);
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Still dizzy', isUrgent: true }), 201);
+    assert.equal(await M.Alert.countDocuments({ conversationId: convo, kind: 'urgent_chat', status: { $in: ['open', 'acknowledged'] } }), 1, 'one open emergency, not one per message');
+    await M.Alert.updateMany({ conversationId: convo, kind: 'urgent_chat' }, { status: 'resolved' });
+    await M.Conversation.updateOne({ _id: convo }, { isUrgent: false });
+
+    // Deleting: once only; the voice note and the bell text go too.
+    const m4a = Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypM4A '), Buffer.alloc(24)]);
+    const vn = ok(await ctx.doc('POST', `/api/conversations/${convo}/messages`, undefined, { form: fileForm('file', m4a, 'note.m4a', 'audio/mp4', { durationSec: '99999' }) }), 201);
+    assert.equal(vn.message.voice.durationSec, 3600, 'voice length is bounded');
+    const urlA = ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).items.find((m) => m.id === vn.message.id).voice.file.url;
+    const urlB = ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).items.find((m) => m.id === vn.message.id).voice.file.url;
+    assert.equal(urlA, urlB, 'a voice note keeps its link (playback is not reset by the refresh)');
+    const before = (await M.Conversation.findById(convo)).participants.find((p) => String(p.userId) === patUser).unreadCount;
+    ok(await ctx.doc('DELETE', `/api/conversations/${convo}/messages/${vn.message.id}`));
+    ok(await ctx.doc('DELETE', `/api/conversations/${convo}/messages/${vn.message.id}`));
+    const after = (await M.Conversation.findById(convo)).participants.find((p) => String(p.userId) === patUser).unreadCount;
+    assert.equal(after, Math.max(0, before - 1), 'deleting twice lowers the unread once');
+    const gone = ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).items.find((m) => m.id === vn.message.id);
+    assert.equal(gone.deleted, true);
+    assert.equal(gone.voice, undefined, 'a deleted voice note no longer plays');
+    // A reply must quote a message of this chat.
+    assert.equal((await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'hm', replyToId: '000000000000000000000000' })).status, 400);
+    // Patients can't change the clinic's pinned message.
+    assert.equal((await ctx.pat('POST', `/api/conversations/${convo}/pin`, { messageId: reply.message.id })).status, 403);
+
+    // A colleague's message tells the other person at once.
+    const direct = ok(await ctx.doc('POST', '/api/inbox', { userId: deskId }), 201);
+    ok(await ctx.doc('POST', `/api/conversations/${direct._id || direct.id}/messages`, { text: 'Please call Mrs Sharma about tomorrow.' }), 201);
+    assert.ok(await M.Notification.exists({ userId: deskId, type: 'message', 'params.conversationId': new (require('mongoose').Types.ObjectId)(String(direct._id || direct.id)) }), 'the colleague is notified');
+
+    // Nutrition chats are the dietician's and doctors': the front desk can't open them.
+    const nutrition = await require('../src/services/care').careConversation(ctx.patientId, ctx.practiceId, 'nutrition');
+    assert.equal((await ctx.desk('GET', `/api/conversations/${nutrition._id}/messages`)).status, 404);
+    // Someone who left the clinic loses its chats.
+    const deskMember = await M.Member.findOne({ practiceId: ctx.practiceId, userId: deskId });
+    await M.Member.updateOne({ _id: deskMember._id }, { status: 'suspended' });
+    assert.equal((await ctx.desk('GET', `/api/conversations/${convo}/messages`)).status === 200, false, 'no access after leaving the clinic');
+    await M.Member.updateOne({ _id: deskMember._id }, { status: 'active' });
+    void me;
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

@@ -690,7 +690,8 @@ r.get('/my-doctors', async (req, res) => {
       M.DoctorProfile.findOne({ userId: c.userId._id }, 'displayName headline presence avgReplyMinutes specialtyKeys'),
       M.Appointment.findOne({ patientId: req.patient._id, doctorId: c.userId._id, startAt: { $gte: T.dayStart() }, status: { $in: ['booked', 'confirmed', 'waiting'] } }).sort({ startAt: 1 }),
       M.Appointment.findOne({ patientId: req.patient._id, doctorId: c.userId._id, status: 'completed' }).sort({ completedAt: -1 }),
-      M.Conversation.findOne({ patientId: req.patient._id, practiceId: c.practiceId?._id, type: 'care' }),
+      // A dietician on the care team: the nutrition chat; everyone else: the clinic's care chat.
+      M.Conversation.findOne({ patientId: req.patient._id, practiceId: c.practiceId?._id, type: c.role === 'dietician' ? 'nutrition' : 'care' }),
       M.FollowUp.findOne({ patientId: req.patient._id, doctorId: c.userId._id, status: { $in: ['not_booked', 'no_reply'] } }).sort({ dueDate: 1 }),
       M.MedicationCourse.countDocuments({ patientId: req.patient._id, doctorId: c.userId._id, status: 'active' }),
     ]);
@@ -1848,7 +1849,11 @@ r.post('/conversations', async (req, res) => {
   const booked = await M.Appointment.exists({ patientId: req.patient._id, doctorId: req.body.doctorId, status: { $nin: ['cancelled', 'rescheduled'] } });
   if (!access || (who === 'booked' && !booked)) throw conflict('You can chat with the doctor once a visit is booked', 'NO_VISIT');
   const dl = await M.DoctorLocation.findOne({ doctorId: req.body.doctorId, status: 'active' });
-  const convo = await care.careConversation(req.patient._id, access.practiceId || dl.practiceId);
+  const practiceId = access.practiceId || dl?.practiceId;
+  if (!practiceId) throw conflict("This doctor's clinic isn't set up for chat yet. Please call the clinic.", 'NO_CLINIC');
+  // Writing to a dietician opens the nutrition chat (their inbox); to anyone else, the care chat.
+  const member = await M.Member.findOne({ userId: req.body.doctorId, practiceId, status: 'active' }, 'role');
+  const convo = await care.careConversation(req.patient._id, practiceId, member?.role === 'dietician' || access.role === 'dietician' ? 'nutrition' : 'care');
   await care.ensureParticipant(convo, req.user._id, 'patient');
   res.json(convo);
 });

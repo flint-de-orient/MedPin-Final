@@ -238,7 +238,20 @@ me.post('/practices', async (req, res) => {
 // ── Notifications (bell) ──
 const notifications = Router();
 notifications.use(requireAuth);
+// "Delivered" ticks: the app is open on this person's phone (it polls its badges here), so
+// chat messages to them reach "delivered". At most once a minute per person.
+const deliveredAt = new Map();
+function noteDelivered(userId) {
+  const k = String(userId);
+  const now = Date.now();
+  if (now - (deliveredAt.get(k) || 0) < 60e3) return;
+  deliveredAt.set(k, now);
+  if (deliveredAt.size > 50000) deliveredAt.clear();
+  require('../services/care').markDelivered(userId).catch((err) => console.warn('[delivered]', err.message));
+}
+
 notifications.get('/', async (req, res) => {
+  noteDelivered(req.user._id);
   const { limit, skip } = paging(req.query);
   // ?practiceId= : a staff member's bell shows only that clinic's notifications.
   const scope = { userId: req.user._id, ...(isId(String(req.query.practiceId || '')) ? { practiceId: String(req.query.practiceId) } : {}) };

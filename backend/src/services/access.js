@@ -48,7 +48,7 @@ async function accessFor({ userId, practiceId }, patient) {
 
     /** Medical records (uploads): own, shared with someone here, or allowed by level. */
     async recordFilter() {
-      const or = [ownPractice, { sharedWith: { $in: memberIds } }];
+      const or = [ownPractice, { 'sharedWith.userId': { $in: memberIds } }];
       if (allows('full_record')) or.push(elsewhere);
       else if (allows('prescriptions_and_tests')) or.push({ ...elsewhere, kind: { $in: ['prescription', 'test_result'] } });
       return { $or: or };
@@ -56,7 +56,7 @@ async function accessFor({ userId, practiceId }, patient) {
 
     /** Lab results: own, from a record shared here, or allowed by level. */
     async labFilter() {
-      const shared = await M.MedicalRecord.distinct('_id', { patientId: patient._id, sharedWith: { $in: memberIds } });
+      const shared = await M.MedicalRecord.distinct('_id', { patientId: patient._id, 'sharedWith.userId': { $in: memberIds } });
       const or = [ownPractice, { recordId: { $in: shared } }];
       if (allows('prescriptions_and_tests')) or.push(elsewhere);
       return { $or: or };

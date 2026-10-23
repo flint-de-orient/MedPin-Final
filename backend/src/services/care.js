@@ -81,12 +81,18 @@ async function careConversation(patientId, practiceId, type = 'care') {
   return convo;
 }
 
-/** Adds a user to a thread if they aren't in it yet. */
+/** Adds a user to a thread if they aren't in it yet (atomic: never overwrites someone else's change). */
 async function ensureParticipant(convo, userId, role) {
   if (convo.participants.some((p) => String(p.userId) === String(userId))) return convo;
-  convo.participants.push({ userId, role });
-  await convo.save();
-  return convo;
+  await addParticipants(convo._id, [{ userId, role }]);
+  return (await M.Conversation.findById(convo._id)) || convo;
+}
+
+/** Adds the people not yet in the thread, one atomic update each. */
+async function addParticipants(convoId, people) {
+  for (const p of people) {
+    await M.Conversation.updateOne({ _id: convoId, 'participants.userId': { $ne: p.userId } }, { $push: { participants: p } });
+  }
 }
 
 const SENDER_LABEL = { ai: 'AI', system: 'Clinic' };
@@ -179,9 +185,11 @@ async function chatNote(ctx, text, event, extraMeta = {}) {
       conversationId: convo._id, kind: 'text', text, meta: { ...extraMeta, event, auto: true },
       ...(sender ? { senderId: sender.userId, senderType: sender.role === 'doctor' ? 'doctor' : 'staff' } : { senderType: 'system' }),
     });
-    convo.lastMessage = previewOf(msg, user?.name);
-    for (const p of convo.participants) if (p.role === 'patient') p.unreadCount = (p.unreadCount || 0) + 1;
-    await convo.save();
+    await M.Conversation.updateOne(
+      { _id: convo._id },
+      { $set: { lastMessage: previewOf(msg, user?.name) }, $inc: { 'participants.$[p].unreadCount': 1 } },
+      { arrayFilters: [{ 'p.role': 'patient' }] },
+    );
     await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
     return msg;
   } catch (err) {
@@ -221,12 +229,21 @@ async function paymentRequestNote(payment, { by } = {}) {
  */
 async function messageDeleted(convo, msg) {
   const latest = await M.Message.findOne({ conversationId: convo._id, deletedForEveryoneAt: null }).sort({ createdAt: -1 }).populate('senderId', 'name');
-  convo.lastMessage = latest ? previewOf(latest, latest.senderId?.name) : undefined;
-  for (const p of convo.participants) {
-    if (String(p.userId) !== String(msg.senderId) && p.unreadCount > 0 && (!p.lastReadAt || p.lastReadAt < msg.createdAt)) p.unreadCount -= 1;
+  // Who it raised an unread for (an automatic note: only the patient), and who hasn't read it yet.
+  const raised = convo.participants
+    .filter((p) => String(p.userId) !== String(msg.senderId) && (!msg.meta?.auto || p.role === 'patient') && (!p.lastReadAt || p.lastReadAt < msg.createdAt))
+    .map((p) => p.userId);
+  await M.Conversation.updateOne(
+    { _id: convo._id },
+    { ...(latest ? { $set: { lastMessage: previewOf(latest, latest.senderId?.name) } } : { $unset: { lastMessage: 1 } }), $inc: { 'participants.$[p].unreadCount': -1 } },
+    { arrayFilters: [{ 'p.userId': { $in: raised }, 'p.unreadCount': { $gt: 0 } }] },
+  );
+  // The bell no longer shows what was deleted.
+  if (msg.text) {
+    await M.Notification.updateMany({ 'params.conversationId': { $in: [convo._id, String(convo._id)] }, body: msg.text.slice(0, 120) }, { body: 'Message deleted' });
   }
-  await convo.save();
   await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
+  await signal(convo.participants.map((p) => p.userId), { type: 'notifications_changed', ...(convo.practiceId ? { practiceId: String(convo.practiceId) } : {}) });
 }
 
 /**
@@ -234,48 +251,75 @@ async function messageDeleted(convo, msg) {
  * itself (Patient-Emergency raises an alert that reaches the doctor and the desk).
  */
 async function postMessage(convo, { sender, senderType, text, kind = 'text', quietForStaff = false, ...rest }) {
-  const msg = await M.Message.create({ conversationId: convo._id, senderId: sender?._id, senderType, text, kind, ...rest });
+  // Only a patient can mark their message urgent (it is their emergency); staff messages never are.
+  const urgent = senderType === 'patient' && rest.isUrgent === true;
+  const msg = await M.Message.create({ conversationId: convo._id, senderId: sender?._id, senderType, text, kind, ...rest, isUrgent: urgent });
   const senderId = sender ? String(sender._id) : null;
-  convo.lastMessage = previewOf(msg, sender?.name);
-  for (const p of convo.participants) {
-    if (String(p.userId) !== senderId) p.unreadCount = (p.unreadCount || 0) + 1;
-  }
-  if (rest.isUrgent && !convo.isUrgent) {
-    convo.isUrgent = true;
-    convo.urgentSince = new Date();
-  }
-  if (senderType === 'patient') convo.triage = convo.triage || 'needs_attention';
-  await convo.save();
-  const toPatient = convo.participants.filter((p) => p.role === 'patient' && String(p.userId) !== senderId).map((p) => p.userId);
+  // One atomic update: the preview, everyone else's unread +1, the urgent / needs-attention marks.
+  // (Saving the whole thread from an older copy could undo a read or a new participant.)
+  const set = { lastMessage: previewOf(msg, sender?.name) };
+  if (urgent && !convo.isUrgent) Object.assign(set, { isUrgent: true, urgentSince: new Date() });
+  if (senderType === 'patient' && !convo.triage) set.triage = 'needs_attention';
+  await M.Conversation.updateOne(
+    { _id: convo._id },
+    { $set: set, $inc: { 'participants.$[p].unreadCount': 1 } },
+    { arrayFilters: [{ 'p.userId': { $ne: sender?._id || null } }] },
+  );
+  const lastMessage = set.lastMessage;
   let toStaff = [];
   if (senderType === 'patient') {
     // The patient's own clinicians hear about it (dietician for nutrition threads); the front
     // desk sees it in their inbox. Clinicians who joined later are added to the thread now.
     toStaff = await clinicians(convo.practiceId, convo.patientId, { roles: convo.type === 'nutrition' ? ['dietician', 'doctor'] : ['doctor'] });
-    let changed = false;
-    for (const id of toStaff) {
-      if (!convo.participants.some((p) => String(p.userId) === String(id))) {
-        convo.participants.push({ userId: id, role: convo.type === 'nutrition' ? 'dietician' : 'doctor', unreadCount: 1 });
-        changed = true;
-      }
+    const missing = toStaff.filter((id) => !convo.participants.some((p) => String(p.userId) === String(id)));
+    if (missing.length) {
+      const roles = new Map((await M.Member.find({ practiceId: convo.practiceId, userId: { $in: missing } }, 'userId role')).map((m) => [String(m.userId), m.role]));
+      await addParticipants(convo._id, missing.map((id) => ({ userId: id, role: roles.get(String(id)) === 'dietician' ? 'dietician' : 'doctor', unreadCount: 1 })));
     }
-    if (changed) await convo.save();
   }
-  const base = { type: rest.isUrgent ? 'urgent_message' : 'message', practiceId: convo.practiceId, body: (text || '').slice(0, 120) };
+  // The thread as it is now (for who to tell).
+  convo = (await M.Conversation.findById(convo._id)) || convo;
+  // An urgent message from the patient always has an open emergency behind it (so the doctor
+  // can resolve it and the thread isn't left marked urgent with nothing to act on).
+  let alertRaised = false;
+  if (urgent && !quietForStaff) {
+    const open = await M.Alert.exists({ conversationId: convo._id, kind: 'urgent_chat', status: { $in: ['open', 'acknowledged'] } });
+    if (!open) {
+      alertRaised = true;
+      await raiseAlert({
+        practiceId: convo.practiceId, patientId: convo.patientId, severity: 'emergency', kind: 'urgent_chat',
+        detail: (text || 'Urgent message').slice(0, 300), sourceModel: 'Message', sourceId: msg._id, conversationId: convo._id,
+      }).catch((err) => console.warn('[urgent alert]', err.message));
+    }
+  }
+  const toPatient = convo.participants.filter((p) => p.role === 'patient' && String(p.userId) !== senderId).map((p) => p.userId);
+  const base = { type: urgent ? 'urgent_message' : 'message', practiceId: convo.practiceId, body: (text || (kind === 'voice' ? 'Voice message' : kind === 'attachment' ? 'Photo or file' : '')).slice(0, 120) };
   let toDesk = [];
   let deskOpen = false;
-  if (senderType === 'patient' && convo.type === 'care' && !quietForStaff) {
-    // The clinic's shared inbox: the front desk covering this patient (their branch and
-    // doctor) hears about it too — they answer most messages (visits, fees, reports).
+  if (senderType === 'patient' && !quietForStaff) {
     const place = await patientPlace(convo.practiceId, convo.patientId);
-    toDesk = (await deskFor(convo.practiceId, place)).map(String).filter((id) => id !== senderId && !toStaff.map(String).includes(id));
+    if (convo.type === 'care') {
+      // The clinic's shared inbox: the front desk covering this patient (their branch and
+      // doctor) hears about it too — they answer most messages (visits, fees, reports).
+      toDesk = (await deskFor(convo.practiceId, place)).map(String).filter((id) => id !== senderId && !toStaff.map(String).includes(id));
+    } else if (convo.type === 'nutrition') {
+      // Nutrition chats are the dietician's inbox, as care chats are the desk's: one notice
+      // per chat, pushed in clinic hours. Doctors on the thread follow the doctor rule.
+      const diet = new Set((await M.Member.find({ practiceId: convo.practiceId, status: 'active', role: 'dietician', userId: { $in: toStaff } }, 'userId')).map((m) => String(m.userId)));
+      toDesk = toStaff.map(String).filter((id) => diet.has(id));
+      toStaff = toStaff.filter((id) => !diet.has(String(id)));
+    }
     deskOpen = toDesk.length > 0 && (await openNow(place?.locationId));
   }
   if (quietForStaff) toStaff = [];
-  const staffTitle = rest.isUrgent ? `Urgent message from ${convo.lastMessage.senderLabel}` : `New message from ${convo.lastMessage.senderLabel}`;
+  const staffTitle = urgent ? `Urgent message from ${lastMessage.senderLabel}` : `New message from ${lastMessage.senderLabel}`;
   const staffNotice = { ...base, title: staffTitle, screen: 'Patient-Thread', params: { conversationId: convo._id } };
   let toldStaff = [];
-  if (senderType === 'patient' && !rest.isUrgent) {
+  if (convo.type === 'direct' && senderId) {
+    // A colleague's message: the others in the chat are told at once (one notice per chat).
+    const others = convo.participants.map((p) => String(p.userId)).filter((id) => id !== senderId);
+    toldStaff.push(...(await chatNotice(others, staffNotice, convo._id)));
+  } else if (senderType === 'patient' && !urgent) {
     // Routine patient messages (a doctor may have thousands of patients):
     //  - doctors: no push and no bell item; the Messages badge shows it. Only a doctor who is in
     //    the middle of this conversation (wrote here in the last 2 h) gets a push for the reply.
@@ -290,14 +334,15 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', qui
     if (activeDocs.length) toldStaff.push(...(await chatNotice(activeDocs, staffNotice, convo._id)));
     if (toDesk.length) toldStaff.push(...(await chatNotice(toDesk, staffNotice, convo._id, { push: deskOpen })));
   } else {
-    // Urgent messages, and staff writing to staff: everyone named, at once.
-    if (toStaff.length) await notify(toStaff, staffNotice);
-    if (toDesk.length) await notify(toDesk, staffNotice);
-    toldStaff = [...toStaff, ...toDesk];
+    // Urgent: a new emergency was just raised (its alert already told the doctor and the desk);
+    // follow-ups while it is open: one notice per chat, pushed at once.
+    const everyone = [...toStaff, ...toDesk].map(String);
+    if (!alertRaised && everyone.length) await chatNotice(everyone, staffNotice, convo._id);
+    toldStaff = everyone;
   }
   if (toPatient.length) {
     // The patient is waiting for the clinic's answer: always told (a quick burst of replies is one notice).
-    await chatNotice(toPatient.map(String), { ...base, title: `New message from ${convo.lastMessage.senderLabel}`, screen: 'Patient-DoctorChat', params: { conversationId: convo._id } }, convo._id);
+    await chatNotice(toPatient.map(String), { ...base, title: `New message from ${lastMessage.senderLabel}`, screen: 'Patient-DoctorChat', params: { conversationId: convo._id } }, convo._id);
   }
   if (senderType !== 'patient' && senderType !== 'system' && senderId) {
     // Someone at the clinic answered: the others' "new message" notices for this chat are done.
@@ -374,21 +419,69 @@ async function awayReply(convo) {
   if (inHours) return;
   const recent = await M.Message.exists({ conversationId: convo._id, senderType: 'system', 'meta.away': true, createdAt: { $gte: new Date(Date.now() - 12 * 3600e3) } });
   if (recent) return;
-  await M.Message.create({ conversationId: convo._id, senderType: 'system', kind: 'text', text: cs.awayMessage, meta: { away: true } });
+  const msg = await M.Message.create({ conversationId: convo._id, senderType: 'system', kind: 'text', text: cs.awayMessage, meta: { away: true } });
+  await M.Conversation.updateOne(
+    { _id: convo._id },
+    { $set: { lastMessage: previewOf(msg, null) }, $inc: { 'participants.$[p].unreadCount': 1 } },
+    { arrayFilters: [{ 'p.role': 'patient' }] },
+  );
+  await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
 }
 
 /** Marks a thread read for one user. */
 async function markRead(convo, userId) {
   const p = convo.participants.find((x) => String(x.userId) === String(userId));
   if (!p) return convo;
-  p.unreadCount = 0;
-  p.lastReadAt = new Date();
-  await convo.save();
-  await M.Message.updateMany(
-    { conversationId: convo._id, senderId: { $ne: userId }, deliveryStatus: { $ne: 'seen' } },
-    { deliveryStatus: 'seen', seenAt: new Date() },
+  const now = new Date();
+  await M.Conversation.updateOne(
+    { _id: convo._id },
+    { $set: { 'participants.$[p].unreadCount': 0, 'participants.$[p].lastReadAt': now } },
+    { arrayFilters: [{ 'p.userId': p.userId }] },
   );
+  p.unreadCount = 0;
+  p.lastReadAt = now;
+  // "Seen" belongs to the other side: the patient reading marks the clinic's (and MedPin AI's)
+  // messages; someone at the clinic reading marks the patient's — never a colleague's reply to
+  // the patient. In a chat between colleagues, the other person's messages.
+  const isPatient = p.role === 'patient';
+  const side = convo.type === 'direct' ? {} : { senderType: isPatient ? { $ne: 'patient' } : 'patient' };
+  const seen = await M.Message.updateMany(
+    { conversationId: convo._id, senderId: { $ne: userId }, ...side, deliveryStatus: { $ne: 'seen' }, createdAt: { $lte: now } },
+    { deliveryStatus: 'seen', seenAt: now },
+  );
+  // This chat's "new message" notices for the reader are done: the bell clears, and the next
+  // message buzzes again instead of only updating an old unread notice.
+  const read = await M.Notification.updateMany(
+    { userId, readAt: null, type: { $in: ['message', 'urgent_message'] }, 'params.conversationId': { $in: [convo._id, String(convo._id)] } },
+    { readAt: now },
+  );
+  if (read.modifiedCount) await signal([userId], { type: 'notifications_changed', ...(convo.practiceId ? { practiceId: String(convo.practiceId) } : {}) });
+  // The sender's ticks turn "Seen" at once.
+  if (seen.modifiedCount) {
+    await signal(convo.participants.map((x) => x.userId).filter((id) => String(id) !== String(userId)), { type: 'chat_changed', conversationId: convo._id });
+  }
   return convo;
+}
+
+/**
+ * "Delivered": the app of someone in these chats fetched its badges (it is
+ * open on their phone), so messages to them that are only "sent" reach
+ * "delivered". Per side, like "Seen".
+ */
+async function markDelivered(userId) {
+  const convos = await M.Conversation.find({ 'participants.userId': userId, 'lastMessage.at': { $gte: new Date(Date.now() - 30 * 864e5) } }, 'type participants.userId participants.role').limit(500).lean();
+  if (!convos.length) return;
+  const now = new Date();
+  const changed = [];
+  for (const c of convos) {
+    const me = c.participants.find((x) => String(x.userId) === String(userId));
+    const side = c.type === 'direct' ? {} : { senderType: me?.role === 'patient' ? { $ne: 'patient' } : 'patient' };
+    const r = await M.Message.updateMany({ conversationId: c._id, senderId: { $ne: userId }, ...side, deliveryStatus: 'sent' }, { deliveryStatus: 'delivered', deliveredAt: now });
+    if (r.modifiedCount) changed.push(c);
+  }
+  for (const c of changed) {
+    await signal(c.participants.map((x) => x.userId).filter((id) => String(id) !== String(userId)), { type: 'chat_changed', conversationId: c._id });
+  }
 }
 
 // ── Medicine doses and adherence ──────────────────────────
@@ -535,5 +628,5 @@ async function adherence(patient, days = 30, acc) {
 }
 
 module.exports = {
-  openNow,
+  openNow, CARE_ROLES, markDelivered, addParticipants,
   paymentRequestNote, chatNote, shortName, doseMinute, MEALS, raiseAlert, checkReading, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };

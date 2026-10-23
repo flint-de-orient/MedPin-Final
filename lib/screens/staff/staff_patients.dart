@@ -7,6 +7,7 @@ import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import '../doctor/common_d10.dart';
 import '../../widgets/i18n.dart';
+import '../doctor/team_chats.dart';
 
 /// Design: Staff-Patients.dc.html — "Patients" (front desk).
 class StaffPatientsScreen extends StatefulWidget {
@@ -55,8 +56,14 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
     final r = await Future.wait([
       Api.I.get('/api/inbox', query: {'type': 'all'}),
       Api.I.get('/api/notifications', query: {'limit': '1', if (Session.I.practiceId != null) 'practiceId': Session.I.practiceId}),
+      // Unread chats with colleagues (the Team tab).
+      Api.I.get('/api/inbox', query: {'type': 'direct', 'tab': 'unread'}).catchError((_) => const <String, dynamic>{}),
     ]);
-    return {...(r[0] as Map).cast<String, dynamic>(), 'unreadNotifications': (r[1] as Map)['unread'] ?? 0};
+    return {
+      ...(r[0] as Map).cast<String, dynamic>(),
+      'unreadNotifications': (r[1] as Map)['unread'] ?? 0,
+      'teamUnread': (r[2] as Map)['unread'] ?? 0,
+    };
   }
 
   @override
@@ -107,6 +114,7 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
   int get _unread => data == null ? 6 : data!.numOr('unread').toInt();
   int get _pending => data == null ? 2 : data!.numOr('pendingEnrolments').toInt();
   int get _notes => data == null ? 2 : data!.numOr('unreadNotifications').toInt();
+  int get _teamUnread => data == null ? 0 : data!.numOr('teamUnread').toInt();
 
   Future<void> _open(String? conversationId) async {
     await Nav.go(context, 'Patient-Thread', args: conversationId == null ? null : {'conversationId': conversationId});
@@ -136,7 +144,7 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
             children: [
               Text('Patients', style: tx(28, w: w800, h: 1.15, em: -0.02)),
               MpSegmented(
-                options: ['Unread ($_unread)', 'All'],
+                options: ['Unread ($_unread)', 'All', if (data != null) _teamUnread > 0 ? 'Team ($_teamUnread)' : 'Team'],
                 index: _tab,
                 onChanged: (i) => setState(() => _tab = i),
               ),
@@ -145,8 +153,11 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
                 padLeft: 48,
                 onChanged: (v) => setState(() => _query = v),
               ),
-              if (_pending > 0) _EnrolmentBanner(count: _pending, onView: () => Nav.go(context, 'Add-Patient-Existing')),
-              if (shown.isEmpty)
+              if (_pending > 0 && _tab != 2) _EnrolmentBanner(count: _pending, onView: () => Nav.go(context, 'Add-Patient-Existing')),
+              // Team: chats with colleagues at this clinic.
+              if (_tab == 2)
+                TeamChats(query: _query)
+              else if (shown.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Text(
@@ -165,7 +176,7 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
                     ],
                   ),
                 ),
-              if (data == null || matching.length > shown.length)
+              if (_tab != 2 && (data == null || matching.length > shown.length))
                 MpButton(
                   'Show more',
                   kind: MpBtn.secondary,
