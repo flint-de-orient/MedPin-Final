@@ -387,11 +387,11 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
           children: [
             // Time, with AM / PM under it (a 6:20 could be morning or evening).
             SizedBox(
-              width: 48,
+              width: 56,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(a.$1, style: tx(15, w: w600, tab: true, h: _lh)),
+                  Text(a.$1, maxLines: 1, style: tx(15, w: w600, tab: true, h: _lh)),
                   if (at != null) Text(at.hour < 12 ? 'AM' : 'PM', style: tx(12, w: w600, c: MP.ink3, h: 1.3)),
                 ],
               ),
@@ -401,13 +401,17 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Who, and with which doctor.
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: _line(a.$2, tx(16, w: w600, h: _lh)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(padding: const EdgeInsets.only(top: 1), child: _line(a.$2, tx(16, w: w600, h: _lh))),
+                            if (a.$4.isNotEmpty) Text(a.$4, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(13, c: MP.ink2, h: _lh)),
+                          ],
                         ),
                       ),
                       if (status == 'Upcoming') ...[
@@ -421,36 +425,26 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                       ],
                     ],
                   ),
-                  const Gap(8),
-                  // Status · doctor, then the fee: wraps to a new line instead of cutting words off.
+                  const Gap(10),
+                  // The visit's status and its fee side by side (same height), with what the desk
+                  // can do about the fee right next to it; wraps on a narrow phone.
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       statusChip,
-                      if (a.$4.isNotEmpty) Text(a.$4, maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(13, c: MP.ink3, h: _lh)),
+                      if (fee != null && fee.status != 'free') FeeChip(fee),
+                      if (fee != null && fee.status != 'free' && fee.due && status != 'Missed')
+                        link('Collect', () async {
+                          if (await collectFee(context, fee, patientName: a.$2) && mounted) reload(quiet: true);
+                        }),
+                      if (fee != null && fee.status != 'free' && fee.refundDue)
+                        link('Refund', () async {
+                          if (await handBackFee(context, fee) && mounted) reload(quiet: true);
+                        }),
                     ],
                   ),
-                  if (fee != null && fee.status != 'free') ...[
-                    const Gap(8),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        FeeChip(fee),
-                        if (fee.due && status != 'Missed')
-                          link('Collect', () async {
-                            if (await collectFee(context, fee, patientName: a.$2) && mounted) reload(quiet: true);
-                          }),
-                        if (fee.refundDue)
-                          link('Refund', () async {
-                            if (await handBackFee(context, fee) && mounted) reload(quiet: true);
-                          }),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),
