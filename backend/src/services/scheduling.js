@@ -6,11 +6,30 @@ const { notify, practiceStaff } = require('./notify');
 
 const ACTIVE = { $nin: ['cancelled', 'rescheduled'] };
 
+/** Whether [doctorId] is an active doctor / dietician of the practice (not removed, not suspended). */
+const seesPatients = (practiceId, doctorId) =>
+  M.Member.exists({ practiceId, userId: doctorId, status: 'active', role: { $in: ['doctor', 'dietician'] } });
+
+/**
+ * The follow-up a new visit with [doctorId] answers: the one the booking names, else the
+ * earliest open one this doctor asked for (another doctor's follow-up stays open).
+ */
+async function openFollowUp({ practiceId, patientId, doctorId, followUpId }) {
+  const open = { practiceId, patientId, doctorId, status: { $in: ['not_booked', 'no_reply'] } };
+  if (followUpId && /^[0-9a-f]{24}$/i.test(String(followUpId))) {
+    const named = await M.FollowUp.findOne({ ...open, _id: followUpId });
+    if (named) return named;
+  }
+  return M.FollowUp.findOne(open).sort({ dueDate: 1 });
+}
+
 /** Bookable slots for one doctor at one location on one day. */
 async function slotsFor({ doctorId, locationId, day, now = new Date() }) {
   const d = T.dayStart(day);
   const dl = await M.DoctorLocation.findOne({ doctorId, locationId, status: 'active' });
   if (!dl) return { open: false, reason: 'not_practising_here', slots: [] };
+  // A doctor removed from the clinic or suspended takes no bookings there.
+  if (!(await seesPatients(dl.practiceId, doctorId))) return { open: false, reason: 'doctor_unavailable', slots: [] };
   const location = await M.Location.findById(locationId);
   if (!location || location.status !== 'active') return { open: false, reason: 'location_inactive', slots: [] };
   const end = T.addDays(d, 1);
@@ -135,11 +154,14 @@ async function book(input) {
     channel = 'desk', bookedBy, requestId, walkIn = false,
     confirmed = false, // the front desk agreed the time with the patient
     chat = true, // a "Visit booked" note in the patient's chat (a reschedule writes its own)
+    followUpId, // the follow-up this visit is for ("Book" on a follow-up)
+    linkFollowUp = true, // a reschedule keeps the follow-up it already had
   } = input;
   const startAt = walkIn ? new Date(input.startAt || Date.now()) : new Date(input.startAt);
   if (Number.isNaN(startAt.getTime())) throw badRequest('Choose a time first', 'TIME_REQUIRED');
   const dl = await M.DoctorLocation.findOne({ doctorId, locationId, practiceId, status: 'active' });
   if (!dl) throw badRequest("The doctor doesn't practise at this location", 'NOT_PRACTISING_HERE');
+  if (!(await seesPatients(practiceId, doctorId))) throw conflict("This doctor isn't seeing patients at this clinic now", 'DOCTOR_UNAVAILABLE');
   const day = T.dayStart(startAt);
 
   if (!walkIn) {
@@ -160,15 +182,23 @@ async function book(input) {
     status: walkIn ? 'waiting' : confirmed ? 'confirmed' : 'booked', arrivedAt: walkIn ? new Date() : undefined,
     fee, feeStatus: fee > 0 ? 'pending' : 'free',
   });
+  // Two bookings of the last place at the same moment: both were checked as free above, so
+  // the slot is counted again now. The first ones booked keep it; a later one is undone.
+  if (!walkIn) {
+    const holders = await M.Appointment.find({ doctorId, locationId, startAt, status: ACTIVE }, '_id').sort({ _id: 1 }).lean();
+    const place = holders.findIndex((h) => String(h._id) === String(appt._id));
+    if (place >= (dl.schedule.patientsPerSlot || 1)) {
+      await M.Appointment.deleteOne({ _id: appt._id });
+      throw conflict('That slot was just taken. Choose another time.', 'SLOT_TAKEN');
+    }
+  }
   if (fee > 0) {
     await M.Payment.create({ practiceId, locationId, patientId, appointmentId: appt._id, amount: fee, status: 'pending' });
   }
-  if (visitType === 'follow_up') {
-    await M.FollowUp.findOneAndUpdate(
-      { practiceId, patientId, status: { $in: ['not_booked', 'no_reply'] } },
-      { status: 'booked', appointmentId: appt._id },
-      { sort: { dueDate: 1 } },
-    );
+  // The follow-up this doctor asked for is now booked (not another doctor's).
+  if (linkFollowUp && (visitType === 'follow_up' || followUpId)) {
+    const fu = await openFollowUp({ practiceId, patientId, doctorId, followUpId });
+    if (fu) await M.FollowUp.updateOne({ _id: fu._id, status: fu.status }, { status: 'booked', appointmentId: appt._id });
   }
   const patient = await M.Patient.findById(patientId, 'userId name');
   if (patient?.userId && !walkIn) {
@@ -207,6 +237,12 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
     throw conflict(`Can't change a ${appt.status.replace('_', ' ')} appointment to ${to.replace('_', ' ')}`, 'BAD_TRANSITION');
   }
   const now = new Date();
+  // Arriving, being seen or missing a visit happens on its day, not before.
+  if (['waiting', 'in_consultation', 'completed'].includes(to) && appt.date > T.dayStart(now)) {
+    throw conflict("This visit is on a later day. Check the patient in on that day, or move the visit to today.", 'NOT_TODAY');
+  }
+  if (to === 'missed' && appt.startAt > now) throw conflict("This visit's time hasn't come yet", 'NOT_YET');
+  const wasMissed = appt.status === 'missed';
   appt.status = to;
   if (to === 'confirmed') appt.confirmedAt = now;
   if (to === 'waiting') { appt.arrivedAt = appt.arrivedAt || now; appt.checkedInBy = by; }
@@ -226,6 +262,18 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
     // Nothing to pay for a cancelled visit. Already paid: online → refunded at once;
     // at the desk → "refund due" until handed back (Fees / the visit's row).
     if (appt.feeStatus === 'pending') appt.feeStatus = 'waived';
+  }
+  // Missed: there's no fee to collect for a visit that didn't happen (a fee paid ahead stays
+  // paid; the clinic refunds it if it chooses). Came after all: it is due again.
+  if (to === 'missed' && appt.feeStatus === 'pending') {
+    const open = await M.Payment.find({ appointmentId: appt._id, status: 'pending', paymentLinkId: { $ne: null } }, 'paymentLinkId');
+    for (const o of open) await require('./payments').cancelLink(o.paymentLinkId);
+    await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { status: 'waived', note: 'Missed visit' });
+    appt.feeStatus = 'waived';
+  }
+  if (wasMissed && to === 'waiting' && appt.feeStatus === 'waived' && await M.Payment.exists({ appointmentId: appt._id, status: 'waived', note: 'Missed visit' })) {
+    await M.Payment.updateMany({ appointmentId: appt._id, status: 'waived', note: 'Missed visit' }, { status: 'pending', $unset: { note: 1 } });
+    appt.feeStatus = 'pending';
   }
   await appt.save();
   // Signed by whoever did it (`by`), else the desk at that visit's branch (care.chatNote).
@@ -250,7 +298,8 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
     // (one due within the next 2 weeks, or overdue).
     if (!fu && to === 'completed') {
       fu = await M.FollowUp.findOne({
-        practiceId: appt.practiceId, patientId: appt.patientId, status: { $in: ['not_booked', 'no_reply', 'booked'] },
+        // The follow-up this doctor asked for (seeing another doctor doesn't close it).
+        practiceId: appt.practiceId, patientId: appt.patientId, doctorId: appt.doctorId, status: { $in: ['not_booked', 'no_reply', 'booked'] },
         dueDate: { $lte: T.addDays(now, 14) },
         // Not the one this visit just asked for.
         createdAt: { $lt: appt.consultStartedAt || appt.arrivedAt || appt.startAt },
@@ -302,10 +351,21 @@ async function reschedule(appt, startAt, by, locationId) {
   const next = await book({
     practiceId: appt.practiceId, locationId: moved ? locationId : appt.locationId, doctorId: appt.doctorId, patientId: appt.patientId,
     startAt, visitType: appt.visitType, mode: appt.mode, reason: appt.reason, channel: appt.channel, bookedBy: by, chat: false,
+    linkFollowUp: false, // its follow-up moves with it (below)
   });
+  // Moved once: of two moves at the same moment (two desks, a double tap), one counts and
+  // the other's new booking is undone.
+  const claimed = await M.Appointment.updateOne(
+    { _id: appt._id, status: { $in: ['booked', 'confirmed'] } },
+    { status: 'rescheduled', rescheduledToId: next._id },
+  );
+  if (!claimed.modifiedCount) {
+    await M.Payment.deleteMany({ appointmentId: next._id });
+    await M.Appointment.deleteOne({ _id: next._id });
+    throw conflict('This visit was just moved or changed. Refresh to see it.', 'ALREADY_MOVED');
+  }
   appt.status = 'rescheduled';
   appt.rescheduledToId = next._id;
-  await appt.save();
   next.rescheduledFromId = appt._id;
   await next.save();
   // Already paid: the payment moves with the visit (it stays paid; nothing is asked again).
@@ -326,10 +386,10 @@ async function reschedule(appt, startAt, by, locationId) {
   } else if (await M.Payment.exists({ appointmentId: appt._id })) {
     await M.Payment.deleteMany({ appointmentId: next._id });
     await M.Payment.updateMany({ appointmentId: appt._id, status: 'pending' }, { appointmentId: next._id });
-    if (appt.payAt) {
-      next.payAt = appt.payAt;
-      await next.save();
-    }
+    // The fee stays as the desk left it: still due, or waived (not asked again after a move).
+    next.feeStatus = appt.feeStatus === 'waived' ? 'waived' : (await M.Payment.exists({ appointmentId: next._id, status: 'pending' })) ? 'pending' : next.fee > 0 ? 'waived' : 'free';
+    if (appt.payAt) next.payAt = appt.payAt;
+    await next.save();
   }
   await M.FollowUp.updateMany({ appointmentId: appt._id }, { appointmentId: next._id });
   await note({ practiceId: next.practiceId, patientId: next.patientId, locationId: next.locationId, doctorId: next.doctorId, by }, `Visit moved to ${await visitLine(next)}${next.feeStatus === 'paid' ? '. Your payment moves with it.' : '.'}`, 'visit_rescheduled');

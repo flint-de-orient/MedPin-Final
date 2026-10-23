@@ -306,12 +306,23 @@ r.get('/doctors/:doctorId/slots', async (req, res) => {
 
 // Doctors of this practice (for booking pickers).
 r.get('/doctors', async (req, res) => {
-  const members = await M.Member.find({ practiceId: req.practiceId, role: 'doctor', status: 'active' }).populate('userId', 'name');
-  const dls = await M.DoctorLocation.find({ practiceId: req.practiceId, status: 'active' }).populate('locationId', 'name shortName');
-  res.json(members.map((m) => ({
-    userId: m.userId._id, name: m.userId.name,
-    locations: dls.filter((d) => String(d.doctorId) === String(m.userId._id)).map((d) => ({ id: d.locationId._id, name: d.locationId.shortName || d.locationId.name, services: d.services })),
-  })));
+  // Who can be booked (doctors and the dietician), at open branches — as far as this person
+  // books: an assistant for the doctors they assist, branch staff at their branches.
+  const me = req.member || {};
+  const locs = me.role === 'doctor' || me.isOwner || me.allLocations || !me.locationIds?.length ? null : me.locationIds.map(String);
+  const docs = me.role === 'doctor_assistant' && me.assistsDoctorIds?.length ? me.assistsDoctorIds.map(String) : null;
+  const members = await M.Member.find({ practiceId: req.practiceId, role: { $in: ['doctor', 'dietician'] }, status: 'active' }).populate('userId', 'name');
+  const dls = await M.DoctorLocation.find({ practiceId: req.practiceId, status: 'active' }).populate('locationId', 'name shortName status');
+  const rows = members
+    .filter((m) => m.userId && (!docs || docs.includes(String(m.userId._id))))
+    .map((m) => ({
+      userId: m.userId._id, name: m.userId.name, role: m.role,
+      locations: dls
+        .filter((d) => String(d.doctorId) === String(m.userId._id) && d.locationId?.status === 'active' && (!locs || locs.includes(String(d.locationId._id))))
+        .map((d) => ({ id: d.locationId._id, name: d.locationId.shortName || d.locationId.name, services: d.services })),
+    }))
+    .filter((d) => d.locations.length);
+  res.json(rows);
 });
 
 // ── Leave and clinic holidays ──
@@ -409,9 +420,29 @@ r.post('/doctor/leaves', async (req, res) => {
 // Cancel a leave: bookings open again for those days.
 r.delete('/doctor/leaves/:id', async (req, res) => {
   if (!isId(req.params.id)) throw notFound('Leave');
-  const r1 = await M.DoctorLeave.updateOne({ _id: req.params.id, doctorId: req.user._id, cancelledAt: null }, { cancelledAt: new Date() });
-  if (!r1.matchedCount) throw notFound('Leave');
-  res.json({ ok: true });
+  const leave = await M.DoctorLeave.findOneAndUpdate({ _id: req.params.id, doctorId: req.user._id, cancelledAt: null }, { cancelledAt: new Date() });
+  if (!leave) throw notFound('Leave');
+  // Patients who were told "on leave, choose another time" and still hold their visit:
+  // it stands after all (no other leave covers it).
+  let told = 0;
+  if (leave.patientsNotifiedAt) {
+    const q = { doctorId: req.user._id, startAt: { $gte: leave.startDate, $lt: T.addDays(leave.endDate, 1) }, status: { $in: ['booked', 'confirmed'] } };
+    if (leave.locationId) q.locationId = leave.locationId;
+    const still = [];
+    for (const a of await M.Appointment.find(q).populate('patientId', 'userId')) {
+      const other = await M.DoctorLeave.exists({ doctorId: req.user._id, cancelledAt: null, startDate: { $lte: a.date }, endDate: { $gte: a.date }, $or: [{ locationId: null }, { locationId: a.locationId }] });
+      if (!other && a.patientId?.userId) still.push(a);
+    }
+    const { notify } = require('../services/notify');
+    for (const a of still) {
+      await notify([a.patientId.userId], {
+        type: 'doctor_back', practiceId: a.practiceId, title: `${req.user.name || 'Your doctor'} is available after all`,
+        body: `Your visit on ${T.dayKey(a.startAt)} at ${T.fmtTime(T.minuteOfDay(a.startAt))} stands.`, screen: 'Patient-DoctorDetail', params: { appointmentId: a._id }, whatsapp: true,
+      });
+    }
+    told = still.length;
+  }
+  res.json({ ok: true, patientsTold: told });
 });
 
 // ── Prescription letterhead preview ──

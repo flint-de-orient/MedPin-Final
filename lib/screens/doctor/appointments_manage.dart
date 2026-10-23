@@ -381,6 +381,8 @@ class _AppointmentsManageSheetState extends State<AppointmentsManageSheet> with 
             'locationId': d['locationId'],
             'startAt': startAt,
             'visitType': d['visitType'],
+            // "Book" on a follow-up: this visit closes that follow-up (not another doctor's).
+            if ((Nav.args<Map>(context) ?? const {})['followUpId'] is String) 'followUpId': (Nav.args<Map>(context) ?? const {})['followUpId'],
           }),
         };
       });

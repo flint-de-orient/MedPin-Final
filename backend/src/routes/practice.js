@@ -295,12 +295,21 @@ r.post('/locations/:id/deactivate', ownerOnly, async (req, res) => {
   loc.status = 'inactive';
   loc.deactivatedAt = new Date();
   await loc.save();
+  // Upcoming visits here can't happen: cancelled, so each patient is told (and a fee paid
+  // online is refunded) instead of coming to a closed branch.
+  const S = require('../services/scheduling');
+  let cancelled = 0;
+  for (const a of await M.Appointment.find({ locationId: loc._id, startAt: { $gte: new Date() }, status: { $in: ['booked', 'confirmed'] } })) {
+    await S.transition(a, 'cancelled', { by: req.user._id, cancelledBy: 'desk', reason: `${loc.name} is closed. Please book at another branch.` })
+      .then(() => { cancelled += 1; })
+      .catch((err) => console.warn('[branch closed]', err.message));
+  }
   await M.Member.updateMany({ practiceId: req.practiceId, locationIds: loc._id }, { $pull: { locationIds: loc._id } });
   for (const m of stranded) {
     if (m.isOwner) await M.Member.updateOne({ _id: m._id }, { allLocations: true });
     else if (m.status === 'active') await setSuspended(m._id, true);
   }
-  res.json({ ...loc.toJSON(), suspendedMembers: toSuspend.length });
+  res.json({ ...loc.toJSON(), suspendedMembers: toSuspend.length, visitsCancelled: cancelled });
 });
 
 r.post('/locations/:id/activate', ownerOnly, async (req, res) => {

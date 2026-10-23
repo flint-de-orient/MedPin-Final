@@ -4,7 +4,7 @@ const { Router } = require('express');
 const M = require('../models');
 const T = require('../lib/time');
 const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
-const { pick, badRequest, notFound, conflict, escapeRegex } = require('../lib/http');
+const { pick, badRequest, notFound, conflict, escapeRegex, forbidden } = require('../lib/http');
 const storage = require('../services/storage');
 const { checkItems, patientSummary, issueConsultation, ensurePrescriptionPdf } = require('../services/clinical');
 const { careConversation, postMessage } = require('../services/care');
@@ -15,8 +15,10 @@ const { accessFor } = require('../services/access');
 const r = Router();
 r.use(requireAuth, staff());
 
-const getConsult = async (req) => {
+/** The consultation; with [mine], only for the doctor treating (colleagues may read it). */
+const getConsult = async (req, { mine = false } = {}) => {
   const c = ownPractice(req, await M.Consultation.findById(req.params.id), 'Consultation');
+  if (mine && String(c.doctorId) !== String(req.user._id)) throw forbidden("This is another doctor's consultation. Only they can change it.", 'NOT_YOUR_CONSULTATION');
   return c;
 };
 
@@ -32,8 +34,8 @@ r.get('/consultations/pick', need('prescribe'), async (req, res) => {
     if (digits.length >= 3) or.push({ phone: new RegExp(escapeRegex(digits.replace(/^91(?=\d{10}$)/, ''))) });
     matches = await M.Patient.find({ _id: { $in: ids }, $or: or }).limit(20);
   }
-  const waiting = await M.Appointment.find({ practiceId: req.practiceId, date: today, status: 'waiting', ...(req.query.locationId ? { locationId: req.query.locationId } : {}) })
-    .sort({ tokenNo: 1 }).populate('patientId', 'name gender ageYears ageRecordedAt phone');
+  const waiting = await M.Appointment.find({ practiceId: req.practiceId, doctorId: req.user._id, date: today, status: 'waiting', ...(req.query.locationId ? { locationId: req.query.locationId } : {}) })
+    .sort({ startAt: 1, tokenNo: 1 }).populate('patientId', 'name gender ageYears ageRecordedAt phone');
   const recentIds = await M.Consultation.find({ practiceId: req.practiceId, doctorId: req.user._id }).sort({ startedAt: -1 }).limit(30).distinct('patientId');
   const recent = await M.Patient.find({ _id: { $in: recentIds.slice(0, 10) } });
   const row = (p) => ({ id: p._id, name: p.name, age: T.ageFrom(p), gender: p.gender, phone: p.phone });
@@ -50,7 +52,12 @@ r.post('/consultations', staff({ perm: 'prescribe' }), async (req, res) => {
   let appt = null;
   if (appointmentId) {
     appt = ownPractice(req, await M.Appointment.findById(appointmentId), 'Appointment');
-    const existing = await M.Consultation.findOne({ appointmentId, status: 'draft' });
+    if (String(appt.doctorId) !== String(req.user._id)) {
+      const doc = await M.User.findById(appt.doctorId, 'name');
+      throw forbidden(`This visit is with ${doc?.name || 'another doctor'}. Ask the front desk to move it to you first.`, 'NOT_YOUR_VISIT');
+    }
+    if (['completed', 'cancelled', 'rescheduled', 'missed'].includes(appt.status)) throw conflict('This visit is closed. Start a consultation from the patient instead.', 'VISIT_CLOSED');
+    const existing = await M.Consultation.findOne({ appointmentId, doctorId: req.user._id, status: 'draft' });
     if (existing) return res.json(existing);
     if (['booked', 'confirmed'].includes(appt.status)) await transition(appt, 'waiting', { by: req.user._id });
     if (appt.status === 'waiting') await transition(appt, 'in_consultation', { by: req.user._id });
@@ -104,7 +111,7 @@ r.get('/consultations/:id', need('clinical'), async (req, res) => {
 
 const RX_ITEM_FIELDS = ['medicineId', 'name', 'strength', 'form', 'dose', 'frequency', 'weekday', 'foodRelation', 'instructions', 'duration', 'quantity', 'change', 'caution', 'entrySource'];
 r.patch('/consultations/:id', need('prescribe'), async (req, res) => {
-  const c = await getConsult(req);
+  const c = await getConsult(req, { mine: true });
   if (c.status !== 'draft') throw conflict('This prescription was already generated', 'ALREADY_ISSUED');
   const body = pick(req.body, ['chiefComplaint', 'complaintLanguage', 'printVitalsOnRx', 'diagnoses', 'labOrders', 'advice', 'validity', 'followUp', 'locationId']);
   if (body.diagnoses) body.diagnoses = body.diagnoses.map((d) => ({ ...d, name: d.source === 'custom' && d.name ? d.name[0].toUpperCase() + d.name.slice(1) : d.name }));
@@ -144,14 +151,14 @@ r.get('/consultations/:id/checks', need('prescribe'), async (req, res) => {
 
 // "Preview": the draft as its prescription PDF, before Generate (nothing is issued).
 r.get('/consultations/:id/preview', need('prescribe'), async (req, res) => {
-  const c = await getConsult(req);
+  const c = await getConsult(req, { mine: true });
   const file = await require('../services/clinical').previewPrescriptionPdf(c, req.user);
   res.json(storage.withUrl(file));
 });
 
 // MedPin AI: possible diagnoses, tests and medicine options for the doctor to pick from.
 r.post('/consultations/:id/ai-suggestions', need('prescribe'), async (req, res) => {
-  const c = await getConsult(req);
+  const c = await getConsult(req, { mine: true });
   const acc = await accessFor({ userId: req.user._id, practiceId: req.practiceId }, await M.Patient.findById(c.patientId));
   res.json(await require('../services/consultai').suggest(c, { force: req.body?.refresh === true, acc }));
 });
@@ -178,7 +185,7 @@ r.get('/consultations/:id/suggestions', need('prescribe'), async (req, res) => {
 });
 
 r.post('/consultations/:id/vitals', need('vitals'), async (req, res) => {
-  const c = await getConsult(req);
+  const c = await getConsult(req, { mine: req.member.role === 'doctor' });
   const v = pick(req.body, ['bpSystolic', 'bpDiastolic', 'pulse', 'spo2', 'temperatureF', 'weightKg', 'heightCm', 'bloodSugar', 'sugarType', 'note']);
   const patient = await M.Patient.findById(c.patientId);
   const h = v.heightCm || patient.heightCm;
@@ -207,6 +214,7 @@ r.post('/consultations/:id/issue', staff({ perm: 'prescribe' }), async (req, res
 // "Send prescription" — needs the doctor's digital signature.
 r.post('/prescriptions/:id/send', staff({ perm: 'prescribe' }), async (req, res) => {
   const rx = ownPractice(req, await M.Prescription.findById(req.params.id), 'Prescription');
+  if (String(rx.doctorId) !== String(req.user._id)) throw forbidden('Only the doctor who wrote this prescription can send it', 'NOT_YOUR_PRESCRIPTION');
   const profile = await M.DoctorProfile.findOne({ userId: rx.doctorId }, 'signature');
   if (!profile?.signature?.key) throw conflict("Add your digital signature first — prescriptions can't be sent without it", 'SIGNATURE_REQUIRED');
   const convo = await careConversation(rx.patientId, req.practiceId);

@@ -40,8 +40,9 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
       Api.I.get('/api/doctor/locations'),
       d4Optional('/api/members'),
       d4Optional('/api/billing'),
+      d4Optional('/api/colleagues'),
     ]);
-    return {'profile': r[0], 'me': r[1], 'locations': r[2], 'members': r[3], 'billing': r[4]};
+    return {'profile': r[0], 'me': r[1], 'locations': r[2], 'members': r[3], 'billing': r[4], 'colleagues': r[5]};
   }
 
   Map<String, dynamic> get _p => data!.obj('profile');
@@ -157,26 +158,35 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
 
   static const _supportRoles = {'front_desk', 'doctor_assistant', 'practice_manager', 'lab_manager', 'lab_technician'};
 
-  /// "Front desk at City Care · 2 people"
+  static const _roleNames = {'front_desk': 'Front desk', 'doctor_assistant': 'Assistant', 'practice_manager': 'Practice manager', 'lab_manager': 'Lab', 'lab_technician': 'Lab'};
+
+  /// "Front desk and assistant · 3 people" — the support roles there are, and how many.
   String? get _staffLine {
     if (data == null) return 'Front desk at City Care · 2 people';
     if (data!['members'] == null) return null;
-    final n = _team.where((m) => _supportRoles.contains(m['role'])).length;
-    final practice = Session.I.activeMembership?['practiceName'] as String? ?? '';
-    return practice.isEmpty ? d4Plural(n, 'person', 'people') : 'Front desk at $practice · ${d4Plural(n, 'person', 'people')}';
+    final staff = _team.where((m) => _supportRoles.contains(m['role'])).toList();
+    if (staff.isEmpty) return 'No staff added yet';
+    final roles = <String>[];
+    for (final m in staff) {
+      final r = tr(context, _roleNames[m['role']] ?? 'Staff');
+      if (!roles.contains(r)) roles.add(roles.isEmpty ? r : r.toLowerCase());
+    }
+    return '${roles.join(', ')} · ${tr(context, d4Plural(staff.length, 'person', 'people'))}';
   }
 
-  /// "Dietician, cardiologist and 4 more" — live: the clinicians' names.
+  /// "Dr. Meera Iyer and 3 doctors you refer to" — this clinic's doctors, then the referral network.
   String? get _colleaguesLine {
     if (data == null) return 'Dietician, cardiologist and 4 more';
-    if (data!['members'] == null) return null;
-    final names = [
-      for (final m in _team)
-        if (!_supportRoles.contains(m['role'])) m.str('name'),
+    final c = data!['colleagues'];
+    if (c is! Map) return null;
+    final here = [for (final x in (c['inClinic'] as List? ?? const [])) (x as Map)['name'] as String? ?? ''];
+    final network = (c['network'] as List? ?? const []).length;
+    if (here.isEmpty && network == 0) return 'No colleagues yet';
+    final parts = <String>[
+      if (here.length == 1) here.first else if (here.length == 2) '${here[0]} ${tr(context, 'and')} ${here[1]}' else if (here.isNotEmpty) '${here.first} ${tr(context, 'and')} ${here.length - 1} ${tr(context, 'more here')}',
+      if (network > 0) tr(context, d4Plural(network, 'doctor you refer to', 'doctors you refer to')),
     ];
-    if (names.isEmpty) return 'No colleagues added yet';
-    if (names.length <= 2) return F.joinAnd(names);
-    return '${names.take(2).join(', ')} and ${names.length - 2} more';
+    return parts.join(' · ');
   }
 
   /// "MedPin Pro · renews 12 Jan"
@@ -403,7 +413,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
             _SettingRow(
               'Colleagues you work with',
               sub: _colleaguesLine,
-              onTap: () => _open('People'),
+              onTap: () => _open('Doctor-Colleagues'),
             ),
           ]),
           _Group('Account', [

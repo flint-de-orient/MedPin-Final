@@ -438,6 +438,61 @@ r.get('/reports/referral-doctors', need('clinical'), async (req, res) => {
   res.json({ items: items.slice(0, 10).map(({ byName, ...x }) => x) });
 });
 
+// Profile → "Colleagues you work with": the other doctors (and the dietician) in this clinic,
+// and the doctors this doctor refers patients to or gets referrals from (any clinic, on
+// MedPin or not), busiest first.
+r.get('/colleagues', need('clinical'), async (req, res) => {
+  const me = String(req.user._id);
+  const [members, refs] = await Promise.all([
+    M.Member.find({ practiceId: req.practiceId, status: 'active', role: { $in: ['doctor', 'dietician'] }, userId: { $ne: req.user._id } }).populate('userId', 'name'),
+    M.Referral.find({ practiceId: req.practiceId, doctorId: req.user._id, status: { $ne: 'cancelled' } }, 'direction counterpartName counterpartUserId specialty referredAt status').sort({ referredAt: -1 }).limit(1000).lean(),
+  ]);
+  const ids = [...new Set([...members.map((m) => String(m.userId?._id)), ...refs.map((x) => x.counterpartUserId && String(x.counterpartUserId))].filter(Boolean))];
+  const [profiles, dls, photos] = await Promise.all([
+    M.DoctorProfile.find({ userId: { $in: ids } }, 'userId displayName headline specialtyKeys specialisations').lean(),
+    M.DoctorLocation.find({ practiceId: req.practiceId, doctorId: { $in: ids }, status: 'active' }).populate('locationId', 'name shortName status').lean(),
+    require('../services/photos').doctorPhotos(ids),
+  ]);
+  const labels = new Map((await M.Specialty.find({ key: { $in: profiles.flatMap((p) => p.specialtyKeys || []) } }, 'key label').lean()).map((x) => [x.key, x.label]));
+  const prof = new Map(profiles.map((p) => [String(p.userId), p]));
+  const specialtyOf = (id) => (prof.get(id) ? doctorSpecialty(prof.get(id), labels) : null);
+
+  // Referral counts with each counterpart (by their MedPin account, else by name).
+  const keyOf = (x) => (x.counterpartUserId ? `u:${x.counterpartUserId}` : `n:${String(x.counterpartName || '').trim().toLowerCase().replace(/^dr\.?\s*/, '')}`);
+  const byKey = new Map();
+  for (const x of refs) {
+    const k = keyOf(x);
+    const row = byKey.get(k) || { userId: x.counterpartUserId || null, name: x.counterpartName, specialty: x.specialty || null, sent: 0, received: 0, awaiting: 0, lastAt: x.referredAt };
+    row[x.direction === 'received' ? 'received' : 'sent'] += 1;
+    if (x.direction === 'sent' && x.status === 'awaiting') row.awaiting += 1;
+    if (!row.specialty && x.specialty) row.specialty = x.specialty;
+    byKey.set(k, row);
+  }
+  const referralsWith = (id) => byKey.get(`u:${id}`);
+
+  const inClinic = members.filter((m) => m.userId).map((m) => {
+    const id = String(m.userId._id);
+    const ref = referralsWith(id);
+    return {
+      userId: id, name: prof.get(id)?.displayName || m.userId.name, role: m.role,
+      specialty: specialtyOf(id) || (m.role === 'dietician' ? 'Nutrition' : null),
+      photoUrl: photos.get(id) || null,
+      locations: dls.filter((d) => String(d.doctorId) === id && d.locationId?.status === 'active').map((d) => d.locationId.shortName || d.locationId.name),
+      sent: ref?.sent || 0, received: ref?.received || 0, lastReferralAt: ref?.lastAt || null,
+    };
+  }).sort((a, b) => b.sent + b.received - (a.sent + a.received) || a.name.localeCompare(b.name));
+  const here = new Set(inClinic.map((c) => c.userId));
+  const network = [...byKey.values()]
+    .filter((x) => !(x.userId && here.has(String(x.userId))) && String(x.userId || '') !== me)
+    .map((x) => ({
+      userId: x.userId, name: (x.userId && prof.get(String(x.userId))?.displayName) || x.name,
+      specialty: (x.userId && specialtyOf(String(x.userId))) || x.specialty, photoUrl: (x.userId && photos.get(String(x.userId))) || null,
+      onMedPin: Boolean(x.userId), sent: x.sent, received: x.received, awaiting: x.awaiting, lastReferralAt: x.lastAt,
+    }))
+    .sort((a, b) => b.sent + b.received - (a.sent + a.received) || new Date(b.lastReferralAt) - new Date(a.lastReferralAt));
+  res.json({ inClinic, network, total: inClinic.length + network.length });
+});
+
 /** "Rising creatinine 1.8 mg/dL" — the analyte in running text keeps HbA1c / LDL as written. */
 function labReason(v, prev) {
   const name = /^[A-Z][a-z]+(\s|$)/.test(v.analyte) ? v.analyte[0].toLowerCase() + v.analyte.slice(1) : v.analyte;

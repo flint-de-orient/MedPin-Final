@@ -685,7 +685,7 @@ r.get('/doctors/:doctorId/slots', async (req, res) => {
       const { slots } = await S.slotsFor({ doctorId: req.params.doctorId, locationId: req.query.locationId, day });
       for (const s of slots) if (s.available && !s.walkIn && found.length < want) found.push(s);
     }
-    return res.json({ open: found.length > 0, slots: found });
+    return res.json({ open: found.length > 0, slots: found, bookingWindowDays: windowDays - 1 });
   }
   // One day: closed online, or beyond the days open ahead, shows no times (the booking rules).
   const dlr = await M.DoctorLocation.findOne({ doctorId: req.params.doctorId, locationId: req.query.locationId, status: 'active' }, 'schedule');
@@ -693,7 +693,7 @@ r.get('/doctors/:doctorId/slots', async (req, res) => {
   const day = T.parseDay(req.query.date);
   if (day >= T.addDays(T.dayStart(), (dlr?.schedule?.bookingWindowDays || 7) + 1)) return res.json({ open: false, reason: 'beyond_booking_window', slots: [] });
   const out = await S.slotsFor({ doctorId: req.params.doctorId, locationId: req.query.locationId, day });
-  res.json({ ...out, slots: out.slots.filter((s) => !s.walkIn) });
+  res.json({ ...out, slots: out.slots.filter((s) => !s.walkIn), bookingWindowDays: dlr?.schedule?.bookingWindowDays || 7 });
 });
 
 // My doctors (Doctors tab).
@@ -750,7 +750,10 @@ r.post('/visit-requests', async (req, res) => {
     if (dl.schedule?.cancelCutoffHours && existing.startAt - Date.now() < dl.schedule.cancelCutoffHours * 3600e3) {
       throw conflict(`Visits can be moved up to ${dl.schedule.cancelCutoffHours} hours before. Please call the clinic.`, 'TOO_LATE');
     }
-    const moved = await S.reschedule(existing, slot, req.user._id);
+    // The new time is at the branch chosen now (it may not be the old visit's).
+    const sameClinic = String(dl.practiceId) === String(existing.practiceId);
+    if (!sameClinic) throw conflict('That time is at another clinic. Book it as a new visit instead.', 'OTHER_CLINIC');
+    const moved = await S.reschedule(existing, slot, req.user._id, dl.locationId);
     const { deskOrDoctors } = require('../services/notify');
     const staff = await deskOrDoctors(moved.practiceId, { locationId: moved.locationId, doctorId: moved.doctorId });
     await notify([...new Set([...staff.map(String), String(moved.doctorId)])], {

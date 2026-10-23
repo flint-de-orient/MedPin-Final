@@ -904,8 +904,9 @@ class P2ConfirmSheet extends StatelessWidget {
   );
 }
 
-/// Pick a new time with a doctor at one clinic (GET
-/// /api/patient/doctors/:id/slots?next=6). Pops the chosen startAt (ISO).
+/// Pick a new time with a doctor at one clinic: the soonest free times (GET
+/// /api/patient/doctors/:id/slots?next=6), or any day the clinic books ahead
+/// (?date=YYYY-MM-DD). Pops the chosen startAt (ISO).
 class P2SlotSheet extends StatefulWidget {
   final String title;
   final String subtitle;
@@ -929,6 +930,8 @@ class _P2SlotSheetState extends State<P2SlotSheet> {
   List<Map<String, dynamic>>? _slots;
   String? _picked;
   String? _error;
+  DateTime? _day; // null: the soonest free times
+  int _windowDays = 7;
 
   @override
   void initState() {
@@ -936,15 +939,24 @@ class _P2SlotSheetState extends State<P2SlotSheet> {
     _load();
   }
 
+  static String _key(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   Future<void> _load() async {
+    setState(() {
+      _slots = null;
+      _error = null;
+    });
+    final day = _day;
     try {
       final res = await Api.I.get(
         '/api/patient/doctors/${widget.doctorId}/slots',
-        query: {'locationId': widget.locationId, 'next': 6},
+        query: {'locationId': widget.locationId, if (day == null) 'next': 6 else 'date': _key(day)},
       );
-      if (!mounted) return;
+      if (!mounted || day != _day) return;
+      final m = (res as Map).cast<String, dynamic>();
       setState(() {
-        _slots = (res as Map).cast<String, dynamic>().list('slots');
+        _windowDays = (m['bookingWindowDays'] as num?)?.toInt().clamp(1, 60) ?? _windowDays;
+        _slots = [for (final s in m.list('slots')) if (day == null || s['available'] == true) s];
         _picked = _slots!.isEmpty ? null : _slots!.first.str('startAt');
       });
     } on ApiException catch (e) {
@@ -952,9 +964,44 @@ class _P2SlotSheetState extends State<P2SlotSheet> {
     }
   }
 
-  static String _label(Map<String, dynamic> s) {
+  void _pickDay(DateTime? d) {
+    if (d == _day) return;
+    _day = d;
+    _load();
+  }
+
+  String _label(Map<String, dynamic> s) {
     final at = F.date(s['startAt']);
-    return at == null ? s.str('time') : F.when(at);
+    if (at == null) return s.str('time');
+    return _day == null ? F.when(at) : F.time(at); // one day: just the times
+  }
+
+  /// "Soonest", then each day the clinic books ahead.
+  Widget _days() {
+    final today = DateTime.now();
+    final start = DateTime(today.year, today.month, today.day);
+    String name(DateTime d) {
+      final diff = d.difference(start).inDays;
+      if (diff == 0) return tr(context, 'Today');
+      if (diff == 1) return tr(context, 'Tomorrow');
+      return '${tr(context, const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1])} ${d.day}';
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          MpChip('Soonest', selected: _day == null, onTap: () => _pickDay(null)),
+          for (var i = 0; i <= _windowDays; i++) ...[
+            const SizedBox(width: 8),
+            () {
+              final d = start.add(Duration(days: i));
+              return MpChip(name(d), selected: _day == d, onTap: () => _pickDay(d));
+            }(),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -969,6 +1016,8 @@ class _P2SlotSheetState extends State<P2SlotSheet> {
             child: P2SheetHeader(title: widget.title, subtitle: widget.subtitle),
           ),
           const Gap(16),
+          _days(),
+          const Gap(14),
           if (_error != null)
             Text(_error!, style: tx(14, c: MP.ink2, h: 1.45))
           else if (slots == null)
@@ -980,7 +1029,7 @@ class _P2SlotSheetState extends State<P2SlotSheet> {
               ),
             )
           else if (slots.isEmpty)
-            Text('No free times in the next two weeks. Please call the clinic.', style: tx(14, c: MP.ink2, h: 1.45))
+            Text(_day == null ? 'No free times in the next two weeks. Please call the clinic.' : 'No free times on this day. Try another day.', style: tx(14, c: MP.ink2, h: 1.45))
           else
             Wrap(
               spacing: 8,

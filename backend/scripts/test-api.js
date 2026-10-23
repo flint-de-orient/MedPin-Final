@@ -2399,6 +2399,67 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(exp.url);
   });
 
+  await step('visits: one booking per place at once, one move at once, no check-in ahead, missed visits owe nothing, suspended doctors not bookable, colleagues', async () => {
+    const T = require('../src/lib/time');
+    const S = require('../src/services/scheduling');
+    const day = T.addDays(T.dayStart(), 5);
+    const at = (min) => T.atMinute(day, min).toISOString();
+    const body = (min) => ({ patientId: ctx.patientId, doctorId: ctx.doctorUserId, locationId: ctx.locationId, startAt: at(min), visitType: 'new' });
+    // The last place in a slot, booked twice at the same moment: one gets it.
+    const both = await Promise.all([ctx.desk('POST', '/api/appointments', body(600)), ctx.desk('POST', '/api/appointments', body(600))]);
+    assert.deepEqual(both.map((x) => x.status).sort(), [201, 409], 'one booking per place');
+    assert.equal(await M.Appointment.countDocuments({ doctorId: ctx.doctorUserId, startAt: new Date(at(600)), status: { $nin: ['cancelled', 'rescheduled'] } }), 1);
+    const booked = both.find((x) => x.status === 201).body;
+    const id = booked.id || booked._id;
+    // A visit on a later day can't be checked in or marked missed yet.
+    const early = await ctx.desk('POST', `/api/appointments/${id}/status`, { status: 'waiting' });
+    assert.deepEqual([early.status, early.body?.error?.code], [409, 'NOT_TODAY']);
+    assert.equal((await ctx.desk('POST', `/api/appointments/${id}/status`, { status: 'missed' })).status, 409);
+    // Two moves at the same moment: one counts.
+    const moves = await Promise.all([ctx.desk('POST', `/api/appointments/${id}/reschedule`, { startAt: at(630) }), ctx.desk('POST', `/api/appointments/${id}/reschedule`, { startAt: at(660) })]);
+    assert.deepEqual(moves.map((x) => x.status).sort(), [200, 409], 'moved once');
+    assert.equal(await M.Appointment.countDocuments({ rescheduledFromId: id }), 1, 'one new visit');
+    // Missed: nothing left to collect.
+    const past = await M.Appointment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, doctorId: ctx.doctorUserId, patientId: ctx.patientId, date: T.dayStart(), startAt: new Date(Date.now() - 3600e3), status: 'booked', fee: 500, feeStatus: 'pending' });
+    await M.Payment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, patientId: ctx.patientId, appointmentId: past._id, amount: 500, status: 'pending' });
+    ok(await ctx.desk('POST', `/api/appointments/${past._id}/status`, { status: 'missed' }));
+    assert.equal((await M.Appointment.findById(past._id)).feeStatus, 'waived');
+    assert.equal(await M.Payment.countDocuments({ appointmentId: past._id, status: 'pending' }), 0, 'no fee to collect for a missed visit');
+    // They came after all: the fee is due again.
+    ok(await ctx.desk('POST', `/api/appointments/${past._id}/status`, { status: 'waiting' }));
+    assert.equal((await M.Appointment.findById(past._id)).feeStatus, 'pending');
+    await S.transition(await M.Appointment.findById(past._id), 'cancelled', { reason: 'Test' });
+    // A suspended doctor takes no bookings.
+    const m = await M.Member.findOne({ practiceId: ctx.practiceId, userId: ctx.doctorUserId });
+    await M.Member.updateOne({ _id: m._id }, { status: 'suspended' });
+    try {
+      assert.equal((await S.slotsFor({ doctorId: ctx.doctorUserId, locationId: ctx.locationId, day })).reason, 'doctor_unavailable');
+      const r0 = await ctx.desk('POST', '/api/appointments', body(720));
+      assert.deepEqual([r0.status, r0.body?.error?.code], [409, 'DOCTOR_UNAVAILABLE']);
+    } finally {
+      await M.Member.updateOne({ _id: m._id }, { status: m.status });
+    }
+    // A walk-in who has seen this doctor before is a follow-up (its fee), not "new".
+    await M.Appointment.updateMany({ patientId: ctx.patientId, doctorId: ctx.doctorUserId, date: T.dayStart(), status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }, { status: 'cancelled' });
+    if (!(await M.Appointment.exists({ patientId: ctx.patientId, doctorId: ctx.doctorUserId, status: 'completed' }))) {
+      await M.Appointment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, doctorId: ctx.doctorUserId, patientId: ctx.patientId, date: T.addDays(T.dayStart(), -30), startAt: T.addDays(new Date(), -30), status: 'completed', completedAt: T.addDays(new Date(), -30) });
+    }
+    const walk = ok(await ctx.desk('POST', '/api/appointments/walk-in', { patientId: ctx.patientId, doctorId: ctx.doctorUserId, locationId: ctx.locationId }), 201);
+    assert.equal(walk.visitType, 'follow_up');
+    await S.transition(await M.Appointment.findById(walk.id || walk._id), 'cancelled', { reason: 'Test' });
+    // Colleagues: the doctors this doctor refers to, with how many.
+    await M.Referral.create([
+      { practiceId: ctx.practiceId, patientId: ctx.patientId, doctorId: ctx.doctorUserId, direction: 'sent', counterpartName: 'Dr. Test Nephro', specialty: 'Nephrology' },
+      { practiceId: ctx.practiceId, patientId: ctx.patientId, doctorId: ctx.doctorUserId, direction: 'sent', counterpartName: 'Test Nephro', specialty: 'Nephrology', status: 'seen' },
+      { practiceId: ctx.practiceId, patientId: ctx.patientId, doctorId: ctx.doctorUserId, direction: 'received', counterpartName: 'Dr. Eye Care' },
+    ]);
+    const col = ok(await ctx.doc('GET', '/api/colleagues'));
+    const nephro = col.network.find((c) => /Nephro/.test(c.name));
+    assert.deepEqual([nephro?.sent, nephro?.awaiting, nephro?.specialty], [2, 1, 'Nephrology'], 'one row per colleague, counted');
+    assert.ok(col.network.some((c) => c.name === 'Dr. Eye Care' && c.received === 1));
+    assert.equal((await ctx.desk('GET', '/api/colleagues')).status, 403, 'for clinical staff');
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

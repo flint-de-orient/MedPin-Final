@@ -57,6 +57,18 @@ dynamic _getResponse(Uri u) {
   // Leave and the clinics' holidays (Profile-Schedule, Leave and holidays).
   if (p == '/api/doctor/time-off') return {'leaves': _fx('leaves'), 'holidays': const [], 'canAddHoliday': true, 'locations': const []};
   if (p == '/api/members') return _fx('members');
+  if (p == '/api/colleagues') {
+    return {
+      'inClinic': [
+        {'userId': 'u2', 'name': 'Dr. Rina Mitra', 'role': 'doctor', 'specialty': 'Cardiology', 'locations': ['Salt Lake'], 'sent': 2, 'received': 0},
+        {'userId': 'u3', 'name': 'Mou Banerjee', 'role': 'dietician', 'specialty': 'Nutrition', 'locations': ['Salt Lake'], 'sent': 0, 'received': 0},
+      ],
+      'network': [
+        {'userId': null, 'name': 'Dr. Sourav Lahiri', 'specialty': 'Nephrology', 'onMedPin': false, 'sent': 3, 'received': 1, 'awaiting': 1},
+      ],
+      'total': 3,
+    };
+  }
   if (p == '/api/billing') return _fx('billing');
   if (p == '/api/practice') return _fx('practice');
   if (p.startsWith('/api/locations/')) return _fx('location');
@@ -188,8 +200,10 @@ void main() {
     expect(find.text('No leave planned'), findsOneWidget);
     expect(find.text('Sent 3 days before · WhatsApp and app'), findsOneWidget);
     expect(find.text('Signature missing'), findsOneWidget);
-    expect(find.text('Front desk at City Care Clinic · 2 people'), findsOneWidget);
-    expect(find.text('Dr. Rina Mitra and Mou Banerjee'), findsOneWidget);
+    // The support roles there are (not all called "front desk"), and the colleagues:
+    // this clinic's doctors, then the doctors this doctor refers to.
+    expect(find.text('Front desk, assistant · 2 people'), findsOneWidget);
+    expect(find.text('Dr. Rina Mitra and Mou Banerjee · 1 doctor you refer to'), findsOneWidget);
     expect(find.text('MedPin Clinic · renews 14 Oct'), findsOneWidget);
     expect(find.text('English'), findsOneWidget); // app language
     expect(t.takeException(), isNull);

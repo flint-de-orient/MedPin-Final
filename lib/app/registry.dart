@@ -83,6 +83,7 @@ import '../screens/doctor/profile_professional.dart';
 import '../screens/doctor/profile_location.dart';
 import '../screens/doctor/profile_schedule.dart';
 import '../screens/doctor/doctor_ai_history.dart';
+import '../screens/doctor/doctor_colleagues.dart';
 import '../screens/doctor/profile_about.dart';
 import '../screens/doctor/profile_chat.dart';
 import '../screens/doctor/profile_notifications.dart';
@@ -212,6 +213,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Profile-Payouts': ScreenSpec(stem: 'Profile-Payouts', title: 'Profile · payouts and bank account', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfilePayoutsScreen()),
   'Profile-Privacy': ScreenSpec(stem: 'Profile-Privacy', title: 'Profile · privacy and data', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfilePrivacyScreen()),
   'Profile-Help': ScreenSpec(stem: 'Profile-Help', title: 'Profile · help and support', group: 'Doctor · My profile & settings', panel: 'doctor', builder: (_) => const ProfileHelpScreen()),
+  'Doctor-Colleagues': ScreenSpec(stem: 'Doctor-Colleagues', title: 'Doctor · Colleagues you work with', group: 'Team, billing & reports', panel: 'doctor', builder: (_) => const DoctorColleaguesScreen()),
   'Doctor-AI-History': ScreenSpec(stem: 'Doctor-AI-History', title: 'Doctor · AI Assistant · history', group: 'Doctor dashboard & AI Assistant', panel: 'doctor', builder: (_) => const DoctorAiHistoryScreen()),
   'Notifications': ScreenSpec(stem: 'Notifications', title: 'Notifications (staff)', group: 'Doctor dashboard & AI Assistant', panel: 'doctor', builder: (_) => const NotificationsScreen()),
   'Lab-Report': ScreenSpec(stem: 'Lab-Report', title: 'Patient profile · lab report', group: 'Patient profile · tabs (doctor view)', panel: 'doctor', builder: (_) => const LabReportScreen()),

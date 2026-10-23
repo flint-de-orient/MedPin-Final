@@ -316,14 +316,14 @@ r.get('/appointments/:id', async (req, res) => {
 });
 
 r.post('/appointments', async (req, res) => {
-  const { patientId, doctorId, locationId, startAt, visitType, mode, reason, walkIn, requestId, confirmed } = req.body;
+  const { patientId, doctorId, locationId, startAt, visitType, mode, reason, walkIn, requestId, confirmed, followUpId } = req.body;
   await patientInPractice(req, patientId);
   if (visitType && !E.VISIT_TYPES.includes(visitType)) throw badRequest('Unknown visit type');
   assertCovers(req, { locationId, doctorId: doctorId === 'me' || !doctorId ? req.user._id : doctorId }, { booking: true });
   const appt = await S.book({
     practiceId: req.practiceId, locationId, doctorId: doctorId === 'me' || !doctorId ? req.user._id : doctorId, patientId,
     startAt, visitType, mode, reason, walkIn: Boolean(walkIn), channel: 'desk', bookedBy: req.user._id, requestId,
-    confirmed: confirmed === true,
+    confirmed: confirmed === true, followUpId,
   });
   // A doctor booking a follow-up visit ("Schedule a follow-up") with nothing
   // advised yet: it is kept as a booked follow-up, so Follow-ups lists it and
@@ -345,12 +345,24 @@ r.post('/appointments/walk-in', async (req, res) => {
   const { patientId } = req.body;
   await patientInPractice(req, patientId);
   const dls = await M.DoctorLocation.find({ practiceId: req.practiceId, status: 'active' }).populate('doctorId', 'name').populate('locationId', 'name status');
-  const mine = req.member.allLocations || !req.member.locationIds?.length ? null : new Set(req.member.locationIds.map(String));
-  let options = dls.filter((d) => d.locationId?.status === 'active' && (!mine || mine.has(String(d.locationId._id))));
+  // The branches this person covers and (an assistant) the doctors they assist; only doctors
+  // still active here.
+  const { locs, docs } = coverage(req);
+  const active = new Set((await M.Member.find({ practiceId: req.practiceId, status: 'active', role: { $in: ['doctor', 'dietician'] } }).distinct('userId')).map(String));
+  let options = dls.filter((d) => d.locationId?.status === 'active' && d.doctorId && active.has(String(d.doctorId._id))
+    && (!locs || locs.includes(String(d.locationId._id))) && (!docs || docs.includes(String(d.doctorId._id))));
   if (req.body.locationId) options = options.filter((d) => String(d.locationId._id) === String(req.body.locationId));
   const doctorId = req.body.doctorId || (req.member.role === 'doctor' ? String(req.user._id) : null);
   if (doctorId) options = options.filter((d) => String(d.doctorId?._id) === String(doctorId));
   if (!options.length) throw conflict('No doctor sees patients at this clinic yet. Add a doctor schedule first.', 'NO_DOCTOR_HERE');
+  // Today: a doctor on leave, or a branch closed today, takes no walk-ins (the desk is told why).
+  const today = await Promise.all(options.map((d) => S.slotsFor({ doctorId: d.doctorId._id, locationId: d.locationId._id, day: T.dayStart() })));
+  const blocked = (i) => ['doctor_on_leave', 'closed', 'location_inactive', 'doctor_unavailable'].includes(today[i].reason);
+  if (options.every((_, i) => blocked(i))) {
+    const why = today[0].reason === 'doctor_on_leave' ? `${options[0].doctorId.name} is on leave today` : `${options[0].locationId.name} is closed today`;
+    throw conflict(options.length === 1 ? `${why}${today[0].note ? ` (${today[0].note})` : ''}.` : 'No doctor here is seeing patients today.', 'NOT_SEEING_TODAY');
+  }
+  options = options.filter((_, i) => !blocked(i));
   if (options.length > 1) {
     const photos = await require('../services/photos').doctorPhotos(options.map((d) => d.doctorId._id));
     const choices = options.map((d) => ({ doctorId: d.doctorId._id, doctorName: d.doctorId.name, doctorPhoto: photos.get(String(d.doctorId._id)) || null, locationId: d.locationId._id, locationName: d.locationId.name }));
@@ -367,16 +379,30 @@ r.post('/appointments/walk-in', async (req, res) => {
   if (todays && ['waiting', 'in_consultation'].includes(todays.status)) {
     throw conflict("This patient is already in today's list for this doctor", 'ALREADY_TODAY');
   }
+  // Booked today at another branch: they're expected there, not checked in here.
+  if (todays && String(todays.locationId) !== String(dl.locationId._id)) {
+    const there = await M.Location.findById(todays.locationId, 'name');
+    throw conflict(`This patient is booked today at ${there?.name || 'another branch'} (${T.fmtTime(T.minuteOfDay(todays.startAt))}). Move that visit here first.`, 'BOOKED_AT_OTHER_BRANCH');
+  }
   if (todays) {
     assertCovers(req, todays);
     if (reason && !todays.reason) todays.reason = reason;
     await S.transition(todays, 'waiting', { by: req.user._id });
     return res.status(201).json({ ...view(await populate(M.Appointment.findById(todays._id))), checkedInBooking: true });
   }
+  // New or follow-up: as the desk chose, else "follow-up" when this doctor has seen them
+  // before (the fee follows the doctor's services for that visit type).
+  let visitType = E.VISIT_TYPES.includes(req.body.visitType) ? req.body.visitType : null;
+  if (!visitType) visitType = (await M.Appointment.exists({ patientId, doctorId: dl.doctorId._id, status: 'completed' })) ? 'follow_up' : 'new';
   const appt = await S.book({
     practiceId: req.practiceId, locationId: dl.locationId._id, doctorId: dl.doctorId._id, patientId,
-    startAt: new Date(), visitType: req.body.visitType || 'new', mode: 'in_clinic', reason, walkIn: true, channel: 'desk', bookedBy: req.user._id,
+    startAt: new Date(), visitType, mode: 'in_clinic', reason, walkIn: true, channel: 'desk', bookedBy: req.user._id,
   });
+  // Readings the desk took just before (Staff-Vitals, no visit yet) belong to this visit.
+  await M.Vitals.updateMany(
+    { patientId, practiceId: req.practiceId, appointmentId: null, recordedAt: { $gte: T.addMinutes(new Date(), -120) } },
+    { appointmentId: appt._id },
+  );
   // The doctor sees a new patient waiting (unless they added them themselves).
   if (String(dl.doctorId._id) !== String(req.user._id)) {
     const patient = await M.Patient.findById(patientId, 'name');
@@ -408,13 +434,8 @@ r.post('/appointments/:id/reschedule', async (req, res) => {
   if (loc && !(await M.Location.exists({ _id: loc, practiceId: req.practiceId }))) throw badRequest("Choose one of this clinic's branches");
   assertCovers(req, appt);
   if (loc) assertCovers(req, { locationId: loc, doctorId: appt.doctorId });
-  // Moving a follow-up visit books it again (S.book), which would also mark the
-  // patient's next still-unbooked follow-up as booked: those stay as they were.
-  const open = await M.FollowUp.find({ practiceId: req.practiceId, patientId: appt.patientId, status: { $in: ['not_booked', 'no_reply'] } }, 'status');
+  // The visit's own follow-up moves with it; other open follow-ups stay as they were.
   const next = await S.reschedule(appt, req.body.startAt, req.user._id, loc);
-  for (const fu of open) {
-    await M.FollowUp.updateOne({ _id: fu._id, appointmentId: next._id, status: 'booked' }, { $set: { status: fu.status }, $unset: { appointmentId: 1 } });
-  }
   res.json(view(await populate(M.Appointment.findById(next._id))));
 });
 
@@ -548,7 +569,8 @@ r.get('/queue', async (req, res) => {
     practiceId: req.practiceId, date: day, status: { $nin: ['cancelled', 'rescheduled'] },
     ...listScope(req, { locationId: req.query.locationId, doctorId: req.query.doctorId || (req.member.role === 'doctor' ? req.user._id : undefined) }),
   };
-  const appts = await withPayments(await populate(M.Appointment.find(q).sort({ tokenNo: 1 })));
+  // In the order of the day: by visit time (a walk-in by when they came), then token.
+  const appts = await withPayments(await populate(M.Appointment.find(q).sort({ startAt: 1, tokenNo: 1 })));
   const ids = appts.map((a) => a._id);
   const patientIds = appts.map((a) => a.patientId._id);
   const [vitals, docs, briefs] = await Promise.all([
@@ -562,7 +584,8 @@ r.get('/queue', async (req, res) => {
   const waitTimes = appts.filter((a) => a.arrivedAt && a.consultStartedAt).map((a) => (a.consultStartedAt - a.arrivedAt) / 60000);
   const waiting = appts.filter((a) => a.status === 'waiting');
   const usualWait = waitTimes.length ? waitTimes.reduce((s, x) => s + x, 0) / waitTimes.length : 20;
-  const nextId = waiting.sort((a, b) => a.tokenNo - b.tokenNo)[0]?._id;
+  // Next in: the earliest visit time among those waiting (then who came first).
+  const nextId = waiting.sort((a, b) => a.startAt - b.startAt || (a.arrivedAt || 0) - (b.arrivedAt || 0) || a.tokenNo - b.tokenNo)[0]?._id;
   const items = appts.map((a) => {
     const v = view(a);
     return {
