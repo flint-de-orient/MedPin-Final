@@ -33,7 +33,7 @@ class ChatPhoto extends StatelessWidget {
       children: [
         Semantics(
           button: true,
-          label: 'Open photo',
+          label: tr(context, 'Open photo'),
           child: GestureDetector(
             onTap: () => openFileView(context, file, title: 'Photo'),
             child: ClipRRect(

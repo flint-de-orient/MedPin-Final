@@ -25,9 +25,12 @@ const _audit = ['Urgency: Medium', 'Model-driven', 'No scripted fallback', '2 ci
 const _citations = ['ADA Standards of Care 2026 §9', 'Clinic knowledge base: “Metformin timing”'];
 
 class _ChatReviewDetailScreenState extends State<ChatReviewDetailScreen> with LiveData {
-  // A form: don't refresh by itself while it's being filled in.
+  // The patient's new messages and MedPin AI's next answer appear here too (the reply
+  // being typed is kept: it lives in its own field).
   @override
-  bool get autoRefresh => false;
+  Duration? get refreshEvery => const Duration(seconds: 15);
+
+  bool _readSent = false;
 
   final _reply = TextEditingController();
   final _pinnedKey = GlobalKey();
@@ -70,6 +73,11 @@ class _ChatReviewDetailScreenState extends State<ChatReviewDetailScreen> with Li
     if (cid == null || cid.isEmpty) throw const ApiException(404, 'NOT_FOUND', 'Choose a conversation first');
     _conversationId = cid;
     final thread = ((await Api.I.get('/api/conversations/$cid/messages')) as Map).cast<String, dynamic>();
+    // Opening the review reads the chat (its unread and bell notice clear).
+    if (!_readSent) {
+      _readSent = true;
+      Api.I.post('/api/conversations/$cid/read', const {'pauseAi': false}).catchError((_) => null);
+    }
     final pid = thread.obj('conversation').obj('patient').str('id');
     Object? patient;
     if (pid.isNotEmpty) {

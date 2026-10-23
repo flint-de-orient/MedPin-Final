@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Text;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../data/push.dart';
 import '../../data/api.dart';
@@ -269,9 +270,16 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
         setState(() => _replyTo = m);
         _replyFocus.requestFocus();
         return;
+      case 'Copy':
+        await Clipboard.setData(ClipboardData(text: m.str('text')));
+        if (mounted) toast(context, 'Copied');
+        return;
       case 'Pin':
         final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/pin', {'messageId': id}), busy: _busy);
         if (ok != null && mounted) toast(context, 'Pinned at the top of the chat');
+      case 'Unpin':
+        final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/pin', const {'messageId': null}), busy: _busy);
+        if (ok != null && mounted) toast(context, 'Unpinned');
       case 'Hide':
         final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/messages/$id/hide'), busy: _busy);
         if (ok != null && mounted) toast(context, 'Message hidden');
@@ -286,9 +294,10 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     final text = _reply.text.trim();
     if (text.isEmpty || _convId == null) return;
     final reply = _replyTo;
+    final clientId = 'd${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
     final ok = await runAction(
       context,
-      () => Api.I.post('/api/conversations/$_convId/messages', {'text': text, if (reply != null) 'replyToId': reply.str('id')}),
+      () => Api.I.post('/api/conversations/$_convId/messages', {'text': text, 'clientId': clientId, if (reply != null) 'replyToId': reply.str('id')}),
       busy: _busy,
     );
     if (ok == null || !mounted) return;
@@ -312,13 +321,15 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     final file = await Files.chooseSource(context, title: 'Attach to chat');
     if (file == null || !mounted) return;
     final text = _reply.text.trim();
+    final reply = _replyTo;
     final ok = await runAction(
       context,
-      () => Api.I.upload('/api/conversations/$_convId/messages', files: {'file': [file]}, fields: {if (text.isNotEmpty) 'text': text}),
+      () => Api.I.upload('/api/conversations/$_convId/messages', files: {'file': [file]}, fields: {if (text.isNotEmpty) 'text': text, if (reply != null) 'replyToId': reply.str('id')}),
       busy: _busy,
     );
     if (ok == null || !mounted) return;
     _reply.clear();
+    setState(() => _replyTo = null);
     await reload(quiet: true);
     _toLatest();
   }
@@ -661,7 +672,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                 ],
               ),
       );
-      if (m['senderType'] != 'system') {
+      if (m['senderType'] != 'system' && m['deleted'] != true) {
         w = GestureDetector(
           onLongPress: () {
             setState(() => _menuFor = id);
@@ -702,7 +713,13 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                   child: Material(
                     type: MaterialType.transparency,
                     child: _menu(
-                      items: [for (final it in _menuItems) if (mine || it.$1 != 'Delete for everyone') it],
+                      items: [
+                        for (final it in _menuItems)
+                          if (mine || it.$1 != 'Delete for everyone')
+                            // The pinned message: Unpin instead of Pin.
+                            it.$1 == 'Pin' && menuMsg.str('id') == '${_conv['pinnedMessageId'] ?? ''}' ? ('Unpin', false) : it,
+                        if (menuMsg.str('text').isNotEmpty) ('Copy', false),
+                      ],
                       onAction: (a) => _liveMenuAction(a, menuMsg),
                     ),
                   ),
@@ -762,6 +779,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
 
   @override
   void dispose() {
+    VoiceNotes.stop();
     if (Push.I.openChat == _convId) Push.I.openChat = null;
     // Replies that came in while the thread was open are read too.
     if (isLive && _readSent && _convId != null) Api.I.post('/api/conversations/$_convId/read', const {'pauseAi': false}).catchError((_) => null);
@@ -1359,13 +1377,40 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
   }
 
   Widget _composer() {
+    final quote = _replyTo;
     return Container(
       decoration: const BoxDecoration(color: MP.white, border: Border(top: BorderSide(color: MP.line))),
       child: SafeArea(
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Replying to a message: which one, and ✕ to cancel.
+              if (quote != null) ...[
+                Container(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                  decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(12), border: const Border(left: BorderSide(color: MP.primary, width: 3))),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(tr(context, 'Replying to #1').replaceFirst('#1', _senderName(quote)), style: tx(12, w: w600, c: MP.primary)),
+                            UserText(_summary(quote), maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(13, c: MP.ink2)),
+                          ],
+                        ),
+                      ),
+                      MpIconButton(I.close, label: 'Cancel reply', iconSize: 16, size: 36, color: MP.ink3, onTap: () => setState(() => _replyTo = null)),
+                    ],
+                  ),
+                ),
+                const Gap(8),
+              ],
+              Row(
             children: [
               Semantics(
                 button: true,
@@ -1383,7 +1428,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
               const Gap(8),
               Expanded(
                 child: Container(
-                  height: 48,
+                  constraints: const BoxConstraints(minHeight: 48),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   alignment: Alignment.centerLeft,
                   decoration: BoxDecoration(
@@ -1395,12 +1440,17 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                     textAlignVertical: TextAlignVertical.center,
                     controller: _reply,
                     focusNode: _replyFocus,
+                    // Longer replies wrap (up to 5 lines, then scroll).
+                    minLines: 1,
+                    maxLines: 5,
                     style: tx(16),
                     cursorColor: MP.primary,
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => data != null ? _sendLive() : _send(),
                     decoration: InputDecoration(
                       isCollapsed: true,
+                      // The field itself is 48 tall (a full tap target), and grows with the text.
+                      contentPadding: const EdgeInsets.symmetric(vertical: 13),
                       border: InputBorder.none,
                       hintText: _replyTo == null ? 'Write a reply' : 'Reply to ${_senderName(_replyTo!)}',
                       hintStyle: tx(16, c: MP.ink3),
@@ -1424,6 +1474,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                   ),
                 ),
               ),
+            ],
+          ),
             ],
           ),
         ),

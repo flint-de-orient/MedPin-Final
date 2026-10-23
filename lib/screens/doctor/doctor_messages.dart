@@ -128,8 +128,8 @@ class _DoctorMessagesScreenState extends State<DoctorMessagesScreen> with LiveDa
     final type = last['senderType'];
     if (type == null || type == 'patient') return text;
     final label = last.str('senderLabel');
-    final me = Session.I.name.split(' ').first;
-    if (label == me) return 'You: $text';
+    // Mine by who sent it (a doctor's label is "Dr. Sen", and two staff can share a first name).
+    if (last['senderId'] != null && '${last['senderId']}' == '${Session.I.user['id']}') return 'You: $text';
     if (label.isEmpty || label == 'Dr.' || label == 'Clinic') return text;
     return '$label: $text';
   }

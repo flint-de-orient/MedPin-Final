@@ -315,7 +315,9 @@ void main() {
     await t.enterText(find.byType(TextField), 'After food, please.');
     await t.pump();
     await _tap(t, find.bySemanticsLabel('Send reply'));
-    expect(_body('POST', '/api/conversations/$_conv/messages'), {'text': 'After food, please.'});
+    final sent = _body('POST', '/api/conversations/$_conv/messages') as Map;
+    expect(sent['text'], 'After food, please.');
+    expect('${sent['clientId']}', isNotEmpty, reason: 'each send has its own id (a retry is saved once)');
     // Long-press → Hide.
     await t.longPress(find.text('Should I take the tablet before or after food?'));
     await _settle(t);

@@ -50,7 +50,7 @@ class _JumpToLatestState extends State<JumpToLatest> {
         ignoring: !(widget.always || _up),
         child: Semantics(
           button: true,
-          label: 'Jump to latest message',
+          label: tr(context, 'Jump to latest message'),
           child: SizedBox(
             width: 44,
             height: 44,

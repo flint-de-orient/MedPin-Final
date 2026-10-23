@@ -17,6 +17,7 @@ import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import '../../widgets/i18n.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 /// Design: Patient-DoctorChat.dc.html — "Patient · chat with doctor".
 ///
@@ -36,6 +37,9 @@ const _replies = ['Thank you', "Share today's sugar", 'Running late'];
 
 const _r16 = Radius.circular(16);
 const _r4 = Radius.circular(4);
+
+/// A pushpin (the clinic's pinned message).
+const _pushpin = '<path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z"/>';
 
 /// Doctor bubbles: 16 16 16 4; patient bubbles: 16 16 4 16.
 const _theirs = BorderRadius.only(topLeft: _r16, topRight: _r16, bottomRight: _r16, bottomLeft: _r4);
@@ -71,6 +75,9 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
 
   /// The newest message id shown, to keep your place when a new one arrives while you read older ones.
   String? _newestShown;
+
+  /// Replying to this message (long-press → Reply).
+  Map<String, dynamic>? _replyTo;
   bool _aiTyping = false;
   Timer? _aiWait;
   int _aiChecks = 0;
@@ -88,6 +95,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
 
   @override
   void dispose() {
+    VoiceNotes.stop();
     if (Push.I.openChat == _convId) Push.I.openChat = null;
     _aiWait?.cancel();
     _scroll.dispose();
@@ -226,7 +234,9 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
     _aiNoAnswer = false;
     if (_scroll.hasClients) _scroll.jumpTo(0); // the list is reversed: 0 is the newest
     try {
-      final res = await Api.I.post('/api/conversations/$_convId/messages', {'text': text, 'clientId': id});
+      final quote = _replyTo;
+      if (quote != null) setState(() => _replyTo = null);
+      final res = await Api.I.post('/api/conversations/$_convId/messages', {'text': text, 'clientId': id, if (quote != null) 'replyToId': quote.str('id')});
       if (!mounted) return;
       _at = null; // load in full: our message is new
       await reload(quiet: true);
@@ -283,6 +293,63 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
   }
 
   bool get _humanRequested => data?.obj('conversation')['humanRequested'] == true;
+
+  /// Long-press a message: copy it, reply to it, hide it for you, or delete your own for everyone.
+  Future<void> _actions(Map<String, dynamic> m) async {
+    if (m['deleted'] == true || data == null) return;
+    final mine = m['mine'] == true;
+    final text = m.str('text');
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: MP.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final a in [if (text.isNotEmpty) 'Copy', 'Reply', 'Hide for me', if (mine) 'Delete for everyone'])
+              Tap(
+                onTap: () => Navigator.of(ctx).pop(a),
+                radius: 0,
+                child: Container(
+                  height: 52,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  alignment: Alignment.centerLeft,
+                  child: Text(a, style: a == 'Delete for everyone' ? tx(16, w: w600, c: MP.red) : tx(16)),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final id = m.str('id');
+    switch (choice) {
+      case 'Copy':
+        await Clipboard.setData(ClipboardData(text: text));
+        if (mounted) toast(context, 'Copied');
+        return;
+      case 'Reply':
+        setState(() => _replyTo = m);
+        return;
+      case 'Hide for me':
+        final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/messages/$id/hide'));
+        if (ok != null && mounted) toast(context, 'Message hidden');
+      default:
+        final ok = await runAction(context, () => Api.I.delete('/api/conversations/$_convId/messages/$id'));
+        if (ok != null && mounted) toast(context, 'Deleted for everyone');
+    }
+    _at = null;
+    if (mounted) await reload(quiet: true);
+  }
+
+  /// "Dr. Sen: Please come fasting" — the quoted message under a reply.
+  String _quoteOf(Map<String, dynamic>? q) {
+    if (q == null) return '';
+    final who = q.str('senderType') == 'patient' || q['mine'] == true ? tr(context, 'You') : _sender(q);
+    final what = q['deleted'] == true ? tr(context, 'This message was deleted') : q.str('text', q.str('kind') == 'voice' ? 'Voice message' : 'Photo or file');
+    return '$who: $what';
+  }
 
   Future<void> _voiceNote() async {
     if (data == null) return p2Missing(context, 'Voice recording');
@@ -345,6 +412,29 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
     final out = <Widget>[];
     DateTime? lastDay;
     final msgs = data!.list('items');
+    // The clinic's pinned note (visit instructions, a dose to remember): always at the top.
+    final pinned = data!.obj('pinned');
+    if (pinned.isNotEmpty && pinned.str('text').isNotEmpty) {
+      out.add(Tap(
+        onTap: () {
+          final c = _keys[pinned.str('id')]?.currentContext;
+          if (c != null && c.mounted) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), alignment: 0.3);
+        },
+        radius: 12,
+        color: MP.primarySoft,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Padding(padding: EdgeInsets.only(top: 2), child: Ico(_pushpin, size: 16, color: MP.primary)),
+          const Gap(8),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Pinned by the clinic', style: tx(12, w: w700, c: MP.primary)),
+              UserText(pinned.str('text'), maxLines: 2, overflow: TextOverflow.ellipsis, style: tx(14, h: 1.4)),
+            ]),
+          ),
+        ]),
+      ));
+    }
     // The server sends the newest 100; older ones on request.
     if (msgs.length >= 100 && !_noOlder) {
       out.add(Center(
@@ -400,14 +490,32 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
           ),
         ));
       } else {
+        final quoted = m['replyToId'] == null ? null : msgs.where((x) => x.str('id') == m.str('replyToId')).firstOrNull;
+        if (m['replyToId'] != null && m['deleted'] != true) {
+          out.add(Align(
+            alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 2),
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                decoration: BoxDecoration(color: MP.fill, borderRadius: BorderRadius.circular(10), border: const Border(left: BorderSide(color: MP.primary, width: 3))),
+                child: UserText(quoted == null ? tr(context, 'Earlier message') : _quoteOf(quoted), maxLines: 2, overflow: TextOverflow.ellipsis, style: tx(13, c: MP.ink2)),
+              ),
+            ),
+          ));
+        }
         out.add(Align(
           key: _keys.putIfAbsent(m.str('id'), GlobalKey.new),
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-          child: kind == 'voice' && m['deleted'] != true
+          child: GestureDetector(
+            onLongPress: () => _actions(m),
+            child: kind == 'voice' && m['deleted'] != true
               ? _Bubble('', mine: mine, child: VoiceNoteChip(url: m.obj('voice').obj('file').str('url'), seconds: m.obj('voice')['durationSec'] as num?, color: mine ? MP.white : MP.ink))
               : m.str('senderType') == 'ai' && m['deleted'] != true
                   ? _AiBubble(text, escalated: m.obj('ai')['escalated'] == true, doctor: _short)
                   : _Bubble(text, mine: mine),
+          ),
         ));
         // Under MedPin AI's latest answer: a person instead.
         if (m.str('senderType') == 'ai' && m == msgs.lastWhere((x) => x.str('senderType') != 'system', orElse: () => m) && !_humanRequested) {
@@ -549,7 +657,22 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       header: _header(),
       bottom: MpBottomBar(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 28),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_replyTo != null) ...[
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+                decoration: BoxDecoration(color: MP.bg, borderRadius: BorderRadius.circular(12), border: const Border(left: BorderSide(color: MP.primary, width: 3))),
+                child: Row(children: [
+                  Expanded(child: UserText(_quoteOf(_replyTo), maxLines: 1, overflow: TextOverflow.ellipsis, style: tx(13, c: MP.ink2))),
+                  MpIconButton(I.close, label: 'Cancel reply', iconSize: 16, size: 36, color: MP.ink3, onTap: () => setState(() => _replyTo = null)),
+                ]),
+              ),
+              const Gap(8),
+            ],
+            Row(
           children: [
             P2Box(
               onTap: _attach,
@@ -585,6 +708,8 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
               alignment: Alignment.center,
               child: Ico(typing ? I.send : I.mic, size: 22, color: MP.white),
             ),
+          ],
+        ),
           ],
         ),
       ),
@@ -891,7 +1016,7 @@ class _TypingState extends State<_Typing> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'MedPin AI is typing',
+      label: tr(context, 'MedPin AI is typing'),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         decoration: BoxDecoration(color: MP.white, borderRadius: _theirs, border: Border.all(color: MP.line)),

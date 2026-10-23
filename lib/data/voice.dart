@@ -490,7 +490,7 @@ class VoiceNoteChip extends StatelessWidget {
         final on = now != null && now == url;
         return Semantics(
           button: true,
-          label: on ? 'Stop voice message' : 'Play voice message',
+          label: tr(context, on ? 'Stop voice message' : 'Play voice message'),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => VoiceNotes.toggle(context, url),
