@@ -607,6 +607,29 @@ ai.post('/sessions/:id/messages', async (req, res) => {
   res.status(201).json({ question, answer });
 });
 
+const memory = require('../services/ai_memory');
+
+// "What MedPin AI remembers": see, add and delete the notes; memory on / off.
+ai.get('/memories', async (req, res) => res.json(await memory.list({ ownerType: 'doctor', userId: req.user._id })));
+ai.post('/memories', async (req, res) => {
+  const note = await memory.add({ ownerType: 'doctor', userId: req.user._id }, req.body?.text);
+  if (!note) throw badRequest('Write what MedPin AI should remember', 'EMPTY_NOTE');
+  res.status(201).json(note);
+});
+ai.delete('/memories/:id', async (req, res) => {
+  if (!isId(req.params.id)) throw notFound('Note');
+  await memory.remove({ ownerType: 'doctor', userId: req.user._id }, req.params.id);
+  res.json({ ok: true });
+});
+ai.delete('/memories', async (req, res) => {
+  await memory.clear({ ownerType: 'doctor', userId: req.user._id });
+  res.json({ ok: true });
+});
+ai.put('/memories/settings', async (req, res) => {
+  await memory.setEnabled({ ownerType: 'doctor', userId: req.user._id }, req.body?.enabled !== false);
+  res.json(await memory.list({ ownerType: 'doctor', userId: req.user._id }));
+});
+
 ai.post('/messages/:id/vote', async (req, res) => {
   const vote = Number(req.body.vote);
   if (![-1, 0, 1].includes(vote)) throw badRequest('vote must be -1, 0 or 1');

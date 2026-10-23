@@ -16,6 +16,7 @@ const userSchema = new Schema(
     avatarUrl: String,
     photo: fileSchema, // profile photo (doctors: the same file as DoctorProfile.photo)
     language: enumOf(E.LANGUAGES, { default: 'en' }), // "App language"
+    aiMemory: { type: Boolean, default: true }, // MedPin AI may remember things from chats
     appLock: { type: Boolean, default: false }, // "Fingerprint or PIN to open" — off until the person turns it on
     termsAcceptedAt: Date, // Register: "agree to the Terms of Use and Privacy Policy"
     activePracticeId: ref('Practice'), // context line on Doctor-Dashboard

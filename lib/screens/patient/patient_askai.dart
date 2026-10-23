@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../data/voice.dart';
+import '../../widgets/ai_memory_sheet.dart';
 import '../../widgets/mp.dart';
 import 'common_p1.dart';
 import 'p1_sheets.dart';
@@ -180,6 +181,16 @@ class _PatientAskaiSheetState extends State<PatientAskaiSheet> {
                 ),
               ),
             ),
+            // What MedPin AI keeps from the patient's chats (see, add, forget; memory on / off).
+            if (isLive) ...[
+              const Gap(10),
+              pad(
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: MpLink('What MedPin AI remembers', icon: I.sparkle, size: 13, onTap: () => AiMemorySheet.open(context, base: '/api/patient/ai')),
+                ),
+              ),
+            ],
           ],
         ),
       ),

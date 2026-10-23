@@ -281,6 +281,9 @@ async function replyInCareThread(convo, patientMessage) {
   const kb = await knowledgeFor(convo.practiceId, patientMessage.text);
   const history = (await M.Message.find({ conversationId: convo._id, deletedForEveryoneAt: null }).sort({ createdAt: -1 }).limit(20)).reverse();
   const practice = await M.Practice.findById(convo.practiceId, 'name');
+  // What the patient told MedPin AI earlier (routine, food, goals) — on their own account.
+  const memory = require('./ai_memory');
+  const notes = patient?.userId ? await memory.notesFor({ ownerType: 'patient', userId: patient.userId, patientId: patient._id }) : [];
 
   const name = who?.parts?.name || null;
   const system = [
@@ -295,6 +298,7 @@ async function replyInCareThread(convo, patientMessage) {
     'Set urgency high and needs_doctor true for anything that could be an emergency, and tell the patient to call 108 or go to the nearest emergency department.',
     'Photos and PDFs the patient sent are attached to their message. Read what is printed on them. A medicine strip, box or bottle: give the name and strength you can read; if it matches a medicine in the patient record, say so and repeat how their doctor prescribed it (dose, times, with or without food); if it is not on their list, say so, tell them not to take it until their doctor confirms, and set needs_doctor true. You may say in plain words what that kind of medicine is generally used for. A prescription or report: say briefly what it shows without interpreting results as a diagnosis; their doctor will review it. A photo of the body (rash, wound, swelling): do not describe a cause; say the doctor will look at it and set needs_doctor true. If the photo is blurred or the label is not visible, ask for a clear photo of the label. Never guess a name you cannot read.',
     `Patient record (JSON): ${patientContext(summary)}`,
+    memory.notesPrompt(notes, 'patient'),
     `Clinic knowledge entries (JSON): ${JSON.stringify(kb.map((k) => ({ id: String(k._id), title: k.title, content: k.content })))}`,
   ].filter(Boolean).join('\n\n');
   const fileLabel = (m) => (m.kind === 'attachment' ? (/^image\//.test(m.attachment?.mimeType || '') ? '[photo]' : '[file]') : m.kind === 'voice' ? '[voice message]' : m.kind === 'record' ? '[shared record]' : '');
@@ -379,17 +383,15 @@ async function doctorAnswer(session, question, practiceId, { excludeId } = {}) {
   let context = '';
   const { accessFor } = require('./access');
   const { practiceBrief, patientsMentioned } = require('./practice_brief');
-  // The patient this chat is about, plus anyone the question names ("How is Priya's sugar?").
-  // Only what this doctor may see of each patient goes to the AI.
-  const about = [];
-  if (session.patientId) {
-    const p = await M.Patient.findById(session.patientId);
-    if (p) about.push(p);
-  }
-  for (const p of await patientsMentioned(question, practiceId)) {
-    if (!about.some((a) => String(a._id) === String(p._id))) about.push(await M.Patient.findById(p._id));
-  }
-  for (const patient of about.slice(0, 3)) {
+  const memory = require('./ai_memory');
+  // The patient this chat is about, anyone the question names ("How is Priya's sugar?"), and
+  // the ones named earlier in this conversation ("and her HbA1c?"). Still linked here only;
+  // only what this doctor may see of each patient goes to the AI.
+  const ids = await memory.sessionPatients(session, await patientsMentioned(question, practiceId));
+  const linked = new Set((await M.PatientEnrolment.find({ patientId: { $in: ids }, practiceId, status: 'linked' }).distinct('patientId')).map(String));
+  const found = await M.Patient.find({ _id: { $in: ids.filter((id) => linked.has(String(id))) } });
+  const about = ids.map((id) => found.find((p) => String(p._id) === String(id))).filter(Boolean);
+  for (const patient of about) {
     const acc = await accessFor({ userId: session.userId, practiceId }, patient);
     context += `\n\nPatient ${patient.name} (JSON): ${patientContext(await patientSummary(patient, practiceId, acc))}`;
   }
@@ -398,10 +400,11 @@ async function doctorAnswer(session, question, practiceId, { excludeId } = {}) {
     practiceBrief(session.userId, practiceId),
     knowledgeFor(practiceId, question).catch(() => []),
   ]);
-  // Earlier turns of this chat (the new question is added once, at the end).
-  const history = await M.AiMessage.find({ sessionId: session._id, ...(excludeId ? { _id: { $ne: excludeId } } : {}) }).sort({ createdAt: -1 }).limit(30);
-  const messages = history.reverse().map((m) => ({ role: m.role, content: m.text || '' })).filter((m) => m.content);
+  // Earlier turns of this chat (the newest as they are, older ones condensed); the new
+  // question is added once, at the end. Notes kept from earlier conversations.
+  const messages = await memory.recentTurns(session, { excludeId });
   messages.push({ role: 'user', content: question });
+  const notes = await memory.notesFor({ ownerType: 'doctor', userId: session.userId });
   const system = [
     'You are MedPin AI, a clinical assistant for a doctor in an Indian outpatient practice. Be concise and precise; use bullet points for lists. Quote values with units and dates from the record. Say clearly when something is not in the record. You support the doctor\'s judgement and do not replace it.',
     doc.field
@@ -412,10 +415,15 @@ async function doctorAnswer(session, question, practiceId, { excludeId } = {}) {
     `This clinic's records (JSON; use for questions across patients): ${JSON.stringify(brief)}`,
     kb.length ? `The clinic's approved knowledge base (prefer it when relevant): ${JSON.stringify(kb.map((e) => ({ title: e.title, text: e.summary || e.content })))}` : '',
     'If a question needs data that is not given here, say exactly what is missing instead of guessing.',
+    about.length > 1 ? `This conversation has been about: ${about.map((p) => p.name).join(', ')} (the first is the current one unless the question says otherwise). If it is unclear which patient "he", "she" or "they" means, ask.` : '',
+    memory.notesPrompt(notes, 'doctor'),
+    'If the doctor asks you to remember or forget something about how they work, say briefly that you will (it is kept in "What MedPin AI remembers"). Facts about a patient are not kept in memory: suggest adding them to the patient\'s record instead.',
+    memory.summaryPrompt(session),
     languageRule((await M.User.findById(session.userId, 'language'))?.language, { clinician: true }),
-  ].join('\n') + context;
+  ].filter(Boolean).join('\n') + context;
   const out = await ai.complete({ system, messages, effort: 'medium' });
   if (out.refused) return { text: "I can't help with that request.", refused: true, ...out };
+  memory.afterAnswer(session, { ownerType: 'doctor', userId: session.userId }, { question, answer: out.text, practiceId });
   return out;
 }
 
@@ -428,17 +436,22 @@ async function patientAnswer(session, question, patient, { excludeId } = {}) {
   const practiceIds = await M.PatientEnrolment.find({ patientId: patient._id, status: 'linked' }).distinct('practiceId');
   if (practiceIds[0]) await useAiChat(practiceIds[0]);
   const summary = await patientSummary(patient, practiceIds[0]);
-  const history = await M.AiMessage.find({ sessionId: session._id, ...(excludeId ? { _id: { $ne: excludeId } } : {}) }).sort({ createdAt: -1 }).limit(20);
-  const messages = history.reverse().map((m) => ({ role: m.role, content: m.text || '' })).filter((m) => m.content);
+  const memory = require('./ai_memory');
+  const who = { ownerType: 'patient', userId: session.userId, patientId: patient._id };
+  const messages = await memory.recentTurns(session, { excludeId });
   messages.push({ role: 'user', content: question });
+  const notes = await memory.notesFor(who);
   const system = [
     'You are MedPin AI in the MedPin patient app, helping a patient in India understand their own health record and use the app.',
     `Rules:\n- ${PATIENT_SAFETY_RULES}`,
     'If they ask which doctor to see, name the kind of specialist (put its key in specialist_key) and suggest Find a doctor in the app.',
     'Before answering, check your reply against the rules. Set breaks_rules true if it names a diagnosis, recommends a medicine or dose change, or recommends a test.',
     `Their record (JSON): ${patientContext(summary)}`,
+    memory.notesPrompt(notes, 'patient'),
+    'If they ask you to remember or forget something, say briefly that you will; they can see it in "What MedPin AI remembers". If they tell you a health fact (an allergy, a medicine from elsewhere), also suggest they tell their doctor or add it to their record.',
+    memory.summaryPrompt(session),
     languageRule(lang),
-  ].join('\n');
+  ].filter(Boolean).join('\n');
   // Short answers for patients: low effort keeps them quick.
   const out = await ai.completeJson({ system, messages, schema: PATIENT_ANSWER_SCHEMA, effort: 'low' });
   const emergencyWords = isEmergencyText(question);
@@ -447,6 +460,7 @@ async function patientAnswer(session, question, patient, { excludeId } = {}) {
   const d = out.data;
   // Self-check failed: don't show an answer that diagnoses or prescribes.
   const text = d.breaks_rules ? fallback : d.reply;
+  if (!d.breaks_rules) memory.afterAnswer(session, who, { question, answer: text });
   return { ...out, text, emergency: emergencyWords || d.emergency, specialistKey: d.specialist_key || null, blocked: Boolean(d.breaks_rules) };
 }
 

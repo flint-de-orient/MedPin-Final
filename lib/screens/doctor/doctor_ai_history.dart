@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../widgets/ai_memory_sheet.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
 import '../../widgets/i18n.dart';
@@ -98,6 +99,32 @@ class _DoctorAiHistoryScreenState extends State<DoctorAiHistoryScreen> with Live
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
             gap: 12,
             children: [
+              // What MedPin AI keeps between conversations (see, add, forget; memory on / off).
+              Tap(
+                onTap: isLive ? () => AiMemorySheet.open(context, base: '/api/ai', doctor: true) : () => toast(context, 'What MedPin AI remembers'),
+                radius: 16,
+                color: MP.white,
+                border: MP.line,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    const MpIconTile(I.sparkle, size: 40, iconSize: 20, radius: 12),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('What MedPin AI remembers', style: tx(15, w: w600)),
+                          const SizedBox(height: 2),
+                          Text('How you like answers, kept between conversations', style: tx(13, c: MP.ink3)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Ico(I.chevronRight, size: 18, color: MP.ink3, stroke: 2),
+                  ],
+                ),
+              ),
               MpInput(controller: _q, hint: 'Search conversations', leadingIcon: I.search, height: 48),
               if (rows.isEmpty)
                 Padding(

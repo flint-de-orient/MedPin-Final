@@ -150,12 +150,37 @@ const aiSessionSchema = new Schema(
     userId: ref('User', true),
     practiceId: ref('Practice'),
     patientId: ref('Patient'), // "Talking about" chip, or the patient's own session
+    // Patients this conversation was about (named in earlier questions), newest first, so
+    // "and her HbA1c?" still knows who "her" is (services/ai_memory.js).
+    patientIds: [{ type: Schema.Types.ObjectId, ref: 'Patient' }],
+    // Earlier turns that no longer fit in the prompt, condensed (up to summarizedUntil).
+    summary: String,
+    summarizedUntil: Date,
     title: String,
     lastAt: Date,
   },
   baseOptions,
 );
 aiSessionSchema.index({ userId: 1, lastAt: -1 });
+
+// What MedPin AI remembers between conversations (services/ai_memory.js). A doctor's notes
+// are about how they work (never about patients — that is the record); a patient's are
+// what they told it (routine, food, goals; health notes are "patient-reported").
+// The owner sees, adds and deletes them ("What MedPin AI remembers").
+const aiMemorySchema = new Schema(
+  {
+    ownerType: enumOf(E.AI_OWNER_TYPES, { required: true }),
+    userId: ref('User', true), // the doctor, or the patient's account
+    patientId: ref('Patient'), // a patient's own notes (one phone may hold family profiles)
+    text: { type: String, required: true, maxlength: 240 },
+    kind: enumOf(['preference', 'about', 'routine', 'goal', 'health_note'], { default: 'about' }),
+    source: enumOf(['chat', 'added'], { default: 'chat' }),
+    sessionId: ref('AiSession'),
+    lastUsedAt: Date,
+  },
+  baseOptions,
+);
+aiMemorySchema.index({ userId: 1, ownerType: 1, patientId: 1, updatedAt: -1 });
 
 const aiMessageSchema = new Schema(
   {
@@ -260,6 +285,7 @@ module.exports = {
   ChatReview: model('ChatReview', chatReviewSchema),
   ChatSummary: model('ChatSummary', chatSummarySchema),
   AiSession: model('AiSession', aiSessionSchema),
+  AiMemory: model('AiMemory', aiMemorySchema),
   AiMessage: model('AiMessage', aiMessageSchema),
   AiSummary: model('AiSummary', aiSummarySchema),
   KnowledgeEntry: model('KnowledgeEntry', knowledgeEntrySchema),

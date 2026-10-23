@@ -2334,6 +2334,71 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(!(await M.DeviceToken.exists({ token: 'sec-other-phone' })), 'the other phone is signed out of pushes');
   });
 
+  await step('MedPin AI memory: notes per person, remember / forget, no patient details in a doctor\'s notes, memory off forgets, earlier patients carried', async () => {
+    const memory = require('../src/services/ai_memory');
+    const doctorId = ctx.doctorUserId;
+    // The doctor adds a note, sees it, deletes it.
+    const n1 = ok(await ctx.doc('POST', '/api/ai/memories', { text: 'Keep answers short, in bullet points' }), 201);
+    assert.equal((await ctx.doc('POST', '/api/ai/memories', { text: '  ' })).status, 400);
+    let mine = ok(await ctx.doc('GET', '/api/ai/memories'));
+    assert.equal(mine.enabled, true);
+    assert.deepEqual(mine.items.map((n) => n.text), ['Keep answers short, in bullet points']);
+    assert.equal(mine.items[0].source, 'added');
+    // The patient's notes are theirs: the doctor's list doesn't show them, and ids don't cross.
+    const p1 = ok(await ctx.pat('POST', '/api/patient/ai/memories', { text: 'I work night shifts' }), 201);
+    assert.equal(ok(await ctx.pat('GET', '/api/patient/ai/memories')).items.length, 1);
+    ok(await ctx.doc('DELETE', `/api/ai/memories/${p1.id}`));
+    assert.equal(ok(await ctx.pat('GET', '/api/patient/ai/memories')).items.length, 1, "a doctor can't delete a patient's note");
+    // What the model sends back is applied: add, update, remove; a doctor's note naming a patient is dropped.
+    const patient = await M.Patient.findById(ctx.patientId);
+    const who = { ownerType: 'doctor', userId: doctorId };
+    await memory.applyChanges(who, {
+      add: [{ text: 'Follows ADA targets for diabetes', kind: 'preference' }, { text: `${patient.name} is pregnant`, kind: 'about' }, { text: 'keep answers short, in bullet points', kind: 'preference' }],
+      update: [{ id: String(n1.id), text: 'Keep answers short, in bullet points, with units' }],
+      remove: [],
+    }, { practiceId: ctx.practiceId });
+    mine = ok(await ctx.doc('GET', '/api/ai/memories'));
+    assert.deepEqual(mine.items.map((n) => n.text).sort(), ['Follows ADA targets for diabetes', 'Keep answers short, in bullet points, with units']);
+    assert.ok(!mine.items.some((n) => n.text.includes(patient.name)), "patient details stay in the record, not in the doctor's notes");
+    const ada = mine.items.find((n) => n.text.startsWith('Follows'));
+    await memory.applyChanges(who, { add: [], update: [], remove: [String(ada.id), String(p1.id)] });
+    assert.equal(ok(await ctx.doc('GET', '/api/ai/memories')).items.length, 1, '"forget" removes it');
+    assert.equal(ok(await ctx.pat('GET', '/api/patient/ai/memories')).items.length, 1, "removing another person's note id does nothing");
+    // At most 40 per person.
+    await memory.applyChanges(who, { add: Array.from({ length: 45 }, (_, i) => ({ text: `Preference number ${i + 1}`, kind: 'preference' })), update: [], remove: [] });
+    assert.equal(await M.AiMemory.countDocuments({ userId: doctorId, ownerType: 'doctor' }), 40);
+    // The prompt says what was kept, and a patient's health notes are marked as theirs.
+    const notes = await memory.notesFor({ ownerType: 'patient', userId: patient.userId, patientId: patient._id });
+    assert.match(memory.notesPrompt(notes, 'patient'), /I work night shifts[\s\S]*|record wins/);
+    assert.match(memory.notesPrompt(notes, 'patient'), /record wins/);
+    assert.equal(memory.notesPrompt([], 'doctor'), '');
+    // "Forget everything", then memory off (nothing is kept, and it stays off).
+    ok(await ctx.doc('DELETE', '/api/ai/memories'));
+    assert.equal(ok(await ctx.doc('GET', '/api/ai/memories')).items.length, 0);
+    const off = ok(await ctx.pat('PUT', '/api/patient/ai/memories/settings', { enabled: false }));
+    assert.deepEqual([off.enabled, off.items.length], [false, 0], 'off forgets what was kept');
+    assert.deepEqual(await memory.notesFor({ ownerType: 'patient', userId: patient.userId, patientId: patient._id }), []);
+    ok(await ctx.pat('PUT', '/api/patient/ai/memories/settings', { enabled: true }));
+    // Small talk isn't worth a memory call; "remember" always is (Bengali / Hindi too).
+    assert.equal(memory.worthLearning('ok thanks'), false);
+    assert.equal(memory.worthLearning('remember I am vegetarian'), true);
+    assert.equal(memory.worthLearning('মনে রাখবেন আমি নিরামিষ খাই'), true);
+    assert.equal(memory.worthLearning('याद रखना मैं शाकाहारी हूँ'), true);
+    // A doctor's conversation keeps the patients it was about ("and her HbA1c?").
+    const s = ok(await ctx.doc('POST', '/api/ai/sessions', {}), 201);
+    const session = await M.AiSession.findById(s.id || s._id);
+    assert.deepEqual((await memory.sessionPatients(session, [patient])).map(String), [String(patient._id)]);
+    const again = await M.AiSession.findById(session._id);
+    assert.deepEqual((await memory.sessionPatients(again, [])).map(String), [String(patient._id)], 'still about them on the next question');
+    // Asking still works with memory in place (the AI is off in tests: a set reply, nothing kept).
+    ok(await ctx.doc('POST', `/api/ai/sessions/${again._id}/messages`, { text: 'Remember that I prefer metformin first' }), 201);
+    assert.equal(await M.AiMemory.countDocuments({ userId: doctorId }), 0);
+    // "Download my data" includes the notes.
+    ok(await ctx.pat('POST', '/api/patient/ai/memories', { text: 'Prefers explanations in simple words' }), 201);
+    const exp = ok(await ctx.pat('POST', '/api/me/export'), 201);
+    assert.ok(exp.url);
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

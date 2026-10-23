@@ -1948,6 +1948,29 @@ r.post('/ai/ask', async (req, res) => {
   res.status(201).json({ question, answer, emergency: Boolean(out.emergency || assistant.isEmergencyText(text)), specialistKey: out.specialistKey || null });
 });
 
+const memory = require('../services/ai_memory');
+
+// "What MedPin AI remembers": see, add and delete the notes; memory on / off.
+r.get('/ai/memories', async (req, res) => res.json(await memory.list({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id })));
+r.post('/ai/memories', async (req, res) => {
+  const note = await memory.add({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id }, req.body?.text);
+  if (!note) throw badRequest('Write what MedPin AI should remember', 'EMPTY_NOTE');
+  res.status(201).json(note);
+});
+r.delete('/ai/memories/:id', async (req, res) => {
+  if (!isId(req.params.id)) throw notFound('Note');
+  await memory.remove({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id }, req.params.id);
+  res.json({ ok: true });
+});
+r.delete('/ai/memories', async (req, res) => {
+  await memory.clear({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id });
+  res.json({ ok: true });
+});
+r.put('/ai/memories/settings', async (req, res) => {
+  await memory.setEnabled({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id }, req.body?.enabled !== false);
+  res.json(await memory.list({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id }));
+});
+
 // ── Feedback ──
 r.post('/feedback', async (req, res) => {
   const rating = Number(req.body.rating);

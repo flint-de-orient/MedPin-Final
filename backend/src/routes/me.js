@@ -120,12 +120,14 @@ me.post('/export', async (req, res) => {
     M.DoctorProfile.findOne({ userId: req.user._id }).lean(),
     M.Patient.findOne({ userId: req.user._id }).lean(),
   ]);
+  const notes = await M.AiMemory.find({ userId: req.user._id }, 'ownerType text kind source createdAt updatedAt').lean();
   const data = {
     exportedAt: new Date(),
     account: { name: req.user.name, phone: req.user.phone, email: req.user.email, language: req.user.language, createdAt: req.user.createdAt },
     memberships: members.map((m) => ({ practice: m.practiceId?.name, role: m.role, status: m.status, joinedAt: m.joinedAt })),
     doctorProfile: profile ? { ...profile, payout: profile.payout ? { ...profile.payout, razorpayAccountId: undefined } : undefined, _id: undefined, __v: undefined } : null,
     patientProfile: patient ? { ...patient, _id: undefined, __v: undefined } : null,
+    medpinAiRemembers: notes.map((n) => ({ for: n.ownerType, text: n.text, kind: n.kind, source: n.source, createdAt: n.createdAt, updatedAt: n.updatedAt })),
   };
   const file = await storage.save(Buffer.from(JSON.stringify(data, null, 2)), { folder: 'exports', name: 'medpin-my-data.json', mimeType: 'application/json' });
   await M.AuditLog.create({ userId: req.user._id, action: 'account.export', ip: req.ip });
