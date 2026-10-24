@@ -33,7 +33,11 @@ class _Chat {
   /// Live: the conversation id, and the patient's profile photo.
   final String? id;
   final String? photo;
-  const _Chat(this.ini, this.name, this.role, this.msg, this.time, this.unread, [this.team = false, this.id, this.photo]);
+
+  /// Live: "Urgent" or "Needs your answer" (MedPin AI passed a clinical question to the doctor);
+  /// routine chats are the desk's (no chip here).
+  final String? flag;
+  const _Chat(this.ini, this.name, this.role, this.msg, this.time, this.unread, [this.team = false, this.id, this.photo, this.flag]);
 
   Map<String, String>? get args => id == null ? null : {'conversationId': id!};
 
@@ -148,6 +152,7 @@ class _DoctorMessagesScreenState extends State<DoctorMessagesScreen> with LiveDa
       false,
       c.str('id'),
       p.str('photo').isEmpty ? null : p.str('photo'),
+      c['isUrgent'] == true ? 'Urgent' : c['needsDoctor'] == true ? 'Needs your answer' : null,
     );
   }
 
@@ -448,6 +453,13 @@ class _ChatRow extends StatelessWidget {
                         if (u) ...[const Gap(8), _Count(c.unread, MP.primary)],
                       ],
                     ),
+                    if (c.flag != null) ...[
+                      const Gap(6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: MpBadge(c.flag!, bg: c.flag == 'Urgent' ? MP.redSoft : MP.amberSoft, fg: c.flag == 'Urgent' ? MP.red : MP.amber, weight: w600),
+                      ),
+                    ],
                   ],
                 ),
               ),

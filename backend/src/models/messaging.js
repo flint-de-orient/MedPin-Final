@@ -78,6 +78,10 @@ const aiMetaSchema = new Schema(
       },
     ],
     escalated: { type: Boolean, default: false }, // "I've asked Dr. Sen to confirm"
+    // Passed on to a person: the desk (a visit, a fee, something it can't answer) or the doctor
+    // (a clinical question); the reason is shown to the clinic on the AI's reply.
+    handoverTo: { type: String, enum: ['desk', 'doctor'] },
+    handoverReason: { type: String, maxlength: 200 },
   },
   { _id: false },
 );

@@ -1,7 +1,7 @@
+import 'old_rx_sheet.dart';
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
-import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/session.dart';
@@ -126,34 +126,15 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
 
   String get _patientName => data == null ? 'Priya Sharma' : data!.obj('patient').str('name');
 
-  /// Files a prescription written on paper into the patient's record.
+  /// Files a prescription written on paper (here, or an old one from another doctor) into the
+  /// patient's record: its pages, the date written on it and who wrote it.
   Future<void> _filePaper(String source) async {
     if (!isLive) {
       toast(context, source == 'camera' ? 'Opening camera' : source == 'gallery' ? 'Opening gallery' : 'Choose a PDF to file');
       return;
     }
-    final patientId = data!.obj('patient').str('id');
-    UploadFile? file;
-    try {
-      file = source == 'pdf' ? await Files.pdf() : await Files.photo(camera: source == 'camera');
-    } catch (_) {
-      if (mounted) toast(context, "Couldn't open ${source == 'camera' ? 'the camera' : 'your files'}");
-      return;
-    }
-    if (file == null || !mounted) return;
-    final upload = file;
-    final ok = await runAction(
-      context,
-      () => Api.I.upload('/api/patients/$patientId/records', files: {'files': [upload]}, fields: {
-        'kind': 'prescription',
-        'scanned': 'true',
-        'title': 'Paper prescription',
-        'uploadSource': source,
-      }),
-    );
-    if (ok == null || !mounted) return;
-    toast(context, 'Paper prescription filed');
-    reload(quiet: true);
+    final filed = await fileOldPrescription(context, patientId: data!.obj('patient').str('id'), source: source);
+    if (filed && mounted) reload(quiet: true);
   }
 
   Map<String, dynamic> _raw(String? id) => data?.list('items').where((x) => x.str('id') == id).firstOrNull ?? const {};
@@ -241,8 +222,10 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
       byline:
           scanned
               ? [
-                x.str('source') == 'this_clinic' ? 'Paper prescription' : 'Shared by the patient',
-                if (doctor.isNotEmpty) 'filed by $doctor',
+                x['fromElsewhere'] == true
+                    ? [tr(context, 'Old prescription'), if (x.str('sourceName').isNotEmpty) x.str('sourceName')].join(' · ')
+                    : x.str('source') == 'this_clinic' ? 'Paper prescription' : 'Shared by the patient',
+                if (doctor.isNotEmpty && x['fromElsewhere'] != true) 'filed by $doctor',
               ].join(' · ')
               : [
                 if (doctor.isNotEmpty) doctor,

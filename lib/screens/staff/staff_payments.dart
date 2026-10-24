@@ -188,14 +188,23 @@ class _StaffPaymentsScreenState extends State<StaffPaymentsScreen> with LiveData
         children: [
           Row(
             children: [
-              Expanded(child: Text("Day's collections", style: tx(18, w: w700))),
-              MpSegmented(
-                options: const ['Today', 'Yesterday'],
-                index: _day,
-                onChanged: (i) {
-                  setState(() => _day = i);
-                  reload();
-                },
+              Expanded(child: Text("Day's collections", maxLines: 2, style: tx(18, w: w700, h: 1.25))),
+              const Gap(12),
+              // A compact two-way switch of its own width (in a Row it would squeeze to nothing).
+              SizedBox(
+                width: 200,
+                child: MpSegmented(
+                  options: const ['Today', 'Yesterday'],
+                  index: _day,
+                  height: 36,
+                  fontSize: 14,
+                  selectedShadow: MPShadow.hairline,
+                  onChanged: (i) {
+                    if (i == _day) return;
+                    setState(() => _day = i);
+                    reload();
+                  },
+                ),
               ),
             ],
           ),

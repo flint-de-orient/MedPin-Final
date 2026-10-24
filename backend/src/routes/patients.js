@@ -11,7 +11,7 @@ const storage = require('../services/storage');
 const { patientSummary } = require('../services/clinical');
 const { adherence, checkReading } = require('../services/care');
 const { notify } = require('../services/notify');
-const { extractLabReport } = require('../services/assistant');
+const { extractLabReport, extractPrescription } = require('../services/assistant');
 const { issueOtp, checkOtp } = require('./auth');
 
 const { uploader } = require('../lib/uploads');
@@ -411,30 +411,63 @@ r.post('/patients/:id/records', upload.array('files', 10), async (req, res) => {
   const kind = E.RECORD_KINDS.includes(req.body.kind) ? req.body.kind : 'test_result';
   const files = [];
   for (const f of req.files) files.push(await storage.save(f.buffer, { folder: 'records', name: f.originalname, mimeType: f.mimetype }));
+  // The date it was written (an old prescription the patient brought): a day that has passed.
+  let recordDate = new Date();
+  if (req.body.recordDate) {
+    recordDate = T.parseDay(req.body.recordDate);
+    if (!recordDate || recordDate > new Date() || recordDate < T.addDays(new Date(), -365 * 30)) throw badRequest('Choose the date it was written (not a future date)', 'BAD_DATE');
+  }
+  const elsewhere = req.body.writtenBy === 'elsewhere';
+  const sourceName = String(req.body.sourceName || '').trim().slice(0, 120) || undefined;
   const record = await M.MedicalRecord.create({
     patientId: patient._id, kind, title: req.body.title || (kind === 'prescription' ? 'Prescription' : 'Test report'),
-    recordDate: req.body.recordDate ? T.parseDay(req.body.recordDate) : new Date(), origin: 'from_doctor',
-    sourceName: req.body.sourceName, practiceId: req.practiceId, doctorId: req.member.role === 'doctor' ? req.user._id : undefined,
+    recordDate, origin: 'from_doctor',
+    sourceName, practiceId: req.practiceId, doctorId: req.member.role === 'doctor' ? req.user._id : undefined,
     uploadSource: req.body.uploadSource, files, uploadedBy: req.user._id, flagLabel: 'New', flagTone: 'new',
   });
+  let rxRead = null;
   if (kind === 'prescription' && req.body.scanned === 'true') {
-    // A paper prescription belongs to the doctor who wrote it, not to whoever scanned it:
-    // the uploading doctor, the doctor of the visit, or the patient's doctor here.
-    let doctorId = req.member.role === 'doctor' ? req.user._id : undefined;
-    if (!doctorId && req.body.appointmentId) doctorId = (await M.Appointment.findOne({ _id: req.body.appointmentId, practiceId: req.practiceId }, 'doctorId'))?.doctorId;
-    if (!doctorId) {
-      const doctors = await M.Member.find({ practiceId: req.practiceId, role: 'doctor', status: 'active' }).distinct('userId');
-      doctorId = (await M.CareTeamAccess.findOne({ patientId: patient._id, userId: { $in: doctors } }).sort({ isPrimary: -1 }))?.userId;
+    // What is written on it (every page): the medicines, diagnosis, tests, doctor and date —
+    // read by MedPin AI when it is on, for the doctor to see at a glance (the scan stays the record).
+    const rx = await extractPrescription(req.files.map((f) => ({ buffer: f.buffer, mimetype: f.mimetype })), null).catch((err) => { console.warn('[extract-rx]', err.message); return null; });
+    const readable = rx && rx.document_type !== 'lab_report' ? rx : null;
+    // Written here: it belongs to the doctor who wrote it, not to whoever scanned it (the
+    // uploading doctor, the doctor of the visit, or the patient's doctor here). Written
+    // elsewhere: that doctor / hospital, as the clinic typed it (or as read from it).
+    let doctorId;
+    let doctorName;
+    if (!elsewhere) {
+      doctorId = req.member.role === 'doctor' ? req.user._id : undefined;
+      if (!doctorId && req.body.appointmentId) doctorId = (await M.Appointment.findOne({ _id: req.body.appointmentId, practiceId: req.practiceId }, 'doctorId'))?.doctorId;
+      if (!doctorId) {
+        const doctors = await M.Member.find({ practiceId: req.practiceId, role: 'doctor', status: 'active' }).distinct('userId');
+        doctorId = (await M.CareTeamAccess.findOne({ patientId: patient._id, userId: { $in: doctors } }).sort({ isPrimary: -1 }))?.userId;
+      }
+      doctorName = (doctorId ? (await M.User.findById(doctorId, 'name'))?.name : null) || sourceName;
+    } else {
+      doctorName = readable?.doctor_name || sourceName;
     }
-    const doctor = doctorId ? await M.User.findById(doctorId, 'name') : null;
-    await M.Prescription.create({
-      practiceId: req.practiceId, patientId: patient._id, doctorId, doctorName: doctor?.name || req.body.sourceName, kind: 'scanned', source: 'this_clinic',
-      uploadedBy: req.user._id, file: files[0], issuedAt: record.recordDate,
+    const FOOD = { before_food: 'before_food', after_food: 'after_food', with_food: 'with_food', empty_stomach: 'empty_stomach' };
+    const items = (readable?.medicines || []).filter((m) => m.name).slice(0, 30).map((m) => ({
+      name: String(m.name).slice(0, 120), strength: m.strength || undefined,
+      dose: { morning: Math.max(0, Number(m.morning) || 0), afternoon: Math.max(0, Number(m.afternoon) || 0), night: Math.max(0, Number(m.night) || 0) },
+      frequency: ['daily', 'weekly', 'as_needed'].includes(m.frequency) ? m.frequency : 'daily',
+      foodRelation: FOOD[m.food], instructions: m.instructions || undefined,
+      ...(m.duration_days > 0 ? { duration: { value: Math.round(m.duration_days), unit: 'days' } } : {}),
+      change: 'continued',
+    }));
+    const rxDoc = await M.Prescription.create({
+      practiceId: req.practiceId, patientId: patient._id, doctorId, doctorName, kind: 'scanned', source: 'this_clinic',
+      fromElsewhere: elsewhere || undefined, sourceName: elsewhere ? (sourceName || [readable?.doctor_name, readable?.clinic_name].filter(Boolean).join(' · ') || undefined) : undefined,
+      uploadedBy: req.user._id, file: files[0], issuedAt: recordDate,
+      diagnosisSummary: readable?.diagnosis || undefined, items,
+      tests: (readable?.tests_advised || []).map((s) => String(s).trim()).filter(Boolean).slice(0, 20),
     });
+    rxRead = { id: rxDoc._id, medicines: items.length, read: Boolean(readable), aiOff: !rx && !require('../services/ai').enabled() };
   }
   let extracted = null;
   if (kind === 'test_result') extracted = await extractLabReport(req.files.map((f) => ({ buffer: f.buffer, mimetype: f.mimetype })), null).catch(() => null);
-  res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted });
+  res.status(201).json({ record: { ...record.toJSON(), files: record.files.map(storage.withUrl) }, extracted, prescription: rxRead });
 });
 
 r.get('/patients/:id/lab-results', need('clinical', 'labs'), async (req, res) => {

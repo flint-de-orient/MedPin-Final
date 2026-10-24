@@ -265,7 +265,7 @@ threads.post('/:id/messages', upload.single('file'), async (req, res) => {
   // A question, or a photo / PDF on its own (a medicine strip, a report): MedPin AI may answer
   // (and the emergency check runs). Voice notes: the clinic listens.
   if (senderType === 'patient' && (text || kind === 'attachment')) {
-    aiPending = await assistant.willReplyInCareThread(convo).catch(() => false);
+    aiPending = await assistant.willReplyInCareThread(convo, msg).catch(() => false);
     setImmediate(() => {
       assistant.replyInCareThread(convo, msg).catch((err) => console.warn('[ai reply]', err.message));
     });
@@ -362,7 +362,10 @@ threads.post('/:id/read', async (req, res) => {
   await markRead(convo, req.user._id);
   const isStaff = convo.participants.find((p) => String(p.userId) === String(req.user._id))?.role !== 'patient';
   if (isStaff && req.body.pauseAi !== false) {
-    await M.Conversation.updateOne({ _id: convo._id }, { $set: { aiPausedBy: req.user._id, aiPausedAt: new Date() } });
+    await M.Conversation.updateOne({ _id: convo._id }, { $set: { staffViewingAt: new Date() } }, { timestamps: false });
+  } else if (isStaff) {
+    // Leaving the thread: MedPin AI may answer again straight away (unless the clinic wrote).
+    await M.Conversation.updateOne({ _id: convo._id }, { $unset: { staffViewingAt: 1 } }, { timestamps: false });
   }
   res.json({ ok: true });
 });
@@ -429,8 +432,11 @@ inbox.get('/', async (req, res) => {
   // Patients' profile photos for the avatars.
   const photos = await require('../services/photos').photosFor(convos.map((c) => c.patientId?.userId));
   const mine = (c) => c.participants.find((p) => String(p.userId) === String(req.user._id));
+  // For the doctor: chats MedPin AI passed to them (a clinical question still to review), or urgent.
+  const forDoctor = type === 'direct' ? new Set() : new Set((await M.ChatReview.distinct('conversationId', { practiceId: req.practiceId, status: 'needs_review', conversationId: { $in: convos.map((c) => c._id) } })).map(String));
   let rows = convos.map((c) => ({
     id: c._id, type: c.type, isUrgent: c.isUrgent, triage: c.triage, lastMessage: c.lastMessage,
+    needsDoctor: Boolean(c.isUrgent || forDoctor.has(String(c._id))),
     unread: mine(c)?.unreadCount || 0,
     patient: c.patientId && {
       id: c.patientId._id, name: c.patientId.name, age: T.ageFrom(c.patientId), gender: c.patientId.gender, conditions: c.patientId.conditions.map((x) => x.name),

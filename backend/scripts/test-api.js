@@ -2048,11 +2048,101 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       assert.equal(seen, null, 'MedPin AI was not asked');
       // Two minutes after the doctor left, MedPin AI answers again.
       await M.Conversation.updateOne({ _id: convo }, { staffViewingAt: new Date(Date.now() - 3 * 60e3), aiPausedAt: null });
-      const later = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Thank you' }), 201);
+      const thanks = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Thank you 🙏' }), 201);
+      assert.equal(thanks.aiPending, false, 'a thank-you needs no answer');
+      await new Promise((r) => setTimeout(r, 300));
+      const later = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'When should I take it?' }), 201);
       assert.equal(later.aiPending, true);
     } finally {
       Object.assign(aiMod, saved);
       await new Promise((r) => setTimeout(r, 300));
+    }
+  });
+
+  await step('MedPin AI in the clinic chat: real clinic facts, quiet for thanks, desk vs doctor handover, 2-hour pause, the 108 line when quiet', async () => {
+    const convo = ctx.convoId;
+    const convoOid = new (require('mongoose').Types.ObjectId)(String(convo));
+    const reset = () => M.Conversation.updateOne({ _id: convo }, { aiEnabled: true, $unset: { aiPausedAt: 1, staffViewingAt: 1, humanRequestedAt: 1, handledAt: 1 } });
+    await reset();
+    await M.Message.updateMany({ conversationId: convo, senderType: 'ai' }, { createdAt: new Date(Date.now() - 3 * 3600e3) }, { timestamps: false });
+    await M.Alert.updateMany({ conversationId: convo }, { status: 'resolved' });
+    const aiMod = require('../src/services/ai');
+    const saved = { enabled: aiMod.enabled, completeJson: aiMod.completeJson };
+    const calls = [];
+    let answer;
+    aiMod.enabled = () => true;
+    aiMod.completeJson = async ({ system, messages, timeoutMs }) => {
+      calls.push({ system, messages, timeoutMs });
+      return { model: 'stub', data: answer };
+    };
+    const settle = async (n) => { for (let i = 0; i < 40 && (await aiCount()) < n; i += 1) await new Promise((r) => setTimeout(r, 50)); await new Promise((r) => setTimeout(r, 150)); };
+    const aiCount = () => M.Message.countDocuments({ conversationId: convo, senderType: 'ai' });
+    const triage = async () => (await M.Conversation.findById(convo, 'triage')).triage || null;
+    try {
+      // Facts from the clinic, fresh, in India time: the doctor's week and the patient's visit.
+      answer = { no_reply: false, reply: 'Dr. Sen sits today from 10 AM.', handover_to: 'none', handover_reason: '', urgency: 'none', needs_doctor: false, reason: 'none', cited_entry_ids: [] };
+      let n = await aiCount();
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Is the doctor sitting today?' }), 201);
+      await settle(n + 1);
+      assert.equal(await aiCount(), n + 1);
+      const sys = calls.at(-1).system;
+      assert.match(sys, /Clinic facts \(JSON, true right now\)/);
+      assert.match(sys, /"now_in_india":"\w{3} \d{1,2} \w{3}, \d{1,2}:\d{2} [AP]M"/);
+      assert.match(sys, /"sittings_next_7_days":\[/);
+      assert.match(sys, /You cannot book, move or cancel a visit/);
+      assert.match(sys, /Do not say you are an AI/);
+      assert.equal(calls.at(-1).timeoutMs, 25000, 'a time limit on the reply');
+      assert.equal(await triage(), null, 'fully answered: nothing for the clinic to do');
+      // "Thanks" after an answer: no model call, no reply, no "Needs attention".
+      const c0 = calls.length;
+      const ty = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'ধন্যবাদ' }), 201);
+      assert.equal(ty.aiPending, false);
+      await new Promise((r) => setTimeout(r, 300));
+      assert.equal(calls.length, c0, 'the model is not asked');
+      assert.equal(await triage(), null);
+      // A visit / fee question: handed to the desk (not the doctor's review list), reason shown.
+      answer = { no_reply: false, reply: 'The desk will arrange a new time for you.', handover_to: 'desk', handover_reason: 'Wants to move Saturday visit', urgency: 'none', needs_doctor: false, reason: 'outside_knowledge_base', cited_entry_ids: [] };
+      const reviews = await M.ChatReview.countDocuments({ conversationId: convo });
+      n = await aiCount();
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Can you move my visit to Monday?' }), 201);
+      await settle(n + 1);
+      const handed = await M.Message.findOne({ conversationId: convo, senderType: 'ai' }).sort({ createdAt: -1 });
+      assert.deepEqual([handed.ai.handoverTo, handed.ai.handoverReason, handed.ai.flagged], ['desk', 'Wants to move Saturday visit', false]);
+      assert.equal(await M.ChatReview.countDocuments({ conversationId: convo }), reviews, 'not for the doctor to review');
+      assert.equal(await triage(), 'needs_attention', 'the desk sees it needs attention');
+      for (let i = 0; i < 30 && !(await M.Notification.exists({ title: /^MedPin AI passed .+'s chat to you$/, 'params.conversationId': convoOid })); i += 1) await new Promise((r) => setTimeout(r, 50));
+      assert.ok(await M.Notification.exists({ title: /^MedPin AI passed .+'s chat to you$/, 'params.conversationId': convoOid }), 'the desk is told');
+      // The clinic writes: MedPin AI stays out for 2 hours, not 10 minutes; Handled lets it back.
+      ok(await ctx.desk('POST', `/api/conversations/${convo}/messages`, { text: 'Monday 11 AM is free, shall I book it?' }), 201);
+      await M.Conversation.updateOne({ _id: convo }, { aiPausedAt: new Date(Date.now() - 30 * 60e3), $unset: { staffViewingAt: 1 } });
+      const yes = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Yes please book it' }), 201);
+      assert.equal(yes.aiPending, false, 'the desk is still on it after 30 minutes');
+      ok(await ctx.desk('POST', `/api/conversations/${convo}/handled`, {}));
+      await M.Conversation.updateOne({ _id: convo }, { $unset: { staffViewingAt: 1 } });
+      answer = { no_reply: false, reply: 'Your doctor will look at this.', handover_to: 'none', handover_reason: '', urgency: 'none', needs_doctor: false, reason: 'none', cited_entry_ids: [] };
+      const back = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Also what should I bring?' }), 201);
+      assert.equal(back.aiPending, true, 'handled: MedPin AI answers again');
+      await new Promise((r) => setTimeout(r, 300));
+      // Reading the thread at the clinic marks "viewing" only (2 minutes), never the 2-hour pause.
+      await reset();
+      ok(await ctx.desk('POST', `/api/conversations/${convo}/read`, {}));
+      assert.equal((await M.Conversation.findById(convo, 'aiPausedAt')).aiPausedAt ?? null, null);
+      // Emergency words while MedPin AI is quiet: the alert, and the fixed "call 108" line.
+      await M.Conversation.updateOne({ _id: convo }, { aiEnabled: false });
+      n = await aiCount();
+      ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'I have chest pain and feel breathless' }), 201);
+      await settle(n + 1);
+      const line = await M.Message.findOne({ conversationId: convo, senderType: 'ai' }).sort({ createdAt: -1 });
+      assert.match(line.text, /108/);
+      assert.deepEqual([line.ai.responseSource, line.ai.handoverTo], ['fixed', 'doctor']);
+      assert.equal(await M.Alert.countDocuments({ conversationId: convo, kind: 'urgent_chat', status: 'open' }), 1);
+    } finally {
+      Object.assign(aiMod, saved);
+      await M.Alert.updateMany({ conversationId: convo }, { status: 'resolved' });
+      await new Promise((r) => setTimeout(r, 200));
+      await M.Conversation.updateOne({ _id: convo }, { aiEnabled: true, isUrgent: false, $unset: { aiPausedAt: 1, staffViewingAt: 1, handledAt: 1 } });
+      // The next checks start with this hour's AI replies not counted (6 an hour per chat).
+      await M.Message.updateMany({ conversationId: convo, senderType: 'ai' }, { createdAt: new Date(Date.now() - 3 * 3600e3) }, { timestamps: false });
     }
   });
 
@@ -2857,6 +2947,38 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     ok(await ctx.doc('POST', '/api/doctor/leaves', { reason: 'Afternoon too', startDate: T.dayKey(day), endDate: T.dayKey(day), part: 'afternoon' }), 201);
     await M.Appointment.updateMany({ _id: { $in: [am._id, pm._id] } }, { status: 'cancelled' });
     await M.DoctorLeave.deleteMany({ doctorId: ctx.doctorUserId, startDate: day });
+  });
+
+  await step('old paper prescription: filed with the date written and who wrote it; a future date is refused; the desk acting clears "Needs attention"', async () => {
+    const T = require('../src/lib/time');
+    const pid = ctx.patientId;
+    const day = T.dayKey(T.addDays(T.dayStart(), -400));
+    const res = ok(await ctx.doc('POST', `/api/patients/${pid}/records`, undefined, { form: fileForm('files', tinyPng(), 'rx.png', 'image/png', { kind: 'prescription', scanned: 'true', recordDate: day, writtenBy: 'elsewhere', sourceName: 'Dr. R. Das · AMRI Hospital', uploadSource: 'camera' }) }), 201);
+    assert.ok(res.prescription?.id);
+    const rx = await M.Prescription.findById(res.prescription.id);
+    assert.deepEqual([rx.kind, rx.fromElsewhere, rx.sourceName, rx.doctorName, T.dayKey(rx.issuedAt)], ['scanned', true, 'Dr. R. Das · AMRI Hospital', 'Dr. R. Das · AMRI Hospital', day]);
+    const listed = ok(await ctx.doc('GET', `/api/patients/${pid}/prescriptions`)).items.find((x) => x.id === String(rx._id));
+    assert.equal(listed.fromElsewhere, true);
+    const future = T.dayKey(T.addDays(T.dayStart(), 3));
+    assert.equal((await ctx.doc('POST', `/api/patients/${pid}/records`, undefined, { form: fileForm('files', tinyPng(), 'rx.png', 'image/png', { kind: 'prescription', scanned: 'true', recordDate: future }) })).status, 400);
+    // Written here: the uploading doctor's, dated as chosen.
+    const here = ok(await ctx.doc('POST', `/api/patients/${pid}/records`, undefined, { form: fileForm('files', tinyPng(), 'rx.png', 'image/png', { kind: 'prescription', scanned: 'true', writtenBy: 'here' }) }), 201);
+    const mine = await M.Prescription.findById(here.prescription.id);
+    assert.equal(String(mine.doctorId), String(ctx.doctorUserId));
+    assert.equal(mine.fromElsewhere, undefined);
+    await M.Prescription.deleteMany({ _id: { $in: [rx._id, mine._id] } });
+    // The patient asked; the desk sent a payment request (a person acting): no longer "Needs attention".
+    const care = require('../src/services/care');
+    await M.Conversation.updateOne({ _id: ctx.convoId }, { triage: 'needs_attention' });
+    const convo = await M.Conversation.findById(ctx.convoId);
+    const deskUser = (await M.Member.findOne({ practiceId: ctx.practiceId, role: 'front_desk', status: 'active' })).userId;
+    await care.chatNote({ practiceId: convo.practiceId, patientId: convo.patientId, by: deskUser }, 'Please pay ₹500 for your visit.', 'payment_request');
+    assert.equal((await M.Conversation.findById(ctx.convoId)).triage ?? null, null);
+    // A note with nobody behind it (paid online) leaves it.
+    await M.Conversation.updateOne({ _id: ctx.convoId }, { triage: 'needs_attention' });
+    await care.chatNote({ practiceId: convo.practiceId, patientId: convo.patientId }, 'Payment received.', 'fee_paid');
+    assert.equal((await M.Conversation.findById(ctx.convoId)).triage, 'needs_attention');
+    await M.Conversation.updateOne({ _id: ctx.convoId }, { $unset: { triage: 1 } });
   });
 
   server.close();

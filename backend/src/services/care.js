@@ -230,6 +230,12 @@ async function chatNote(ctx, text, event, extraMeta = {}) {
       { $set: { lastMessage: previewOf(msg, user?.name) }, $inc: { 'participants.$[p].unreadCount': 1 } },
       { arrayFilters: [{ 'p.role': 'patient' }] },
     );
+    // Done by someone at the clinic (the desk booked the visit, took the fee, sent the payment
+    // request): the patient's message has been acted on, so it no longer "Needs attention".
+    // A note with nobody behind it (a fee paid online) leaves it as it is.
+    if (ctx.by && (await M.Member.exists({ practiceId, userId: idOf(ctx.by), status: 'active' }))) {
+      await M.Conversation.updateOne({ _id: convo._id, triage: 'needs_attention' }, { $unset: { triage: 1 } });
+    }
     await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
     return msg;
   } catch (err) {

@@ -467,7 +467,10 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     if (m['deleted'] == true) {
       return Align(alignment: align, child: Text('Message deleted · $time', style: tx(14, c: MP.ink3)));
     }
-    if (type == 'ai') return _aiMessage(text: m.str('text'), time: time, flagged: m.obj('ai')['flagged'] == true);
+    if (type == 'ai') {
+      final a = m.obj('ai');
+      return _aiMessage(text: m.str('text'), time: time, flagged: a['flagged'] == true, handoverTo: a['handoverTo'] as String?, handoverReason: a['handoverReason'] as String?);
+    }
     if (m['kind'] == 'voice') {
       final v = m.obj('voice');
       return Align(
@@ -1248,7 +1251,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     await reload(quiet: true);
   }
 
-  Widget _aiMessage({String text = "Thanks, Priya. I've shared your report with Dr. Sen's team.", String time = '9:06 AM', bool flagged = false}) {
+  Widget _aiMessage({String text = "Thanks, Priya. I've shared your report with Dr. Sen's team.", String time = '9:06 AM', bool flagged = false, String? handoverTo, String? handoverReason}) {
     return Align(
       alignment: Alignment.centerLeft,
       child: ConstrainedBox(
@@ -1270,7 +1273,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                 const Gap(4),
                 UserText(text, style: tx(16, h: 1.5)),
                 // MedPin AI asked the doctor to check this answer: straight to the review.
-                if (flagged) ...[
+                // (The desk can't review MedPin AI's answers: the doctor does.)
+                if (flagged && (!isLive || Session.I.can('ai'))) ...[
                   const Gap(8),
                   Tap(
                     onTap: () => Nav.go(context, 'Chat-Review-Detail', args: {'conversationId': '$_convId'}),
@@ -1282,6 +1286,23 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                       const Gap(6),
                       Text('Flagged for your review', style: tx(12, w: w600, c: MP.amber)),
                     ]),
+                  ),
+                ],
+                // Passed on to the desk (a visit, a fee, a clinic question): why, for whoever picks it up.
+                if (handoverTo != null && (handoverReason ?? '').isNotEmpty) ...[
+                  const Gap(8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Ico(I.alert, size: 14, color: handoverTo == 'desk' ? MP.primary : MP.amber),
+                      const Gap(6),
+                      Expanded(
+                        child: Text(
+                          trf(context, handoverTo == 'desk' ? 'Passed to the desk: {reason}' : 'For the doctor: {reason}', {'reason': handoverReason}),
+                          style: tx(13, w: w600, c: handoverTo == 'desk' ? MP.primary : MP.amber, h: 1.4),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
                 const Gap(4),

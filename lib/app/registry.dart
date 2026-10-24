@@ -165,7 +165,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Export': ScreenSpec(stem: 'Export', title: 'Export', group: 'Team, billing & reports', panel: 'doctor', builder: (_) => const ExportScreen()),
   'Daily-Report': ScreenSpec(stem: 'Daily-Report', title: 'Daily report', group: 'Team, billing & reports', panel: 'doctor', builder: (_) => const DailyReportScreen()),
   'Chat-Review': ScreenSpec(stem: 'Chat-Review', title: 'Chat review', group: 'AI assistant & feedback', panel: 'doctor', builder: (_) => const ChatReviewScreen()),
-  'Chat-Review-Detail': ScreenSpec(stem: 'Chat-Review-Detail', title: 'Chat review · detail', group: 'AI assistant & feedback', panel: 'doctor', builder: (_) => const ChatReviewDetailScreen()),
+  'Chat-Review-Detail': ScreenSpec(stem: 'Chat-Review-Detail', title: 'Chat review · detail', group: 'AI assistant & feedback', panel: 'doctor', builder: (_) => Session.I.role == null || Session.I.can('ai') ? const ChatReviewDetailScreen() : const PatientThreadScreen()),
   'Chat-Summaries': ScreenSpec(stem: 'Chat-Summaries', title: 'Chat summaries', group: 'AI assistant & feedback', panel: 'doctor', builder: (_) => const ChatSummariesScreen()),
   'Knowledge': ScreenSpec(stem: 'Knowledge', title: 'Knowledge base', group: 'AI assistant & feedback', panel: 'doctor', builder: (_) => const KnowledgeScreen()),
   'Knowledge-Editor': ScreenSpec(stem: 'Knowledge-Editor', title: 'Knowledge · edit', group: 'AI assistant & feedback', panel: 'doctor', builder: (_) => const KnowledgeEditorScreen()),

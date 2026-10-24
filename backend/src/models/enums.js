@@ -113,7 +113,7 @@ module.exports = {
   AI_OWNER_TYPES: ['doctor', 'patient'],
   AI_ROLES: ['user', 'assistant'],
   INPUT_MODES: ['typed', 'spoken'],
-  AI_RESPONSE_SOURCES: ['model', 'scripted'],
+  AI_RESPONSE_SOURCES: ['model', 'scripted', 'fixed'],
   REVIEW_URGENCIES: ['high', 'medium', 'low'],
   REVIEW_REASONS: ['symptom_question', 'dosage_question', 'low_confidence', 'outside_knowledge_base', 'other'],
   REVIEW_STATUSES: ['needs_review', 'reviewed'],

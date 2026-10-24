@@ -13,6 +13,12 @@ require('../src/models');
     const r = await P.collection.updateMany({ primary: { $exists: false }, familyOf: { $exists: false } }, { $set: { primary: true } });
     if (r.modifiedCount) console.log(`  patients marked as their phone's holder: ${r.modifiedCount}`);
   }
+  // "Needs attention" left on chats the clinic already answered (its last word is the clinic's).
+  const C = mongoose.models.Conversation;
+  if (C) {
+    const r = await C.collection.updateMany({ triage: 'needs_attention', 'lastMessage.senderType': { $in: ['doctor', 'staff', 'dietician'] } }, { $unset: { triage: '' } });
+    if (r.modifiedCount) console.log(`  chats no longer marked "Needs attention": ${r.modifiedCount}`);
+  }
   const names = Object.keys(mongoose.models).sort();
   for (const name of names) {
     const Model = mongoose.models[name];

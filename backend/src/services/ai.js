@@ -16,7 +16,7 @@ const modelName = () => (provider() === 'gemini' ? env.ai.gemini.chatModel : pro
 // ── Claude ────────────────────────────────────────────────
 
 let anthropic;
-async function claudeComplete({ system, messages, effort, format, maxTokens }) {
+async function claudeComplete({ system, messages, effort, format, maxTokens, timeoutMs }) {
   if (!anthropic) {
     const Anthropic = require('@anthropic-ai/sdk');
     anthropic = new Anthropic({ apiKey: env.ai.apiKey });
@@ -30,7 +30,7 @@ async function claudeComplete({ system, messages, effort, format, maxTokens }) {
     system,
     messages,
     output_config: { effort, ...(format ? { format } : {}) },
-  });
+  }, timeoutMs ? { timeout: timeoutMs, maxRetries: 1 } : undefined);
   const refused = response.stop_reason === 'refusal';
   return {
     text: refused ? '' : response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(),
@@ -66,17 +66,18 @@ const stripForGemini = (schema) => {
   return out;
 };
 
-async function geminiCall(model, body) {
+async function geminiCall(model, body, timeoutMs = 120000) {
   const res = await fetch(`${GEMINI}/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': env.ai.gemini.apiKey },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const json = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, json };
 }
 
-async function geminiComplete({ system, messages, format, maxTokens, vision, effort }) {
+async function geminiComplete({ system, messages, format, maxTokens, vision, effort, timeoutMs }) {
   const model = vision ? env.ai.gemini.visionModel : env.ai.gemini.chatModel;
   const started = Date.now();
   const body = {
@@ -88,15 +89,15 @@ async function geminiComplete({ system, messages, format, maxTokens, vision, eff
       ...(effort === 'low' ? { thinkingConfig: { thinkingLevel: 'low' } } : {}),
     },
   };
-  let r = await geminiCall(model, body);
+  let r = await geminiCall(model, body, timeoutMs);
   if (!r.ok && r.status === 400 && body.generationConfig.thinkingConfig && /thinking/i.test(JSON.stringify(r.json))) {
     delete body.generationConfig.thinkingConfig; // a model without thinking levels
-    r = await geminiCall(model, body);
+    r = await geminiCall(model, body, timeoutMs);
   }
   if (!r.ok && format && r.status === 400 && /responseJsonSchema|response_json_schema/i.test(JSON.stringify(r.json))) {
     // Older model: fall back to the OpenAPI-style schema field.
     body.generationConfig = { maxOutputTokens: maxTokens, responseMimeType: 'application/json', responseSchema: stripForGemini(format.schema) };
-    r = await geminiCall(model, body);
+    r = await geminiCall(model, body, timeoutMs);
   }
   if (!r.ok) throw new Error(`Gemini ${r.status}: ${r.json?.error?.message || 'request failed'}`);
   const cand = r.json.candidates?.[0];
@@ -119,15 +120,15 @@ async function geminiComplete({ system, messages, format, maxTokens, vision, eff
  * One assistant turn.
  * @returns {Promise<null | {text, refused, model, latencyMs, inputTokens, outputTokens}>}
  */
-async function complete({ system, messages, effort = 'medium', format, maxTokens = 8192, vision = false }) {
+async function complete({ system, messages, effort = 'medium', format, maxTokens = 8192, vision = false, timeoutMs }) {
   if (!enabled()) return null;
-  if (provider() === 'gemini') return geminiComplete({ system, messages, format, maxTokens, vision, effort });
-  return claudeComplete({ system, messages, effort, format, maxTokens });
+  if (provider() === 'gemini') return geminiComplete({ system, messages, format, maxTokens, vision, effort, timeoutMs });
+  return claudeComplete({ system, messages, effort, format, maxTokens, timeoutMs });
 }
 
 /** Structured JSON answer matching `schema`. Returns { ...result, data } or null. */
-async function completeJson({ system, messages, schema, effort = 'medium', vision = false, maxTokens = 8192 }) {
-  const out = await complete({ system, messages, effort, vision, maxTokens, format: { type: 'json_schema', schema } });
+async function completeJson({ system, messages, schema, effort = 'medium', vision = false, maxTokens = 8192, timeoutMs }) {
+  const out = await complete({ system, messages, effort, vision, maxTokens, timeoutMs, format: { type: 'json_schema', schema } });
   if (!out) return null;
   if (out.refused || !out.text) return { ...out, data: null };
   try {

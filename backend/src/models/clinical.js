@@ -141,6 +141,10 @@ const prescriptionSchema = new Schema(
     locationId: ref('Location'),
     doctorId: ref('User'),
     doctorName: String, // for prescriptions from outside MedPin
+    // A paper prescription filed by the clinic that another doctor / hospital wrote (an old one
+    // the patient brought): who wrote it, as written ("Dr. R. Das · AMRI Hospital").
+    fromElsewhere: Boolean,
+    sourceName: String,
     patientId: ref('Patient', true),
     consultationId: ref('Consultation'),
     rxNumber: Number, // sequential per practice: "Rx 0286"
