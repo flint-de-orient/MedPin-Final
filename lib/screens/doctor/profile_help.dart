@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api.dart';
+import '../../data/config.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d4.dart';
@@ -20,7 +21,7 @@ class ProfileHelpScreen extends StatefulWidget {
 }
 
 class _ProfileHelpScreenState extends State<ProfileHelpScreen> with LiveData {
-  static const _appVersion = '3.8.2';
+  static const _appVersion = AppConfig.version;
 
   static const _faqs = [
     (
@@ -62,9 +63,10 @@ class _ProfileHelpScreenState extends State<ProfileHelpScreen> with LiveData {
   }
 
   // Contacts come from the backend (SUPPORT_EMAIL / SUPPORT_PHONE / SUPPORT_WHATSAPP).
-  String? get _email => data == null ? 'support@example.com' : data!['email'] as String?;
-  String? get _phone => data == null ? '+91 33 4000 0000' : data!['phone'] as String?;
-  String? get _whatsapp => data == null ? '+91 98300 00000' : data!['whatsapp'] as String?;
+  // The design's sample contacts only in the preview: never a fake number on the live app.
+  String? get _email => data == null ? (isLive ? null : 'support@example.com') : data!['email'] as String?;
+  String? get _phone => data == null ? (isLive ? null : '+91 33 4000 0000') : data!['phone'] as String?;
+  String? get _whatsapp => data == null ? (isLive ? null : '+91 98300 00000') : data!['whatsapp'] as String?;
 
   Future<void> _launch(String url) async {
     final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);

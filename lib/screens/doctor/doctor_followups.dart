@@ -72,7 +72,8 @@ class _Fu {
       'reports_in' => ('Reports in', MP.primarySoft, MP.primary),
       _ => ('Not booked', MP.amberSoft, MP.amber),
     };
-    final booked = status == 'booked' || status == 'reports_in';
+    // "Reports in" is booked once its review visit is; until then it needs booking (and a reminder).
+    final booked = status == 'booked' || (status == 'reports_in' && m['appointmentId'] != null);
     final conditions = [for (final c in (p['conditions'] as List? ?? const [])) '$c'];
     final phone = p.str('phone');
     final meta = [d1AgeSex(p), conditions.join(', '), if (phone.isNotEmpty) d1Phone(phone)].where((x) => x.isNotEmpty).join(' · ');

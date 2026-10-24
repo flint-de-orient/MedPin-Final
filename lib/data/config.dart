@@ -7,6 +7,10 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   AppConfig._();
 
+  /// The app's version as shown in Profile and Help and sent with support requests
+  /// (pubspec.yaml's version; --dart-define=APP_VERSION=… sets it for a release).
+  static const version = String.fromEnvironment('APP_VERSION', defaultValue: '1.0.0');
+
   static const _baseUrl = String.fromEnvironment('API_BASE_URL');
 
   /// Opens the design launcher after the splash instead of the real sign-in.

@@ -101,7 +101,7 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen> with LiveData {
     ];
   }
 
-  int get _openCount => data == null ? 2 : _part('alerts')?.obj('counts').numOr('open', _openAlertItems.length).toInt() ?? 0;
+  int get _openCount => data == null ? (isLive ? 0 : 2) : _part('alerts')?.obj('counts').numOr('open', _openAlertItems.length).toInt() ?? 0;
 
   static String _visitType(String v) => switch (v) {
     'new' => 'New',
@@ -235,7 +235,7 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen> with LiveData {
     ];
   }
 
-  int get _worseCount => data == null ? 3 : (_part('abnormal')?.numOr('total', _abnormal.length).toInt() ?? 0);
+  int get _worseCount => data == null ? (isLive ? 0 : 3) : (_part('abnormal')?.numOr('total', _abnormal.length).toInt() ?? 0);
 
   /// Patients ranked by their most urgent open alert, then abnormal labs by risk.
   List<(String, String, String, String?)> get _triageRows {

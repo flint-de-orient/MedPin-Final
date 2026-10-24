@@ -201,7 +201,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
     return s['readings'] == 0 && s['stepDays'] == 0;
   }
 
-  int get _unread => data == null ? 1 : data!.numOr('unreadNotifications').toInt();
+  int get _unread => data == null ? (isLive ? 0 : 1) : data!.numOr('unreadNotifications').toInt();
   String get _initials => data == null ? 'PS' : F.initials(Session.I.name.isEmpty ? _name : Session.I.name);
 
   // ── Carousel ──

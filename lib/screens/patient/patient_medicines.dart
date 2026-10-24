@@ -436,7 +436,7 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text((live ? liveSlots[s].$1 : _slots[s].$1).toUpperCase(), style: tx(12, w: w700, c: MP.ink3, em: 0.06)),
+                  Text(tr(context, live ? liveSlots[s].$1 : _slots[s].$1).toUpperCase(), style: tx(12, w: w700, c: MP.ink3, em: 0.06)),
                   if (live)
                     for (final d in liveSlots[s].$2) ...[const Gap(10), _liveDoseRow(d)]
                   else

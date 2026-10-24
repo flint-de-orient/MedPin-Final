@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
+import '../../data/config.dart';
 import '../../data/files.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
@@ -107,7 +108,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
     return 'Next free slot: $when${where.isEmpty ? '' : ' · $where'}';
   }
 
-  int get _locationCount => data == null ? 3 : _p.numOr('locations').toInt();
+  int get _locationCount => data == null ? (isLive ? 0 : 3) : _p.numOr('locations').toInt();
 
   List<Map<String, dynamic>> get _activeLocations => [
     for (final l in data!.list('locations'))
@@ -423,7 +424,8 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
               sub: 'UPI and bank for online fees',
               onTap: () => _open('Profile-Payouts'),
             ),
-            _SettingRow('Plan and billing', sub: _planLine, onTap: () => _go('Billing')),
+            // The clinic's plan is the owner's (and practice manager's) business: others would get a permission error.
+            if (!isLive || Session.I.can('billing')) _SettingRow('Plan and billing', sub: _planLine, onTap: () => _go('Billing')),
             _SettingRow('Privacy and data', onTap: () => _open('Profile-Privacy')),
             _SettingRow('App language', sub: _appLanguage, onTap: _pickAppLanguage),
             _SettingRow(
@@ -435,7 +437,7 @@ class _DoctorMyprofileScreenState extends State<DoctorMyprofileScreen> with Live
             _SettingRow('Help and support', onTap: () => _open('Profile-Help')),
           ]),
           D4OutlineButton('Log out', border: MP.redLine, onTap: () => signOut(context)),
-          Text('MedPin 3.8.2', textAlign: TextAlign.center, style: tx(12, c: MP.ink3)),
+          Text('MedPin ${AppConfig.version}', textAlign: TextAlign.center, style: tx(12, c: MP.ink3)),
         ],
       ),
     );

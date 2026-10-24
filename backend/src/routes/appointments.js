@@ -527,7 +527,8 @@ r.post('/appointment-requests/:id/decline', async (req, res) => {
 
 // ── Queue (Queue-Select / Queue-List) ──
 r.get('/queue/locations', async (req, res) => {
-  const dls = await M.DoctorLocation.find({ doctorId: req.user._id, status: 'active' }).populate('locationId');
+  // The branches of the clinic open in the app (a doctor in two clinics sees this one's).
+  const dls = await M.DoctorLocation.find({ doctorId: req.user._id, practiceId: req.practiceId, status: 'active' }).populate('locationId');
   const profile = await M.DoctorProfile.findOne({ userId: req.user._id }, 'defaultQueueLocation');
   const today = T.dayStart();
   const out = [];
@@ -681,7 +682,7 @@ const consultView = (c) => {
 r.get('/history', async (req, res) => {
   const period = req.query.period || 'this_month';
   const now = new Date();
-  const from = req.query.from ? T.parseDay(req.query.from) : period === 'last_3_months' ? T.addDays(T.dayStart(), -90) : period === 'this_year' ? new Date(`${now.getFullYear()}-01-01T00:00:00+05:30`) : new Date(`${T.dayKey(now).slice(0, 7)}-01T00:00:00+05:30`);
+  const from = req.query.from ? T.parseDay(req.query.from) : period === 'last_3_months' ? T.addDays(T.dayStart(), -90) : period === 'this_year' ? new Date(`${T.dayKey(now).slice(0, 4)}-01-01T00:00:00+05:30`) : new Date(`${T.dayKey(now).slice(0, 7)}-01T00:00:00+05:30`);
   const to = req.query.to ? T.addDays(T.parseDay(req.query.to), 1) : T.addDays(T.dayStart(), 1);
   const q = { practiceId: req.practiceId, date: { $gte: from, $lt: to } };
   const mineOnly = req.member.role === 'doctor' && req.query.all !== 'true';

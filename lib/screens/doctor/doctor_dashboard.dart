@@ -43,7 +43,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> with Live
   }
 
   String get _name => data?.str('greetingName') ?? 'Dr. Arjun Sen';
-  int get _unread => data == null ? 3 : data!.numOr('unreadNotifications').toInt();
+  int get _unread => data == null ? (isLive ? 0 : 3) : data!.numOr('unreadNotifications').toInt();
 
   /// Red bell dot only while an emergency / urgent clinical alert is open;
   /// plain unread notifications get the primary (blue) dot.

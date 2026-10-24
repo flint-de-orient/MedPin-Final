@@ -118,7 +118,7 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
   Map<String, dynamic>? get _next => data == null || _d.obj('nextVisit').isEmpty ? null : _d.obj('nextVisit');
   Map<String, dynamic>? get _last => data == null || _d.obj('lastVisit').isEmpty ? null : _d.obj('lastVisit');
   Map<String, dynamic> get _convo => _d.obj('conversation');
-  int get _unread => data == null ? 2 : _convo.numOr('unread').toInt();
+  int get _unread => data == null ? (isLive ? 0 : 2) : _convo.numOr('unread').toInt();
 
   Future<void> _chat() async {
     await Nav.go(
@@ -202,7 +202,7 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
     final ok = await runAction(context, () => Api.I.post('/api/patient/appointments/${next.str('id')}/reschedule', {'startAt': startAt}));
     if (ok == null || !mounted) return;
     final at = F.date(startAt);
-    toast(context, at == null ? 'Visit moved' : 'Visit moved to ${F.when(at)}');
+    toast(context, at == null ? 'Visit moved' : trf(context, 'Visit moved to {slot}', {'slot': F.when(at)}));
     reload(quiet: true);
   }
 
@@ -241,7 +241,7 @@ class _PatientDoctordetailScreenState extends State<PatientDoctordetailScreen> w
     final key = p2AccessLevels.entries.firstWhere((e) => e.value == level).key;
     final ok = await runAction(context, () => Api.I.patch('/api/patient/care-team/$_id', {'accessLevel': key}));
     if (ok == null || !mounted) return;
-    toast(context, key == 'not_shared' ? 'Stopped sharing with $_name' : '$_name can now see: ${level.toLowerCase()}');
+    toast(context, key == 'not_shared' ? trf(context, 'Stopped sharing with {doctor}', {'doctor': _name}) : trf(context, '{doctor} can now see: {what}', {'doctor': _name, 'what': tr(context, level).toLowerCase()}));
     reload(quiet: true);
   }
 

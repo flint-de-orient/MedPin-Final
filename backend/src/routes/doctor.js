@@ -240,7 +240,8 @@ r.post('/doctor/qualifications/:qid/proof', proofUpload.single('file'), async (r
 
 // ── Where I practise: services/fees and weekly schedule per location ──
 r.get('/doctor/locations', async (req, res) => {
-  const items = await M.DoctorLocation.find({ doctorId: req.user._id }).populate('locationId');
+  // This clinic's places (a doctor in two clinics edits each one's hours there).
+  const items = await M.DoctorLocation.find({ doctorId: req.user._id, practiceId: req.practiceId }).populate('locationId');
   res.json(items);
 });
 

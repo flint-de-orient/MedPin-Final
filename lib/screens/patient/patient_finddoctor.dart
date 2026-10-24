@@ -846,7 +846,7 @@ class _PatientFinddoctorScreenState extends State<PatientFinddoctorScreen>
       reload(quiet: true);
       return;
     }
-    toast(context, 'Request sent to ${d.name} for $slot. The clinic will confirm.');
+    toast(context, trf(context, 'Request sent to {doctor} for {slot}. The clinic will confirm.', {'doctor': d.name, 'slot': slot}));
   }
 
   @override
@@ -1796,7 +1796,7 @@ class _DoctorSheetState extends State<_DoctorSheet> {
       res = await send(move ? {'moveId': had['appointmentId']} : const {'another': true});
       if (res is Map && res['moved'] == true) {
         if (!mounted) return;
-        Navigator.pop(context, 'Visit moved to $slot');
+        Navigator.pop(context, trf(context, 'Visit moved to {slot}', {'slot': slot}));
         return;
       }
     }
@@ -1826,15 +1826,17 @@ class _DoctorSheetState extends State<_DoctorSheet> {
     Navigator.pop(
       context,
       appt != null
-          ? 'Visit booked with ${d.name} for $slot${token == null ? '' : ' · Token ${'$token'.padLeft(2, '0')}'}$payNote'
-          : 'Request sent to ${d.name}${_laterDate != null ? ' for ${F.dateLong(_laterDate!)}' : slot == null ? '' : ' for $slot'}. The clinic will confirm.',
+          ? '${trf(context, 'Visit booked with {doctor} for {slot}', {'doctor': d.name, 'slot': slot})}${token == null ? '' : ' · Token ${'$token'.padLeft(2, '0')}'}$payNote'
+          : (_laterDate != null || slot != null)
+              ? trf(context, 'Request sent to {doctor} for {slot}. The clinic will confirm.', {'doctor': d.name, 'slot': _laterDate != null ? F.dateLong(_laterDate!) : slot})
+              : trf(context, 'Request sent to {doctor}. The clinic will confirm.', {'doctor': d.name}),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final d = widget.doc;
-    final showPage = widget.showPage ?? d.name == 'Dr. Arjun Sen';
+    final showPage = widget.showPage ?? !isLive; // live callers say; never by the sample doctor's name
     final where = [d.clinic, d.area].where((x) => x.isNotEmpty).join(', ');
     return MpSheet(
       child: Column(

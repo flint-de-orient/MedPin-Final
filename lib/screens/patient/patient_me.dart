@@ -335,7 +335,7 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
     return _languages[i < 0 ? 0 : i];
   }
 
-  int get _unreadNotifications => data == null ? 1 : data!.obj('notifications').numOr('unread').toInt();
+  int get _unreadNotifications => data == null ? (isLive ? 0 : 1) : data!.obj('notifications').numOr('unread').toInt();
 
   /// PATCH /api/patient/me and show the saved profile. Returns false on error.
   Future<bool> _save(Map<String, dynamic> body) async {

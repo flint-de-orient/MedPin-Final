@@ -122,7 +122,7 @@ class _CareScreenState extends State<CareScreen> with LiveData {
     ];
   }
 
-  int get _unreadCount => data == null ? 6 : data!.numOr('unread').toInt();
+  int get _unreadCount => data == null ? (isLive ? 0 : 6) : data!.numOr('unread').toInt();
   int get _pending => data == null ? 2 : data!.numOr('pendingEnrolments').toInt();
 
   List<_Conv> get _matching {

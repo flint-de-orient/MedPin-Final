@@ -138,7 +138,7 @@ class _ProfilePayoutsScreenState extends State<ProfilePayoutsScreen> with LiveDa
   Widget _onlineFees() {
     final p = _payouts;
     final waiting = data == null ? 2400 : (p?.obj('waiting').numOr('amount') ?? 0);
-    final count = data == null ? 4 : (p?.obj('waiting').numOr('count') ?? 0).toInt();
+    final count = data == null ? (isLive ? 0 : 4) : (p?.obj('waiting').numOr('count') ?? 0).toInt();
     final next = data == null ? null : F.date(p?['nextPayoutOn']);
     final items = data == null ? const <Map<String, dynamic>>[] : (p?.list('items') ?? const <Map<String, dynamic>>[]);
     return D4Card(

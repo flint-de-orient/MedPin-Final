@@ -25,10 +25,31 @@ class LocalNotes {
   bool _ready = false;
 
   /// Called with {screen, params} when a notification is tapped.
-  void Function(Map<String, dynamic> payload)? onTap;
+  void Function(Map<String, dynamic> payload)? _onTap;
+  void Function(Map<String, dynamic> payload)? get onTap => _onTap;
+
+  /// Set once the app can open screens; a tap that launched the app before then is kept
+  /// and handled now (never lost on a cold start).
+  set onTap(void Function(Map<String, dynamic> payload)? f) {
+    _onTap = f;
+    final waiting = _waitingTap;
+    _waitingTap = null;
+    if (f != null && waiting != null) f(waiting);
+  }
+
+  Map<String, dynamic>? _waitingTap;
 
   /// A medicine alarm's "Taken" button ({doseIds, …}): the app marks the doses taken.
-  void Function(Map<String, dynamic> payload)? onTaken;
+  void Function(Map<String, dynamic> payload)? _onTaken;
+  void Function(Map<String, dynamic> payload)? get onTaken => _onTaken;
+  set onTaken(void Function(Map<String, dynamic> payload)? f) {
+    _onTaken = f;
+    final waiting = _waitingTaken;
+    _waitingTaken = null;
+    if (f != null && waiting != null) f(waiting);
+  }
+
+  Map<String, dynamic>? _waitingTaken;
 
   static const general = AndroidNotificationChannel('medpin_general', 'Updates', description: 'Visits, messages, reports and reminders', importance: Importance.high);
   static const urgent = AndroidNotificationChannel('medpin_urgent', 'Urgent', description: 'Emergency alerts and urgent messages', importance: Importance.max);
@@ -80,7 +101,11 @@ class LocalNotes {
       case 'taken':
         try {
           final p = (jsonDecode(r.payload ?? '{}') as Map).cast<String, dynamic>();
-          onTaken?.call(p);
+          if (_onTaken != null) {
+            _onTaken!(p);
+          } else {
+            _waitingTaken = p; // "Taken" on an alarm that launched the app: marked once it's ready
+          }
         } catch (_) {}
       default:
         _handle(r.payload);
@@ -107,7 +132,12 @@ class LocalNotes {
   void _handle(String? payload) {
     if (payload == null || payload.isEmpty) return;
     try {
-      onTap?.call((jsonDecode(payload) as Map).cast<String, dynamic>());
+      final p = (jsonDecode(payload) as Map).cast<String, dynamic>();
+      if (_onTap != null) {
+        _onTap!(p);
+      } else {
+        _waitingTap = p;
+      }
     } catch (_) {}
   }
 

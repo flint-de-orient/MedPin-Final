@@ -15,8 +15,9 @@ r.use(requireAuth, staff());
 r.get('/follow-ups', async (req, res) => {
   const today = T.dayStart();
   const q = { practiceId: req.practiceId, status: { $in: ['not_booked', 'no_reply', 'booked', 'reports_in'] } };
-  if (req.query.tab === 'not_booked') q.status = { $in: ['not_booked', 'no_reply'] };
-  if (req.query.tab === 'booked') q.status = { $in: ['booked', 'reports_in'] };
+  // "Reports in" is booked only once its report-review visit is; without one it still needs booking.
+  if (req.query.tab === 'not_booked') Object.assign(q, { status: { $in: ['not_booked', 'no_reply', 'reports_in'] }, $or: [{ status: { $ne: 'reports_in' } }, { appointmentId: null }] });
+  if (req.query.tab === 'booked') Object.assign(q, { status: { $in: ['booked', 'reports_in'] }, $or: [{ status: 'booked' }, { appointmentId: { $ne: null } }] });
   if (req.query.locationId) q.locationId = req.query.locationId;
   if (req.query.doctorId) q.doctorId = req.query.doctorId === 'me' ? req.user._id : req.query.doctorId;
   q.dueDate = { $lte: T.addDays(today, Number(req.query.days) || 31) };
@@ -34,7 +35,10 @@ r.get('/follow-ups', async (req, res) => {
     group: f.dueDate < today ? 'overdue' : f.dueDate < endOfWeek ? 'this_week' : 'later',
   }));
   res.json({
-    counts: { all: rows.length, notBooked: rows.filter((x) => ['not_booked', 'no_reply'].includes(x.status)).length, booked: rows.filter((x) => ['booked', 'reports_in'].includes(x.status)).length },
+    counts: (() => {
+      const booked = (x) => x.status === 'booked' || (x.status === 'reports_in' && x.appointmentId);
+      return { all: rows.length, notBooked: rows.filter((x) => !booked(x)).length, booked: rows.filter(booked).length };
+    })(),
     items: rows,
   });
 });
@@ -60,7 +64,7 @@ r.post('/follow-ups/:id/remind', async (req, res) => {
 // "Remind all" / "Remind 5"
 r.post('/follow-ups/remind', async (req, res) => {
   const ids = list(req.body.ids);
-  const q = { practiceId: req.practiceId, status: { $in: ['not_booked', 'no_reply'] }, ...(ids.length ? { _id: { $in: ids } } : { dueDate: { $lte: T.addDays(T.dayStart(), 7) } }) };
+  const q = { practiceId: req.practiceId, status: { $in: ['not_booked', 'no_reply', 'reports_in'] }, appointmentId: null, ...(ids.length ? { _id: { $in: ids } } : { dueDate: { $lte: T.addDays(T.dayStart(), 7) } }) };
   const practice = await M.Practice.findById(req.practiceId, 'name');
   const items = await M.FollowUp.find(q);
   for (const fu of items) await remind(fu, practice.name);

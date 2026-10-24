@@ -111,9 +111,10 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
     ];
   }
 
-  int get _unread => data == null ? 6 : data!.numOr('unread').toInt();
-  int get _pending => data == null ? 2 : data!.numOr('pendingEnrolments').toInt();
-  int get _notes => data == null ? 2 : data!.numOr('unreadNotifications').toInt();
+  // The design's sample counts only in the preview; live, nothing until the real counts arrive.
+  int get _unread => data == null ? (isLive ? 0 : 6) : data!.numOr('unread').toInt();
+  int get _pending => data == null ? (isLive ? 0 : 2) : data!.numOr('pendingEnrolments').toInt();
+  int get _notes => data == null ? (isLive ? 0 : 2) : data!.numOr('unreadNotifications').toInt();
   int get _teamUnread => data == null ? 0 : data!.numOr('teamUnread').toInt();
 
   Future<void> _open(String? conversationId) async {
@@ -133,7 +134,7 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
     final shown = data == null ? matching : matching.take(_limit).toList();
     final placeholder = livePlaceholder();
     return MpPage(
-      nav: _nav(data == null ? 6 : (_unread > 0 ? _unread : null)),
+      nav: _nav(data == null ? (isLive ? null : 6) : (_unread > 0 ? _unread : null)),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

@@ -18,6 +18,16 @@ void main() {
     expect(I18n.tr('Something new', 'bn'), 'Something new', reason: 'missing entries stay English');
   });
 
+  test('lines of parts and capital labels translate', () {
+    // " · " lines with a name: the fixed parts translate, the name stays.
+    expect(I18n.tr('Follow-up · Dr. Sen · Tomorrow', 'bn'), 'ফলো-আপ · Dr. Sen · আগামীকাল');
+    // A whole-line entry with numbers still wins over splitting.
+    expect(I18n.tr('2 of 5 tasks done', 'bn'), '5টির মধ্যে 2টি কাজ শেষ');
+    // Labels in capitals use their ordinary entry.
+    expect(I18n.tr('MORNING', 'bn'), 'সকাল');
+    expect(I18n.tr('MORNING', 'en'), 'MORNING');
+  });
+
   test('doctor and staff screens are translated too', () {
     expect(I18n.tr('Payouts and bank account', 'bn'), 'পেমেন্ট ও ব্যাংক অ্যাকাউন্ট');
     expect(I18n.tr('Signature checked · looks good', 'hi'), 'हस्ताक्षर जांचा गया · ठीक है');

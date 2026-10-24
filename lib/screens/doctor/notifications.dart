@@ -57,7 +57,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> with LiveData
     ];
   }
 
-  int get _unread => data == null ? 2 : data!.numOr('unread').toInt();
+  int get _unread => data == null ? (isLive ? 0 : 2) : data!.numOr('unread').toInt();
 
   Future<void> _open(Map<String, dynamic> n) async {
     if (!isLive) {

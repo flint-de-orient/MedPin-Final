@@ -119,7 +119,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> with LiveData {
     return can['details'] == true || can['closures'] == true;
   }
 
-  int get _notes => data == null ? 3 : data!.numOr('unreadNotifications').toInt();
+  int get _notes => data == null ? (isLive ? 0 : 3) : data!.numOr('unreadNotifications').toInt();
 
   /// Saves account fields; returns false (after a toast) when it fails.
   Future<bool> _save(Map<String, Object?> body) async {

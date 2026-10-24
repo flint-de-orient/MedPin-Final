@@ -272,7 +272,8 @@ const doseLogSchema = new Schema(
   },
   baseOptions,
 );
-doseLogSchema.index({ courseId: 1, scheduledAt: 1 }, { unique: true });
+// One dose per medicine, time and slot (a 1-0-1 "at bedtime" medicine has two doses at bedtime).
+doseLogSchema.index({ courseId: 1, scheduledAt: 1, slot: 1 }, { unique: true });
 doseLogSchema.index({ patientId: 1, scheduledAt: -1 });
 
 // ── Treatment plan (PP-Treatment) ─────────────────────────

@@ -110,7 +110,7 @@ class _PatientDoctorsScreenState extends State<PatientDoctorsScreen> with LiveDa
       final lower = when.startsWith('Today') || when.startsWith('Tomorrow') ? when[0].toLowerCase() + when.substring(1) : when;
       visit = 'Visit $lower${next.str('token').isEmpty ? '' : ' · Token ${next.str('token')}'}';
     } else if (due != null) {
-      visit = 'Follow-up due by ${F.dayMonth(due)}';
+      visit = '${tr(context, 'Follow-up due by')} ${F.dayMonth(due)}';
     } else if (seen != null) {
       visit = 'No visit booked · last seen ${F.dayMonth(seen)}';
     } else {

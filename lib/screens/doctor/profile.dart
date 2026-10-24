@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
+import '../../data/config.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../data/photo.dart';
@@ -283,7 +284,7 @@ class _ProfileScreenState extends State<ProfileScreen> with LiveData {
                             const Gap(6),
                             Flexible(
                               child: Text(
-                                '3.8.2 · Up to date',
+                                'MedPin ${AppConfig.version}',
                                 style: tx(14, c: MP.ink2, tab: true),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,

@@ -180,7 +180,7 @@ class _NutritionScreenState extends State<NutritionScreen> with LiveData {
     ];
   }
 
-  int get _unreadCount => data == null ? 3 : data!.numOr('unread').toInt();
+  int get _unreadCount => data == null ? (isLive ? 0 : 3) : data!.numOr('unread').toInt();
 
   List<_Conv> get _matching {
     final q = _query.trim().toLowerCase();

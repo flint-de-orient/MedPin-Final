@@ -96,7 +96,8 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
   static String _requestDetail(Map<String, dynamic> r) {
     final kind = r['visitType'] == 'follow_up' ? 'Follow-up' : 'New visit';
     final doctor = r.obj('doctorId').str('name');
-    return doctor.isEmpty ? kind : '$kind with ${F.doctorShort(doctor)}';
+    // "Follow-up · Dr. Sen": the parts translate (a name in a sentence wouldn't).
+    return doctor.isEmpty ? kind : '$kind · ${F.doctorShort(doctor)}';
   }
 
   /// Today's list (time, name, status, doctor, appointment id), at most six:
@@ -181,7 +182,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
     return '${F.dateLong(DateTime.now())} · Updated $ago ago';
   }
 
-  int get _unread => data == null ? 3 : data!.numOr('unreadNotifications').toInt();
+  int get _unread => data == null ? (isLive ? 0 : 3) : data!.numOr('unreadNotifications').toInt();
 
   String get _bookedLine {
     if (data == null) return '18 booked · Dr. Sen and Dr. Mitra';

@@ -1990,8 +1990,8 @@ r.post('/ai/ask', async (req, res) => {
   if (!s) s = await M.AiSession.create({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id });
   const question = await M.AiMessage.create({ sessionId: s._id, role: 'user', text, inputMode: req.body.inputMode, voiceLanguage: req.body.voiceLanguage });
   const out = await assistant.patientAnswer(s, text, req.patient, { excludeId: question._id }).catch((err) => {
-    console.warn('[ai]', err.message);
-    return { text: assistant.line('failed', req.user.language), scripted: true };
+    if (err.code !== 'AI_LIMIT') console.warn('[ai]', err.message);
+    return { text: assistant.line(err.code === 'AI_LIMIT' ? 'limit' : 'failed', req.user.language), scripted: true };
   });
   const answer = await M.AiMessage.create({ sessionId: s._id, role: 'assistant', text: out.text, aiModel: out.model, latencyMs: out.latencyMs, payload: out.scripted ? { scripted: true } : undefined });
   s.lastAt = new Date();

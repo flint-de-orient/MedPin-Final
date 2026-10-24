@@ -115,7 +115,16 @@ r.get('/patients', async (req, res) => {
   if (req.query.sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name));
   else rows.sort((a, b) => new Date(b.lastVisitAt || 0) - new Date(a.lastVisitAt || 0));
   res.json({
-    counts: { all: ids.length, today: todayIds.length, followUpDue: dueIds.length, abnormal: abnormalIds.length },
+    counts: await (async () => {
+      // The chips count what the list shows: this branch's patients when one is chosen.
+      let scope = new Set(ids.map(String));
+      if (/^[0-9a-f]{24}$/i.test(at)) {
+        const all = await branchesOf(req.practiceId, ids);
+        scope = new Set(ids.map(String).filter((id) => all.get(id)?.seenAt.includes(at)));
+      }
+      const n = (list) => new Set(list.map(String).filter((id) => scope.has(id))).size;
+      return { all: scope.size, today: n(todayIds), followUpDue: n(dueIds), abnormal: n(abnormalIds) };
+    })(),
     locations: (await M.Location.find({ practiceId: req.practiceId, status: { $ne: 'inactive' } }, 'name shortName').sort({ createdAt: 1 }).lean()).map((l) => ({ id: l._id, name: l.shortName || l.name })),
     total: rows.length,
     items: rows.slice(skip, skip + limit),

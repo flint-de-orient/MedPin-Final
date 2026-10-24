@@ -175,6 +175,16 @@ mixin LiveData<W extends StatefulWidget> on State<W> implements MpRefreshable {
         loading = false;
       });
       if (data != null && !quiet) toast(context, e.message);
+    } catch (e, st) {
+      // Unexpected data (a field of another shape): the error with a retry, never an endless spinner.
+      debugPrint('Screen data not shown: $e\n$st');
+      if (!mounted) return;
+      const err = ApiException(0, 'BAD_DATA', "Something went wrong showing this. Try again.");
+      setState(() {
+        loadError = err;
+        loading = false;
+      });
+      if (data != null && !quiet) toast(context, err.message);
     }
   }
 

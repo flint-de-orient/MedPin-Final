@@ -97,8 +97,9 @@ class _ChatReviewScreenState extends State<ChatReviewScreen> with LiveData {
     final rv = m.obj('reviewed');
     final by = d10Person(rv['by'] is Map ? rv.obj('by').str('name') : '');
     final at = F.date(rv['at']);
-    final when = at == null ? '' : (F.sameDay(at, DateTime.now()) ? ' at ${F.time(at)}' : ' on ${F.dayMonth(at)}');
-    final line = by.isEmpty ? 'Reviewed$when.' : 'Reviewed by $by$when.';
+    final when = at == null ? '' : (F.sameDay(at, DateTime.now()) ? F.time(at) : F.dayMonth(at));
+    // "Reviewed · Dr. Sen · 8:15 AM": the parts translate (a name inside a sentence wouldn't).
+    final line = ['Reviewed', if (by.isNotEmpty) by, if (when.isNotEmpty) when].join(' · ');
     return (f.$1, f.$2, f.$3, f.$4, f.$6.isEmpty ? line : '$line ${f.$6}');
   }
 

@@ -56,6 +56,12 @@ const LINES = {
     bn: 'এটা গুরুতর হতে পারে। এখনই 108-এ ফোন করুন বা কাছের ইমার্জেন্সিতে যান, আর অ্যাপের Emergency দিয়ে ডাক্তারকে জানান।',
     hi: 'यह गंभीर हो सकता है। अभी 108 पर कॉल करें या नज़दीकी इमरजेंसी में जाएँ, और ऐप में Emergency से अपने डॉक्टर को बताएँ।',
   },
+  // The clinic's MedPin AI allowance for the month is used up: trying again won't help.
+  limit: {
+    en: "MedPin AI isn't available from your clinic for the rest of this month. You can message your doctor from the Doctors tab.",
+    bn: 'এই মাসে আপনার ক্লিনিক থেকে MedPin AI আর পাওয়া যাবে না। Doctors ট্যাব থেকে ডাক্তারকে মেসেজ করতে পারেন।',
+    hi: 'इस महीने आपके क्लिनिक से MedPin AI अब उपलब्ध नहीं है। Doctors टैब से अपने डॉक्टर को संदेश भेज सकते हैं।',
+  },
   failed: {
     en: "MedPin AI couldn't answer just now. Please try again, or message your doctor from the Doctors tab.",
     bn: 'MedPin AI এই মুহূর্তে উত্তর দিতে পারেনি। আবার চেষ্টা করুন, বা Doctors ট্যাব থেকে ডাক্তারকে মেসেজ করুন।',

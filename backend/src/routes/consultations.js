@@ -36,8 +36,16 @@ r.get('/consultations/pick', need('prescribe'), async (req, res) => {
   }
   const waiting = await M.Appointment.find({ practiceId: req.practiceId, doctorId: req.user._id, date: today, status: 'waiting', ...(req.query.locationId ? { locationId: req.query.locationId } : {}) })
     .sort({ startAt: 1, tokenNo: 1 }).populate('patientId', 'name gender ageYears ageRecordedAt phone');
-  const recentIds = await M.Consultation.find({ practiceId: req.practiceId, doctorId: req.user._id }).sort({ startedAt: -1 }).limit(30).distinct('patientId');
-  const recent = await M.Patient.find({ _id: { $in: recentIds.slice(0, 10) } });
+  // The patients this doctor saw last, most recent first (distinct() would ignore the order).
+  const recentIds = (await M.Consultation.aggregate([
+    { $match: { practiceId: req.practiceId, doctorId: req.user._id } },
+    { $sort: { startedAt: -1 } },
+    { $group: { _id: '$patientId', at: { $first: '$startedAt' } } },
+    { $sort: { at: -1 } },
+    { $limit: 10 },
+  ])).map((x) => String(x._id));
+  const found = await M.Patient.find({ _id: { $in: recentIds } });
+  const recent = recentIds.map((id) => found.find((p) => String(p._id) === id)).filter(Boolean);
   const row = (p) => ({ id: p._id, name: p.name, age: T.ageFrom(p), gender: p.gender, phone: p.phone });
   res.json({
     matches: matches.map(row),
