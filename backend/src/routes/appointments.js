@@ -623,8 +623,18 @@ r.get('/staff/today', async (req, res) => {
   ]);
   const doctors = [...new Set(appts.map((a) => a.doctorId?.name).filter(Boolean))];
   const count = (...s) => appts.filter((a) => s.includes(a.status)).length;
+  // Money to hand back (a visit paid at the desk, then cancelled): those visits aren't on
+  // today's list, so they are listed here until the desk refunds them.
+  const { locs, docs } = coverage(req);
+  const refundQ = { practiceId: req.practiceId, refundDue: true, ...(locs ? { locationId: { $in: locs.map((id) => new Types.ObjectId(id)) } } : {}) };
+  if (docs) refundQ.appointmentId = { $in: await M.Appointment.distinct('_id', { practiceId: req.practiceId, doctorId: { $in: docs.map((id) => new Types.ObjectId(id)) } }) };
+  const refunds = await M.Payment.find(refundQ).sort({ paidAt: 1 }).limit(50).populate('patientId', 'name phone').populate('appointmentId', 'startAt status');
   res.json({
     date: today,
+    refundsDue: refunds.map((p) => ({
+      paymentId: p._id, amount: p.amount, method: p.method || null, patient: p.patientId && { id: p.patientId._id, name: p.patientId.name, phone: p.patientId.phone },
+      visitAt: p.appointmentId?.startAt || null, visitStatus: p.appointmentId?.status || null, reason: p.refundReason || null,
+    })),
     summary: { booked: appts.length, checkedIn: count('waiting', 'in_consultation', 'completed'), done: count('completed'), missed: count('missed'), doctors },
     unreadChats: unreadConvos,
     unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, practiceId: { $in: [req.practiceId, null] }, readAt: null }),

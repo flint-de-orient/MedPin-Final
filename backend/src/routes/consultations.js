@@ -94,7 +94,16 @@ r.delete('/consultations/:id', need('prescribe'), async (req, res) => {
   const empty = c.status === 'draft' && !c.chiefComplaint && !c.diagnoses?.length && !c.medications?.length && !c.labOrders?.length && !c.advice?.items?.length && !c.advice?.freeText;
   if (!empty) return res.json({ ok: true, kept: true });
   await c.deleteOne();
-  res.json({ ok: true, deleted: true });
+  // Opened from the waiting list and left without writing anything: the patient goes back
+  // to waiting (not stuck "with the doctor").
+  if (c.appointmentId) {
+    const appt = await M.Appointment.findById(c.appointmentId);
+    if (appt?.status === 'in_consultation' && !(await M.Consultation.exists({ appointmentId: appt._id }))) {
+      appt.consultStartedAt = undefined;
+      await transition(appt, 'waiting', { by: req.user._id }).catch((err) => console.warn('[back to waiting]', err.message));
+    }
+  }
+  res.json({ ok: true, deleted: true, backToWaiting: Boolean(c.appointmentId) });
 });
 
 r.get('/consultations/:id', need('clinical'), async (req, res) => {

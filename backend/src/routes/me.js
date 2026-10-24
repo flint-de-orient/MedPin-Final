@@ -283,6 +283,19 @@ notifications.post('/read-all', async (req, res) => {
   await M.Notification.updateMany({ ...scope, readAt: null }, { readAt: new Date() });
   res.json({ ok: true });
 });
+// A push was tapped (it carries the type and what it is about, not each person's notice id):
+// the person's unread notices of that type about the same thing are read.
+notifications.post('/opened', async (req, res) => {
+  const type = typeof req.body?.type === 'string' ? req.body.type.slice(0, 60) : '';
+  if (!type) return res.json({ ok: true, read: 0 });
+  const q = { userId: req.user._id, readAt: null, type };
+  for (const k of ['conversationId', 'appointmentId', 'alertId', 'patientId', 'reviewId', 'orderId', 'paymentId']) {
+    const v = String(req.body[k] || '');
+    if (isId(v)) q[`params.${k}`] = { $in: [v, new (require('mongoose').Types.ObjectId)(v)] };
+  }
+  const r = await M.Notification.updateMany(q, { readAt: new Date() });
+  res.json({ ok: true, read: r.modifiedCount });
+});
 notifications.post('/:id/read', async (req, res) => {
   const n = await M.Notification.findOneAndUpdate({ _id: req.params.id, userId: req.user._id }, { readAt: new Date() }, { new: true });
   if (!n) throw notFound('Notification');

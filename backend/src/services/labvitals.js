@@ -7,7 +7,7 @@
 const { keysOf } = require('./advisedtests');
 
 const num = (v) => {
-  const x = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, ''));
+  const x = require('../lib/numbers').labNumber(v);
   return Number.isFinite(x) ? x : null;
 };
 

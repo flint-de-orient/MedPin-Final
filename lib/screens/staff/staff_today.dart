@@ -228,6 +228,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                 ),
               ),
               if (_requestRows.isNotEmpty) _requestsCard(context),
+              if (_refunds.isNotEmpty) _refundsCard(context),
               Row(
                 children: [
                   for (var i = 0; i < _actions.length; i++) ...[
@@ -240,6 +241,62 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
               _summaryCard(),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Money to hand back: visits paid at the desk and then cancelled (not on today's list).
+  List<Map<String, dynamic>> get _refunds => data?.list('refundsDue') ?? const [];
+
+  Future<void> _refund(Map<String, dynamic> r) async {
+    final done = await handBackFee(context, VisitFee(paymentId: r.str('paymentId'), amount: r.numOr('amount').round(), status: 'paid', method: r['method'] as String?, refundDue: true));
+    if (done && mounted) reload(quiet: true);
+  }
+
+  Widget _refundsCard(BuildContext context) {
+    return MpCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Money to hand back', style: tx(20, w: w700, h: 1.25)),
+                const Gap(2),
+                Text('Paid at the desk, then the visit was cancelled', style: tx(14, c: MP.ink2, h: _lh)),
+              ],
+            ),
+          ),
+          for (final r in _refunds)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: const BoxDecoration(border: Border(top: BorderSide(color: MP.line))),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _line(r.obj('patient').str('name', 'Patient'), tx(16, w: w600, h: _lh)),
+                        const Gap(2),
+                        _line(
+                          [
+                            '₹${r.numOr('amount').round()}',
+                            if (F.date(r['visitAt']) != null) '${tr(context, 'visit')} ${F.dayMonth(F.date(r['visitAt'])!)}',
+                          ].join(' · '),
+                          tx(14, c: MP.ink2, h: _lh),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Gap(12),
+                  MpButton.small('Refund', expand: false, onTap: () => _refund(r)),
+                ],
+              ),
+            ),
         ],
       ),
     );

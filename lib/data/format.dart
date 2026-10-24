@@ -13,6 +13,14 @@ class F {
   static String dateLong(DateTime d) => '${_days[d.weekday - 1]}, ${d.day} ${_months[d.month - 1]} ${d.year}';
 
   /// "29 Sep"
+  /// A dose count as printed on a prescription: 1, ½, 1½ (halves kept, never rounded away).
+  static String dose(num n) {
+    final whole = n.floor();
+    final half = (n - whole) >= 0.5;
+    if (!half) return '$whole';
+    return whole == 0 ? '½' : '$whole½';
+  }
+
   static String dayMonth(DateTime d) => '${d.day} ${_months[d.month - 1]}';
 
   /// "8:30 AM"

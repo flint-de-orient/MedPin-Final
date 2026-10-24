@@ -73,6 +73,9 @@ const appointmentSchema = new Schema(
     todos: [todoSchema], // patient's before-visit checklist
     patientNotifiedAt: Date,
     reminderSentAt: Date,
+    // The visit reminders sent (jobs.visitReminders): each once, and no visit looked at again.
+    reminded24At: Date,
+    reminded2At: Date,
     videoRoomUrl: String,
   },
   baseOptions,

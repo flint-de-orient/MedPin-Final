@@ -42,6 +42,8 @@ r.get('/practice', async (req, res) => {
     practice: { ...practice.toJSON(), logo: storage.withUrl(practice.logo) },
     tiles: { locations, people, departments },
     readiness,
+    // The open branches: a checklist item opens that branch's editor (one branch) or the list.
+    branches: (await M.Location.find({ practiceId: req.practiceId, status: 'active' }, 'name shortName').sort({ createdAt: 1 }).lean()).map((l) => ({ id: l._id, name: l.shortName || l.name })),
     role: req.member.role,
     isOwner: req.member.isOwner,
     permissions: req.perms,
@@ -50,6 +52,8 @@ r.get('/practice', async (req, res) => {
 
 r.patch('/practice', ownerOnly, async (req, res) => {
   const body = pick(req.body, ['name', 'tagline', 'registrationNo', 'patientCallNumber', 'foodLogReviewCadence']);
+  if (body.name !== undefined && String(body.name).trim().length < 2) throw badRequest('Enter the clinic name', 'NAME_REQUIRED');
+  for (const k of ['name', 'tagline', 'registrationNo']) if (typeof body[k] === 'string') body[k] = body[k].trim().slice(0, 120);
   const practice = await M.Practice.findByIdAndUpdate(req.practiceId, body, { new: true, runValidators: true });
   res.json(practice);
 });

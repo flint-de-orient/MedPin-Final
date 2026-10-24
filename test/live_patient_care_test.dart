@@ -266,6 +266,10 @@ void main() {
     expect(_called('GET', '/api/patient/readings?measure=blood_sugar&days=30'), isTrue);
     expect(find.text('RECENT'), findsOneWidget);
     await t.enterText(find.byType(TextField), '118');
+    // When it was checked is chosen (no "fasting" by default).
+    await _tap(t, find.text('Save reading'));
+    expect(_called('POST', '/api/patient/readings'), isFalse);
+    await _tap(t, find.text('Fasting'));
     await _tap(t, find.text('Save reading'));
     expect(_body('POST', '/api/patient/readings'), {'bloodSugar': 118, 'sugarType': 'fasting'});
     await _tearDown(t);

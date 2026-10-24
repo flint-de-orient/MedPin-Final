@@ -1116,8 +1116,9 @@ class _MedicineSheetState extends State<_MedicineSheet> {
   late final _strength = TextEditingController(text: _c.str('strength'));
   late final _by = TextEditingController(text: _c['selfAdded'] == true ? _c.str('prescriber') : '');
   late final _stock = TextEditingController(text: _isNew ? '' : '${_c.obj('stock')['units'] ?? ''}');
-  late final Map<String, int> _dose = {
-    for (final s in const ['morning', 'afternoon', 'night']) s: _isNew ? (s == 'morning' ? 1 : 0) : _c.obj('dose').numOr(s).toInt(),
+  // Halves kept (½ tablet from a prescription stays ½ when the sheet is saved).
+  late final Map<String, num> _dose = {
+    for (final s in const ['morning', 'afternoon', 'night']) s: _isNew ? (s == 'morning' ? 1 : 0) : _c.obj('dose').numOr(s),
   };
   late bool _weekly = _c.str('frequency') == 'weekly';
   late String _weekday = _c.str('weekday', 'sun');
@@ -1192,13 +1193,14 @@ class _MedicineSheetState extends State<_MedicineSheet> {
     children: [
       Expanded(child: Text(label, style: tx(15, w: w600))),
       P2Stepper(
-        value: '${_dose[slot]}',
+        value: F.dose(_dose[slot]!),
         button: 40,
         valueWidth: 40,
         iconSize: 16,
         style: tx(15, w: w700, tab: true),
         label: '$label dose',
-        onMinus: () => setState(() => _dose[slot] = (_dose[slot]! - 1).clamp(0, 9)),
+        // − from 1½ is ½, − from ½ is 0; + adds a whole tablet.
+        onMinus: () => setState(() => _dose[slot] = _dose[slot]! >= 1 ? _dose[slot]! - 1 : 0),
         onPlus: () => setState(() => _dose[slot] = (_dose[slot]! + 1).clamp(0, 9)),
       ),
     ],

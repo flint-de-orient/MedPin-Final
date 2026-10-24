@@ -174,12 +174,16 @@ async function advisedTests(patient) {
       const key = c?.key || norm(name);
       if (!name || seen.has(key)) continue;
       seen.add(key);
-      // A result on or after the day it was asked for (a report checked for this test counts whatever its date).
+      // A result on or after the day it was asked for. A report checked for this test counts when
+      // it came for this request (uploaded after it, or done on / after that day) — a repeat
+      // test (HbA1c again in 3 months) isn't "done" by the last one's report.
       const askedDay = T.dayStart(rx.issuedAt);
-      const checkedFor = (r) => r.testCheck && (r.forTests || []).some((x) => norm(x) === norm(name));
+      const checkedFor = (r) => r.testCheck && (r.forTests || []).some((x) => norm(x) === norm(name))
+        && ((r.createdAt && r.createdAt >= rx.issuedAt) || (r.recordDate && r.recordDate >= askedDay));
       const hit = recs.find(checkedFor) || recs.find((r) => r.recordDate >= askedDay && answers(name, r, labOf.get(String(r._id))));
       // Not done yet, but a report was uploaded for it: why it doesn't count.
-      const tried = hit ? null : recs.find((r) => r.testCheck && !r.testCheck.auto && (r.testCheck.asked || []).some((x) => norm(x) === norm(name)));
+      const forThis = (r) => (r.createdAt && r.createdAt >= rx.issuedAt) || (r.recordDate && r.recordDate >= askedDay);
+      const tried = hit ? null : recs.find((r) => r.testCheck && !r.testCheck.auto && forThis(r) && (r.testCheck.asked || []).some((x) => norm(x) === norm(name)));
       out.push({
         name,
         checks: c?.checks || null,

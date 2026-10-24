@@ -78,9 +78,9 @@ class _MedAddtocartSheetState extends State<MedAddtocartSheet> {
     final c = _course;
     if (c == null) return 'Strip of 10 tablets · you take 1 a day';
     final dose = c.obj('dose');
-    final perTake = ['morning', 'afternoon', 'night'].map((s) => dose.numOr(s)).fold<num>(0, (a, b) => a + b).toInt();
+    final perTake = ['morning', 'afternoon', 'night'].map((s) => dose.numOr(s)).fold<num>(0, (a, b) => a + b);
     final weekly = c.str('frequency') == 'weekly';
-    return 'Strip of $_perStrip tablets · you take ${perTake == 0 ? 1 : perTake} a ${weekly ? 'week' : 'day'}';
+    return 'Strip of $_perStrip tablets · you take ${perTake == 0 ? 1 : F.dose(perTake)} a ${weekly ? 'week' : 'day'}';
   }
 
   Future<void> _add() async {

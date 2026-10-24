@@ -184,7 +184,7 @@ void main() {
     await _tearDown(t);
   });
 
-  testWidgets('PP-Tests lists results; opening one marks it reviewed', (t) async {
+  testWidgets('PP-Tests lists results; opening one is not marking it reviewed', (t) async {
     _serve();
     await _pump(t, const PpTestsScreen(), stem: 'PP-Tests', args: {'patientId': _pid});
     expect(find.text('All · 3'), findsOneWidget);
@@ -192,7 +192,8 @@ void main() {
     expect(find.text('Lipid profile'), findsOneWidget);
     expect(find.text('2 high'), findsWidgets);
     await _tap(t, find.text('Lipid profile'));
-    expect(_called('POST', '/api/lab-results/6ac8bbd08adea6a429a731f9/reviewed'), isTrue);
+    // Reviewing is the doctor's deliberate "Mark as reviewed" on the report, not a tap on the row.
+    expect(_called('POST', '/api/lab-results/6ac8bbd08adea6a429a731f9/reviewed'), isFalse);
     expect(t.takeException(), isNull);
     await _tearDown(t);
   });

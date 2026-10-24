@@ -19,7 +19,10 @@ const { dosesPerDay, doseText } = require('./clinical');
 const SLOT_LABEL = { morning: 'Morning', afternoon: 'Afternoon', night: 'Night' };
 const FOOD = { before_food: 'before food', after_food: 'after food', with_food: 'with food', empty_stomach: 'on an empty stomach' };
 
-/** Runs [fn] only the first time [key] is seen. */
+/**
+ * Runs [fn] only the first time [key] is seen. If [fn] fails (a database hiccup, the push
+ * service down), the key is released so the next minute's run tries again.
+ */
 async function once(key, fn) {
   try {
     await M.ReminderLog.create({ key });
@@ -27,9 +30,17 @@ async function once(key, fn) {
     if (err.code === 11000) return false;
     throw err;
   }
-  await fn();
+  try {
+    await fn();
+  } catch (err) {
+    await M.ReminderLog.deleteOne({ key }).catch(() => {});
+    throw err;
+  }
   return true;
 }
+
+/** Every 15 minutes (jobs that need no minute-by-minute check). */
+const quarter = (now) => T.minuteOfDay(now) % 15 === 0;
 
 const visitText = async (a) => {
   const [doctor, loc] = await Promise.all([M.User.findById(a.doctorId, 'name'), M.Location.findById(a.locationId, 'name shortName')]);
@@ -60,7 +71,7 @@ async function prepareDoses(now) {
 }
 
 async function doseReminders(now, since) {
-  const doses = await M.DoseLog.find({ status: 'due', scheduledAt: { $gt: since, $lte: now } }).limit(2000);
+  const doses = await M.DoseLog.find({ status: 'due', scheduledAt: { $gt: since, $lte: now } });
   if (!doses.length) return;
   const patients = new Map((await M.Patient.find({ _id: { $in: doses.map((d) => d.patientId) } }, 'userId settings')).map((p) => [String(p._id), p]));
   // Only medicines still being taken: a course stopped or finished since its doses were made rings nothing.
@@ -104,8 +115,10 @@ async function visitReminders(now) {
   for (const [hours, until] of [[24, 2], [2, 0]]) {
     const from = new Date(now.getTime() + until * 3600e3);
     const to = new Date(now.getTime() + hours * 3600e3);
-    const appts = await M.Appointment.find({ status: { $in: ['booked', 'confirmed'] }, startAt: { $gt: from, $lte: to } }).limit(1000);
-    for (const a of appts) {
+    const field = hours === 24 ? 'reminded24At' : 'reminded2At';
+    for await (const a of M.Appointment.find({ status: { $in: ['booked', 'confirmed'] }, startAt: { $gt: from, $lte: to }, [field]: null }).cursor()) {
+      // Looked at once: sent now, or not needed (booked late, reminders off, the phone rings it).
+      await M.Appointment.updateOne({ _id: a._id }, { [field]: now }, { timestamps: false });
       // Booked only shortly before (e.g. this morning for this evening): the confirmation was enough.
       if (a.createdAt && a.startAt - a.createdAt < (hours === 24 ? 12 : 2) * 3600e3) continue;
       const p = await M.Patient.findById(a.patientId, 'userId settings');
@@ -117,22 +130,28 @@ async function visitReminders(now) {
       const label = hours === 2
         ? (mins < 90 ? `in ${mins} minutes` : 'in about 2 hours')
         : T.dayKey(a.startAt) === T.dayKey(now) ? 'today' : 'tomorrow';
-      await once(`visit${hours}:${a._id}`, async () =>
-        notify([p.userId], {
-          type: 'visit_reminder', practiceId: a.practiceId, title: `Your visit is ${label}`, body: await visitText(a),
-          screen: 'Patient-DoctorDetail', params: { doctorId: a.doctorId, appointmentId: a._id }, whatsapp: hours === 24,
-        }),
-      );
+      try {
+        await once(`visit${hours}:${a._id}`, async () =>
+          notify([p.userId], {
+            type: 'visit_reminder', practiceId: a.practiceId, title: `Your visit is ${label}`, body: await visitText(a),
+            screen: 'Patient-DoctorDetail', params: { doctorId: a.doctorId, appointmentId: a._id }, whatsapp: hours === 24,
+          }),
+        );
+      } catch (err) {
+        await M.Appointment.updateOne({ _id: a._id }, { $unset: { [field]: 1 } }, { timestamps: false }); // tried again next minute
+        throw err;
+      }
     }
   }
 }
 
-async function followUpReminders(now) {
+async function followUpReminders(now, { force = false } = {}) {
   if (T.minuteOfDay(now) < 10 * 60) return; // from 10:00 IST
+  if (!force && !quarter(now)) return;
   const today = T.dayStart(now);
   // Only when the doctor left "Remind the patient" on.
-  const due = await M.FollowUp.find({ status: 'not_booked', remindPatient: { $ne: false }, dueDate: { $gte: today, $lt: T.addDays(today, 31) } }).limit(2000);
-  for (const f of due) {
+  const due = M.FollowUp.find({ status: 'not_booked', remindPatient: { $ne: false }, remindersSent: { $in: [0, null] }, dueDate: { $gte: today, $lt: T.addDays(today, 31) } }).cursor();
+  for await (const f of due) {
     const prof = await M.DoctorProfile.findOne({ userId: f.doctorId }, 'followUpReminder displayName');
     const days = prof?.followUpReminder?.daysBefore ?? 3;
     const channels = prof?.followUpReminder?.channels || ['whatsapp', 'app'];
@@ -160,10 +179,9 @@ async function followUpReminders(now) {
 }
 
 async function lowStock(now) {
-  if (T.minuteOfDay(now) < 9 * 60) return; // from 09:00 IST
+  if (T.minuteOfDay(now) < 9 * 60 || !quarter(now)) return; // from 09:00 IST, every 15 min
   const day = T.dayKey(now);
-  const courses = await M.MedicationCourse.find({ status: 'active', stockUnits: { $ne: null } }).limit(5000);
-  for (const c of courses) {
+  for await (const c of M.MedicationCourse.find({ status: 'active', stockUnits: { $ne: null } }).cursor()) {
     const perDay = require('./clinical').stockPerDay(c);
     if (!perDay) continue;
     const daysLeft = Math.floor(c.stockUnits / perDay);
@@ -182,8 +200,7 @@ async function lowStock(now) {
 async function dailyLogReminders(now) {
   const day = T.dayKey(now);
   const minute = T.minuteOfDay(now);
-  const patients = await M.Patient.find({ userId: { $ne: null }, 'settings.dailyLogReminder': { $ne: false } }, 'userId settings').limit(5000);
-  for (const p of patients) {
+  for await (const p of M.Patient.find({ userId: { $ne: null }, 'settings.dailyLogReminder': { $ne: false } }, 'userId settings').cursor()) {
     const at = /^\d{2}:\d{2}$/.test(p.settings?.dailyLogReminderAt || '') ? p.settings.dailyLogReminderAt : '20:00';
     if (minute < T.hhmmToMin(at)) continue;
     const logged = await M.HealthLog.exists({ patientId: p._id, loggedAt: { $gte: T.dayStart(now) } });
@@ -268,7 +285,13 @@ async function morningSummary(now) {
       const askedToLog = await M.TreatmentPlan.find({ practiceId: m.practiceId?._id, nutritionBy: m.userId }).distinct('patientId');
       const logging = askedToLog.length ? await M.HealthLog.find({ patientId: { $in: askedToLog }, type: 'meal', loggedAt: { $gte: T.addDays(now, -2) } }).distinct('patientId') : [];
       const notLogging = askedToLog.length - logging.length;
+      // Patients who wrote since yesterday (overnight too) and haven't had this doctor read it.
+      const waiting = await M.Conversation.countDocuments({
+        practiceId: m.practiceId?._id, type: m.role === 'dietician' ? 'nutrition' : 'care', patientId: { $in: team },
+        'lastMessage.at': { $gte: since }, participants: { $elemMatch: { userId: m.userId, unreadCount: { $gt: 0 } } },
+      });
       const parts = [
+        waiting && `${waiting} ${waiting === 1 ? 'patient' : 'patients'} wrote, waiting for a reply`,
         shared && `${shared} ${shared === 1 ? 'report' : 'reports'} shared${abnormal ? ` (${abnormal} out of range)` : ''}${asked ? ` · ${asked} you asked for` : ''}`,
         dropped && `${dropped} ${dropped === 1 ? 'patient' : 'patients'} below 70% on medicines`,
         notLogging > 0 && `${notLogging} not logging meals`,
@@ -491,4 +514,4 @@ function stop() {
   timer = null;
 }
 
-module.exports = { chatRollup, escalateEmergencies, noShows, start, stop, tick, morningSummary, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };
+module.exports = { once, chatRollup, escalateEmergencies, noShows, start, stop, tick, morningSummary, doseReminders, visitReminders, followUpReminders, lowStock, dailyLogReminders, dailyDigest, prepareDoses, healthScores };

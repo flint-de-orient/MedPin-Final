@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart' hide Text;
 
-import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
-import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: PP-Tests.dc.html — "Patient profile · Test results".
 /// Live data: GET /api/patients/:id, /lab-results and /records. Opening a
-/// result marks it reviewed (POST /api/lab-results/:id/reviewed).
+/// result opens Lab-Report, where the doctor marks it reviewed.
 class PpTestsScreen extends StatefulWidget {
   const PpTestsScreen({super.key});
 
@@ -55,14 +53,8 @@ class _PpTestsScreenState extends State<PpTestsScreen> with LiveData {
   }
 
   Future<void> _openLive(BuildContext context, D6Rec rec, Map<String, dynamic> r) async {
-    // Opening it is the doctor's review; others (an assistant) just open it.
-    if (r.obj('reviewed')['at'] == null && Session.I.role == 'doctor') {
-      final ok = await runAction(context, () => Api.I.post('/api/lab-results/${r.str('id')}/reviewed'));
-      if (ok == null || !context.mounted) return;
-      toast(context, 'Marked as reviewed');
-      reload(quiet: true);
-    }
-    if (!context.mounted) return;
+    // Opening a result is not reviewing it: the doctor marks it on the report ("Mark as
+    // reviewed"), so a stray tap never tells the patient their doctor has seen it.
     await Nav.go(context, 'Lab-Report', args: {'labResultId': r.str('id'), 'patientId': rec.m.str('id')});
     if (context.mounted) reload(quiet: true);
   }

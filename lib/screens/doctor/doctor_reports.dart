@@ -225,6 +225,16 @@ class _DoctorReportsScreenState extends State<DoctorReportsScreen> with LiveData
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
             gap: 16,
             children: [
+              // "Me / Whole clinic" (a clinic with several doctors): whose numbers these are.
+              if (data != null && _s.obj('scope')['canSwitch'] == true)
+                MpSegmented(
+                  options: const ['Me', 'Whole clinic'],
+                  index: d3ClinicWide ? 1 : 0,
+                  onChanged: (i) {
+                    setState(() => d3ClinicWide = i == 1);
+                    reload();
+                  },
+                ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text(_dateLine, style: tx(13, c: MP.ink2)),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
+import '../../data/files.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d8.dart';
@@ -59,6 +60,39 @@ class _PracticeScreenState extends State<PracticeScreen> with LiveData {
   List<String> get _minorItems => data == null
       ? _minor
       : [for (final c in _checks) if (c['blocking'] != true && c['done'] != true) c.str('label')];
+
+  /// A checklist item opens where it is done: Team → People, the signature → its screen,
+  /// a branch detail (map, hours, closures, letterhead) → that branch's editor, or the list
+  /// of branches when there are several. Never a blank "new branch".
+  Future<void> _openItem(String label) async {
+    final key = data == null ? null : _checks.where((c) => c.str('label') == label).firstOrNull?.str('key');
+    final branches = data?.list('branches') ?? const <Map<String, dynamic>>[];
+    if (key == 'team') {
+      await Nav.go(context, 'People');
+    } else if (key == 'signature') {
+      await Nav.go(context, 'Profile-Signature');
+    } else if (branches.length == 1) {
+      await Nav.go(context, 'Clinic-Editor', args: {'locationId': branches.first.str('id')});
+    } else {
+      await Nav.go(context, 'Clinics');
+    }
+    if (mounted && isLive) reload(quiet: true);
+  }
+
+  /// "Edit" on the masthead: the clinic's own name, tagline, registration and logo (owner).
+  Future<void> _editPractice() async {
+    if (!isLive) {
+      toast(context, 'Edit clinic details');
+      return;
+    }
+    if (data!['isOwner'] != true && data!['role'] != 'practice_manager') {
+      toast(context, 'Only the clinic owner can change these');
+      return;
+    }
+    await openSheet<bool>(context, (_) => _PracticeSheet(practice: _practice));
+    // Reloaded either way: a new logo shows even when the sheet is closed without Save.
+    if (mounted) reload(quiet: true);
+  }
 
   List<String> get _doneItems => data == null
       ? _done
@@ -150,7 +184,7 @@ class _PracticeScreenState extends State<PracticeScreen> with LiveData {
                 'Edit',
                 height: 44,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                onTap: () => Nav.go(context, 'Clinic-Editor'),
+                onTap: _editPractice,
               ),
             ],
           ),
@@ -230,7 +264,7 @@ class _PracticeScreenState extends State<PracticeScreen> with LiveData {
             const Padding(padding: EdgeInsets.only(bottom: 4), child: SectionLabel('Optional', h: 1.35)),
             for (final m in _minorItems)
               Tap(
-                onTap: () => Nav.go(context, 'Clinic-Editor'),
+                onTap: () => _openItem(m),
                 radius: 0,
                 child: _ChecklistRow(
                   leading: const Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: D8PendingIcon()),
@@ -343,6 +377,81 @@ class _ChecklistRow extends StatelessWidget {
           if (trailing != null) ...[const Gap(12), trailing!],
         ],
       ),
+    );
+  }
+}
+
+/// The clinic's name, tagline, registration number and logo (PATCH /api/practice,
+/// POST /api/practice/logo). Pops true when something was saved.
+class _PracticeSheet extends StatefulWidget {
+  final Map<String, dynamic> practice;
+  const _PracticeSheet({required this.practice});
+
+  @override
+  State<_PracticeSheet> createState() => _PracticeSheetState();
+}
+
+class _PracticeSheetState extends State<_PracticeSheet> {
+  late final _name = TextEditingController(text: widget.practice.str('name'));
+  late final _tagline = TextEditingController(text: widget.practice.str('tagline'));
+  late final _reg = TextEditingController(text: widget.practice.str('registrationNo'));
+  final _busy = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _tagline.dispose();
+    _reg.dispose();
+    _busy.dispose();
+    super.dispose();
+  }
+
+  Future<void> _logo() async {
+    final file = await Files.chooseSource(context, title: 'Clinic logo', allowPdf: false);
+    if (file == null || !mounted) return;
+    final ok = await runAction(context, () => Api.I.upload('/api/practice/logo', files: {'file': [file]}), busy: _busy);
+    if (ok == null || !mounted) return;
+    toast(context, (ok as Map)['backgroundRemoved'] == true ? 'Logo updated · background removed' : 'Logo updated');
+  }
+
+  Future<void> _save() async {
+    if (_name.text.trim().length < 2) {
+      toast(context, 'Enter the clinic name');
+      return;
+    }
+    final ok = await runAction(
+      context,
+      () => Api.I.patch('/api/practice', {'name': _name.text.trim(), 'tagline': _tagline.text.trim(), 'registrationNo': _reg.text.trim()}),
+      busy: _busy,
+    );
+    if (ok == null || !mounted) return;
+    toast(context, 'Clinic details saved');
+    Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MpSheet(
+        title: 'Clinic details',
+        subtitle: 'Shown on your clinic page and prescriptions. Branch address and hours are set on each branch.',
+        showClose: true,
+        child: ValueListenableBuilder<bool>(
+          valueListenable: _busy,
+          builder: (context, busy, _) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MpInput(controller: _name, label: 'Clinic name', hint: 'E.g. City Care Clinic', height: 52),
+              const Gap(12),
+              MpInput(controller: _tagline, label: 'Tagline', hint: 'E.g. Diabetes and heart care since 2011', height: 52),
+              const Gap(12),
+              MpInput(controller: _reg, label: 'Registration number', hint: 'Clinical establishment registration', height: 52),
+              const Gap(12),
+              MpButton('Change logo', kind: MpBtn.secondary, height: 48, icon: I.image, onTap: busy ? null : _logo),
+              const Gap(16),
+              MpButton(busy ? 'Saving…' : 'Save', onTap: busy ? null : _save),
+            ],
+          ),
+        ),
     );
   }
 }

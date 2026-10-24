@@ -34,6 +34,14 @@ class Push {
   String? openChat;
   Map<String, dynamic>? _pendingTap;
 
+  /// True once the first screen after launch / sign-in is showing ([flushPending]). Before
+  /// that a tap waits: opened earlier, the launch would replace its screen with Home.
+  bool _ready = false;
+  DateTime? _startedAt;
+
+  /// Ready, or running for a few seconds already (a sign-in path that never flushed).
+  bool get _launched => _ready || (_startedAt != null && DateTime.now().difference(_startedAt!) > const Duration(seconds: 5));
+
   bool get _supported => !kIsWeb && !AppMode.preview && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
 
   /// Phones only (Firebase Messaging has no background handler elsewhere).
@@ -64,6 +72,11 @@ class Push {
   /// After sign-in (or a restored session): permission, token, listeners.
   Future<void> start() async {
     if (!_supported || !Session.I.signedIn) return;
+    _startedAt ??= DateTime.now();
+    // A sign-in path that never calls flushPending: a waiting tap still opens.
+    Future.delayed(const Duration(seconds: 6), () {
+      if (!_ready && _pendingTap != null && Session.I.signedIn) flushPending();
+    });
     try {
       if (Firebase.apps.isEmpty) await Firebase.initializeApp();
       await LocalNotes.I.init();
@@ -141,9 +154,18 @@ class Push {
     final screen = data['screen']?.toString() ?? '';
     final ctx = Nav.key.currentContext;
     if (screen.isEmpty) return;
-    if (ctx == null || !Session.I.signedIn) {
+    if (ctx == null || !Session.I.signedIn || !_launched) {
       _pendingTap = data; // shown after sign-in / launch
       return;
+    }
+    // Tapped: that notice is read in the bell too (the push names its type and what it's about).
+    final type = data['type']?.toString() ?? '';
+    if (type.isNotEmpty) {
+      Api.I.post('/api/notifications/opened', {
+        'type': type,
+        for (final k in const ['conversationId', 'appointmentId', 'alertId', 'patientId', 'reviewId', 'orderId', 'paymentId'])
+          if (data[k] != null) k: '${data[k]}',
+      }).then((_) => NavCounts.refresh(force: true)).catchError((_) {});
     }
     final spec = Nav.spec(screen);
     if (spec == null) return;
@@ -167,6 +189,7 @@ class Push {
 
   /// Called once the first screen after sign-in is showing.
   void flushPending() {
+    _ready = true;
     final p = _pendingTap;
     _pendingTap = null;
     if (p != null) scheduleMicrotask(() => open(p));
@@ -184,6 +207,8 @@ class Push {
 
   /// On sign-out: the backend forgets this phone (sent with /api/auth/logout).
   Future<void> forget() async {
+    _ready = false;
+    _startedAt = null;
     if (!_supported || Session.I.signedIn) return;
     try {
       if (Firebase.apps.isEmpty) await Firebase.initializeApp();

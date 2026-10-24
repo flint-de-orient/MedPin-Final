@@ -376,6 +376,12 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', qui
     const activeDocs = toStaff.map(String).filter((id) => active.includes(id));
     if (activeDocs.length) toldStaff.push(...(await chatNotice(activeDocs, staffNotice, convo._id)));
     if (toDesk.length) toldStaff.push(...(await chatNotice(toDesk, staffNotice, convo._id, { push: deskOpen })));
+    // No front desk for this patient (their branch has none): the doctors' bell keeps one quiet
+    // item per chat (no buzz), so the message isn't only a badge count until the roll-up.
+    if (!toDesk.length && convo.type === 'care') {
+      const quiet = toStaff.map(String).filter((id) => !activeDocs.includes(id));
+      if (quiet.length) toldStaff.push(...(await chatNotice(quiet, staffNotice, convo._id, { push: false })));
+    }
   } else {
     // Urgent: a new emergency was just raised (its alert already told the doctor and the desk);
     // follow-ups while it is open: one notice per chat, pushed at once.
@@ -581,7 +587,9 @@ async function ensureDoses(patient, from, to = from) {
       if (c.frequency === 'weekly' && (c.weekday || T.weekday(c.startDate)) !== T.weekday(day)) continue;
       for (const slot of SLOTS) {
         if (!(c.dose?.[slot] > 0)) continue;
-        want.set(`${c._id}|${T.dayKey(day)}|${slot}`, { course: c, slot, scheduledAt: T.atMinute(day, doseMinute(patient.settings, slot, c.foodRelation)) });
+        const scheduledAt = T.atMinute(day, doseMinute(patient.settings, slot, c.foodRelation));
+        if (c.trackingSince && scheduledAt < c.trackingSince) continue; // while it was off
+        want.set(`${c._id}|${T.dayKey(day)}|${slot}`, { course: c, slot, scheduledAt });
       }
     }
   }

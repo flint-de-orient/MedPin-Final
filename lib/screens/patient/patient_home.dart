@@ -94,7 +94,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
         final status = t['status'];
         final now = DateTime.now();
         final mins = at == null ? 0 : at.difference(now).inMinutes;
-        final due = status != 'missed' && at != null && mins <= 30;
+        // Skipped (or missed) is settled: no "Take" for it.
+        final due = status != 'missed' && status != 'skipped' && at != null && mins <= 30;
         return (
           icon: I.pill,
           title: t.str('title'),
@@ -102,6 +103,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen> with LiveData {
           action: due ? 'Take' : '',
           later: status == 'missed'
               ? 'Missed'
+              : status == 'skipped'
+                  ? 'Skipped'
               : mins < 60
                   ? 'In $mins min'
                   : t['slot'] == 'night'

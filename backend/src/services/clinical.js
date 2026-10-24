@@ -13,7 +13,9 @@ const ALLERGY_CLASSES = {
   statin: ['statin'],
 };
 
-const doseText = (d = {}) => `${d.morning || 0}-${d.afternoon || 0}-${d.night || 0}`;
+// "1-0-1", with halves as printed on Indian prescriptions: "½-0-1", "1½-0-0".
+const half = (n = 0) => { const w = Math.floor(n); return n - w >= 0.5 ? (w ? `${w}½` : '½') : `${w}`; };
+const doseText = (d = {}) => `${half(d.morning || 0)}-${half(d.afternoon || 0)}-${half(d.night || 0)}`;
 const dosesPerDay = (d = {}) => (d.morning || 0) + (d.afternoon || 0) + (d.night || 0);
 /**
  * Tablets used per day, for "runs out in N days": weekly = a seventh of a dose day; "when
@@ -249,6 +251,10 @@ async function issueClaimed(consult, doctorUser, doctor) {
     doctorId: consult.doctorId, prescriptionId: rx._id, flagLabel: 'New', flagTone: 'new',
   });
 
+  // What it prints is fixed now (a later redraw prints the same signature, letterhead and address).
+  const [loc, practice] = await Promise.all([rxLocation(rx, consult), M.Practice.findById(rx.practiceId, 'logo name')]);
+  rx.printed = printedSnapshot({ doctor, location: loc, practice });
+  rx.markModified('printed');
   // PDF is generated now so it can be downloaded or sent straight away.
   await buildPrescriptionPdf(rx, { consult, patient, doctor });
 
@@ -287,7 +293,44 @@ async function rxLocation(rx, consult) {
   return options.find((l) => l.letterhead?.logo?.key) || options[0] || null;
 }
 
+const plain = (x) => (x?.toObject ? x.toObject() : x || null);
+
+/** What an issued prescription prints, fixed at issue (see Prescription.printed). */
+function printedSnapshot({ doctor, location, practice }) {
+  const d = plain(doctor) || {};
+  const l = plain(location);
+  return {
+    signatureKey: d.signature?.key || null,
+    logoKey: l?.letterhead?.logo?.key || practice?.logo?.key || null,
+    practiceName: practice?.name || null,
+    doctor: {
+      displayName: d.displayName, degreesSummary: d.degreesSummary, headline: d.headline, hprId: d.hprId,
+      qualifications: (d.qualifications || []).map((q) => ({ name: q.name, institution: q.institution, year: q.year })),
+      registration: d.registration ? { number: d.registration.number, council: d.registration.council, councilShort: d.registration.councilShort } : null,
+    },
+    location: l ? {
+      _id: l._id, name: l.name, address: l.address, area: l.area, city: l.city, pincode: l.pincode, phone: l.phone, patientPhone: l.patientPhone,
+      hfrId: l.hfrId, weeklyHours: l.weeklyHours, letterhead: l.letterhead ? { tagline: l.letterhead.tagline, doctorNamePrinted: l.letterhead.doctorNamePrinted, registrationNo: l.letterhead.registrationNo } : null,
+    } : null,
+  };
+}
+
+/** The doctor, location and images to print: the issue-time snapshot when there is one. */
+function fromSnapshot(rx, { doctor, location, practice }) {
+  const p = rx.printed;
+  if (!p) return { doctor, location, practice, signatureKey: doctor?.signature?.key, logoKey: location?.letterhead?.logo?.key || practice?.logo?.key };
+  return {
+    doctor: { ...p.doctor, signature: p.signatureKey ? { key: p.signatureKey } : null },
+    location: p.location,
+    practice: { name: p.practiceName },
+    signatureKey: p.signatureKey,
+    logoKey: p.logoKey,
+  };
+}
+
 async function pdfInputs(rx, { doctor, location, practice } = {}) {
+  // Issued with a snapshot: drawn from it, so nothing changed later redraws it.
+  if (rx.printed) return require('crypto').createHash('sha1').update(JSON.stringify(rx.printed)).digest('hex');
   doctor = doctor || (await M.DoctorProfile.findOne({ userId: rx.doctorId }, 'signature displayName qualifications degreesSummary registration hprId headline'));
   location = location !== undefined ? location : await rxLocation(rx);
   practice = practice || (await M.Practice.findById(rx.practiceId, 'logo name'));
@@ -310,26 +353,29 @@ async function buildPrescriptionPdf(rx, { consult, patient, doctor, lang = 'en',
   patient = patient || (await M.Patient.findById(rx.patientId));
   doctor = doctor || (await M.DoctorProfile.findOne({ userId: rx.doctorId }));
   const vitals = consult?.printVitalsOnRx && consult.vitalsId ? await M.Vitals.findById(consult.vitalsId) : null;
-  const location = await rxLocation(rx, consult);
-  const practice = await M.Practice.findById(rx.practiceId, 'logo name');
+  const live = rx.printed ? {} : { location: await rxLocation(rx, consult), practice: await M.Practice.findById(rx.practiceId, 'logo name') };
+  // An issued prescription prints what it was issued with (its snapshot), not today's details.
+  const use = fromSnapshot(rx, { doctor, ...live });
+  const location = use.location;
+  const practice = use.practice;
   const appt = consult?.appointmentId ? await M.Appointment.findById(consult.appointmentId, 'mode') : null;
-  const image = async (file) => (file?.key ? storage.read(file.key).catch(() => null) : null);
-  const [signature, logo] = await Promise.all([image(doctor?.signature), image(location?.letterhead?.logo || practice?.logo)]);
+  const image = async (key) => (key ? storage.read(key).catch(() => null) : null);
+  const [signature, logo] = await Promise.all([image(use.signatureKey), image(use.logoKey)]);
   const { buffer, pages } = await rxpdf.renderPrescription({
-    rx, patient, doctor, location, vitals, complaint: consult?.chiefComplaint, signature, logo, practiceName: practice?.name, mode: appt?.mode, lang, tr,
+    rx, patient, doctor: use.doctor, location, vitals, complaint: consult?.chiefComplaint, signature, logo, practiceName: practice?.name, mode: appt?.mode, lang, tr,
   });
   const suffix = { bn: ' (বাংলা)', hi: ' (हिन्दी)' }[lang] || '';
   const name = `Prescription ${rxpdf.rxNo(rx)} · ${patient?.name || 'Patient'} · ${rxpdf.fmtDate(rx.issuedAt)}${suffix}.pdf`.replace(/[\/:*?"<>|]/g, '');
   const file = await storage.save(buffer, { folder: 'prescriptions', name, mimeType: 'application/pdf', pages });
   if (lang !== 'en') {
-    rx.localized = { ...(rx.localized || {}), [lang]: { file, version: rxpdf.PDF_VERSION, inputs: await pdfInputs(rx, { doctor, location, practice }), text: tr } };
+    rx.localized = { ...(rx.localized || {}), [lang]: { file, version: rxpdf.PDF_VERSION, inputs: await pdfInputs(rx, { doctor, location: live.location ?? location, practice: live.practice ?? practice }), text: tr } };
     rx.markModified('localized');
     await rx.save();
     return rx;
   }
   rx.file = file;
   rx.pdfVersion = rxpdf.PDF_VERSION;
-  rx.pdfInputs = await pdfInputs(rx, { doctor, location, practice });
+  rx.pdfInputs = await pdfInputs(rx, { doctor, location: live.location ?? location, practice: live.practice ?? practice });
   await rx.save();
   return rx;
 }
@@ -340,6 +386,9 @@ async function buildPrescriptionPdf(rx, { consult, patient, doctor, lang = 'en',
  */
 async function ensurePrescriptionPdf(rx) {
   if (rx.kind !== 'digital' || !rx.consultationId) return rx;
+  // Issued before snapshots were kept: its PDF is the record of what was issued — never redrawn
+  // with today's signature or address (only drawn again if the file is missing).
+  if (!rx.printed && rx.file?.key) return rx;
   const fresh = rx.file?.key && (rx.pdfVersion || 1) >= rxpdf.PDF_VERSION && rx.pdfInputs === (await pdfInputs(rx));
   if (fresh) return rx;
   return buildPrescriptionPdf(rx);

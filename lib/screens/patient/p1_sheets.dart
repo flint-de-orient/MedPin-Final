@@ -107,7 +107,9 @@ class _P1ReadingSheetState extends State<P1ReadingSheet> with LiveData {
   final _a = TextEditingController();
   final _b = TextEditingController();
   final _c = TextEditingController();
-  int _sugarType = 0;
+  // When the sugar was checked is chosen, not assumed: a "fasting" default turns an after-lunch
+  // 220 into a false high-fasting alert for the doctor.
+  int _sugarType = -1;
   final _busy = ValueNotifier(false);
 
   P1Measure get _m => P1Measure.all[widget.measure] ?? P1Measure.all['blood_sugar']!;
@@ -131,6 +133,10 @@ class _P1ReadingSheetState extends State<P1ReadingSheet> with LiveData {
     final body = <String, Object?>{};
     switch (_m.key) {
       case 'blood_sugar':
+        if (_sugarType < 0) {
+          toast(context, 'Choose when you checked: fasting, after a meal or random');
+          return;
+        }
         body.addAll({'bloodSugar': a, 'sugarType': _sugarTypes[_sugarType].$1});
       case 'blood_pressure':
         body.addAll({'bpSystolic': a, 'bpDiastolic': _num(_b), if (_num(_c) != null) 'pulse': _num(_c)});

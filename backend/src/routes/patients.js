@@ -444,7 +444,17 @@ r.get('/patients/:id/trends/:analyte', need('clinical', 'labs'), async (req, res
 const ANALYTE_FIELDS = ['analyte', 'value', 'valueText', 'unit', 'refLow', 'refHigh', 'refText', 'flag'];
 r.post('/patients/:id/lab-results', need('labs'), async (req, res) => {
   const patient = await patientInPractice(req, req.params.id);
-  const values = (req.body.values || []).map((v) => pick(v, ANALYTE_FIELDS));
+  // "1,50,000" typed or read from a report is 150000; a word ("Positive") is kept as text.
+  const { labNumber } = require('../lib/numbers');
+  const values = (req.body.values || []).map((v) => {
+    const x = pick(v, ANALYTE_FIELDS);
+    if (x.value !== undefined && x.value !== null && typeof x.value !== 'number') {
+      const n = labNumber(x.value);
+      if (Number.isFinite(n)) x.value = n;
+      else { x.valueText = x.valueText || String(x.value); delete x.value; }
+    }
+    return x;
+  });
   const result = await M.LabResult.create({
     patientId: patient._id, recordId: req.body.recordId, practiceId: req.practiceId, testName: req.body.testName,
     panel: req.body.panel, labName: req.body.labName, collectedAt: T.parseDay(req.body.collectedAt),

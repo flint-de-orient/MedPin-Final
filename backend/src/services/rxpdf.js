@@ -76,7 +76,9 @@ function doseCell(item, t = (s) => s) {
   if (item.frequency === 'weekly') return [t('1 / week'), item.weekday ? t(DAYS[item.weekday] || item.weekday) : t('Once a week')];
   if (item.frequency === 'sos' || item.frequency === 'as_needed') return [t('When needed'), ''];
   const d = item.dose || {};
-  return [`${d.morning || 0} – ${d.afternoon || 0} – ${d.night || 0}`, t('Morn – Aft – Night')];
+  // Halves as written by hand on Indian prescriptions (½, 1½).
+  const h = (n = 0) => { const w = Math.floor(n); return n - w >= 0.5 ? (w ? `${w}½` : '½') : `${w}`; };
+  return [`${h(d.morning || 0)} – ${h(d.afternoon || 0)} – ${h(d.night || 0)}`, t('Morn – Aft – Night')];
 }
 
 function durationCell(item, t = (s) => s) {

@@ -31,7 +31,7 @@ function hba1cScore(x) {
 
 const hba1cOf = (lab) => {
   const v = (lab?.values || []).find((x) => /hba1c|glycated|glycosylated|a1c/i.test(x.analyte || ''));
-  const n = v ? (typeof v.value === 'number' ? v.value : parseFloat(v.valueText)) : null;
+  const n = v ? (typeof v.value === 'number' ? v.value : require('../lib/numbers').labNumber(v.valueText)) : null;
   return Number.isFinite(n) && n > 2 && n < 20 ? n : null;
 };
 

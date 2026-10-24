@@ -275,6 +275,7 @@ const TEMPLATES = [
   },
   { en: /^(\d+) you asked for$/, bn: '$1টি আপনি চেয়েছিলেন', hi: '$1 आपने मांगी थीं' },
   { en: /^(\d+) patients? below 70% on medicines$/, bn: '$1 জন রোগী ওষুধ খাওয়ায় 70%-এর নিচে', hi: '$1 मरीज़ दवा लेने में 70% से नीचे' },
+  { en: /^(\d+) patients? wrote, waiting for a reply$/, bn: '$1 জন রোগী লিখেছেন, উত্তরের অপেক্ষায়', hi: '$1 मरीज़ों ने लिखा, जवाब का इंतज़ार' },
   { en: /^(\d+) not logging meals$/, bn: '$1 জন খাবারের লগ রাখছেন না', hi: '$1 भोजन का लॉग नहीं रख रहे' },
 
   // ── Team, profile, support ──

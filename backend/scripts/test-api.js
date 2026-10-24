@@ -406,13 +406,19 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const freshPdf = Buffer.from(await (await fetch(fresh.url)).arrayBuffer()).toString('latin1');
     assert.ok((freshPdf.match(/\/Subtype\s*\/Image/g) || []).length >= 2, 'signature and verification QR are printed');
     assert.equal(ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}`)).pdfVersion, require('../src/services/rxpdf').PDF_VERSION);
-    // A new clinic logo reaches prescriptions already issued: the PDF is drawn again.
+    // An issued prescription is a legal record: a new clinic logo or signature later doesn't
+    // change it. What it printed is kept (Prescription.printed); a redraw (a new layout) prints that.
     const before = (await M.Prescription.findById(ctx.rxId)).file.key;
     assert.equal(ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}/pdf`)).key, before, 'nothing changed: same file');
+    const snap = (await M.Prescription.findById(ctx.rxId)).printed;
+    assert.ok(snap?.signatureKey, 'the signature it was issued with is kept');
     ok(await ctx.doc('POST', '/api/practice/logo', undefined, { form: fileForm('file', tinyPng(), 'logo2.png', 'image/png') }));
     const loc0 = await M.Location.findById((await M.Prescription.findById(ctx.rxId)).locationId);
     if (loc0?.letterhead?.logo) await M.Location.updateOne({ _id: loc0._id }, { $unset: { 'letterhead.logo': 1 } });
-    assert.notEqual(ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}/pdf`)).key, before, 'new logo: redrawn');
+    assert.equal(ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}/pdf`)).key, before, 'a new logo later: the issued PDF stays');
+    await M.Prescription.updateOne({ _id: ctx.rxId }, { pdfVersion: 1 }); // a layout update
+    assert.notEqual(ok(await ctx.doc('GET', `/api/prescriptions/${ctx.rxId}/pdf`)).key, before, 'a new layout: drawn again');
+    assert.deepEqual((await M.Prescription.findById(ctx.rxId)).printed, snap, '…from what it was issued with');
     // QR verification page: genuine with the token, not verified without it.
     const { verifyUrl } = require('../src/services/rxpdf');
     const vpage = await fetch(verifyUrl(ctx.rxId).replace(/^https?:\/\/[^/]+/, base));
@@ -2559,6 +2565,64 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     await M.Notification.create({ userId: ctx.doctorUserId, type: 'account', title: 'Account notice for the test' });
     const bell = ok(await ctx.doc('GET', `/api/notifications?practiceId=${ctx.practiceId}`));
     assert.ok(bell.items.some((n) => n.title === 'Account notice for the test'));
+  });
+
+  await step('details round: lab numbers, repeat tests, tracking again, refunds on Today, tapped notices read, webhook once, jobs retried, clinic details', async () => {
+    const T = require('../src/lib/time');
+    const pid = ctx.patientId;
+    const today = T.dayStart();
+    // "1,50,000" platelets is 150000, not 1; a word stays text.
+    const lab = ok(await ctx.doc('POST', `/api/patients/${pid}/lab-results`, { testName: 'CBC', collectedAt: T.dayKey(today), values: [{ analyte: 'Platelets', value: '1,50,000', unit: '/µL', flag: 'normal' }, { analyte: 'Urine sugar', value: 'Nil' }] }), 201);
+    const saved = await M.LabResult.findById(lab.id || lab._id);
+    assert.equal(saved.values[0].value, 150000);
+    assert.equal(saved.values[1].valueText, 'Nil');
+    // A repeat test isn't "done" by the last request's report.
+    const oldB12 = await M.MedicalRecord.create({ patientId: pid, kind: 'test_result', title: 'Vitamin B12', recordDate: T.addDays(today, -90), origin: 'shared_by_patient', forTests: ['Vitamin B12'], testCheck: { asked: ['Vitamin B12'], detected: ['Vitamin B12'] } });
+    await M.MedicalRecord.collection.updateOne({ _id: oldB12._id }, { $set: { createdAt: T.addDays(today, -90) } });
+    await M.Prescription.create({ patientId: pid, practiceId: ctx.practiceId, doctorId: ctx.doctorUserId, issuedAt: new Date(), tests: ['Vitamin B12'], items: [] });
+    const advised = await require('../src/services/advisedtests').advisedTests(await M.Patient.findById(pid));
+    assert.equal(advised.find((x) => /b12/i.test(x.name))?.status, 'todo', 'asked again: still to do');
+    // Reminders turned back on: no "missed" doses for the days they were off.
+    const course = await M.MedicationCourse.create({ patientId: pid, name: 'Telmisartan', dose: { morning: 1 }, startDate: T.addDays(today, -10), trackingEnabled: false });
+    ok(await ctx.pat('PATCH', `/api/patient/medicines/${course._id}`, { trackingEnabled: true }));
+    assert.ok((await M.MedicationCourse.findById(course._id)).trackingSince);
+    await require('../src/services/care').ensureDoses(await M.Patient.findById(pid), T.addDays(today, -10), today);
+    assert.equal(await M.DoseLog.countDocuments({ courseId: course._id, scheduledAt: { $lt: T.addMinutes(new Date(), -1) } }), 0, 'none for the days it was off');
+    // Money to hand back shows on the desk's Today.
+    const refund = await M.Payment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, patientId: pid, amount: 400, status: 'paid', method: 'cash', paidAt: new Date(), refundDue: true });
+    const todayView = ok(await ctx.desk('GET', '/api/staff/today'));
+    assert.ok(todayView.refundsDue.some((x) => String(x.paymentId) === String(refund._id)));
+    await M.Payment.deleteOne({ _id: refund._id });
+    // A tapped push marks its notice read.
+    const convoId = new (require('mongoose').Types.ObjectId)();
+    await M.Notification.create({ userId: ctx.doctorUserId, type: 'message', title: 'Test message notice', params: { conversationId: convoId } });
+    const opened = ok(await ctx.doc('POST', '/api/notifications/opened', { type: 'message', conversationId: String(convoId) }));
+    assert.equal(opened.read, 1);
+    // A Razorpay event sent twice is handled once.
+    const saved0 = env.razorpay.webhookSecret;
+    env.razorpay.webhookSecret = 'whsec_test_only';
+    try {
+      const body = JSON.stringify({ event: 'invoice.paid', created_at: Math.floor(Date.now() / 1000), payload: { invoice: { entity: { id: 'inv_test_1' } } } });
+      const sig = require('crypto').createHmac('sha256', 'whsec_test_only').update(body).digest('hex');
+      const send = () => fetch(`${base}/api/billing/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-razorpay-signature': sig, 'x-razorpay-event-id': 'evt_test_1' }, body }).then((r) => r.json());
+      assert.equal((await send()).ok, true);
+      assert.equal((await send()).duplicate, true, 'the copy is ignored');
+      const oldBody = JSON.stringify({ event: 'invoice.paid', created_at: Math.floor(Date.now() / 1000) - 5 * 86400, payload: {} });
+      const oldSig = require('crypto').createHmac('sha256', 'whsec_test_only').update(oldBody).digest('hex');
+      const stale = await fetch(`${base}/api/billing/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-razorpay-signature': oldSig, 'x-razorpay-event-id': 'evt_test_2' }, body: oldBody }).then((r) => r.json());
+      assert.equal(stale.ignored, 'stale');
+    } finally {
+      env.razorpay.webhookSecret = saved0;
+    }
+    // A job that fails is tried again (its "done" mark is released).
+    const jobs = require('../src/services/jobs');
+    const key = `test-retry:${Date.now()}`;
+    await assert.rejects(() => jobs.once(key, async () => { throw new Error('push service down'); }));
+    assert.ok(!(await M.ReminderLog.exists({ key })), 'released for the next run');
+    // Clinic details: the name can't be blanked.
+    assert.equal((await ctx.doc('PATCH', '/api/practice', { name: ' ' })).status, 400);
+    const pr = ok(await ctx.doc('GET', '/api/practice'));
+    assert.ok(Array.isArray(pr.branches) && pr.branches.length >= 1, 'checklist items open a branch, not a new one');
   });
 
   server.close();

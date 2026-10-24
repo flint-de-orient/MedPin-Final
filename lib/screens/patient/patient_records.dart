@@ -689,7 +689,7 @@ class _RecordSheetState extends State<_RecordSheet> with LiveData {
   static String _pattern(Map<String, dynamic> m) {
     if (m.str('frequency') == 'weekly') return 'Once a week';
     final d = m.obj('dose');
-    return '${d.numOr('morning').toInt()}-${d.numOr('afternoon').toInt()}-${d.numOr('night').toInt()}';
+    return '${F.dose(d.numOr('morning'))}-${F.dose(d.numOr('afternoon'))}-${F.dose(d.numOr('night'))}';
   }
 
   @override

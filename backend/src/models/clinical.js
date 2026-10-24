@@ -156,6 +156,10 @@ const prescriptionSchema = new Schema(
     file: fileSchema, // generated PDF or scan
     pdfVersion: Number, // layout version of the generated PDF (services/rxpdf.js)
     pdfInputs: String, // what the PDF was drawn from (logo, signature, letterhead); a change redraws it
+    // What was printed when it was issued (signature, logo, letterhead, clinic address / hours, the
+    // doctor's printed details). An issued prescription is a legal document: a later redraw (new
+    // layout, the patient's Bengali / Hindi copy) prints these, never today's signature or address.
+    printed: { type: Schema.Types.Mixed, default: undefined },
     // The patient's copies in Bengali / Hindi: { bn: { file, version, inputs, text }, hi: … } (services/rxlang.js).
     localized: { type: Schema.Types.Mixed, default: undefined },
     sentAt: Date, // "Prescription sent to Priya"
@@ -236,6 +240,8 @@ const medicationCourseSchema = new Schema(
     startDate: { type: Date, required: true },
     endDate: Date, // null = ongoing
     trackingEnabled: { type: Boolean, default: true },
+    // Tracked again from here (turned back on): no "missed" doses for the time it was off.
+    trackingSince: Date,
     stockUnits: { type: Number, min: 0 }, // "6 · 3 days"
     stockUpdatedAt: Date,
     unitsPerStrip: { type: Number, default: 10 },

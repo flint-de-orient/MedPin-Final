@@ -21,7 +21,30 @@ r.post('/billing/webhook', async (req, res) => {
   if (!env.razorpay.webhookSecret) return res.status(503).json({ error: 'Webhook not configured' });
   const expected = crypto.createHmac('sha256', env.razorpay.webhookSecret).update(req.rawBody || '').digest('hex');
   if (!safeEqual(expected, req.headers['x-razorpay-signature'] || '')) return res.status(400).json({ error: 'Bad signature' });
-  const { event, payload } = req.body;
+  // A signed event sent again (Razorpay's retries, or a copy replayed later) is handled once;
+  // one older than 3 days is ignored (Razorpay retries for 24 h).
+  const createdAt = Number(req.body?.created_at);
+  if (createdAt && Date.now() / 1000 - createdAt > 3 * 86400) return res.json({ ok: true, ignored: 'stale' });
+  const eventId = String(req.headers['x-razorpay-event-id'] || '').slice(0, 100);
+  const key = eventId ? `webhook:${eventId}` : null;
+  if (key) {
+    try {
+      await M.ReminderLog.create({ key });
+    } catch (err) {
+      if (err.code === 11000) return res.json({ ok: true, duplicate: true });
+      throw err;
+    }
+  }
+  try {
+    await handleWebhook(req.body);
+  } catch (err) {
+    if (key) await M.ReminderLog.deleteOne({ key }).catch(() => {}); // Razorpay's retry runs it again
+    throw err;
+  }
+  return res.json({ ok: true });
+});
+
+async function handleWebhook({ event, payload }) {
   if (event === 'payment_link.paid') {
     const pay = require('../services/payments');
     const link = payload.payment_link?.entity || {};
@@ -46,7 +69,8 @@ r.post('/billing/webhook', async (req, res) => {
     const sub = await M.Subscription.findOne({ razorpaySubscriptionId: payload.subscription?.entity?.id });
     // Razorpay retries webhooks: one charge moves the plan on one month, once.
     const chargeId = payload.payment?.entity?.id;
-    if (sub && !(chargeId && (await M.Invoice.exists({ razorpayPaymentId: chargeId })))) {
+    // Only a charge with its payment id moves the plan on (a copy without one can't be told apart).
+    if (sub && chargeId && !(await M.Invoice.exists({ razorpayPaymentId: chargeId }))) {
       const start = sub.currentPeriodEnd || new Date();
       if (sub.pendingPlanKey) {
         const plan = await M.Plan.findOne({ key: sub.pendingPlanKey });
@@ -57,8 +81,7 @@ r.post('/billing/webhook', async (req, res) => {
       await M.Invoice.create({ practiceId: sub.practiceId, issuedAt: new Date(), description: `${sub.planKey} plan · monthly`, amount: sub.price, status: 'paid', paidAt: new Date(), periodStart: start, periodEnd: sub.currentPeriodEnd, razorpayPaymentId: payload.payment?.entity?.id });
     }
   }
-  return res.json({ ok: true });
-});
+}
 
 r.use(requireAuth, staff());
 r.use('/billing', need('billing'));
@@ -243,10 +266,26 @@ async function buildRows(req, job) {
         rows: items.map((x) => [day(x.referredAt), x.patientId?.name, ...(job.includeMobiles ? [mobile(x.patientId)] : []), x.direction, x.counterpartName, x.specialty || '', x.reason || '', x.status]),
       };
     } else if (type === 'daily') {
-      const appts = await visits(req, from, to, f, { status: { $in: ['completed', 'missed', 'cancelled', 'booked', 'confirmed', 'waiting', 'in_consultation', 'rescheduled'] } });
+      // The Daily report as on screen (Reports → Daily): each patient seen — the doctor's own,
+      // or the clinic's for others — with complaint, diagnosis, readings, medicines, advice.
+      const q = { practiceId: req.practiceId, startedAt: { $gte: from, $lt: to }, status: { $ne: 'draft' } };
+      if (req.member.role === 'doctor' && !f.all) q.doctorId = req.user._id;
+      else if (f.doctorId) q.doctorId = f.doctorId === 'me' ? req.user._id : f.doctorId;
+      const consults = await M.Consultation.find(q).sort({ startedAt: 1 }).populate('patientId', 'name phone gender ageYears ageRecordedAt dateOfBirth')
+        .populate('vitalsId').populate('appointmentId', 'visitType').populate('prescriptionId').lean();
+      const vitalsText = (v) => (v ? [v.bpSystolic ? `BP ${v.bpSystolic}/${v.bpDiastolic}` : '', v.pulse ? `P ${v.pulse}` : '', v.spo2 ? `SpO2 ${v.spo2}%` : '', v.weightKg ? `${v.weightKg} kg` : ''].filter(Boolean).join(', ') : '');
       sets.daily = {
-        header: ['Date', 'Time', 'Token', 'Patient', ...mob, 'Location', 'Type', 'Mode', 'Status', 'Fee', 'Fee status'],
-        rows: appts.sort((a, b) => a.startAt - b.startAt).map((a) => [day(a.date), T.fmtTime(T.minuteOfDay(a.startAt)), a.tokenNo, a.patientId?.name, ...(job.includeMobiles ? [mobile(a.patientId)] : []), a.locationId?.name, a.visitType, a.mode, a.status, a.fee, a.feeStatus]),
+        header: ['Date', 'Time', 'Patient', ...mob, 'Age / sex', 'Visit', 'Complaint', 'Diagnosis', 'Readings', 'Medicines', 'Advice', 'Follow-up'],
+        rows: consults.map((c) => {
+          const p = c.patientId || {};
+          const meds = (c.prescriptionId?.items || c.medications || []).map((i) => `${`${i.name} ${i.strength || ''}`.trim()} ${i.dose?.morning || 0}-${i.dose?.afternoon || 0}-${i.dose?.night || 0}`).join('; ');
+          return [
+            day(c.startedAt), T.fmtTime(T.minuteOfDay(c.startedAt)), p.name, ...(job.includeMobiles ? [mobile(p)] : []),
+            [T.ageFrom(p), p.gender ? p.gender[0].toUpperCase() : ''].filter((x) => x !== null && x !== undefined && x !== '').join(' / '),
+            c.appointmentId?.visitType === 'new' ? 'New' : 'Follow-up', c.chiefComplaint || '', (c.diagnoses || []).map((d) => d.name).join(', '),
+            vitalsText(c.vitalsId), meds, c.prescriptionId?.advice || c.advice?.freeText || '', day(c.prescriptionId?.followUpDate || c.followUp?.date),
+          ];
+        }),
       };
     } else {
       // Every visit seen: completed appointments and consultations without one (as on Reports).

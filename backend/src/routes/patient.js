@@ -8,6 +8,7 @@ const E = require('../models/enums');
 const T = require('../lib/time');
 const { requireAuth, patientOnly } = require('../middleware/auth');
 const { pick, badRequest, notFound, conflict, escapeRegex, list, isId } = require('../lib/http');
+const { labNumber } = require('../lib/numbers');
 const { hmac, randomDigits } = require('../lib/security');
 const storage = require('../services/storage');
 const S = require('../services/scheduling');
@@ -95,7 +96,7 @@ async function latestReadings(p) {
     } else if (lab[m]) {
       const r = await M.LabResult.findOne({ patientId: p._id, 'values.analyte': lab[m] }, 'collectedAt values').sort({ collectedAt: -1 });
       const x = r?.values.find((v) => lab[m].test(v.analyte || '') && !(m === 'ldl' && /ratio|hdl/i.test(v.analyte)) && !(m === 'creatinine' && /urine|ratio|clearance/i.test(v.analyte)));
-      const value = x ? (typeof x.value === 'number' ? x.value : parseFloat(x.valueText)) : NaN;
+      const value = x ? (typeof x.value === 'number' ? x.value : labNumber(x.valueText)) : NaN;
       if (Number.isFinite(value)) out[m] = { value, unit: x.unit || null, flag: x.flag || null, at: r.collectedAt, source: 'lab' };
     }
   }
@@ -367,7 +368,7 @@ r.get('/home', async (req, res) => {
   const labSeries = async (re, not) => (await M.LabResult.find({ patientId: p._id, 'values.analyte': re }, 'collectedAt values').sort({ collectedAt: 1 }))
     .map((r) => {
       const x = r.values.find((v) => re.test(v.analyte || '') && !(not && not.test(v.analyte || '')));
-      const value = x ? (typeof x.value === 'number' ? x.value : parseFloat(x.valueText)) : NaN;
+      const value = x ? (typeof x.value === 'number' ? x.value : labNumber(x.valueText)) : NaN;
       return { at: r.collectedAt, source: 'lab', value: Number.isFinite(value) ? value : null, flag: x?.flag || null, unit: x?.unit || null };
     })
     .filter((x) => x.value != null)
@@ -382,7 +383,7 @@ r.get('/home', async (req, res) => {
     hba1c: (await M.LabResult.find({ patientId: p._id, 'values.analyte': /hba1c|glycated|a1c/i }, 'collectedAt values').sort({ collectedAt: 1 }))
       .map((r) => {
         const x = r.values.find((v) => /hba1c|glycated|a1c/i.test(v.analyte || ''));
-        return { at: r.collectedAt, value: x?.value ?? (Number.isFinite(parseFloat(x?.valueText)) ? parseFloat(x.valueText) : null) };
+        return { at: r.collectedAt, value: x?.value ?? (Number.isFinite(labNumber(x?.valueText)) ? labNumber(x.valueText) : null) };
       })
       .filter((x) => x.value != null)
       .slice(-7),
@@ -1004,7 +1005,10 @@ r.post('/medicines', async (req, res) => {
 r.patch('/medicines/:id', async (req, res) => {
   const c = await M.MedicationCourse.findOne({ _id: req.params.id, patientId: req.patient._id });
   if (!c) throw notFound('Medicine');
+  const wasTracked = c.trackingEnabled !== false;
   Object.assign(c, pick(req.body, ['trackingEnabled', 'stockUnits']));
+  // Turned back on: tracked from now (the days it was off aren't counted as missed).
+  if (!wasTracked && c.trackingEnabled === true) c.trackingSince = new Date();
   if (req.body.stockUnits != null) c.stockUpdatedAt = new Date();
   // Medicines the patient added themselves can be edited in full.
   if (!c.doctorId && !c.prescriptionId) {
@@ -1293,7 +1297,23 @@ r.post('/device-sync', async (req, res) => {
       const vitals = await M.Vitals.create({ ...v, patientId: p._id, recordedBy: req.user._id, recordedByRole: 'patient', source: 'device', recordedAt: at });
       added += 1;
       // Only fresh readings can raise an alert (not last month's history).
-      if (at > T.addDays(new Date(), -1)) alerted = (await care.checkReading(vitals, p)).length > 0 || alerted;
+      if (at > T.addDays(new Date(), -1)) {
+        let findings = care.readingFindings(vitals, p);
+        // A watch's SpO₂ dips on its own (a loose strap, sleeping on the wrist): it counts only
+        // when another low reading within 15 minutes confirms it, and at night (22:00–07:00)
+        // it is a "watch" for the doctor, not an emergency buzz.
+        if (x.kind === 'spo2' && findings.length) {
+          const limit = p.alertLimits?.spo2Min || 92;
+          const confirmed = await M.Vitals.exists({
+            patientId: p._id, source: 'device', _id: { $ne: vitals._id }, spo2: { $lt: limit },
+            recordedAt: { $gte: new Date(at.getTime() - 15 * 60e3), $lte: new Date(at.getTime() + 15 * 60e3) },
+          });
+          const m = T.minuteOfDay(at);
+          const night = m >= 22 * 60 || m < 7 * 60;
+          findings = confirmed ? findings.map((f) => (night ? { ...f, severity: 'watch' } : f)) : [];
+        }
+        alerted = (await care.checkReading(vitals, p, findings)).length > 0 || alerted;
+      }
     } catch (err) {
       if (err.name !== 'ValidationError') throw err; // out-of-range values are skipped
     }
@@ -1636,7 +1656,7 @@ r.post('/records/:id/split', async (req, res) => {
     const name = t.testName || t.test_name;
     const forTests = (parent.forTests || []).filter((x) => inReport(x, [name, ...(t.values || []).map((v) => v.analyte)]));
     const values = (t.values || []).map((v) => ({
-      analyte: v.analyte, value: Number.isFinite(parseFloat(v.value)) ? parseFloat(v.value) : undefined, valueText: Number.isFinite(parseFloat(v.value)) ? undefined : v.value,
+      analyte: v.analyte, value: Number.isFinite(labNumber(v.value)) ? labNumber(v.value) : undefined, valueText: Number.isFinite(labNumber(v.value)) ? undefined : v.value,
       unit: v.unit, refText: v.refText || v.ref_text, refLow: v.refLow, refHigh: v.refHigh, flag: E.RESULT_FLAGS.includes(v.flag) ? v.flag : 'normal',
     }));
     const abnormal = values.filter((v) => v.flag !== 'normal').length;

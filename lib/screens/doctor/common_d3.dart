@@ -684,6 +684,10 @@ String d3Plural(num n, String one, [String? many]) => '${F.count(n)} ${n == 1 ? 
 /// The report period and filters (Doctor-Reports-Filter). Doctor-Reports
 /// keeps them and passes them on as `args: {'filters': f}`; the filter
 /// sheet returns a new one with `Navigator.pop`.
+/// Reports → "Me / Whole clinic": a doctor's reports are their own unless this is on
+/// (kept while the app is open; every report and export follows it).
+bool d3ClinicWide = false;
+
 class D3Filters {
   /// today / 7_days / 30_days / this_month / this_year / custom
   final String range;
@@ -787,6 +791,7 @@ class D3Filters {
     if (modes.isNotEmpty) 'modes': modes.join(','),
     if (ageGroups.isNotEmpty) 'ageGroups': ageGroups.join(','),
     if (!compare) 'compare': 'false',
+    if (d3ClinicWide) 'scope': 'clinic',
   };
 
   /// `filters` for POST /api/exports.

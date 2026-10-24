@@ -13,6 +13,11 @@ const { accessFor } = require('../services/access');
 const r = Router();
 r.use(requireAuth, staff());
 r.use('/reports', need('reports'));
+// Whether "Me" means something here (more than one doctor), for the default and the switch.
+r.use('/reports', async (req, _res, next) => {
+  req.multiDoctor = (await M.Member.countDocuments({ practiceId: req.practiceId, status: 'active', role: 'doctor' })) > 1;
+  next();
+});
 r.use('/dashboard', need('clinical'));
 
 // Reports are also for the practice manager, who isn't clinical staff: they get the counts
@@ -39,12 +44,18 @@ function rangeOf(q) {
   return { from, to, prevFrom: new Date(from - len), prevTo: from };
 }
 
-const filtersOf = (q) => ({
+/**
+ * A doctor's reports are their own by default ("Me"); ?scope=clinic shows the whole clinic.
+ * The practice manager, the owner's other staff and a clinic with one doctor see the clinic.
+ */
+const mineByDefault = (req) => req?.member?.role === 'doctor' && req.query.scope !== 'clinic' && !req.query.doctorId && req.multiDoctor;
+const filtersOf = (q, req) => ({
   locationIds: list(q.locationIds),
   visitTypes: list(q.visitTypes),
   modes: list(q.modes),
   ageGroups: list(q.ageGroups),
-  doctorId: q.doctorId,
+  doctorId: q.doctorId || (mineByDefault(req) ? 'me' : undefined),
+  defaultMine: !q.doctorId && mineByDefault(req),
 });
 
 /** Completed visits in range, filtered, with patient age attached. */
@@ -165,7 +176,7 @@ const consultMin = (a) => (a.consultStartedAt && a.completedAt ? (new Date(a.com
 const delta = (now, prev) => (prev ? Math.round(((now - prev) / prev) * 100) : null);
 const countBy = (rows, key) => Object.entries(rows.reduce((acc, x) => { const k = key(x) ?? 'other'; acc[k] = (acc[k] || 0) + 1; return acc; }, {})).map(([k, n]) => ({ key: k, count: n })).sort((a, b) => b.count - a.count);
 
-const hasFilters = (f) => !!(f.locationIds.length || f.visitTypes.length || f.modes.length || f.ageGroups.length || f.doctorId);
+const hasFilters = (f) => !!(f.locationIds.length || f.visitTypes.length || f.modes.length || f.ageGroups.length || (f.doctorId && !f.defaultMine));
 
 /**
  * Booked, didn't come: marked missed, or still booked / confirmed after the day ended.
@@ -222,7 +233,7 @@ async function kpis(req, from, to, f) {
 
 r.get('/reports/summary', async (req, res) => {
   const { from, to, prevFrom, prevTo } = rangeOf(req.query);
-  const f = filtersOf(req.query);
+  const f = filtersOf(req.query, req);
   const now = await kpis(req, from, to, f);
   const prev = req.query.compare === 'false' ? null : await kpis(req, prevFrom, prevTo, f);
   const consults = [...(await consultsOf(now.done, 'diagnoses')).values()];
@@ -235,6 +246,8 @@ r.get('/reports/summary', async (req, res) => {
   const cmp = (k) => (prev ? { previous: prev[k], changePct: delta(now[k], prev[k]) } : {});
   res.json({
     range: { from, to, previousFrom: prev ? prevFrom : null, previousTo: prev ? prevTo : null },
+    // "Me / Whole clinic": whose numbers these are, and whether the switch applies here.
+    scope: { mine: f.doctorId === 'me' || String(f.doctorId || '') === String(req.user._id), canSwitch: Boolean(req.multiDoctor && req.member.role === 'doctor') },
     kpis: {
       consultations: { value: now.consultations, ...cmp('consultations') },
       newPatients: { value: now.newPatients, ...(prev ? { previous: prev.newPatients, change: now.newPatients - prev.newPatients } : {}) },
@@ -257,7 +270,7 @@ r.get('/reports/summary', async (req, res) => {
 r.get('/reports/filter-counts', async (req, res) => {
   const { from, to } = rangeOf(req.query);
   const all = await seenVisits(req, from, to, { locationIds: [], visitTypes: [], modes: [], ageGroups: [] });
-  const matching = await seenVisits(req, from, to, filtersOf(req.query));
+  const matching = await seenVisits(req, from, to, filtersOf(req.query, req));
   res.json({
     matching: matching.length,
     location: countBy(all, (a) => String(a.locationId?._id)),
@@ -270,7 +283,7 @@ r.get('/reports/filter-counts', async (req, res) => {
 r.get('/reports/consultations', async (req, res) => {
   const { from, to } = rangeOf(req.query);
   // Completed visits and consults issued without one (started straight from the patient).
-  let rows = await seenVisits(req, from, to, filtersOf(req.query));
+  let rows = await seenVisits(req, from, to, filtersOf(req.query, req));
   const cmap = await consultsOf(rows, 'diagnoses chiefComplaint');
   const clinical = seesClinical(req);
   if (req.query.q) {
@@ -294,7 +307,7 @@ r.get('/reports/consultations', async (req, res) => {
 
 r.get('/reports/prescriptions', async (req, res) => {
   const { from, to } = rangeOf(req.query);
-  const q = await rxScope(req, from, to, filtersOf(req.query));
+  const q = await rxScope(req, from, to, filtersOf(req.query, req));
   let rx = await M.Prescription.find(q).sort({ issuedAt: -1 }).populate('patientId', 'name').lean();
   const clinical = seesClinical(req);
   if (req.query.q) {
@@ -313,7 +326,7 @@ r.get('/reports/prescriptions', async (req, res) => {
 
 r.get('/reports/fees', async (req, res) => {
   const { from, to } = rangeOf(req.query);
-  const f = filtersOf(req.query);
+  const f = filtersOf(req.query, req);
   const rows = await seenVisits(req, from, to, f);
   const scope = await paymentScope(req, from, to, f);
   const withVisit = { path: 'appointmentId', select: 'date startAt mode payAt locationId', populate: { path: 'locationId', select: 'name shortName' } };
@@ -576,7 +589,7 @@ r.get('/reports/referral-suggestions', need('clinical'), async (req, res) => {
 
 r.get('/reports/follow-ups', async (req, res) => {
   const { from, to } = rangeOf(req.query);
-  const f0 = filtersOf(req.query);
+  const f0 = filtersOf(req.query, req);
   const fus = await M.FollowUp.find({ practiceId: req.practiceId, dueDate: { $gte: from, $lt: to }, status: { $ne: 'cancelled' }, ...(f0.doctorId ? { doctorId: f0.doctorId === 'me' ? req.user._id : f0.doctorId } : {}) })
     .populate('patientId', 'name phone gender ageYears ageRecordedAt conditions').lean();
   const today = T.dayStart();
@@ -627,16 +640,28 @@ r.get('/dashboard', async (req, res) => {
   const today = T.dayStart();
   const week = T.addDays(today, -6);
   const mine = req.member.role === 'doctor' ? { doctorId: req.user._id } : {};
-  const [todayAppts, last7, alerts, reviews, unread, nutrition, flaggedChats, aiMsgs] = await Promise.all([
+  // Alerts: a doctor in a clinic with several doctors sees their own patients' (the ones named
+  // for them, or in their care team) — like the bell — the most serious first.
+  let alertScope = {};
+  if (req.member.role === 'doctor' && (await M.Member.countDocuments({ practiceId: req.practiceId, status: 'active', role: 'doctor' })) > 1) {
+    const myPatients = await M.CareTeamAccess.distinct('patientId', { userId: req.user._id, practiceId: req.practiceId, accessLevel: { $ne: 'not_shared' } });
+    alertScope = { $or: [{ doctorId: req.user._id }, { patientId: { $in: myPatients } }] };
+  }
+  const alertQ = { practiceId: req.practiceId, status: 'open', ...alertScope };
+  const SEVERITY = { emergency: 0, urgent: 1, watch: 2 };
+  const [todayAppts, last7, openAlerts, alertsTotal, reviews, unread, nutrition, flaggedChats, aiMsgs] = await Promise.all([
     M.Appointment.find({ practiceId: req.practiceId, date: today, status: { $nin: ['cancelled', 'rescheduled'] }, ...mine }).lean(),
     M.Appointment.find({ practiceId: req.practiceId, date: { $gte: week }, status: 'completed', ...mine }).lean(),
-    M.Alert.find({ practiceId: req.practiceId, status: 'open' }).sort({ createdAt: -1 }).limit(5).populate('patientId', 'name'),
+    M.Alert.find(alertQ).sort({ createdAt: -1 }).limit(100).populate('patientId', 'name'),
+    M.Alert.countDocuments(alertQ),
     M.ChatReview.countDocuments({ practiceId: req.practiceId, status: 'needs_review' }),
     M.Conversation.countDocuments({ practiceId: req.practiceId, participants: { $elemMatch: { userId: req.user._id, unreadCount: { $gt: 0 } } } }),
     M.HealthLog.countDocuments({ sharedWith: req.user._id, type: 'meal', 'review.at': null, loggedAt: { $gte: T.addDays(today, -7) } }),
     M.ChatReview.countDocuments({ practiceId: req.practiceId, status: 'needs_review', createdAt: { $gte: week } }),
     M.Message.countDocuments({ senderType: 'ai', createdAt: { $gte: week }, conversationId: { $in: await M.Conversation.find({ practiceId: req.practiceId }).distinct('_id') } }),
   ]);
+  // The card shows the 5 most serious (emergency, urgent, then watch; newest first within each).
+  const alerts = [...openAlerts].sort((a, b) => (SEVERITY[a.severity] ?? 3) - (SEVERITY[b.severity] ?? 3) || b.createdAt - a.createdAt).slice(0, 5);
   const appIds = await M.Patient.find({ _id: { $in: await M.PatientEnrolment.find({ practiceId: req.practiceId, status: 'linked' }).distinct('patientId') }, userId: { $type: 'objectId' } }).distinct('_id');
   const active = new Set([
     ...(await M.HealthLog.find({ patientId: { $in: appIds }, loggedAt: { $gte: T.addDays(today, -7) } }).distinct('patientId')),
@@ -672,8 +697,9 @@ r.get('/dashboard', async (req, res) => {
     location: location && (location.shortName || location.name),
     unreadNotifications: await M.Notification.countDocuments({ userId: req.user._id, practiceId: { $in: [req.practiceId, null] }, readAt: null }),
     today: { total: todayAppts.length, pending: count('booked', 'confirmed', 'waiting', 'in_consultation'), waiting: count('waiting'), completed: count('completed') },
-    actionQueue: { unreadMessages: unread, checkInsOverdue: appIds.filter((id) => !active.has(String(id))).length, pendingActions: alerts.length + reviews, nutritionReviewsDue: nutrition },
+    actionQueue: { unreadMessages: unread, checkInsOverdue: appIds.filter((id) => !active.has(String(id))).length, pendingActions: alertsTotal + reviews, nutritionReviewsDue: nutrition },
     alerts: alerts.map((a) => ({ id: a._id, severity: a.severity, kind: a.kind, patient: a.patientId?.name, patientId: a.patientId?._id, conversationId: a.conversationId, detail: a.detail, at: a.createdAt })),
+    alertsTotal, // "See all 12" when there are more than the card shows
     last7Days: { consultations: last7.length, avgConsultMin: times.length >= 3 ? Math.round(avg(times)) : null },
     aiChats: { handled: aiMsgs - flaggedChats, escalated: flaggedChats },
     updatedAt: new Date(),
