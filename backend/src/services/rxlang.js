@@ -12,7 +12,7 @@ const LANGS = ['en', 'bn', 'hi'];
 const L = {
   bn: {
     'Prescription': 'প্রেসক্রিপশন', 'Prescription no.': 'প্রেসক্রিপশন নং', 'Date': 'তারিখ', 'Visit': 'ভিজিট', 'Video consult': 'ভিডিও পরামর্শ', 'In clinic': 'ক্লিনিকে',
-    'Next visit': 'পরের ভিজিট', 'Valid till': 'মেয়াদ', 'Patient': 'রোগী', 'yrs': 'বছর', 'Male': 'পুরুষ', 'Female': 'মহিলা', 'Other': 'অন্যান্য', 'Blood': 'রক্তের গ্রুপ',
+    'If needed (SOS)': 'দরকার হলে (SOS)', 'Next visit': 'পরের ভিজিট', 'Valid till': 'মেয়াদ', 'Patient': 'রোগী', 'yrs': 'বছর', 'Male': 'পুরুষ', 'Female': 'মহিলা', 'Other': 'অন্যান্য', 'Blood': 'রক্তের গ্রুপ',
     'Allergies': 'অ্যালার্জি', 'Chief complaint': 'প্রধান সমস্যা', 'Diagnosis': 'রোগ নির্ণয়', 'Vitals': 'ভাইটালস', 'Medicines': 'ওষুধ',
     'Medicine names in English for the chemist': 'ওষুধের নাম ইংরেজিতে, কেমিস্টের জন্য', '#': '#', 'Medicine': 'ওষুধ', 'Dose': 'ডোজ', 'When': 'কখন', 'Duration': 'কত দিন',
     'Qty': 'সংখ্যা', 'Instructions': 'নির্দেশ', 'No medicines prescribed.': 'কোনো ওষুধ দেওয়া হয়নি।', 'Investigations advised': 'যে পরীক্ষাগুলি করাতে হবে', 'Advice': 'পরামর্শ',
@@ -27,7 +27,7 @@ const L = {
   },
   hi: {
     'Prescription': 'पर्चा', 'Prescription no.': 'पर्चा नं.', 'Date': 'तारीख', 'Visit': 'विज़िट', 'Video consult': 'वीडियो परामर्श', 'In clinic': 'क्लिनिक में',
-    'Next visit': 'अगली विज़िट', 'Valid till': 'वैधता', 'Patient': 'मरीज़', 'yrs': 'वर्ष', 'Male': 'पुरुष', 'Female': 'महिला', 'Other': 'अन्य', 'Blood': 'ब्लड ग्रुप',
+    'If needed (SOS)': 'ज़रूरत हो तो (SOS)', 'Next visit': 'अगली विज़िट', 'Valid till': 'वैधता', 'Patient': 'मरीज़', 'yrs': 'वर्ष', 'Male': 'पुरुष', 'Female': 'महिला', 'Other': 'अन्य', 'Blood': 'ब्लड ग्रुप',
     'Allergies': 'एलर्जी', 'Chief complaint': 'मुख्य तकलीफ़', 'Diagnosis': 'निदान', 'Vitals': 'वाइटल्स', 'Medicines': 'दवाइयाँ',
     'Medicine names in English for the chemist': 'दवाओं के नाम अंग्रेज़ी में, केमिस्ट के लिए', '#': '#', 'Medicine': 'दवा', 'Dose': 'खुराक', 'When': 'कब', 'Duration': 'कितने दिन',
     'Qty': 'संख्या', 'Instructions': 'निर्देश', 'No medicines prescribed.': 'कोई दवा नहीं लिखी गई।', 'Investigations advised': 'कराई जाने वाली जाँचें', 'Advice': 'सलाह',

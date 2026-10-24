@@ -102,6 +102,8 @@ class _ConsultAdviceScreenState extends State<ConsultAdviceScreen> with LiveData
       }
       _advice.text = consult.obj('advice').str('freeText');
       final f = consult.obj('followUp');
+      // "If needed (SOS)": no fixed next visit (an acute illness, a one-off).
+      _sos = f['enabled'] == false && f['preset'] == 'sos';
       final date = f['enabled'] == true ? F.date(f['date']) : null;
       _preset = date == null ? 2 : _presetKeys.indexOf(f.str('preset'));
       _next = date == null ? _presetDate(2) : DateTime(date.year, date.month, date.day);
@@ -203,12 +205,14 @@ class _ConsultAdviceScreenState extends State<ConsultAdviceScreen> with LiveData
             },
         ],
         'advice': {'items': consult.obj('advice').list('items'), 'freeText': _advice.text.trim()},
-        'followUp': {
-          ...consult.obj('followUp'),
-          'enabled': true,
-          'preset': _preset >= 0 ? _presetKeys[_preset] : 'custom',
-          'date': _next.toUtc().toIso8601String(),
-        },
+        'followUp': _sos
+            ? {...consult.obj('followUp'), 'enabled': false, 'preset': 'sos'}
+            : {
+                ...consult.obj('followUp'),
+                'enabled': true,
+                'preset': _preset >= 0 ? _presetKeys[_preset] : 'custom',
+                'date': _next.toUtc().toIso8601String(),
+              },
       });
       return (await Api.I.post('/api/consultations/$id/issue', const {}) as Map).cast<String, dynamic>();
     });
@@ -430,12 +434,23 @@ class _ConsultAdviceScreenState extends State<ConsultAdviceScreen> with LiveData
     );
   }
 
+  /// No fixed next visit: "Review if needed (SOS)" on the prescription, no follow-up reminder.
+  bool _sos = false;
+
   Widget _followUpCard() {
     return MpCard(
       child: VGap(
         gap: 16,
         children: [
-          const D7Title('Follow-up'),
+          Row(
+            children: [
+              const Expanded(child: D7Title('Follow-up')),
+              D7Pill('If needed (SOS)', on: _sos, onTap: () => setState(() => _sos = !_sos)),
+            ],
+          ),
+          if (_sos)
+            Text('No fixed next visit. The prescription says to come back if needed, and no follow-up reminder is sent.', style: tx(14, c: MP.ink2, h: 1.45))
+          else ...[
           Row(
             children: [
               for (var i = 0; i < _presets.length; i++) ...[
@@ -478,6 +493,7 @@ class _ConsultAdviceScreenState extends State<ConsultAdviceScreen> with LiveData
               ],
             ),
           ),
+          ],
         ],
       ),
     );

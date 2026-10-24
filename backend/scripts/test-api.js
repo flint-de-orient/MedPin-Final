@@ -2789,6 +2789,40 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.match(page, /do not dispense/);
   });
 
+  await step('consult and leave: stop a medicine, "if needed (SOS)", half-day leave closes only those hours', async () => {
+    const T = require('../src/lib/time');
+    const S = require('../src/services/scheduling');
+    const pid = ctx.patientId;
+    // A running medicine is stopped on the prescription (a STOPPED line, no dose) and SOS follow-up.
+    await M.MedicationCourse.create({ patientId: pid, doctorId: ctx.doctorUserId, name: 'Ranitidine', dose: { night: 1 }, startDate: T.dayStart() });
+    const c0 = await ctx.doc('POST', '/api/consultations', { patientId: pid });
+    const cid = c0.body.id || c0.body._id;
+    ok(await ctx.doc('PATCH', `/api/consultations/${cid}`, {
+      chiefComplaint: 'Acidity better', diagnoses: [{ name: 'GERD', source: 'custom' }],
+      medications: [{ name: 'Ranitidine', dose: { morning: 0, afternoon: 0, night: 0 }, frequency: 'daily', change: 'stopped' }],
+      followUp: { enabled: false, preset: 'sos' },
+    }));
+    const issued = ok(await ctx.doc('POST', `/api/consultations/${cid}/issue`));
+    assert.equal(await M.MedicationCourse.countDocuments({ patientId: pid, name: 'Ranitidine', status: 'active' }), 0, 'stopped');
+    const rx = await M.Prescription.findById(issued.prescription.id || issued.prescription._id);
+    assert.deepEqual([rx.followUpSos, rx.followUpDate ?? null], [true, null], 'no fixed next visit');
+    assert.ok(!(await M.FollowUp.exists({ consultationId: cid })), 'no follow-up reminder');
+    // Half-day leave: the morning closes, the afternoon stays bookable; only morning patients told.
+    const day = T.addDays(T.dayStart(), 12);
+    const am = await M.Appointment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, doctorId: ctx.doctorUserId, patientId: pid, date: day, startAt: T.atMinute(day, 600), status: 'booked' });
+    const pm = await M.Appointment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, doctorId: ctx.doctorUserId, patientId: pid, date: day, startAt: T.atMinute(day, 900), status: 'booked' });
+    const leave = ok(await ctx.doc('POST', '/api/doctor/leaves', { reason: 'Hospital rounds', startDate: T.dayKey(day), endDate: T.dayKey(day), part: 'morning' }), 201);
+    assert.equal(leave.patientsTold, 1, 'only the morning patient');
+    const slots = await S.slotsFor({ doctorId: ctx.doctorUserId, locationId: ctx.locationId, day });
+    assert.equal(slots.open, true);
+    assert.ok(!slots.slots.some((s) => s.minute < 780), 'no morning slots');
+    assert.ok(slots.slots.some((s) => s.minute >= 780), 'afternoon open');
+    assert.equal((await ctx.doc('POST', '/api/doctor/leaves', { reason: 'Again', startDate: T.dayKey(day), endDate: T.dayKey(day), part: 'morning' })).status, 409);
+    ok(await ctx.doc('POST', '/api/doctor/leaves', { reason: 'Afternoon too', startDate: T.dayKey(day), endDate: T.dayKey(day), part: 'afternoon' }), 201);
+    await M.Appointment.updateMany({ _id: { $in: [am._id, pm._id] } }, { status: 'cancelled' });
+    await M.DoctorLeave.deleteMany({ doctorId: ctx.doctorUserId, startDate: day });
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

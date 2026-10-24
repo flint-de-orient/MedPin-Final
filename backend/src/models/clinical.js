@@ -154,6 +154,7 @@ const prescriptionSchema = new Schema(
     tests: [String],
     advice: String,
     followUpDate: Date,
+    followUpSos: Boolean, // no fixed next visit: "review if needed (SOS)"
     file: fileSchema, // generated PDF or scan
     pdfVersion: Number, // layout version of the generated PDF (services/rxpdf.js)
     pdfInputs: String, // what the PDF was drawn from (logo, signature, letterhead); a change redraws it

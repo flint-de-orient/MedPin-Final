@@ -343,11 +343,13 @@ async function leaveRows(userId, { upcomingOnly = false } = {}) {
   const names = new Map(locs.map((l) => [String(l._id), l.shortName || l.name]));
   const out = [];
   for (const l of leaves) {
-    const affected = await M.Appointment.countDocuments({
+    const appts = await M.Appointment.find({
       doctorId: userId, startAt: { $gte: l.startDate, $lt: T.addDays(l.endDate, 1) }, status: { $in: ['booked', 'confirmed'] },
       ...(l.locationId ? { locationId: l.locationId } : {}),
-    });
-    out.push({ ...l.toJSON(), locationName: l.locationId ? names.get(String(l.locationId)) || null : null, affectedPatients: affected, status: leaveStatus(l) });
+    }, 'startAt').lean();
+    const affected = l.fromMin == null ? appts.length : appts.filter((a) => T.minuteOfDay(a.startAt) >= l.fromMin && T.minuteOfDay(a.startAt) < l.toMin).length;
+    const part = l.fromMin == null ? null : l.fromMin === 0 ? 'morning' : 'afternoon';
+    out.push({ ...l.toJSON(), part, locationName: l.locationId ? names.get(String(l.locationId)) || null : null, affectedPatients: affected, status: leaveStatus(l) });
   }
   return out;
 }
@@ -393,16 +395,21 @@ r.post('/doctor/leaves', async (req, res) => {
     if (!loc) throw badRequest('Choose one of your locations', 'BAD_LOCATION');
     locationId = loc._id;
   }
-  const overlap = await M.DoctorLeave.exists({
+  // Half a day (one day): the morning until 1 PM or the afternoon from 1 PM.
+  const PARTS = { morning: [0, 13 * 60], afternoon: [13 * 60, 24 * 60] };
+  const part = +startDate === +endDate ? PARTS[req.body.part] : null;
+  const overlaps = await M.DoctorLeave.find({
     doctorId: req.user._id, cancelledAt: null, startDate: { $lte: endDate }, endDate: { $gte: startDate },
     ...(locationId ? { $or: [{ locationId: null }, { locationId }] } : {}),
   });
-  if (overlap) throw conflict('You already have leave on some of these days', 'LEAVE_OVERLAP');
-  const leave = await M.DoctorLeave.create({ doctorId: req.user._id, locationId, reason, startDate, endDate });
-  // Patients already booked in those days are told to pick another time.
+  const clash = overlaps.some((l) => !part || l.fromMin == null || (part[0] < l.toMin && part[1] > l.fromMin));
+  if (clash) throw conflict('You already have leave on some of these days', 'LEAVE_OVERLAP');
+  const leave = await M.DoctorLeave.create({ doctorId: req.user._id, locationId, reason, startDate, endDate, ...(part ? { fromMin: part[0], toMin: part[1] } : {}) });
+  // Patients already booked in that time are told to pick another time.
   const q = { doctorId: req.user._id, startAt: { $gte: startDate, $lt: T.addDays(endDate, 1) }, status: { $in: ['booked', 'confirmed'] } };
   if (leave.locationId) q.locationId = leave.locationId;
-  const affected = await M.Appointment.find(q).populate('patientId', 'userId name');
+  const affected = (await M.Appointment.find(q).populate('patientId', 'userId name'))
+    .filter((a) => !part || (T.minuteOfDay(a.startAt) >= part[0] && T.minuteOfDay(a.startAt) < part[1]));
   const { notify } = require('../services/notify');
   const who = req.user.name || 'Your doctor';
   await notify(affected.map((a) => a.patientId?.userId).filter(Boolean), {

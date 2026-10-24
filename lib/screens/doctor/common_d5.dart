@@ -1510,7 +1510,9 @@ class D5Live {
         return 'As needed';
     }
     final d = m.obj('dose');
-    return '${number(d['morning'] ?? 0)}-${number(d['afternoon'] ?? 0)}-${number(d['night'] ?? 0)}';
+    // ½-0-1½ as written on prescriptions.
+    String n(Object? v) => v is num ? F.dose(v) : number(v ?? 0);
+    return '${n(d['morning'])}-${n(d['afternoon'])}-${n(d['night'])}';
   }
 
   /// 'before breakfast' (the doctor's words) or 'after food'.

@@ -38,11 +38,14 @@ async function slotsFor({ doctorId, locationId, day, now = new Date() }) {
   const closure = closures.find((c) => c.allDay !== false || c.fromMin == null || c.toMin == null);
   if (closure) return { open: false, reason: 'closed', note: closure.reason, slots: [] };
   const partClosed = (t, len) => closures.some((c) => t < c.toMin && t + len > c.fromMin);
-  const leave = await M.DoctorLeave.findOne({
+  const leaves = await M.DoctorLeave.find({
     doctorId, cancelledAt: null, startDate: { $lt: end }, endDate: { $gte: d },
     $or: [{ locationId: null }, { locationId }],
   });
+  // A whole-day leave closes the day; half a day only takes those hours out.
+  const leave = leaves.find((l) => l.fromMin == null || l.toMin == null);
   if (leave) return { open: false, reason: 'doctor_on_leave', note: leave.reason, slots: [] };
+  const partLeave = (t, len) => leaves.some((l) => t < l.toMin && t + len > l.fromMin);
 
   const s = dl.schedule;
   const sessions = (s.week.find((w) => w.weekday === T.weekday(d)) || {}).sessions || [];
@@ -56,7 +59,7 @@ async function slotsFor({ doctorId, locationId, day, now = new Date() }) {
   const minutes = [];
   for (const { startMin, endMin } of sessions) {
     for (let t = Math.max(startMin, opens); t + s.slotLengthMin <= Math.min(endMin, closes); t += step) {
-      if (!partClosed(t, s.slotLengthMin)) minutes.push(t);
+      if (!partClosed(t, s.slotLengthMin) && !partLeave(t, s.slotLengthMin)) minutes.push(t);
     }
   }
   if (!minutes.length) return { open: false, reason: 'clinic_closed', slots: [] };

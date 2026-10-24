@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../../data/api.dart';
+import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
 import 'common_d5.dart';
@@ -103,11 +104,12 @@ class _ConsultDosageSheetState extends State<ConsultDosageSheet> with LiveData {
 
   /// 'tablet', 'capsule' … for the dose buttons and the quantity.
   String get _unit => _form.isEmpty ? 'tablet' : _form.toLowerCase();
-  String _units(num n) => n == 1 ? '1 $_unit' : '${D5Live.number(n)} ${_unit}s';
+  // ½ and 1½ as written on prescriptions ("½ tablet"); 2 tablets, 1 tablet.
+  String _units(num n) => n == 1 ? '1 $_unit' : n < 1 ? '${F.dose(n)} $_unit' : '${F.dose(n)} ${_unit}s';
 
   String get _when =>
       isLive
-          ? [for (var i = 0; i < 3; i++) _on[i] ? D5Live.number(_doses[i]) : '0'].join('-')
+          ? [for (var i = 0; i < 3; i++) _on[i] ? F.dose(_doses[i]) : '0'].join('-')
           : _on.map((v) => v ? '1' : '0').join('-');
   int get _perDay => _on.where((v) => v).length;
   num get _perDayUnits => [for (var i = 0; i < 3; i++) if (_on[i]) _doses[i]].fold<num>(0, (a, b) => a + b);
@@ -225,6 +227,25 @@ class _ConsultDosageSheetState extends State<ConsultDosageSheet> with LiveData {
                   ],
                 ],
               ),
+              // How much each time: half a tablet, one, one and a half, two.
+              if (isLive && _on.any((v) => v))
+                Row(
+                  children: [
+                    Expanded(child: Text('Each time', style: tx(14, c: MP.ink2))),
+                    for (final n in const <num>[0.5, 1, 1.5, 2]) ...[
+                      const Gap(6),
+                      MpChip(
+                        F.dose(n),
+                        selected: [for (var i = 0; i < 3; i++) if (_on[i]) _doses[i]].every((d) => d == n),
+                        onTap: () => setState(() {
+                          for (var i = 0; i < 3; i++) {
+                            if (_on[i]) _doses[i] = n;
+                          }
+                        }),
+                      ),
+                    ],
+                  ],
+                ),
             ],
           ),
 

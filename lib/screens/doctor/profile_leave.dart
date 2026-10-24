@@ -100,7 +100,13 @@ class _TimeOffSheetState extends State<_TimeOffSheet> {
 
   String _dates(Map<String, dynamic> x) {
     final s = F.date(x['startDate']) ?? DateTime.now();
-    return d4DateRange(s, F.date(x['endDate']) ?? s);
+    final range = d4DateRange(s, F.date(x['endDate']) ?? s);
+    // Half a day off: which half.
+    return switch (x['part']) {
+      'morning' => '$range · ${tr(context, 'Morning')}',
+      'afternoon' => '$range · ${tr(context, 'Afternoon')}',
+      _ => range,
+    };
   }
 
   Future<void> _addLeave() async {
@@ -254,6 +260,9 @@ class _TimeOffFormState extends State<_TimeOffForm> {
   final _reason = TextEditingController();
   late DateTime _from = _today;
   late DateTime _to = _today;
+
+  /// Leave on one day: the whole day, the morning (until 1 PM) or the afternoon (from 1 PM).
+  String _part = 'day';
   late String? _where = widget.locationId ?? (widget.holiday && widget.locations.isNotEmpty ? widget.locations.first.$1 : null);
 
   static DateTime get _today {
@@ -295,6 +304,7 @@ class _TimeOffFormState extends State<_TimeOffForm> {
       'startDate': _ymd(_from),
       'endDate': _ymd(_to),
       'locationId': (_where ?? '').isEmpty ? null : _where,
+      if (!widget.holiday && _from == _to && _part != 'day') 'part': _part,
     });
   }
 
@@ -318,6 +328,12 @@ class _TimeOffFormState extends State<_TimeOffForm> {
             D11Row('From', value: F.dayMonth(_from), onTap: () => _pick(true)),
             D11Row('Until', value: F.dayMonth(_to), sub: days == 1 ? '1 day' : '$days days', onTap: () => _pick(false)),
           ]),
+          // Half a day off (one day): only those hours are closed, only those patients are told.
+          if (!widget.holiday && days == 1)
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final p in const [('day', 'Whole day'), ('morning', 'Morning (until 1 PM)'), ('afternoon', 'Afternoon (from 1 PM)')])
+                MpChip(p.$2, selected: _part == p.$1, onTap: () => setState(() => _part = p.$1)),
+            ]),
           if (widget.locations.length > 1 || !widget.holiday)
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

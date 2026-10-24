@@ -413,6 +413,36 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
     }
   }
 
+  /// Whether the prescription stops this running medicine (a STOPPED line).
+  bool _stopping(Map<String, dynamic> m) => _medItems.any((x) => x['change'] == 'stopped' && '${x['name']}'.toLowerCase() == m.str('name').toLowerCase());
+
+  /// "Stop" on a current medicine: a STOPPED line on the prescription (the patient's course and
+  /// alarms stop when it is issued); "Keep" takes it back off.
+  void _toggleStop(Map<String, dynamic> m) {
+    setState(() {
+      if (_stopping(m)) {
+        final i = _medItems.indexWhere((x) => x['change'] == 'stopped' && '${x['name']}'.toLowerCase() == m.str('name').toLowerCase());
+        if (i >= 0) {
+          _medItems.removeAt(i);
+          if (i < _meds.length) _meds.removeAt(i);
+        }
+      } else {
+        final item = <String, dynamic>{
+          'name': m.str('name'),
+          if (m.str('strength').isNotEmpty) 'strength': m.str('strength'),
+          'dose': const {'morning': 0, 'afternoon': 0, 'night': 0},
+          'frequency': m.str('frequency', 'daily'),
+          'change': 'stopped',
+          'entrySource': 'typed',
+        };
+        _medItems.add(item);
+        _meds.add(D5Live.med(item));
+      }
+    });
+    _saveMeds();
+    toast(context, _stopping(m) ? trf(context, '{name} will be stopped', {'name': m.str('name')}) : trf(context, '{name} continues', {'name': m.str('name')}));
+  }
+
   /// Adds a live line after the dosage (or voice) sheet confirmed it.
   void _addLine(D5MedResult r) {
     final item = {...r.item!};
@@ -754,6 +784,18 @@ class _ConsultPageScreenState extends State<ConsultPageScreen> with LiveData, D5
                         ),
                         const Gap(12),
                         Text(current[i].$3, textAlign: TextAlign.right, style: tx(14, c: MP.ink2, tab: true)),
+                        // Stop it on this prescription (or take that back).
+                        if (isLive && i < currentMedicines.length) ...[
+                          const Gap(12),
+                          Tap(
+                            onTap: () => _toggleStop(currentMedicines[i]),
+                            radius: 6,
+                            child: Text(
+                              _stopping(currentMedicines[i]) ? tr(context, 'Keep') : tr(context, 'Stop'),
+                              style: tx(14, w: w700, c: _stopping(currentMedicines[i]) ? MP.primary : MP.red),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

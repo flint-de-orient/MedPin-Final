@@ -140,7 +140,8 @@ r.patch('/consultations/:id', need('prescribe'), async (req, res) => {
     const items = req.body.medications.map((m) => pick(m, RX_ITEM_FIELDS));
     for (const m of items) {
       const d = m.dose || {};
-      if (m.frequency !== 'weekly' && m.frequency !== 'as_needed' && !((d.morning || 0) + (d.afternoon || 0) + (d.night || 0))) {
+      // A "stop this medicine" line has no dose (it is printed STOPPED on the prescription).
+      if (m.change !== 'stopped' && m.frequency !== 'weekly' && m.frequency !== 'as_needed' && !((d.morning || 0) + (d.afternoon || 0) + (d.night || 0))) {
         throw badRequest(`${m.name}: choose at least one dose a day`, 'DOSE_REQUIRED');
       }
     }

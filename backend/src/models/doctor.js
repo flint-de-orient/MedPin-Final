@@ -185,6 +185,9 @@ const doctorLeaveSchema = new Schema(
     reason: { type: String, required: true },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
+    // Half a day (one day only): minutes of the day the doctor is away (morning 0–780, afternoon 780–1440).
+    fromMin: Number,
+    toMin: Number,
     patientsNotifiedAt: Date,
     cancelledAt: Date,
   },

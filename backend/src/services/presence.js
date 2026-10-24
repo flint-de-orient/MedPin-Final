@@ -27,12 +27,16 @@ const hhmm = (s) => {
 async function sessionsOn(doctorId, day, dls) {
   const d = T.dayStart(day);
   const end = T.addDays(d, 1);
-  const leave = await M.DoctorLeave.find({ doctorId, cancelledAt: null, startDate: { $lt: end }, endDate: { $gte: d } }, 'locationId');
+  const leave = await M.DoctorLeave.find({ doctorId, cancelledAt: null, startDate: { $lt: end }, endDate: { $gte: d } }, 'locationId fromMin toMin');
+  const here = (l, loc) => !l.locationId || String(l.locationId) === String(loc._id);
+  const whole = (l) => l.fromMin == null || l.toMin == null;
   const out = [];
   for (const dl of dls) {
     const loc = dl.locationId;
     if (!loc || loc.status !== 'active') continue;
-    if (leave.some((l) => !l.locationId || String(l.locationId) === String(loc._id))) continue;
+    if (leave.some((l) => whole(l) && here(l, loc))) continue;
+    // Half a day off here: those hours come out of the sessions.
+    const away = leave.filter((l) => !whole(l) && here(l, loc));
     if (await M.LocationClosure.exists({ locationId: loc._id, startDate: { $lt: end }, endDate: { $gte: d }, allDay: { $ne: false } })) continue;
     const hours = (loc.weeklyHours || []).find((h) => h.weekday === T.weekday(d));
     if (hours && hours.isOpen === false) continue;
@@ -42,7 +46,9 @@ async function sessionsOn(doctorId, day, dls) {
     for (const s of week?.sessions || []) {
       const startMin = Math.max(s.startMin, opens);
       const endMin = Math.min(s.endMin, closes);
-      if (endMin > startMin) out.push({ startMin, endMin, locationName: loc.shortName || loc.name });
+      let pieces = endMin > startMin ? [[startMin, endMin]] : [];
+      for (const a of away) pieces = pieces.flatMap(([s0, e0]) => [[s0, Math.min(e0, a.fromMin)], [Math.max(s0, a.toMin), e0]].filter(([x, y]) => y > x));
+      for (const [s0, e0] of pieces) out.push({ startMin: s0, endMin: e0, locationName: loc.shortName || loc.name });
     }
   }
   return out.sort((a, b) => a.startMin - b.startMin);

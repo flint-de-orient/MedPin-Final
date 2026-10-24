@@ -67,7 +67,7 @@ module.exports = {
   RX_CHANGE: ['new', 'continued', 'changed', 'stopped'],
   ENTRY_SOURCES: ['typed', 'voice', 'suggestion'],
   VALIDITY_PRESETS: ['15_days', '1_month', '3_months', 'custom'],
-  FOLLOW_UP_PRESETS: ['1_week', '2_weeks', '1_month', '3_months', 'custom'],
+  FOLLOW_UP_PRESETS: ['1_week', '2_weeks', '1_month', '3_months', 'custom', 'sos'],
   ADVICE_CATEGORIES: ['general', 'diet', 'activity', 'monitoring', 'before_next_visit', 'come_in_immediately'],
 
   // Vitals and readings

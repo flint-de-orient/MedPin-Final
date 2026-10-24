@@ -199,7 +199,7 @@ async function drawPrescription({ rx, patient, doctor, location, vitals, complai
       ['Prescription no.', rxNo(rx)],
       ['Date', fmtDate(rx.issuedAt)],
       ['Visit', video ? t('Video consult') : t('In clinic')],
-      ['Next visit', rx.followUpDate ? fmtDate(rx.followUpDate) : '—'],
+      ['Next visit', rx.followUpDate ? fmtDate(rx.followUpDate) : rx.followUpSos ? t('If needed (SOS)') : '—'],
       ['Valid till', rx.validUntil ? fmtDate(rx.validUntil) : '—'],
     ];
     const cw = W / cells.length;

@@ -144,6 +144,8 @@ function prescriptionFields(consult, now = new Date()) {
       consult.advice.freeText,
     ].filter(Boolean).join('\n'),
     followUpDate,
+    // No fixed next visit: "Review if needed (SOS)" is printed instead of a date.
+    followUpSos: !followUpDate && consult.followUp?.preset === 'sos',
   };
 }
 
