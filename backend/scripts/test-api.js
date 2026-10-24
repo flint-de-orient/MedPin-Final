@@ -2696,6 +2696,60 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     await M.Appointment.updateOne({ _id: later._id }, { status: 'cancelled' });
   });
 
+  await step('desk tools: move visits together, extra charges, undo, chats handled / assigned, reply templates', async () => {
+    const T = require('../src/lib/time');
+    const pid = ctx.patientId;
+    const day = T.addDays(T.dayStart(), 9);
+    // A visit on a day the doctor is now on leave: listed to move; "Move all" to another day.
+    const v = await M.Appointment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, doctorId: ctx.doctorUserId, patientId: pid, date: day, startAt: T.atMinute(day, 600), status: 'booked', fee: 500, feeStatus: 'pending' });
+    const leave = await M.DoctorLeave.create({ doctorId: ctx.doctorUserId, reason: 'Conference', startDate: day, endDate: day });
+    const toMove = ok(await ctx.desk('GET', '/api/appointments/to-move'));
+    assert.ok(toMove.items.some((a) => String(a.id) === String(v._id) && a.moveReason === 'Doctor on leave'));
+    const target = T.addDays(day, 2);
+    const moved = ok(await ctx.desk('POST', '/api/appointments/bulk-reschedule', { ids: [String(v._id)], date: T.dayKey(target) }));
+    assert.equal(moved.moved, 1);
+    const next = await M.Appointment.findOne({ rescheduledFromId: v._id });
+    assert.equal(T.dayKey(next.date), T.dayKey(target));
+    await M.DoctorLeave.deleteOne({ _id: leave._id });
+    // Extra charge on a checked-in visit: added to the unpaid fee; after paying, a new amount.
+    const today = await M.Appointment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, doctorId: ctx.doctorUserId, patientId: pid, date: T.dayStart(), startAt: new Date(), status: 'waiting', arrivedAt: new Date(), fee: 500, feeStatus: 'pending', tokenNo: 90 });
+    const fee = await M.Payment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, patientId: pid, appointmentId: today._id, amount: 500, status: 'pending' });
+    ok(await ctx.desk('POST', '/api/payments/extra', { appointmentId: String(today._id), label: 'Dressing', amount: 200 }), 201);
+    assert.equal((await M.Payment.findById(fee._id)).amount, 700, 'added to the fee');
+    // Collected, then "Undo" (the wrong patient), then collected again.
+    ok(await ctx.desk('POST', `/api/payments/${fee._id}/mark-paid`, { method: 'cash' }));
+    ok(await ctx.desk('POST', `/api/payments/${fee._id}/undo-paid`, {}));
+    assert.equal((await M.Payment.findById(fee._id)).status, 'pending', 'undone');
+    assert.equal((await ctx.doc('POST', `/api/payments/${fee._id}/undo-paid`, {})).status, 409, 'only a fresh one, by who marked it');
+    ok(await ctx.desk('POST', `/api/payments/${fee._id}/mark-paid`, { method: 'cash' }));
+    ok(await ctx.desk('POST', '/api/payments/extra', { appointmentId: String(today._id), label: 'ECG', amount: 300 }), 201);
+    assert.ok(await M.Payment.exists({ appointmentId: today._id, status: 'pending', amount: 300 }), 'paid already: a new amount to collect');
+    // A cancel by mistake: "Undo" puts the visit back, and its fee is due again.
+    const c = await M.Appointment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, doctorId: ctx.doctorUserId, patientId: pid, date: day, startAt: T.atMinute(day, 720), status: 'confirmed', confirmedAt: new Date(), fee: 500, feeStatus: 'pending' });
+    await M.Payment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, patientId: pid, appointmentId: c._id, amount: 500, status: 'pending' });
+    ok(await ctx.desk('POST', `/api/appointments/${c._id}/cancel`, { reason: 'Booked by mistake' }));
+    const back = ok(await ctx.desk('POST', `/api/appointments/${c._id}/undo-cancel`, {}));
+    assert.equal(back.status, 'confirmed');
+    assert.ok(await M.Payment.exists({ appointmentId: c._id, status: 'pending' }), 'fee due again');
+    await M.Appointment.updateMany({ _id: { $in: [today._id, c._id, next._id] } }, { status: 'cancelled' });
+    // The inbox: given to the desk, marked handled; the patient writing again opens it.
+    const convo = await require('../src/services/care').careConversation(pid, ctx.practiceId);
+    const deskUser = await M.User.findOne({ phone: { $regex: '9749681391$' } });
+    ok(await ctx.doc('POST', `/api/conversations/${convo._id}/assign`, { userId: String(deskUser._id) }));
+    assert.ok(await M.Notification.exists({ userId: deskUser._id, type: 'chat_assigned' }), 'they are told');
+    const mine = ok(await ctx.desk('GET', '/api/inbox?type=care&view=mine'));
+    assert.ok(mine.items.some((x) => String(x.id) === String(convo._id)));
+    ok(await ctx.desk('POST', `/api/conversations/${convo._id}/handled`, { handled: true }));
+    assert.ok((await M.Conversation.findById(convo._id)).handledAt);
+    ok(await ctx.pat('POST', `/api/conversations/${convo._id}/messages`, { text: 'One more question' }), 201);
+    assert.equal((await M.Conversation.findById(convo._id)).handledAt, undefined, 'open again');
+    // Reply templates: the defaults, then the clinic's own.
+    const tpl = ok(await ctx.desk('GET', '/api/practice/templates'));
+    assert.ok(tpl.items.length >= 3 && tpl.custom === false);
+    const saved = ok(await ctx.desk('PUT', '/api/practice/templates', { items: [{ title: 'Holiday', text: 'The clinic is closed on Sunday.' }] }));
+    assert.deepEqual([saved.custom, saved.items[0].title], [true, 'Holiday']);
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

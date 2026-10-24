@@ -15,6 +15,8 @@ const practiceSchema = new Schema(
     foodLogReviewCadence: enumOf(E.FOOD_LOG_REVIEW_CADENCES, { default: 'every_3_days' }),
     // "Call next" in the queue (the patient is told it's their turn); the owner can turn it off.
     callNext: { type: Boolean, default: true },
+    // The clinic's own reply templates for patient chats ("Clinic timings", "Report received").
+    replyTemplates: [{ title: { type: String, maxlength: 60 }, text: { type: String, maxlength: 1000 }, _id: false }],
     ownerUserId: ref('User', true),
   },
   baseOptions,

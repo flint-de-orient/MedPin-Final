@@ -100,7 +100,16 @@ Future<bool> collectFee(BuildContext context, VisitFee fee, {String? patientName
   if (method == null || !context.mounted) return false;
   final ok = await runAction(context, () => Api.I.post('/api/payments/${fee.paymentId}/mark-paid', {'method': method}));
   if (ok == null || !context.mounted) return false;
-  toast(context, tr(context, '₹#1 collected').replaceFirst('#1', '${fee.amount}'));
+  // Marked on the wrong patient? "Undo" (within 15 minutes; the screens refresh by themselves).
+  final id = fee.paymentId;
+  toast(context, tr(context, '₹#1 collected').replaceFirst('#1', '${fee.amount}'), action: tr(context, 'Undo'), onAction: () async {
+    try {
+      await Api.I.post('/api/payments/$id/undo-paid', const {});
+      if (context.mounted) toast(context, tr(context, 'Undone · the fee is to collect again'));
+    } on ApiException catch (e) {
+      if (context.mounted) toast(context, e.message);
+    }
+  });
   return true;
 }
 
@@ -217,6 +226,72 @@ class _PaymentRequestCardState extends State<PaymentRequestCard> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// "Add charge" on a visit: a dressing, an injection, an ECG… on top of the visit fee (added
+/// to what is still to pay, or a new amount to collect). True when added.
+/// POST /api/payments/extra.
+Future<bool> addVisitCharge(BuildContext context, {required String appointmentId}) async {
+  final added = await openSheet<bool>(context, (_) => _ChargeSheet(appointmentId: appointmentId));
+  return added == true;
+}
+
+class _ChargeSheet extends StatefulWidget {
+  final String appointmentId;
+  const _ChargeSheet({required this.appointmentId});
+
+  @override
+  State<_ChargeSheet> createState() => _ChargeSheetState();
+}
+
+class _ChargeSheetState extends State<_ChargeSheet> {
+  final _label = TextEditingController();
+  final _amount = TextEditingController();
+  bool _busy = false;
+  static const _common = ['Dressing', 'Injection', 'ECG', 'Nebulisation', 'Blood sugar test', 'Procedure'];
+
+  @override
+  void dispose() {
+    _label.dispose();
+    _amount.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final amount = int.tryParse(_amount.text.trim());
+    if (_label.text.trim().isEmpty) return toast(context, 'Say what the charge is for');
+    if (amount == null || amount <= 0) return toast(context, 'Enter the amount in rupees');
+    setState(() => _busy = true);
+    final ok = await runAction(context, () => Api.I.post('/api/payments/extra', {'appointmentId': widget.appointmentId, 'label': _label.text.trim(), 'amount': amount}));
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok == null) return;
+    toast(context, tr(context, '₹#1 added to the bill').replaceFirst('#1', '$amount'));
+    Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MpSheet(
+      title: 'Add charge',
+      subtitle: 'On top of the visit fee. The patient pays it with the fee.',
+      showClose: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final c in _common) MpChip(c, selected: _label.text == c, onTap: () => setState(() => _label.text = c)),
+          ]),
+          const SizedBox(height: 12),
+          MpInput(controller: _label, label: 'What for', hint: 'E.g. Dressing', height: 52, onChanged: (_) => setState(() {})),
+          const SizedBox(height: 12),
+          MpInput(controller: _amount, label: 'Amount', prefixText: '₹ ', hint: 'E.g. 200', keyboard: TextInputType.number, height: 52),
+          const SizedBox(height: 16),
+          MpButton(_busy ? 'Adding…' : 'Add to the bill', onTap: _busy ? null : _save),
+        ],
       ),
     );
   }

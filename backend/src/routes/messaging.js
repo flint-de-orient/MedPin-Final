@@ -305,6 +305,47 @@ threads.post('/:id/handoff', async (req, res) => {
   res.json({ ok: true });
 });
 
+// The clinic's inbox: give this chat to a colleague (or take it back), or mark it handled.
+threads.post('/:id/assign', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  if (!convo.practiceId || convo.type === 'direct') throw badRequest('Only patient chats can be assigned');
+  const me = await M.Member.findOne({ userId: req.user._id, practiceId: convo.practiceId, status: 'active' }, 'role');
+  if (!me) throw forbidden('Only the clinic can assign this chat');
+  const to = req.body.userId ? String(req.body.userId) : null;
+  if (to) {
+    if (!isId(to)) throw badRequest('Choose a colleague');
+    const member = await M.Member.findOne({ userId: to, practiceId: convo.practiceId, status: 'active', role: { $in: ['doctor', 'front_desk', 'doctor_assistant', 'practice_manager', 'dietician'] } }, 'role');
+    if (!member) throw badRequest('Choose someone at this clinic', 'NOT_A_COLLEAGUE');
+    await M.Conversation.updateOne({ _id: convo._id }, { assignedTo: to, assignedBy: req.user._id, assignedAt: new Date() });
+    // They're in the chat (with it unread), and told it's theirs now.
+    if (!convo.participants.some((p) => String(p.userId) === to)) {
+      await M.Conversation.updateOne({ _id: convo._id, 'participants.userId': { $ne: to } }, { $push: { participants: { userId: to, role: member.role === 'doctor' ? 'doctor' : member.role === 'dietician' ? 'dietician' : 'staff', unreadCount: 1 } } });
+    }
+    if (to !== String(req.user._id)) {
+      const patient = await M.Patient.findById(convo.patientId, 'name');
+      await require('../services/notify').notify([to], {
+        type: 'chat_assigned', practiceId: convo.practiceId,
+        title: `${req.user.name || 'A colleague'} gave you ${patient?.name || 'a patient'}'s chat`, screen: 'Patient-Thread', params: { conversationId: convo._id },
+      }).catch(() => {});
+    }
+  } else {
+    await M.Conversation.updateOne({ _id: convo._id }, { $unset: { assignedTo: 1, assignedBy: 1, assignedAt: 1 } });
+  }
+  await signal(convo.participants.map((p) => p.userId).filter((u) => String(u) !== String(req.user._id)), { type: 'chat_changed', conversationId: convo._id });
+  res.json({ ok: true, assignedTo: to });
+});
+
+threads.post('/:id/handled', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  if (!convo.practiceId || convo.type === 'direct') throw badRequest('Only patient chats can be marked handled');
+  const me = await M.Member.exists({ userId: req.user._id, practiceId: convo.practiceId, status: 'active' });
+  if (!me) throw forbidden('Only the clinic can mark this chat');
+  const handled = req.body.handled !== false;
+  await M.Conversation.updateOne({ _id: convo._id }, handled ? { handledAt: new Date(), handledBy: req.user._id } : { $unset: { handledAt: 1, handledBy: 1 } });
+  if (handled) await markRead(convo, req.user._id);
+  res.json({ ok: true, handled });
+});
+
 // MedPin AI on or off for one patient's chat (the doctor, dietician or their assistant).
 threads.patch('/:id/ai', async (req, res) => {
   const convo = await openConversation(req, req.params.id);
@@ -378,7 +419,13 @@ inbox.get('/', async (req, res) => {
     const pts = await M.Patient.find({ $or: [{ name: re }, { phone: re }] }, '_id').limit(500).lean();
     q.$or = [{ patientId: { $in: pts.map((p) => p._id) } }, { 'lastMessage.text': re }];
   }
-  const convos = await M.Conversation.find(q).sort({ 'lastMessage.at': -1 }).limit(Math.min(Number(req.query.limit) || 300, 500)).populate('patientId', 'name gender ageYears ageRecordedAt phone conditions userId');
+  // Views of the clinic's inbox: given to me, not given to anyone, still open (not handled).
+  if (type !== 'direct') {
+    if (req.query.view === 'mine') q.assignedTo = req.user._id;
+    if (req.query.view === 'unassigned') q.assignedTo = null;
+    if (req.query.view === 'open') q.handledAt = null;
+  }
+  const convos = await M.Conversation.find(q).sort({ 'lastMessage.at': -1 }).limit(Math.min(Number(req.query.limit) || 300, 500)).populate('patientId', 'name gender ageYears ageRecordedAt phone conditions userId').populate('assignedTo', 'name');
   // Patients' profile photos for the avatars.
   const photos = await require('../services/photos').photosFor(convos.map((c) => c.patientId?.userId));
   const mine = (c) => c.participants.find((p) => String(p.userId) === String(req.user._id));
@@ -390,6 +437,8 @@ inbox.get('/', async (req, res) => {
       photo: c.patientId.userId ? photos.get(String(c.patientId.userId)) || null : null,
     },
     participants: c.participants.map((p) => ({ userId: p.userId, role: p.role })),
+    assignedTo: c.assignedTo ? { id: c.assignedTo._id || c.assignedTo, name: c.assignedTo.name || null } : null,
+    handled: Boolean(c.handledAt),
   }));
   if (type === 'direct') {
     // Chats with colleagues: who the other person is (name, role here, photo).

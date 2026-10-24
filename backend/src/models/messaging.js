@@ -37,6 +37,13 @@ const conversationSchema = new Schema(
     // The patient asked for a person ("Talk to the clinic"): MedPin AI stays out until the clinic replies.
     humanRequestedAt: Date,
     pinnedMessageId: ref('Message'),
+    // The clinic's inbox: who is looking after this chat, and "Handled" (nothing more to do —
+    // undone when the patient writes again).
+    assignedTo: ref('User'),
+    assignedBy: ref('User'),
+    assignedAt: Date,
+    handledAt: Date,
+    handledBy: ref('User'),
     lastMessage: {
       text: String,
       senderType: enumOf(E.SENDER_TYPES),

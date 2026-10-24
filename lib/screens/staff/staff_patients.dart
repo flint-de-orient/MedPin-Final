@@ -95,6 +95,7 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
     if (data == null) return [for (final r in _rows) (r, null, null)];
     return [
       for (final c in data!.list('items'))
+        if (_inView(c))
         (
           (
             F.initials(c.obj('patient').str('name', '?')),
@@ -103,12 +104,29 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
             c.numOr('unread').toInt(),
             _who(c),
             c.obj('lastMessage').str('text'),
-            _triageLabels[c['triage']] ?? '',
+            // Who looks after it, or that it is handled; else the triage chip.
+            c['handled'] == true
+                ? 'Handled'
+                : c['assignedTo'] is Map
+                    ? ('${(c['assignedTo'] as Map)['id']}' == '${Session.I.user['id']}' ? 'Yours' : trf(context, 'With {name}', {'name': F.firstName('${(c['assignedTo'] as Map)['name'] ?? ''}')}))
+                    : _triageLabels[c['triage']] ?? '',
           ),
           c.str('id'),
           c.obj('patient').str('photo').isEmpty ? null : c.obj('patient').str('photo'),
         ),
     ];
+  }
+
+  /// Inbox views: every chat, the ones still open (not handled), mine, nobody's yet.
+  String _view = 'all';
+  bool _inView(Map<String, dynamic> c) {
+    final a = c['assignedTo'];
+    return switch (_view) {
+      'open' => c['handled'] != true,
+      'mine' => a is Map && '${a['id']}' == '${Session.I.user['id']}',
+      'unassigned' => a == null,
+      _ => true,
+    };
   }
 
   // The design's sample counts only in the preview; live, nothing until the real counts arrive.
@@ -149,6 +167,16 @@ class _StaffPatientsScreenState extends State<StaffPatientsScreen> with LiveData
                 index: _tab,
                 onChanged: (i) => setState(() => _tab = i),
               ),
+              if (data != null && _tab != 2)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: [
+                    for (final v in const [('all', 'All chats'), ('open', 'Open'), ('mine', 'Mine'), ('unassigned', 'Not assigned')]) ...[
+                      MpChip(v.$2, selected: _view == v.$1, onTap: () => setState(() => _view = v.$1)),
+                      const SizedBox(width: 8),
+                    ],
+                  ]),
+                ),
               D10SearchField(
                 hint: 'Search patients or messages',
                 padLeft: 48,

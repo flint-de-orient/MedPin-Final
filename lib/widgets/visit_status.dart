@@ -98,7 +98,20 @@ Future<bool> changeVisitStatus(BuildContext context, {required String appointmen
         : Api.I.post('/api/appointments/$appointmentId/status', {'status': picked}),
   );
   if (ok == null || !context.mounted) return false;
-  toast(context, tr(context, 'Status: #1').replaceFirst('#1', tr(context, visitStatusLabel(picked))));
+  final msg = tr(context, 'Status: #1').replaceFirst('#1', tr(context, visitStatusLabel(picked)));
+  if (picked == 'cancelled') {
+    // The wrong visit? "Undo" within 15 minutes (the patient is told it stands).
+    toast(context, msg, action: tr(context, 'Undo'), onAction: () async {
+      try {
+        await Api.I.post('/api/appointments/$appointmentId/undo-cancel', const {});
+        if (context.mounted) toast(context, tr(context, 'Undone · the visit is back on'));
+      } on ApiException catch (e) {
+        if (context.mounted) toast(context, e.message);
+      }
+    });
+  } else {
+    toast(context, msg);
+  }
   return true;
 }
 

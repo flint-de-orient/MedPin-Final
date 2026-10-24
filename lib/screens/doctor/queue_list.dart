@@ -449,6 +449,10 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
         link(tr(context, 'Collect ₹#1').replaceFirst('#1', '${fee.amount}'), () async {
           if (await collectFee(context, fee, patientName: r.name) && mounted) reload(quiet: true);
         }),
+      if (r.id != null && isLive && Session.I.can('fees') && const {_Kind.waiting, _Kind.consult, _Kind.done}.contains(r.kind))
+        link(tr(context, 'Add charge'), () async {
+          if (await addVisitCharge(context, appointmentId: r.id!) && mounted) reload(quiet: true);
+        }),
       if (fee != null && fee.refundDue && Session.I.can('fees'))
         link(tr(context, 'Refund ₹#1').replaceFirst('#1', '${fee.amount}'), () async {
           if (await handBackFee(context, fee) && mounted) reload(quiet: true);

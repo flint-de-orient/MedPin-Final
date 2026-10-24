@@ -63,6 +63,7 @@ const appointmentSchema = new Schema(
     cancelledAt: Date,
     cancelledBy: enumOf(E.CANCELLED_BY),
     cancelReason: String,
+    statusBeforeCancel: String, // for "Undo" (a cancel made by mistake, within 15 minutes)
     cancelledByUser: ref('User'), // the doctor / desk member who cancelled it (Fees, the visit show the name)
     rescheduledFromId: ref('Appointment'),
     rescheduledToId: ref('Appointment'),
@@ -98,6 +99,8 @@ const paymentSchema = new Schema(
     patientId: ref('Patient', true),
     appointmentId: ref('Appointment'),
     amount: { ...rupees, required: true },
+    // Extra charges added at the desk (a dressing, an injection, an ECG): on top of the visit fee.
+    charges: [{ label: { type: String, maxlength: 60 }, amount: Number, addedBy: { type: Schema.Types.ObjectId, ref: 'User' }, at: Date, _id: false }],
     method: enumOf(E.PAYMENT_METHODS),
     status: enumOf(E.FEE_STATUSES, { default: 'pending' }),
     paidAt: Date,

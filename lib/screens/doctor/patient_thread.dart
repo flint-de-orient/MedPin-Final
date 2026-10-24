@@ -15,6 +15,7 @@ import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
 import '../../widgets/i18n.dart';
+import 'chat_tools.dart';
 
 /// Design: Patient-Thread.dc.html — "Patient thread".
 ///
@@ -759,6 +760,9 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     if (s == AnimationStatus.completed && mounted) setState(() => _voice.value = 0);
   });
 
+  /// A chat with a patient (not one with a colleague): templates and the inbox menu apply.
+  bool get _isPatientChat => const {'care', 'nutrition'}.contains(data?.obj('conversation').str('type'));
+
   bool _menuOpen = !isLive;
   bool _voiceShown = true;
   bool _voicePinned = false;
@@ -987,6 +991,11 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
           ),
           const Gap(4),
           if (live) MpIconButton(I.search, label: 'Search this chat', color: MP.ink2, onTap: _searchLive),
+          // The clinic's inbox: handled, and who looks after this chat.
+          if (live && _isPatientChat && _convId != null)
+            MpIconButton(I.moreV, label: 'This chat', color: MP.ink2, onTap: () async {
+              if (await chatInboxActions(context, conversationId: _convId!, conversation: data?.obj('conversation') ?? const {}) && mounted) reload(quiet: true);
+            }),
           MpIconButton(
             I.phone,
             label: 'Call $name',
@@ -1425,6 +1434,24 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                   ),
                 ),
               ),
+              // The clinic's ready replies ("Clinic timings", "Report received").
+              if (isLive && _isPatientChat)
+                Semantics(
+                  button: true,
+                  label: 'Reply templates',
+                  child: Tap(
+                    onTap: () async {
+                      final text = await pickReplyTemplate(context, current: _reply.text);
+                      if (text == null || !mounted) return;
+                      final now = _reply.text.trim();
+                      _reply.text = now.isEmpty ? text : '$now\n$text';
+                      _reply.selection = TextSelection.collapsed(offset: _reply.text.length);
+                      _replyFocus.requestFocus();
+                    },
+                    radius: 12,
+                    child: const SizedBox(width: 40, height: 48, child: Center(child: Ico(I.fileText, size: 21, color: MP.ink2))),
+                  ),
+                ),
               const Gap(8),
               Expanded(
                 child: Container(

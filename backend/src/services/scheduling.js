@@ -243,6 +243,7 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
   }
   if (to === 'missed' && appt.startAt > now) throw conflict("This visit's time hasn't come yet", 'NOT_YET');
   const wasMissed = appt.status === 'missed';
+  const before = appt.status;
   appt.status = to;
   if (to === 'confirmed') appt.confirmedAt = now;
   if (to === 'waiting') { appt.arrivedAt = appt.arrivedAt || now; appt.checkedInBy = by; }
@@ -251,6 +252,7 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
   if (to === 'missed') appt.missedAt = now;
   if (to === 'completed') appt.completedAt = now;
   if (to === 'cancelled') {
+    appt.statusBeforeCancel = before;
     appt.cancelledAt = now;
     appt.cancelledBy = cancelledBy || 'desk';
     appt.cancelReason = reason;

@@ -59,6 +59,27 @@ r.patch('/practice', ownerOnly, async (req, res) => {
   res.json(practice);
 });
 
+// Reply templates for patient chats: the clinic's own (the defaults until it saves its own).
+const DEFAULT_TEMPLATES = [
+  { title: 'Clinic timings', text: 'Our clinic is open Monday to Saturday, 9 AM to 8 PM. You can book a time in the MedPin app.' },
+  { title: 'Report received', text: 'Thank you, we have received your report. The doctor will see it and we will let you know here.' },
+  { title: 'Book in the app', text: 'Please book a visit from the doctor’s page in the MedPin app, or tell us a day and time that suits you.' },
+  { title: 'Come to the clinic', text: 'This needs the doctor to see you. Please come to the clinic; let us know when you can come.' },
+  { title: 'Emergency', text: 'If this is an emergency, please call 108 or go to the nearest emergency department now.' },
+];
+r.get('/practice/templates', async (req, res) => {
+  const p = await M.Practice.findById(req.practiceId, 'replyTemplates');
+  res.json({ items: p?.replyTemplates?.length ? p.replyTemplates : DEFAULT_TEMPLATES, custom: Boolean(p?.replyTemplates?.length) });
+});
+r.put('/practice/templates', need('chats'), async (req, res) => {
+  const items = (Array.isArray(req.body.items) ? req.body.items : [])
+    .map((x) => ({ title: String(x?.title || '').trim().slice(0, 60), text: String(x?.text || '').trim().slice(0, 1000) }))
+    .filter((x) => x.title && x.text)
+    .slice(0, 30);
+  await M.Practice.updateOne({ _id: req.practiceId }, { replyTemplates: items });
+  res.json({ items: items.length ? items : DEFAULT_TEMPLATES, custom: items.length > 0 });
+});
+
 r.post('/practice/logo', ownerOnly, upload.single('file'), async (req, res) => {
   if (!req.file) throw badRequest('Choose a logo file');
   const logo = await saveLogo(req.file);

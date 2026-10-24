@@ -111,6 +111,7 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
     }
     final rows = [
       for (final a in d.list('items'))
+        if (_matches(a))
         (
           F.timeShort(F.date(a['startAt']) ?? DateTime.now()),
           a.obj('patient').str('name'),
@@ -119,10 +120,51 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
           a['id'] as String?,
         ),
     ];
+    // A filter chosen: up to 30 of those; otherwise the next 6 (finished ones roll off the top).
+    if (_filter != 'all' || _doctor != null) return rows.take(30).toList();
     while (rows.length > 6 && (rows.first.$3 == 'Done' || rows.first.$3 == 'Missed')) {
       rows.removeAt(0);
     }
     return rows.take(6).toList();
+  }
+
+  /// Today's list: who's still to come, waiting, done, or still to pay; and one doctor's.
+  String _filter = 'all';
+  String? _doctor;
+  static const _filters = [('all', 'All'), ('to_come', 'Not arrived'), ('waiting', 'Waiting'), ('done', 'Done'), ('to_collect', 'To collect')];
+
+  bool _matches(Map<String, dynamic> a) {
+    if (_doctor != null && a.obj('doctor').str('id') != _doctor) return false;
+    final s = a.str('status');
+    return switch (_filter) {
+      'to_come' => s == 'booked' || s == 'confirmed',
+      'waiting' => s == 'waiting' || s == 'in_consultation',
+      'done' => s == 'completed',
+      'to_collect' => VisitFee.of(a)?.due == true,
+      _ => true,
+    };
+  }
+
+  Widget _filterChips() {
+    final doctors = <String, String>{};
+    for (final a in data?.list('items') ?? const <Map<String, dynamic>>[]) {
+      final d = a.obj('doctor');
+      if (d.str('id').isNotEmpty) doctors[d.str('id')] = F.doctorShort(d.str('name'));
+    }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: [
+        for (final f in _filters) ...[
+          MpChip(f.$2, selected: _filter == f.$1, onTap: () => setState(() => _filter = f.$1)),
+          const SizedBox(width: 8),
+        ],
+        if (doctors.length > 1)
+          for (final e in doctors.entries) ...[
+            MpChip(e.value, selected: _doctor == e.key, onTap: () => setState(() => _doctor = _doctor == e.key ? null : e.key)),
+            const SizedBox(width: 8),
+          ],
+      ]),
+    );
   }
 
   Map<String, dynamic> get _summary => data?.obj('summary') ?? const {};
@@ -407,6 +449,9 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
               padding: const EdgeInsets.only(bottom: 10),
               child: MpButton('Doctor running late', kind: MpBtn.secondary, height: 44, icon: I.clock, onTap: _runningLate),
             ),
+          if (isLive && (data?.list('items').length ?? 0) > 3) ...[_filterChips(), const SizedBox(height: 10)],
+          if (isLive && _apptRows.isEmpty && (_filter != 'all' || _doctor != null))
+            Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('No visits like this today', style: tx(14, c: MP.ink2))),
           for (var i = 0; i < _apptRows.length; i++) _apptRow(context, i),
         ],
       ),
@@ -549,6 +594,11 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
                       if (fee != null && fee.status != 'free' && fee.refundDue)
                         link('Refund', () async {
                           if (await handBackFee(context, fee) && mounted) reload(quiet: true);
+                        }),
+                      // A dressing, an injection, an ECG… on top of the fee (checked-in visits).
+                      if (appt != null && isLive && const {'waiting', 'in_consultation', 'completed'}.contains(appt['status']) && Session.I.can('fees'))
+                        link('Add charge', () async {
+                          if (await addVisitCharge(context, appointmentId: appt.str('id')) && mounted) reload(quiet: true);
                         }),
                     ],
                   ),

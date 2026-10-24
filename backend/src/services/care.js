@@ -403,6 +403,8 @@ async function postMessage(convo, { sender, senderType, text, kind = 'text', qui
   // Everyone else in the thread (staff who weren't notified, the sender's other phone): refresh now.
   const told = new Set([...toPatient, ...toldStaff].map(String));
   await signal(convo.participants.map((p) => p.userId).filter((id) => !told.has(String(id))), { type: 'chat_changed', conversationId: convo._id });
+  // The patient wrote again: a chat marked "Handled" is open again.
+  if (senderType === 'patient' && convo.handledAt) await M.Conversation.updateOne({ _id: convo._id }, { $unset: { handledAt: 1, handledBy: 1 } });
   if (senderType === 'patient') await awayReply(convo, msg).catch(() => {});
   return msg;
 }

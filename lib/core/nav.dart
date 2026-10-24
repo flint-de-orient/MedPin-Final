@@ -141,7 +141,9 @@ OverlayEntry? _toastEntry;
 
 /// Shows a short confirmation toast for actions that have no screen. It is
 /// drawn in the root overlay, so it also shows above open bottom sheets.
-void toast(BuildContext context, String message) {
+/// With [action] (e.g. "Undo"), the toast stays a few seconds longer and the action is
+/// a button on it ([onAction]).
+void toast(BuildContext context, String message, {String? action, VoidCallback? onAction}) {
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay == null) return;
   _toastEntry?.remove();
@@ -149,6 +151,14 @@ void toast(BuildContext context, String message) {
   entry = OverlayEntry(
     builder: (_) => _Toast(
       message: message,
+      action: action,
+      onAction: onAction == null
+          ? null
+          : () {
+              if (_toastEntry == entry) _toastEntry = null;
+              if (entry.mounted) entry.remove();
+              onAction();
+            },
       onDone: () {
         if (_toastEntry == entry) _toastEntry = null;
         if (entry.mounted) entry.remove();
@@ -162,7 +172,9 @@ void toast(BuildContext context, String message) {
 class _Toast extends StatefulWidget {
   final String message;
   final VoidCallback onDone;
-  const _Toast({required this.message, required this.onDone});
+  final String? action;
+  final VoidCallback? onAction;
+  const _Toast({required this.message, required this.onDone, this.action, this.onAction});
   @override
   State<_Toast> createState() => _ToastState();
 }
@@ -178,7 +190,7 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
 
   Future<void> _run() async {
     await _c.forward();
-    await Future.delayed(const Duration(milliseconds: 1600));
+    await Future.delayed(Duration(milliseconds: widget.onAction == null ? 1600 : 6000));
     if (!mounted) return;
     await _c.reverse();
     if (mounted) widget.onDone();
@@ -198,6 +210,7 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
       right: 16,
       bottom: 100 + bottom,
       child: IgnorePointer(
+        ignoring: widget.onAction == null,
         child: FadeTransition(
           opacity: _c,
           child: Center(
@@ -210,7 +223,23 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: MPShadow.float,
                 ),
-                child: Text(widget.message, textAlign: TextAlign.center, style: tx(14, w: w600, c: MP.white, h: 1.4)),
+                child: widget.onAction == null
+                    ? Text(widget.message, textAlign: TextAlign.center, style: tx(14, w: w600, c: MP.white, h: 1.4))
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(child: Text(widget.message, style: tx(14, w: w600, c: MP.white, h: 1.4))),
+                          const SizedBox(width: 12),
+                          GestureDetector(
+                            onTap: widget.onAction,
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: Text(widget.action ?? 'Undo', style: tx(14, w: w700, c: MP.primarySoft)),
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ),

@@ -46,7 +46,7 @@ async function withPayments(appts) {
   for (const a of appts) {
     if (a.patientId?.userId) a._photo = photos.get(String(a.patientId.userId)) || null;
     const p = by.get(String(a._id));
-    a._payment = p ? { id: p._id, status: p.status, method: p.method || null, amount: p.amount, paidAt: p.paidAt || null, refundDue: Boolean(p.refundDue) } : null;
+    a._payment = p ? { id: p._id, status: p.status, method: p.method || null, amount: p.amount, paidAt: p.paidAt || null, refundDue: Boolean(p.refundDue), charges: (p.charges || []).map((c) => ({ label: c.label, amount: c.amount })) } : null;
   }
   return appts;
 }
@@ -306,6 +306,12 @@ r.get('/appointments/booking/days', async (req, res) => {
   res.json({ windowDays, firstDate: T.dayKey(today), lastDate: T.dayKey(last), days });
 });
 
+// Visits that need a new time (see visitsToMove below; before /appointments/:id).
+r.get('/appointments/to-move', async (req, res) => {
+  const items = await visitsToMove(req);
+  res.json({ items, total: items.length });
+});
+
 r.get('/appointments/:id', async (req, res) => {
   const a = await populate(M.Appointment.findOne({ _id: req.params.id, practiceId: req.practiceId }));
   if (!a) throw notFound('Appointment');
@@ -428,6 +434,56 @@ r.post('/appointments/:id/status', async (req, res) => {
   res.json(view(await populate(M.Appointment.findById(appt._id))));
 });
 
+// ── Visits that need a new time (leave, a closure, hours changed) and "Move all" ──
+const MOVE_REASONS = { doctor_on_leave: 'Doctor on leave', closed: 'Clinic closed', clinic_closed: 'Clinic closed', no_session: 'No session that day', not_practising_here: 'Doctor not at this branch', location_inactive: 'Branch closed', doctor_unavailable: 'Doctor not seeing patients' };
+
+/** Upcoming visits (next 60 days) on a day the doctor can't see them there, with why. */
+async function visitsToMove(req) {
+  const from = T.dayStart();
+  const appts = await populate(M.Appointment.find({
+    practiceId: req.practiceId, status: { $in: ['booked', 'confirmed'] }, startAt: { $gte: new Date() }, date: { $lt: T.addDays(from, 60) }, ...listScope(req),
+  }).sort({ startAt: 1 }).limit(500));
+  const days = new Map(); // doctor|location|day → slotsFor result
+  const out = [];
+  for (const a of appts) {
+    const key = `${a.doctorId?._id || a.doctorId}|${a.locationId?._id || a.locationId}|${T.dayKey(a.date)}`;
+    if (!days.has(key)) days.set(key, await S.slotsFor({ doctorId: a.doctorId?._id || a.doctorId, locationId: a.locationId?._id || a.locationId, day: a.date }));
+    const day = days.get(key);
+    const slotThere = day.open && day.slots.some((s) => s.startAt.getTime() === a.startAt.getTime());
+    if (day.open && slotThere) continue;
+    out.push({ ...view(a), moveReason: MOVE_REASONS[day.reason] || (day.open ? 'Outside the new hours' : 'Not available that day'), note: day.note || null });
+  }
+  return out;
+}
+
+// "Move all to <day>": each visit to the next free time that day with the same doctor and branch,
+// in the order they were booked; the patient's chat says where it moved (as one move does).
+r.post('/appointments/bulk-reschedule', async (req, res) => {
+  const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).filter(isId).slice(0, 200);
+  if (!ids.length) throw badRequest('Choose the visits to move', 'NOTHING_CHOSEN');
+  const day = T.parseDay(req.body.date);
+  if (day < T.dayStart()) throw badRequest('Choose today or a later day', 'DATE_PAST');
+  const appts = await M.Appointment.find({ _id: { $in: ids }, practiceId: req.practiceId, status: { $in: ['booked', 'confirmed'] } }).sort({ startAt: 1 });
+  const moved = [];
+  const failed = [];
+  for (const a of appts) {
+    try {
+      assertCovers(req, a, { booking: true });
+      const { open, slots, reason } = await S.slotsFor({ doctorId: a.doctorId, locationId: a.locationId, day });
+      const free = open ? slots.find((s) => s.available) : null;
+      if (!free) {
+        failed.push({ id: a._id, why: open ? 'No free time left that day' : MOVE_REASONS[reason] || 'Not available that day' });
+        continue;
+      }
+      const next = await S.reschedule(a, free.startAt, req.user._id);
+      moved.push({ id: a._id, to: next._id, startAt: next.startAt });
+    } catch (err) {
+      failed.push({ id: a._id, why: err.message });
+    }
+  }
+  res.json({ moved: moved.length, failed, items: moved });
+});
+
 r.post('/appointments/:id/reschedule', async (req, res) => {
   const appt = await S.getAppointment(req.params.id, req.practiceId);
   const loc = /^[0-9a-f]{24}$/i.test(String(req.body.locationId || '')) ? req.body.locationId : undefined;
@@ -437,6 +493,43 @@ r.post('/appointments/:id/reschedule', async (req, res) => {
   // The visit's own follow-up moves with it; other open follow-ups stay as they were.
   const next = await S.reschedule(appt, req.body.startAt, req.user._id, loc);
   res.json(view(await populate(M.Appointment.findById(next._id))));
+});
+
+// "Undo" a cancel made by mistake: within 15 minutes, if no money went back yet and the time
+// is still free. The visit and its fee are as they were; the patient is told it stands.
+r.post('/appointments/:id/undo-cancel', async (req, res) => {
+  const appt = await S.getAppointment(req.params.id, req.practiceId);
+  assertCovers(req, appt, { booking: true });
+  if (appt.status !== 'cancelled' || appt.cancelledBy === 'patient' || !appt.cancelledAt || appt.cancelledAt < new Date(Date.now() - 15 * 60e3)) {
+    throw conflict('This cancel can no longer be undone', 'CANT_UNDO');
+  }
+  if (await M.Payment.exists({ appointmentId: appt._id, status: 'refunded' })) throw conflict('The fee was already refunded. Book the visit again instead.', 'CANT_UNDO');
+  // The place is still free (nobody took the slot meanwhile).
+  const taken = await M.Appointment.countDocuments({ _id: { $ne: appt._id }, doctorId: appt.doctorId, locationId: appt.locationId, startAt: appt.startAt, status: S.ACTIVE });
+  const dl = await M.DoctorLocation.findOne({ doctorId: appt.doctorId, locationId: appt.locationId }, 'schedule');
+  if (!appt.isWalkIn && taken >= (dl?.schedule?.patientsPerSlot || 1)) throw conflict('That time was taken meanwhile. Book another time.', 'SLOT_TAKEN');
+  const back = ['booked', 'confirmed', 'waiting'].includes(appt.statusBeforeCancel) ? appt.statusBeforeCancel : appt.confirmedAt ? 'confirmed' : 'booked';
+  const restored = await M.Appointment.findOneAndUpdate(
+    { _id: appt._id, status: 'cancelled' },
+    { status: back, $unset: { cancelledAt: 1, cancelledBy: 1, cancelReason: 1, cancelledByUser: 1, statusBeforeCancel: 1 } },
+    { new: true },
+  );
+  if (!restored) throw conflict('This cancel can no longer be undone', 'CANT_UNDO');
+  // The fee waived by the cancel is due again; one paid and marked "to hand back" stays paid.
+  await M.Payment.updateMany({ appointmentId: appt._id, status: 'waived' }, { status: 'pending' });
+  await M.Payment.updateMany({ appointmentId: appt._id, status: 'paid', refundDue: true }, { $unset: { refundDue: 1 } });
+  const due = await M.Payment.exists({ appointmentId: appt._id, status: 'pending' });
+  const paid = await M.Payment.exists({ appointmentId: appt._id, status: 'paid' });
+  await M.Appointment.updateOne({ _id: appt._id }, { feeStatus: paid ? 'paid' : due ? 'pending' : restored.fee > 0 ? 'pending' : 'free' });
+  const patient = await M.Patient.findById(appt.patientId, 'userId');
+  if (patient?.userId) {
+    await notify([patient.userId], {
+      forPatientId: patient._id, type: 'appointment_booked', practiceId: req.practiceId, title: 'Your visit is back on',
+      body: `${T.fmtTime(T.minuteOfDay(appt.startAt))}, ${T.dayKey(appt.startAt)}. Sorry for the earlier message.`, screen: 'Patient-DoctorDetail', params: { appointmentId: appt._id },
+    }).catch(() => {});
+  }
+  await S.visitsChanged(restored);
+  res.json(view(await populate(M.Appointment.findById(appt._id))));
 });
 
 r.post('/appointments/:id/cancel', async (req, res) => {
@@ -872,6 +965,54 @@ r.get('/payments/summary', need('fees'), async (req, res) => {
     cashInDrawer: cashIn - sum(handedBack),
     stillToCollect: { amount: sum(toCollect), count: toCollect.length },
   });
+});
+
+// "Add charge" on a visit (a dressing, an injection, an ECG): added to what is still to pay,
+// or — the fee was already paid — a new amount to collect. A payment link sent for the old
+// total is cancelled (the patient pays the new total).
+r.post('/payments/extra', need('fees'), async (req, res) => {
+  const label = String(req.body.label || '').trim().slice(0, 60);
+  const amount = Math.round(Number(req.body.amount));
+  if (!label) throw badRequest('Say what the charge is for', 'LABEL_REQUIRED');
+  if (!(amount > 0 && amount <= 100000)) throw badRequest('Enter the amount in rupees', 'BAD_AMOUNT');
+  if (!isId(req.body.appointmentId)) throw badRequest('Choose the visit', 'VISIT_REQUIRED');
+  const appt = await S.getAppointment(req.body.appointmentId, req.practiceId);
+  assertCovers(req, appt, { booking: true });
+  if (['cancelled', 'rescheduled'].includes(appt.status)) throw conflict('This visit was cancelled', 'VISIT_CANCELLED');
+  const charge = { label, amount, addedBy: req.user._id, at: new Date() };
+  let p = await M.Payment.findOne({ appointmentId: appt._id, status: 'pending' });
+  if (p) {
+    if (p.paymentLinkId) await require('../services/payments').cancelLink(p.paymentLinkId);
+    // A link or in-app payment started for the old total no longer counts.
+    await M.Payment.updateOne({ _id: p._id }, {
+      $inc: { amount }, $push: { charges: charge },
+      $unset: { paymentLinkUrl: 1, paymentLinkId: 1, paymentLinkAmount: 1, paymentLinkExpiresAt: 1, razorpayOrderId: 1, razorpayOrderAmount: 1 },
+    });
+    p = await M.Payment.findById(p._id);
+  } else {
+    p = await M.Payment.create({ practiceId: req.practiceId, locationId: appt.locationId, patientId: appt.patientId, appointmentId: appt._id, amount, charges: [charge], status: 'pending' });
+  }
+  if (appt.feeStatus !== 'pending') await M.Appointment.updateOne({ _id: appt._id }, { feeStatus: 'pending' });
+  await S.visitsChanged(appt);
+  res.status(201).json(p);
+});
+
+// "Undo" a fee marked paid by mistake (the wrong patient, the wrong row): within 15 minutes,
+// by whoever marked it; not an online payment (that is the patient's real money).
+r.post('/payments/:id/undo-paid', need('fees'), async (req, res) => {
+  if (!isId(req.params.id)) throw notFound('Payment');
+  const p = await M.Payment.findOneAndUpdate(
+    { _id: req.params.id, practiceId: req.practiceId, status: 'paid', razorpayPaymentId: null, method: { $ne: 'online' }, markedPaidBy: req.user._id, paidAt: { $gte: new Date(Date.now() - 15 * 60e3) }, refunding: { $ne: true } },
+    { status: 'pending', $unset: { method: 1, paidAt: 1, markedPaidBy: 1 } },
+    { new: true },
+  );
+  if (!p) throw conflict('This payment can no longer be undone', 'CANT_UNDO');
+  if (p.appointmentId) {
+    await M.Appointment.updateOne({ _id: p.appointmentId, feeStatus: 'paid' }, { feeStatus: 'pending' });
+    const appt = await M.Appointment.findById(p.appointmentId);
+    if (appt) await S.visitsChanged(appt);
+  }
+  res.json(p);
 });
 
 r.post('/payments/:id/mark-paid', async (req, res) => {

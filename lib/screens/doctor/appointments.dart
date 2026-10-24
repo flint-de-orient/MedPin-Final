@@ -7,6 +7,7 @@ import '../../widgets/mp.dart';
 import 'appointments_manage.dart';
 import 'common_d7.dart';
 import '../../widgets/i18n.dart';
+import 'visits_to_move.dart';
 import '../../widgets/visit_status.dart';
 
 /// Design: Appointments.dc.html — "Appointments".
@@ -64,8 +65,38 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
       Api.I.get('/api/appointments', query: {'view': 'past'}),
       Api.I.get('/api/appointment-requests', query: {'status': 'pending'}),
       Api.I.get('/api/appointment-requests', query: {'status': 'declined'}),
+      Api.I.get('/api/appointments/to-move').catchError((_) => null),
     ]);
-    return {'today': r[0], 'upcoming': r[1], 'past': r[2], 'requests': r[3], 'declined': r[4]};
+    return {'today': r[0], 'upcoming': r[1], 'past': r[2], 'requests': r[3], 'declined': r[4], 'toMove': r[5]};
+  }
+
+  /// Visits on a day the doctor can't see them (leave, a closure, changed hours): move them all.
+  Widget _toMoveCard() {
+    final items = data?.obj('toMove').list('items') ?? const <Map<String, dynamic>>[];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return MpCard(
+      onTap: () async {
+        final moved = await openSheet<bool>(context, (_) => VisitsToMoveSheet(items: items));
+        if (moved == true && mounted) reload(quiet: true);
+      },
+      child: Row(
+        children: [
+          const MpIconTile(I.calendar, size: 40, iconSize: 20, radius: 12),
+          const Gap(12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tr(context, '#1 visits need a new time').replaceFirst('#1', '${items.length}'), style: tx(16, w: w700)),
+                const Gap(2),
+                Text('Doctor on leave, a closure or changed hours. Move them together.', style: tx(13, c: MP.ink2, h: 1.35)),
+              ],
+            ),
+          ),
+          const Ico(I.chevronRight, size: 18, color: MP.ink3),
+        ],
+      ),
+    );
   }
 
   static const _statusLabels = {
@@ -366,6 +397,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> with LiveData {
         gap: 16,
         children: [
           _waitingCard(),
+          _toMoveCard(),
 
           // Range
           Padding(
