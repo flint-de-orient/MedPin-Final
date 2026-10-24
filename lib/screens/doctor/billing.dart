@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
 import '../../data/checkout.dart';
+import '../../data/downloads.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
@@ -73,6 +74,12 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
 
   Map<String, dynamic> get _renewal => data == null ? const {} : data!.obj('renewal');
 
+  /// "City Care Clinic LLP · GSTIN 19AAACC1234C1Z5" (empty: nothing added yet).
+  String get _billing {
+    final b = data?.obj('billingDetails') ?? const <String, dynamic>{};
+    return [b.str('name'), if (b.str('gstin').isNotEmpty) 'GSTIN ${b.str('gstin')}' else if (b.str('state').isNotEmpty) b.str('state')].where((s) => s.isNotEmpty).join(' · ');
+  }
+
   /// The owner (or manager) pays and switches plans; others see the plan.
   bool get _canManage => data == null || data!['canManage'] != false;
 
@@ -133,7 +140,7 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
     }
     return [
       for (final i in data!.list('invoices'))
-        (_date(i['issuedAt']), i.str('description'), D9Fmt.money(i.numOr('amount')), i.str('status'), i['id'] as String?),
+        (_date(i['issuedAt']), [i.str('number'), i.str('description')].where((s) => s.isNotEmpty).join(' · '), D9Fmt.money(i.numOr('amount')), i.str('status'), i['id'] as String?),
     ];
   }
 
@@ -239,14 +246,53 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
     );
   }
 
-  Future<void> _download(String? id) async {
+  /// Download: the invoice PDF is made, then saved to Downloads › MedPin with its number
+  /// ("MedPin-Invoice-MP-26-27-0001.pdf"), with "Saved · Open"; Share sends it (to an accountant).
+  Future<void> _download(String? id, {bool share = false}) async {
     if (!isLive || id == null) {
       toast(context, 'Invoice downloaded');
       return;
     }
+    toast(context, 'Getting the invoice ready…');
     final res = await runAction(context, () => Api.I.get('/api/billing/invoices/$id/download'), busy: _busy);
     if (res is! Map || !mounted) return;
-    await D9Open.url(context, res['url'], failed: "Couldn't open the invoice");
+    final name = res['name'] as String?;
+    if (share) {
+      await Downloads.share(context, res['url'] as String?, name: name);
+    } else {
+      await Downloads.save(context, res['url'] as String?, name: name, title: 'Invoice downloaded');
+    }
+  }
+
+  Future<void> _invoiceActions(String? id, String label) async {
+    final pick = await openSheet<String>(
+      context,
+      (c) => MpSheet(
+        title: label,
+        showClose: true,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: VGap(
+            gap: 8,
+            children: [
+              MpButton('Download PDF', onTap: () => Navigator.pop(c, 'download')),
+              MpButton('Share', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, 'share')),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (pick != null && mounted) await _download(id, share: pick == 'share');
+  }
+
+  /// Billing details: who the invoices are made out to (for the clinic's accounts and GST).
+  Future<void> _editDetails() async {
+    if (!isLive) return;
+    final saved = await openSheet<bool>(context, (_) => const _DetailsSheet());
+    if (saved == true && mounted) {
+      toast(context, 'Billing details saved · they show on your invoices');
+      reload(quiet: true);
+    }
   }
 
   void _toggleInvoices() {
@@ -322,10 +368,23 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
                   ],
                 ),
               ),
-              for (final d in invoices) _InvoiceRow(d, onDownload: () => _download(d.$5)),
+              for (final d in invoices) _InvoiceRow(d, onDownload: () => _download(d.$5), onMore: () => _invoiceActions(d.$5, d.$2.split(' · ').first)),
               if (invoices.isEmpty) Text('No invoices yet', style: tx(14, c: MP.ink2)),
             ],
           ),
+
+          // Billing details (owner / manager): the name, address and GSTIN on the invoices.
+          if (data != null && _canManage)
+            D9Card(
+              children: [
+                D9Head(
+                  'Billing details',
+                  sub: _billing.isEmpty ? 'Add your clinic\'s legal name, address and GSTIN for your invoices' : _billing,
+                  subH: 1.45,
+                  trailing: D9Link(_billing.isEmpty ? 'Add' : 'Edit', h: null, onTap: _editDetails),
+                ),
+              ],
+            ),
 
           // Plans
           D9Card(
@@ -403,7 +462,8 @@ class _Meter extends StatelessWidget {
 class _InvoiceRow extends StatelessWidget {
   final _Invoice invoice;
   final VoidCallback onDownload;
-  const _InvoiceRow(this.invoice, {required this.onDownload});
+  final VoidCallback? onMore;
+  const _InvoiceRow(this.invoice, {required this.onDownload, this.onMore});
 
   @override
   Widget build(BuildContext context) {
@@ -417,6 +477,7 @@ class _InvoiceRow extends StatelessWidget {
     final statusLabel = status.isEmpty ? '' : '${status[0].toUpperCase()}${status.substring(1)}';
     return D9Row(
       padding: const EdgeInsets.symmetric(vertical: 12),
+      onTap: onMore, // the row: Download PDF or Share
       child: Row(
         children: [
           Expanded(
@@ -491,6 +552,98 @@ class _PlanRow extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Billing details: the clinic's legal name, address, state and GSTIN for MedPin's invoices.
+/// GET / PUT /api/billing/details.
+class _DetailsSheet extends StatefulWidget {
+  const _DetailsSheet();
+
+  @override
+  State<_DetailsSheet> createState() => _DetailsSheetState();
+}
+
+class _DetailsSheetState extends State<_DetailsSheet> {
+  final _name = TextEditingController();
+  final _address = TextEditingController();
+  final _gstin = TextEditingController();
+  String _state = '';
+  List<String> _states = const [];
+  bool _loaded = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _address.dispose();
+    _gstin.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final r = ((await Api.I.get('/api/billing/details')) as Map).cast<String, dynamic>();
+      if (!mounted) return;
+      final d = r.obj('defaults');
+      setState(() {
+        _name.text = r.str('name').isEmpty ? d.str('name') : r.str('name');
+        _address.text = r.str('address').isEmpty ? d.str('address') : r.str('address');
+        _gstin.text = r.str('gstin');
+        _state = r.str('state');
+        _states = [for (final s in (r['states'] as List? ?? const [])) '$s'];
+        _loaded = true;
+      });
+    } on ApiException catch (e) {
+      if (mounted) {
+        toast(context, e.message);
+        Navigator.pop(context);
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    if (_name.text.trim().isEmpty) {
+      toast(context, 'Write the name the invoices are made out to');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final ok = await runAction(context, () => Api.I.put('/api/billing/details', {'name': _name.text.trim(), 'address': _address.text.trim(), 'state': _state, 'gstin': _gstin.text.trim()}));
+      if (ok != null && mounted) Navigator.pop(context, true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MpSheet(
+      title: 'Billing details',
+      subtitle: 'Shown on your MedPin invoices',
+      showClose: true,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: !_loaded
+            ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+            : VGap(
+                gap: 14,
+                children: [
+                  MpInput(controller: _name, label: 'Legal or trade name'),
+                  MpInput(controller: _address, label: 'Billing address', maxLines: 3, height: 96),
+                  MpSelect(label: 'State', value: _state.isEmpty ? tr(context, 'Choose') : _state, options: _states, onChanged: (v) => setState(() => _state = v)),
+                  MpInput(controller: _gstin, label: 'GSTIN (if registered)', hint: '19ABCDE1234F1Z5', help: 'For input tax credit. The state is read from it.'),
+                  MpButton(_busy ? 'Saving…' : 'Save', onTap: _busy ? null : _save),
+                ],
+              ),
+      ),
     );
   }
 }

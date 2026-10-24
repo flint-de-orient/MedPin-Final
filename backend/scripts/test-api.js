@@ -1235,7 +1235,21 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     const renewed = await M.Subscription.findById(subNow._id);
     assert.equal(renewed.status, 'active');
     assert.ok(renewed.currentPeriodEnd - Date.now() > 29 * 864e5, 'a month from today');
-    assert.match((await M.Invoice.findOne({ practiceId: ctx.practiceId }).sort({ createdAt: -1 })).number, /^MP-\d{4}-\d{4}$/);
+    const lastInv = await M.Invoice.findOne({ practiceId: ctx.practiceId }).sort({ createdAt: -1 });
+    assert.match(lastInv.number, /^MP\/\d{2}-\d{2}\/\d{4}$/, 'one series per financial year');
+    assert.ok(lastInv.number.length <= 16);
+    // The clinic's billing details (GSTIN checked; the state read from it) and the invoice PDF.
+    assert.equal((await ctx.doc('PUT', '/api/billing/details', { name: 'City Care Clinic LLP', gstin: '19ABC' })).status, 400);
+    assert.equal((await ctx.desk('PUT', '/api/billing/details', { name: 'X' })).status, 403);
+    const det = ok(await ctx.doc('PUT', '/api/billing/details', { name: 'City Care Clinic LLP', address: '12 Park Street, Kolkata 700016', state: 'Kerala', gstin: '19aaacc1234c1z5' }));
+    assert.deepEqual([det.gstin, det.state], ['19AAACC1234C1Z5', 'West Bengal']);
+    const dl = ok(await ctx.doc('GET', `/api/billing/invoices/${lastInv._id}/download`));
+    assert.equal(dl.name, `MedPin-Invoice-${lastInv.number.replace(/[^\w-]+/g, '-')}.pdf`);
+    const invPdf = await fetch(dl.url);
+    assert.equal(invPdf.status, 200);
+    assert.equal(Buffer.from(await invPdf.arrayBuffer()).subarray(0, 4).toString(), '%PDF');
+    assert.equal((await ctx.doc('GET', '/api/billing/invoices/000000000000000000000000/download')).status, 404);
+    assert.equal(ok(await ctx.doc('GET', '/api/billing')).billingDetails.name, 'City Care Clinic LLP');
     // In the app (Checkout, test mode without keys): due again → pay → a new month at once.
     await M.Subscription.updateOne({ _id: subNow._id }, { status: 'past_due', currentPeriodEnd: new Date(Date.now() - 864e5) });
     const co = ok(await ctx.doc('POST', '/api/billing/checkout', { renew: true }));
@@ -2126,7 +2140,7 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       assert.match(sys, /"sittings_next_7_days":\[/);
       assert.match(sys, /You cannot book, move or cancel a visit/);
       assert.match(sys, /Do not say you are an AI/);
-      assert.equal(calls.at(-1).timeoutMs, 25000, 'a time limit on the reply');
+      assert.equal(calls.at(-1).timeoutMs, 40000, 'a time limit on the reply');
       assert.equal(await triage(), null, 'fully answered: nothing for the clinic to do');
       // "Thanks" after an answer: no model call, no reply, no "Needs attention".
       const c0 = calls.length;
@@ -2152,6 +2166,10 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       await M.Conversation.updateOne({ _id: convo }, { aiPausedAt: new Date(Date.now() - 30 * 60e3), $unset: { staffViewingAt: 1 } });
       const yes = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Yes please book it' }), 201);
       assert.equal(yes.aiPending, false, 'the desk is still on it after 30 minutes');
+      const st = ok(await ctx.doc('GET', `/api/conversations/${convo}/messages`)).conversation.aiStatus;
+      assert.equal(st.state, 'clinic_replied', 'the banner says why MedPin AI is quiet');
+      assert.ok(new Date(st.until) > new Date(), 'and until when');
+      assert.equal(ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).conversation.aiStatus, undefined, 'not for the patient');
       ok(await ctx.desk('POST', `/api/conversations/${convo}/handled`, {}));
       await M.Conversation.updateOne({ _id: convo }, { $unset: { staffViewingAt: 1 } });
       answer = { no_reply: false, reply: 'Your doctor will look at this.', handover_to: 'none', handover_reason: '', urgency: 'none', needs_doctor: false, reason: 'none', cited_entry_ids: [] };

@@ -118,6 +118,7 @@ r.get('/billing', async (req, res) => {
     },
     invoices: invoices.map((i) => ({ ...i.toJSON(), file: storage.withUrl(i.file) })),
     invoicesTotal,
+    billingDetails: (await M.Practice.findById(req.practiceId, 'billing'))?.billing || {},
     renewal: await B.renewal(sub),
     canManage: Boolean(req.member?.isOwner || req.member?.role === 'practice_manager'),
     checkout: require('../services/payments').configured() ? 'razorpay' : env.isProd ? 'not_configured' : 'dev',
@@ -188,18 +189,37 @@ r.post('/billing/switch', ownerOnly, async (req, res) => {
   res.json(sub);
 });
 
+// The invoice PDF (made each time: the clinic's billing details may have been filled in since).
 r.get('/billing/invoices/:id/download', async (req, res) => {
-  const inv = await M.Invoice.findOne({ _id: req.params.id, practiceId: req.practiceId });
+  if (!/^[a-f\d]{24}$/i.test(req.params.id)) throw notFound('Invoice');
+  const inv = await M.Invoice.findOne({ _id: req.params.id, practiceId: req.practiceId }, '_id');
   if (!inv) throw notFound('Invoice');
-  if (!inv.file?.key) {
-    const practice = await M.Practice.findById(req.practiceId, 'name');
-    const pdf = await simplePdf(`Invoice ${inv.number || inv._id}`, [
-      ['Billed to', practice.name], ['Date', T.dayKey(inv.issuedAt)], ['Description', inv.description || ''], ['Amount', `INR ${inv.amount}`], ['Status', inv.status],
-    ]);
-    inv.file = await storage.save(pdf, { folder: 'invoices', name: `invoice-${T.dayKey(inv.issuedAt)}.pdf`, mimeType: 'application/pdf' });
-    await inv.save();
-  }
-  res.json({ url: storage.signedUrl(inv.file.key) });
+  res.json(await require('../services/invoicepdf').invoiceFile(inv._id));
+});
+
+// Who the plan invoices are billed to: the clinic's legal name, address, state, GSTIN.
+r.get('/billing/details', async (req, res) => {
+  const p = await M.Practice.findById(req.practiceId, 'name billing');
+  const loc = await M.Location.findOne({ practiceId: req.practiceId, status: 'active' }, 'address city pincode').sort({ createdAt: 1 });
+  const { STATES } = require('../services/invoicepdf');
+  res.json({
+    name: p?.billing?.name || '', address: p?.billing?.address || '', state: p?.billing?.state || '', gstin: p?.billing?.gstin || '',
+    defaults: { name: p?.name || '', address: [loc?.address, loc?.city, loc?.pincode].filter(Boolean).join(', ') },
+    states: Object.values(STATES).sort(),
+  });
+});
+
+r.put('/billing/details', ownerOnly, async (req, res) => {
+  const { GSTIN, STATES } = require('../services/invoicepdf');
+  const clean = (s, n) => String(s || '').trim().replace(/\s+/g, ' ').slice(0, n);
+  const gstin = clean(req.body.gstin, 15).toUpperCase().replace(/\s/g, '');
+  if (gstin && !GSTIN.test(gstin)) throw badRequest('This GSTIN does not look right: 15 characters, like 19ABCDE1234F1Z5', 'BAD_GSTIN');
+  let state = clean(req.body.state, 60);
+  if (state && !Object.values(STATES).some((s) => s.toLowerCase() === state.toLowerCase())) throw badRequest('Choose the state from the list', 'BAD_STATE');
+  if (gstin) state = STATES[gstin.slice(0, 2)] || state; // the GSTIN says which state
+  const billing = { name: clean(req.body.name, 120), address: clean(req.body.address, 300), state, gstin };
+  await M.Practice.updateOne({ _id: req.practiceId }, { billing });
+  res.json(billing);
 });
 
 // ── Exports ──

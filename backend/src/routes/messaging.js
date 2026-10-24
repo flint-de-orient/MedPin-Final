@@ -175,6 +175,7 @@ threads.get('/:id/messages', async (req, res) => {
     conversation: {
       ...(isPatientView ? patientConvoView(convo) : convo.toJSON()),
       aiPaused: assistant.aiPaused(convo),
+      ...(isPatientView ? {} : { aiStatus: await assistant.aiStatus(convo).catch(() => ({ state: 'on' })) }),
       patient: patient && {
         id: patient._id, name: patient.name, lastSeenAt: lastSeen,
         photo: patient.userId ? (await require('../services/photos').photosFor([patient.userId])).get(String(patient.userId)) || null : null,

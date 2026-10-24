@@ -137,6 +137,18 @@ const env = {
   // Off until MedPin has a pharmacy partner: patients buy from any chemist with their
   // prescription or medicine list. PHARMACY_ORDERING=on turns it on.
   pharmacyOrdering: v('PHARMACY_ORDERING', 'off') === 'on',
+  // MedPin as the seller on clinics' plan invoices (services/invoicepdf.js). With a GSTIN the
+  // invoice is a GST tax invoice (CGST + SGST / IGST at 18%); without one, no GST is shown.
+  billing: {
+    legalName: v('BILLING_LEGAL_NAME', 'MedPin'),
+    address: v('BILLING_ADDRESS', ''),
+    state: v('BILLING_STATE', ''), // "West Bengal" (taken from the GSTIN when that is set)
+    gstin: v('BILLING_GSTIN', ''),
+    pan: v('BILLING_PAN', ''),
+    sac: v('BILLING_SAC', '997331'), // ask your CA: SaaS is often 997331 or 998314
+    email: v('BILLING_EMAIL', ''),
+    pricesIncludeGst: v('BILLING_PRICES_INCLUDE_GST', 'yes') !== 'no',
+  },
   support: {
     email: v('SUPPORT_EMAIL'),
     phone: v('SUPPORT_PHONE'),

@@ -15,6 +15,14 @@ const practiceSchema = new Schema(
     foodLogReviewCadence: enumOf(E.FOOD_LOG_REVIEW_CADENCES, { default: 'every_3_days' }),
     // "Call next" in the queue (the patient is told it's their turn); the owner can turn it off.
     callNext: { type: Boolean, default: true },
+    // Who MedPin's plan invoices are billed to (Plan & billing → Billing details).
+    billing: {
+      name: { type: String, maxlength: 120 }, // legal / trade name
+      address: { type: String, maxlength: 300 },
+      state: { type: String, maxlength: 60 },
+      gstin: { type: String, maxlength: 15 },
+      _id: false,
+    },
     // The clinic's own reply templates for patient chats ("Clinic timings", "Report received").
     replyTemplates: [{ title: { type: String, maxlength: 60 }, text: { type: String, maxlength: 1000 }, _id: false }],
     ownerUserId: ref('User', true),

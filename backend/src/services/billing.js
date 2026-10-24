@@ -47,11 +47,16 @@ async function renewal(sub, now = new Date()) {
   };
 }
 
-/** "MP-2026-0007": MedPin's invoice numbers, one series a year. */
+/**
+ * "MP/26-27/0007": MedPin's invoice numbers, one unbroken series per financial year
+ * (April to March), at most 16 characters (GST rules).
+ */
 async function invoiceNumber(at = new Date()) {
-  const year = new Date(at.getTime() + T.IST_MS).getUTCFullYear();
-  const n = await M.Counter.next(`invoice:${year}`);
-  return `MP-${year}-${String(n).padStart(4, '0')}`;
+  const ist = new Date(at.getTime() + T.IST_MS);
+  const start = ist.getUTCMonth() >= 3 ? ist.getUTCFullYear() : ist.getUTCFullYear() - 1;
+  const fy = `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`;
+  const n = await M.Counter.next(`invoice:fy${fy}`);
+  return `MP/${fy}/${String(n).padStart(4, '0')}`;
 }
 
 /** Owners and managers are told the plan needs paying (in the app; once per month that ended). */

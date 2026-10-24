@@ -1236,6 +1236,26 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     if (_conv['humanRequestedAt'] != null && DateTime.now().difference(F.date(_conv['humanRequestedAt']) ?? DateTime(2000)).inHours < 24) {
       return 'The patient asked for a person · MedPin AI waits for your reply';
     }
+    // Why it is quiet, and until when (the server's aiStatus).
+    final s = _conv['aiStatus'] is Map ? (_conv['aiStatus'] as Map).cast<String, dynamic>() : const <String, dynamic>{};
+    final until = F.date(s['until']);
+    switch (s['state']) {
+      case 'not_set_up':
+        return 'MedPin AI is not set up on this server';
+      case 'off_doctor':
+        return "MedPin AI replies are off in the doctor's chat settings";
+      case 'limit':
+        return "This month's MedPin AI chats are used up · your team answers";
+      case 'clinic_replied':
+        final who = s.str('by').isEmpty ? '' : F.firstName(s.str('by'));
+        return until == null
+            ? 'MedPin AI is quiet: the clinic replied'
+            : trf(context, who.isEmpty ? 'MedPin AI is quiet: the clinic replied · back at {time}, or when marked handled' : 'MedPin AI is quiet: {name} replied · back at {time}, or when marked handled', {'name': who, 'time': F.time(until)});
+      case 'viewing':
+        return "AI assistant is paused while you're in this thread";
+      case 'on':
+        return 'MedPin AI answers when nobody from the clinic is here';
+    }
     return _conv['aiPaused'] == true ? "AI assistant is paused while you're in this thread" : 'MedPin AI answers when nobody from the clinic is here';
   }
 

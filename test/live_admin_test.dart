@@ -180,7 +180,7 @@ void main() {
     // Download the newest invoice.
     await _tap(t, find.bySemanticsLabel('Download invoice for ${_d(inv['issuedAt'])}'));
     expect(_requests.any((r) => r.url.path == '/api/billing/invoices/${inv['id']}/download'), isTrue);
-    expect(launched.single.path, '/files/invoices/x.pdf');
+    expect(launched, isEmpty, reason: 'saved in the app (Downloads › MedPin), not opened in a browser');
 
     // View all → ?invoices=50.
     await _tap(t, find.text('View all'));

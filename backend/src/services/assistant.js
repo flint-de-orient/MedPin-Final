@@ -115,6 +115,28 @@ function aiPaused(convo, now = new Date()) {
   );
 }
 
+/**
+ * What MedPin AI is doing in this chat, for the clinic's banner: on, or why it is quiet and
+ * until when — no AI key on the server, off for this chat or by the doctor, the month's AI
+ * chats used up, the patient asked for a person, the clinic wrote (2 hours, or until Handled),
+ * someone at the clinic has the chat open.
+ */
+async function aiStatus(convo, now = new Date()) {
+  if (!['care', 'nutrition'].includes(convo.type)) return { state: 'none' };
+  if (!ai.enabled()) return { state: 'not_set_up' };
+  if (!convo.aiEnabled) return { state: 'off_chat' };
+  const primary = await M.CareTeamAccess.findOne({ patientId: convo.patientId, practiceId: convo.practiceId, isPrimary: true }, 'userId');
+  if (primary && (await M.DoctorProfile.findOne({ userId: primary.userId }, 'chatSettings'))?.chatSettings?.aiReplies === false) return { state: 'off_doctor' };
+  if (await aiLimitReached(convo.practiceId)) return { state: 'limit' };
+  if (convo.humanRequestedAt && convo.humanRequestedAt > T.addMinutes(now, -AI_HUMAN_HOURS * 60)) return { state: 'human', until: T.addMinutes(convo.humanRequestedAt, AI_HUMAN_HOURS * 60) };
+  if (convo.aiPausedAt && convo.aiPausedAt > T.addMinutes(now, -AI_PAUSE_MIN) && !(convo.handledAt && convo.handledAt >= convo.aiPausedAt)) {
+    const by = convo.aiPausedBy ? (await M.User.findById(convo.aiPausedBy, 'name'))?.name : null;
+    return { state: 'clinic_replied', until: T.addMinutes(convo.aiPausedAt, AI_PAUSE_MIN), by };
+  }
+  if (convo.staffViewingAt && convo.staffViewingAt > T.addMinutes(now, -AI_VIEWING_MIN)) return { state: 'viewing' };
+  return { state: 'on' };
+}
+
 /** Would this month's AI chat limit be passed? (Checked before answering; counted only after.) */
 async function aiLimitReached(practiceId) {
   if (!practiceId) return false;
@@ -314,6 +336,10 @@ async function replyInCareThread(convo, patientMessage) {
   let msg = null;
   try {
     msg = await careReply(convo, patientMessage, { urgentByWords });
+    if (!msg && process.env.NODE_ENV !== 'test') {
+      const s = await aiStatus(await M.Conversation.findById(convo._id)).catch(() => ({ state: '?' }));
+      console.log(`[ai reply] quiet in ${convo._id}: ${s.state === 'on' ? 'no answer needed, a newer message, or the model gave none' : s.state}`);
+    }
   } catch (err) {
     // The model failed or timed out: the chat stays "Needs attention" for the clinic.
     console.warn('[ai reply]', err.message);
@@ -426,9 +452,18 @@ async function careReply(convo, patientMessage, { urgentByWords }) {
   if (files.length && last.role === 'user') last.content = [{ type: 'text', text: last.content }, ...files];
 
   // Chat replies are short: low effort and a time limit keep them quick.
-  const out = await ai.completeJson({ system, messages, schema: REPLY_SCHEMA, effort: 'low', vision: files.length > 0, maxTokens: 2048, timeoutMs: 25000 });
+  // (The output budget includes the model's thinking on Gemini: kept roomy, the reply itself is short.)
+  let out = await ai.completeJson({ system, messages, schema: REPLY_SCHEMA, effort: 'low', vision: files.length > 0, maxTokens: 8192, timeoutMs: 40000 });
+  // Cut off or not valid JSON: one more try before giving up.
+  if (out && !out.refused && !out.data) {
+    console.warn(`[ai reply] no usable answer (${out.truncated ? 'cut off' : 'not JSON'}), trying again`);
+    out = await ai.completeJson({ system, messages, schema: REPLY_SCHEMA, effort: 'low', vision: files.length > 0, maxTokens: 8192, timeoutMs: 40000 });
+  }
   // No answer (model down, refused): the patient's "typing…" stops; the clinic replies as usual.
-  if (!out || out.refused || !out.data) return null;
+  if (!out || out.refused || !out.data) {
+    console.warn(`[ai reply] no answer from ${ai.modelName?.() || 'the model'}: ${!out ? 'AI off' : out.refused ? 'refused' : 'unusable output'}`);
+    return null;
+  }
   // The clinic answered while the model was thinking (theirs stands), or the patient wrote again (that gets the reply).
   if (await skip()) return null;
   if (await newerPatient()) return null;
@@ -777,4 +812,4 @@ async function extractPrescription(buffer, mimeType) {
 
 module.exports = {
   line, languageRule, patientLanguage,
-  aiPaused, aiLimitReached, isAck, threadClinician, willReplyInCareThread, replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };
+  aiPaused, aiStatus, aiLimitReached, isAck, threadClinician, willReplyInCareThread, replyInCareThread, doctorAnswer, patientAnswer, summarizeDay, extractLabReport, extractPrescription, isEmergencyText, useAiChat };
