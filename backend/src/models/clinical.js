@@ -104,6 +104,7 @@ const consultationSchema = new Schema(
     completedAt: Date,
     durationSec: Number,
     issuingAt: Date, // Generate in progress (a second tap waits for this one)
+    amendsRxId: ref('Prescription'), // a draft that corrects an issued prescription (replaces it when issued)
     chiefComplaint: String,
     complaintLanguage: enumOf(E.LANGUAGES),
     vitalsId: ref('Vitals'),
@@ -163,6 +164,14 @@ const prescriptionSchema = new Schema(
     // The patient's copies in Bengali / Hindi: { bn: { file, version, inputs, text }, hi: … } (services/rxlang.js).
     localized: { type: Schema.Types.Mixed, default: undefined },
     sentAt: Date, // "Prescription sent to Priya"
+    // An issued prescription is never edited: it is cancelled (with why), or replaced by a
+    // corrected one (amended: replacedById points to it; the new one's amendsId to this).
+    status: { type: String, enum: ['issued', 'cancelled', 'amended'], default: 'issued' },
+    cancelledAt: Date,
+    cancelReason: String,
+    cancelledBy: ref('User'),
+    replacedById: ref('Prescription'),
+    amendsId: ref('Prescription'),
   },
   baseOptions,
 );

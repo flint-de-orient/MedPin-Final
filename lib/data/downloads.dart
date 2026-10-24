@@ -43,7 +43,8 @@ class Downloads {
   /// Downloads [url] into the app's cache (kept until the phone clears it).
   static Future<File> fetch(String url, {String? name}) async {
     final res = await client.get(Uri.parse(url)).timeout(const Duration(seconds: 60));
-    if (res.statusCode == 403) throw const DownloadException('This link has expired. Go back and open it again.');
+    if (res.statusCode == 403) throw const DownloadException('This link has expired. Go back, open the screen again and try once more.');
+    if (res.statusCode == 404) throw const DownloadException('This file is no longer available.');
     if (res.statusCode != 200) throw DownloadException("Couldn't download the file (${res.statusCode}).");
     final dir = Directory('${(await getTemporaryDirectory()).path}${Platform.pathSeparator}medpin');
     await dir.create(recursive: true);
@@ -62,9 +63,10 @@ class Downloads {
     toast(context, 'Opening…');
     try {
       final file = await fetch(url, name: name);
-      final r = await OpenFilex.open(file.path);
+      final r = await OpenFilex.open(file.path, type: _mimeOf(file.path));
       if (r.type != ResultType.done && context.mounted) {
-        // No app for this type: offer to save / send it instead.
+        // No app for this type: offer to save / send it instead (and say why).
+        toast(context, r.type == ResultType.noAppToOpen ? 'No app on this phone opens this file. Choose where to save or send it.' : "Couldn't open it here. Choose where to save or send it.");
         await share(context, url, name: name, file: file);
       }
     } on DownloadException catch (e) {
@@ -96,6 +98,8 @@ class Downloads {
       return true;
     }
     final File file;
+    // A report or export can take a few seconds: say it's on its way (no second tap).
+    toast(context, 'Downloading…');
     try {
       file = await fetch(url, name: name);
     } on DownloadException catch (e) {
@@ -122,6 +126,8 @@ class Downloads {
     }
     if (!context.mounted) return false;
     if (saved == null) {
+      // This phone can't save to Downloads directly (iPhone, older Android): the share sheet
+      // has "Save to Files" / Drive.
       await share(context, url, name: name, file: file);
       return false;
     }
@@ -148,8 +154,13 @@ class Downloads {
       return;
     }
     try {
+      if (file == null) toast(context, 'Getting the file ready…');
       final f = file ?? await fetch(url, name: name);
-      await SharePlus.instance.share(ShareParams(files: [XFile(f.path)], title: nameFor(url, name: name)));
+      // With its type, so WhatsApp / Gmail / Drive show and send it as a PDF, image or sheet.
+      final r = await SharePlus.instance.share(ShareParams(files: [XFile(f.path, mimeType: _mimeOf(f.path), name: f.uri.pathSegments.last)], title: nameFor(url, name: name)));
+      if (r.status == ShareResultStatus.success && context.mounted) toast(context, 'Shared');
+    } on TimeoutException {
+      if (context.mounted) toast(context, 'The download is taking too long. Please try again.');
     } on DownloadException catch (e) {
       if (context.mounted) toast(context, e.message);
     } catch (_) {

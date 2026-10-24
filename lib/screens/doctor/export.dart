@@ -3,11 +3,12 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/api.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import 'common_d3.dart' show d3Save;
 import 'common_d9.dart';
 import '../../widgets/i18n.dart';
 
 /// Design: Export.dc.html — "Export".
-/// Live data: GET /api/billing (active patient count); "Export and share" →
+/// Live data: GET /api/billing (active patient count); "Export and download" →
 /// POST /api/exports {kind: data_export} and opens the file link.
 class ExportScreen extends StatefulWidget {
   const ExportScreen({super.key});
@@ -90,8 +91,10 @@ class _ExportScreenState extends State<ExportScreen> with LiveData {
       busy: _busy,
     );
     if (res is! Map || !mounted) return;
-    toast(context, '$format export ready to share');
-    await D9Open.url(context, res['url'], failed: "Couldn't open the export");
+    final url = res['url'] as String?;
+    if (url == null) return toast(context, "The export couldn't be made. Please try again.");
+    // Saved to the phone (Downloads › MedPin, with Open), named for its dates.
+    await d3Save(context, url, 'MedPin-data-export-${D9Fmt.dayKey(from)}-to-${D9Fmt.dayKey(to)}');
   }
 
   Widget _dateField(TextEditingController controller) => D9Input(
@@ -216,7 +219,7 @@ class _ExportScreenState extends State<ExportScreen> with LiveData {
             ],
           ),
 
-          MpButton('Export and share', icon: I.share, iconStroke: 1.75, onTap: _export),
+          MpButton('Export and download', icon: I.download, iconStroke: 1.75, onTap: _export),
         ],
       ),
     );

@@ -156,6 +156,64 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
     reload(quiet: true);
   }
 
+  Map<String, dynamic> _raw(String? id) => data?.list('items').where((x) => x.str('id') == id).firstOrNull ?? const {};
+
+  /// "Cancelled" / "Replaced" on an issued prescription that no longer stands.
+  String? _badge(_Rx rx) => switch (_raw(rx.id).str('status')) {
+        'cancelled' => 'Cancelled',
+        'amended' => 'Replaced',
+        _ => null,
+      };
+
+  /// Correct (a new draft that replaces this one), repeat (the same medicines today), or cancel.
+  Future<void> _more(_Rx rx) async {
+    final x = _raw(rx.id);
+    final mine = x.str('doctorId') == '${Session.I.user['id']}';
+    final standing = x.str('status', 'issued') == 'issued';
+    final pick = await openSheet<String>(
+      context,
+      (c) => MpSheet(
+        title: tr(context, 'Prescription, #1').replaceFirst('#1', rx.date),
+        showClose: true,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (mine && standing) ...[MpButton('Correct this prescription', onTap: () => Navigator.pop(c, 'amend')), const SizedBox(height: 10)],
+          MpButton('Repeat for today', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, 'repeat')),
+          if (mine && standing) ...[const SizedBox(height: 10), MpButton('Cancel prescription', kind: MpBtn.dangerSoft, onTap: () => Navigator.pop(c, 'cancel'))],
+          if (!mine && standing) ...[const SizedBox(height: 10), Text('Only the doctor who wrote it can correct or cancel it.', style: tx(13, c: MP.ink2))],
+        ]),
+      ),
+    );
+    if (pick == null || !mounted) return;
+    if (pick == 'cancel') {
+      final reason = TextEditingController();
+      final ok = await openSheet<bool>(
+        context,
+        (c) => MpSheet(
+          title: 'Cancel this prescription?',
+          subtitle: 'Its medicines stop and the patient is told not to take them. It stays in the record, marked cancelled.',
+          showClose: true,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            MpInput(controller: reason, label: 'Why', hint: 'E.g. Written for the wrong patient', height: 52),
+            const SizedBox(height: 14),
+            MpButton('Cancel prescription', kind: MpBtn.danger, onTap: () => Navigator.pop(c, true)),
+          ]),
+        ),
+      );
+      if (ok != true || !mounted) return;
+      if (reason.text.trim().isEmpty) return toast(context, 'Say why it is cancelled');
+      final res = await runAction(context, () => Api.I.post('/api/prescriptions/${rx.id}/cancel', {'reason': reason.text.trim()}));
+      if (res == null || !mounted) return;
+      toast(context, 'Prescription cancelled · the patient is told to stop those medicines');
+      reload(quiet: true);
+      return;
+    }
+    final res = await runAction(context, () => Api.I.post('/api/prescriptions/${rx.id}/$pick', const {}));
+    if (res is! Map || !mounted) return;
+    toast(context, pick == 'amend' ? 'Make the changes, then issue: it replaces the old one' : 'The same medicines, ready to change and issue');
+    await Nav.go(context, 'Consult-Page', args: {'consultationId': '${res['id'] ?? res['_id']}', 'patientId': x.str('patientId')});
+    if (mounted) reload(quiet: true);
+  }
+
   List<_Rx> get _rows {
     final d = data;
     if (d == null) return _sample;
@@ -281,8 +339,10 @@ class _PrescriptionsScreenState extends State<PrescriptionsScreen> with LiveData
               _RxCard(
                 date: rx.date,
                 byline: rx.byline,
+                badge: _badge(rx),
+                onMore: isLive && rx.id != null ? () => _more(rx) : null,
                 onDownload: () => _download(rx),
-                onSend: rx.sendable ? () => _send(rx) : null,
+                onSend: rx.sendable && _badge(rx) == null ? () => _send(rx) : null,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -431,7 +491,15 @@ class _RxCard extends StatelessWidget {
     required this.children,
     required this.onDownload,
     this.onSend,
+    this.badge,
+    this.onMore,
   });
+
+  /// "Cancelled" / "Replaced" (it no longer stands); null for an issued one.
+  final String? badge;
+
+  /// Correct / repeat / cancel (the doctor's own issued prescription).
+  final VoidCallback? onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -450,6 +518,8 @@ class _RxCard extends StatelessWidget {
                   children: [
                     Text(date, style: tx(20, w: w700, h: 1.25, tab: true)),
                     if (scanned) ...[const SizedBox(width: 8), const MpBadge.grey('Scanned', weight: w600)],
+                    if (badge != null) ...[const SizedBox(width: 8), MpBadge.grey(badge!, weight: w600)],
+                    if (onMore != null) ...[const Spacer(), MpIconButton(I.moreV, label: 'Correct, repeat or cancel', color: MP.ink2, onTap: onMore)],
                   ],
                 ),
                 const SizedBox(height: 2),

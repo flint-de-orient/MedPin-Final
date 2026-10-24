@@ -76,7 +76,9 @@ class _ReportDownloadSheetState extends State<ReportDownloadSheet> {
       'filters': _filters.exportFilters,
       'includeMobiles': _mobiles,
     };
-    final fileName = 'MedPin-$_reportType';
+    // Named for the report and its dates ("MedPin-consultations-2026-10-01-2026-10-24").
+    final f = _filters.exportFilters;
+    final fileName = ['MedPin-$_reportType', if (f['from'] != null) '${f['from']}', if (f['to'] != null) '${f['to']}'].join('-');
     // With "Email me a copy": one export, emailed (asks for an email if none), then saved here too.
     final dynamic res;
     if (_email) {

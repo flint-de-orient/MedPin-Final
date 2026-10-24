@@ -120,7 +120,11 @@ function createApp() {
     const ini = String(rx.patientId?.name || '').split(/\s+/).filter(Boolean).map((w) => `${w[0].toUpperCase()}.`).join(' ');
     const reg = profile?.registration?.number ? `${profile.registration.number}${profile.registration.councilShort ? ` · ${profile.registration.councilShort}` : ''}` : '';
     const row = (k, v) => (v ? `<div style="display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #E5E9F0"><span style="color:#69738A">${k}</span><span style="font-weight:600;text-align:right">${esc(v)}</span></div>` : '');
-    const badge = valid
+    // Cancelled or replaced by a corrected one: genuine, but not to be dispensed.
+    const stopped = rx.status === 'cancelled' || rx.status === 'amended';
+    const badge = stopped
+      ? `<span style="background:#FDECEC;color:#B91C1C;border-radius:999px;padding:4px 12px;font-weight:700;font-size:13px">${rx.status === 'cancelled' ? 'Cancelled by the doctor · do not dispense' : 'Replaced by a corrected prescription · do not dispense'}</span>`
+      : valid
       ? '<span style="background:#E8F5EC;color:#15803D;border-radius:999px;padding:4px 12px;font-weight:700;font-size:13px">✓ Genuine · valid</span>'
       : '<span style="background:#FEF6E7;color:#B45309;border-radius:999px;padding:4px 12px;font-weight:700;font-size:13px">Genuine · expired</span>';
     res.set('Cache-Control', 'no-store').send(page('Prescription verified', `<div style="background:#fff;border:1px solid #E5E9F0;border-radius:24px;padding:20px">${badge}

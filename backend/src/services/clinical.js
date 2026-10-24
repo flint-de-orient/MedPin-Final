@@ -181,6 +181,7 @@ async function issueClaimed(consult, doctorUser, doctor) {
 
   const rx = await M.Prescription.create({
     ...fields,
+    ...(consult.amendsRxId ? { amendsId: consult.amendsRxId } : {}),
     doctorName: doctor?.displayName || doctorUser.name,
     rxNumber: await M.Counter.next(`rx:${consult.practiceId}`),
   });
@@ -258,6 +259,18 @@ async function issueClaimed(consult, doctorUser, doctor) {
   // PDF is generated now so it can be downloaded or sent straight away.
   await buildPrescriptionPdf(rx, { consult, patient, doctor });
 
+  // A correction: the old prescription is replaced, and its medicines not in this one stop.
+  if (consult.amendsRxId) {
+    const old = await M.Prescription.findOneAndUpdate({ _id: consult.amendsRxId, status: 'issued' }, { status: 'amended', replacedById: rx._id }, { new: true });
+    if (old) {
+      const keep = new Set(taking.map((i) => i.name.trim().toLowerCase()));
+      await M.MedicationCourse.updateMany(
+        { prescriptionId: old._id, status: 'active', name: { $nin: [...keep].map((n) => new RegExp(`^\\s*${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i')) } },
+        { status: 'stopped', stoppedAt: now, stoppedReason: `Not in the corrected prescription of ${T.dayKey(now)}` },
+      );
+      await M.MedicalRecord.updateMany({ prescriptionId: old._id }, { flagLabel: 'Replaced', flagTone: 'muted' });
+    }
+  }
   consult.status = 'issued';
   consult.prescriptionId = rx._id;
   consult.completedAt = now;

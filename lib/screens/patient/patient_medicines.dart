@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
+import '../../data/downloads.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
@@ -262,8 +263,11 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
       case 2:
         await openSheet<void>(context, (_) => const _PastSheet());
       default:
+        // "Share" for a new doctor or a pharmacy: the share sheet (WhatsApp, Gmail…), dated.
         final res = await runAction(context, () => Api.I.post('/api/patient/medicines/share-pdf'));
-        if (res is Map && mounted) await p3Open(context, res['url'] as String?, what: 'the medicine list');
+        if (res is! Map || !mounted) return;
+        final d = DateTime.now();
+        await Downloads.share(context, res['url'] as String?, name: 'Medicine-list-${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}.pdf');
     }
   }
 

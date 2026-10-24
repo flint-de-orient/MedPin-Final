@@ -325,7 +325,7 @@ void main() {
       final now = DateTime.now();
       expect(find.text(D9Fmt.date(now)), findsOneWidget);
       await _tap(t, find.text('Alerts'));
-      await _tap(t, find.text('Export and share'));
+      await _tap(t, find.text('Export and download'));
       expect(_body(_last('POST', '/api/exports')), {
         'kind': 'data_export',
         'datasets': ['patients', 'clinical_summary'],
@@ -336,7 +336,7 @@ void main() {
         },
       });
       if (owner) {
-        expect(find.text('CSV export ready to share'), findsOneWidget);
+        // Saved to the phone (Downloads › MedPin), named for its dates.
         expect(launched.single.path, '/files/exports/data.csv');
       } else {
         expect(find.text('Only the practice owner can export patient data'), findsOneWidget);

@@ -2750,6 +2750,45 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.deepEqual([saved.custom, saved.items[0].title], [true, 'Holiday']);
   });
 
+  await step('prescriptions: correct (replaces the old one), repeat, cancel (medicines stop, the patient told, the QR says do not dispense)', async () => {
+    const pid = ctx.patientId;
+    const startC = await ctx.doc('POST', '/api/consultations', { patientId: pid });
+    const cid = startC.body.id || startC.body._id;
+    ok(await ctx.doc('PATCH', `/api/consultations/${cid}`, {
+      chiefComplaint: 'Cough', diagnoses: [{ name: 'Acute bronchitis', source: 'custom' }],
+      medications: [
+        { name: 'Amoxicillin', strength: '500 mg', dose: { morning: 1, afternoon: 1, night: 1 }, frequency: 'daily', duration: { value: 5, unit: 'days' } },
+        { name: 'Cetirizine', strength: '10 mg', dose: { morning: 0, afternoon: 0, night: 1 }, frequency: 'daily', duration: { value: 5, unit: 'days' } },
+      ],
+    }));
+    const issued = ok(await ctx.doc('POST', `/api/consultations/${cid}/issue`));
+    const rxId = issued.prescription.id || issued.prescription._id;
+    // Correct it: a draft copied from it; issuing replaces the old one and stops what was dropped.
+    const draft = ok(await ctx.doc('POST', `/api/prescriptions/${rxId}/amend`, {}), 201);
+    const did = draft.id || draft._id;
+    assert.equal(String(draft.amendsRxId), String(rxId));
+    ok(await ctx.doc('PATCH', `/api/consultations/${did}`, { medications: [{ name: 'Amoxicillin', strength: '500 mg', dose: { morning: 1, afternoon: 1, night: 1 }, frequency: 'daily', duration: { value: 5, unit: 'days' } }] }));
+    const fixed = ok(await ctx.doc('POST', `/api/consultations/${did}/issue`));
+    const old = await M.Prescription.findById(rxId);
+    assert.deepEqual([old.status, String(old.replacedById)], ['amended', String(fixed.prescription.id || fixed.prescription._id)]);
+    assert.equal(await M.MedicationCourse.countDocuments({ patientId: pid, name: 'Cetirizine', status: 'active' }), 0, 'dropped in the correction: stopped');
+    assert.equal(await M.MedicationCourse.countDocuments({ patientId: pid, name: 'Amoxicillin', status: 'active' }), 1, 'one amoxicillin');
+    assert.equal((await ctx.doc('POST', `/api/prescriptions/${rxId}/amend`, {})).status, 409, 'a replaced one is not corrected again');
+    // Repeat: the same medicines, continued, in a new draft.
+    const rep = ok(await ctx.doc('POST', `/api/prescriptions/${fixed.prescription.id || fixed.prescription._id}/repeat`, {}), 201);
+    assert.equal(rep.medications[0].change, 'continued');
+    await M.Consultation.deleteOne({ _id: rep.id || rep._id });
+    // Cancel: medicines stop, the patient is told, the QR page says not to dispense.
+    const newId = fixed.prescription.id || fixed.prescription._id;
+    assert.equal((await ctx.doc('POST', `/api/prescriptions/${newId}/cancel`, {})).status, 400, 'needs a reason');
+    ok(await ctx.doc('POST', `/api/prescriptions/${newId}/cancel`, { reason: 'Wrong patient' }));
+    assert.equal(await M.MedicationCourse.countDocuments({ prescriptionId: newId, status: 'active' }), 0);
+    assert.ok(await M.Notification.exists({ type: 'prescription_cancelled' }));
+    const { verifyUrl } = require('../src/services/rxpdf');
+    const page = await (await fetch(verifyUrl(newId).replace(/^https?:\/\/[^/]+/, base))).text();
+    assert.match(page, /do not dispense/);
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

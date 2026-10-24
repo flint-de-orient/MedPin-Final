@@ -247,6 +247,70 @@ r.post('/prescriptions/:id/send', staff({ perm: 'prescribe' }), async (req, res)
   res.json({ ...rx.toJSON(), file: storage.withUrl(rx.file) });
 });
 
+// ── Correcting, cancelling and repeating an issued prescription ──
+/** The doctor's own issued prescription, with the consultation it came from. */
+async function ownIssued(req) {
+  const rx = ownPractice(req, await M.Prescription.findById(req.params.id), 'Prescription');
+  if (String(rx.doctorId) !== String(req.user._id)) throw forbidden('Only the doctor who wrote this prescription can change it', 'NOT_YOUR_PRESCRIPTION');
+  return rx;
+}
+
+/** A new draft for the patient copied from [rx]'s consultation (a correction or a repeat). */
+async function draftFrom(req, rx, { amend }) {
+  const from = rx.consultationId ? await M.Consultation.findById(rx.consultationId).lean() : null;
+  const meds = (from?.medications?.length ? from.medications : rx.items || []).map((m) => {
+    const { _id, ...rest } = m.toObject ? m.toObject() : m;
+    return { ...rest, change: amend ? rest.change : 'continued' };
+  });
+  return M.Consultation.create({
+    practiceId: req.practiceId, locationId: rx.locationId || from?.locationId, doctorId: req.user._id, patientId: rx.patientId,
+    chiefComplaint: from?.chiefComplaint || (amend ? undefined : 'Repeat prescription'), complaintLanguage: from?.complaintLanguage,
+    diagnoses: from?.diagnoses || [], medications: meds, labOrders: amend ? from?.labOrders || [] : [],
+    advice: from?.advice || { items: [], freeText: rx.advice || '' }, validity: from?.validity, followUp: amend ? from?.followUp : { enabled: false },
+    ...(amend ? { amendsRxId: rx._id } : {}),
+  });
+}
+
+// "Correct this prescription": a draft to fix and issue; issuing it replaces this one.
+r.post('/prescriptions/:id/amend', staff({ perm: 'prescribe' }), async (req, res) => {
+  const rx = await ownIssued(req);
+  if (rx.status !== 'issued') throw conflict('This prescription was already replaced or cancelled', 'NOT_ISSUED');
+  const open = await M.Consultation.findOne({ amendsRxId: rx._id, status: 'draft', doctorId: req.user._id });
+  res.status(201).json(open || (await draftFrom(req, rx, { amend: true })));
+});
+
+// "Repeat": the same medicines (continued) in a new draft for today.
+r.post('/prescriptions/:id/repeat', staff({ perm: 'prescribe' }), async (req, res) => {
+  const rx = ownPractice(req, await M.Prescription.findById(req.params.id), 'Prescription');
+  await patientInPractice(req, rx.patientId);
+  res.status(201).json(await draftFrom(req, rx, { amend: false }));
+});
+
+// "Cancel prescription" (written by mistake, wrong patient): its medicines stop and the patient
+// is told not to take them. It stays in the record, marked cancelled, with why.
+r.post('/prescriptions/:id/cancel', staff({ perm: 'prescribe' }), async (req, res) => {
+  const rx = await ownIssued(req);
+  const reason = String(req.body.reason || '').trim().slice(0, 300);
+  if (!reason) throw badRequest('Say why it is cancelled', 'REASON_REQUIRED');
+  const done = await M.Prescription.findOneAndUpdate({ _id: rx._id, status: 'issued' }, { status: 'cancelled', cancelledAt: new Date(), cancelReason: reason, cancelledBy: req.user._id }, { new: true });
+  if (!done) throw conflict('This prescription was already replaced or cancelled', 'NOT_ISSUED');
+  const now = new Date();
+  await M.MedicationCourse.updateMany({ prescriptionId: rx._id, status: 'active' }, { status: 'stopped', stoppedAt: now, stoppedReason: 'Prescription cancelled by the doctor' });
+  await M.DoseLog.deleteMany({ courseId: { $in: await M.MedicationCourse.find({ prescriptionId: rx._id }).distinct('_id') }, status: 'due', scheduledAt: { $gt: now } });
+  if (rx.consultationId) await M.FollowUp.updateMany({ consultationId: rx.consultationId, status: { $in: ['not_booked', 'no_reply'] } }, { status: 'cancelled' });
+  await M.MedicalRecord.updateMany({ prescriptionId: rx._id }, { flagLabel: 'Cancelled', flagTone: 'muted' });
+  require('../services/reminders').remindersChanged(rx.patientId);
+  const patient = await M.Patient.findById(rx.patientId, 'userId');
+  if (patient?.userId) {
+    await notify([patient.userId], {
+      forPatientId: patient._id, type: 'prescription_cancelled', practiceId: req.practiceId, whatsapp: true,
+      title: `${req.user.name || 'Your doctor'} cancelled a prescription`, body: `Stop the medicines from the prescription of ${T.dayKey(rx.issuedAt)}. ${reason}`,
+      screen: 'Patient-Records',
+    }).catch(() => {});
+  }
+  res.json({ ...done.toJSON(), file: storage.withUrl(done.file) });
+});
+
 /** A prescription this person may open: their clinic's, or another clinic's the patient shares here. */
 async function visibleRx(req) {
   const rx = await M.Prescription.findById(req.params.id);

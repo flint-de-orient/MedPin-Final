@@ -864,7 +864,7 @@ Future<Map?> d3EmailExport(BuildContext context, Map<String, Object?> body, {Str
     if (res == null || !context.mounted) return res;
   }
   if (res['emailed'] == true) {
-    toast(context, res['emailTo'] is String ? 'Report sent to ${res['emailTo']}' : 'Report sent to your email');
+    toast(context, res['emailTo'] is String ? trf(context, 'Report sent to {email}', {'email': res['emailTo']}) : tr(context, 'Report sent to your email'));
     return res;
   }
   final url = res['url'] as String?;

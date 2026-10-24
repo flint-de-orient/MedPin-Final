@@ -122,7 +122,7 @@ class _HistoryDownloadSheetState extends State<HistoryDownloadSheet> with LiveDa
     var ok = false;
     final under = nav.context;
     if (url != null && under.mounted) {
-      await d3Save(under, url, 'MedPin-appointment-history');
+      await d3Save(under, url, ['MedPin-appointment-history', if (from != null) _ymd(from), if (to != null) _ymd(to)].join('-'));
       ok = true;
     }
     if (!under.mounted) return;
