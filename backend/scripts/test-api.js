@@ -2668,6 +2668,34 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.ok(await M.PatientEnrolment.exists({ patientId: son.id, status: 'linked', practiceId: { $ne: ctx.practiceId } }), 'the son is linked, not his parent');
   });
 
+  await step('queue: call next tells the patient, the owner can turn it off, running late tells those still to come', async () => {
+    const T = require('../src/lib/time');
+    const pid = ctx.patientId;
+    await M.Appointment.updateMany({ patientId: pid, date: T.dayStart(), status: { $in: ['booked', 'confirmed', 'waiting', 'in_consultation'] } }, { status: 'cancelled' });
+    const waiting = await M.Appointment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, doctorId: ctx.doctorUserId, patientId: pid, date: T.dayStart(), startAt: new Date(Date.now() - 600e3), status: 'waiting', arrivedAt: new Date(), tokenNo: 77 });
+    const called = ok(await ctx.doc('POST', '/api/queue/call-next', {}));
+    assert.equal(String(called.id), String(waiting._id));
+    assert.ok((await M.Appointment.findById(waiting._id)).calledAt, 'marked called');
+    assert.ok(await M.Notification.exists({ type: 'your_turn', 'params.appointmentId': waiting._id }), 'the patient is told');
+    const q = ok(await ctx.doc('GET', '/api/queue'));
+    assert.equal(q.callNext, true, 'on by default');
+    // The owner turns it off: no calling.
+    ok(await ctx.doc('PATCH', '/api/practice', { callNext: false }));
+    assert.equal((await ctx.doc('POST', `/api/appointments/${waiting._id}/call`, {})).body?.error?.code, 'CALL_NEXT_OFF');
+    ok(await ctx.doc('PATCH', '/api/practice', { callNext: true }));
+    assert.equal((await M.Appointment.findById(waiting._id)).callCount, 1);
+    ok(await ctx.doc('POST', `/api/appointments/${waiting._id}/call`, {}));
+    assert.equal((await M.Appointment.findById(waiting._id)).callCount, 2, 'called again');
+    await M.Appointment.updateOne({ _id: waiting._id }, { status: 'cancelled' });
+    // Running late: the ones still to come today are told, once per 20 minutes.
+    const later = await M.Appointment.create({ practiceId: ctx.practiceId, locationId: ctx.locationId, doctorId: ctx.doctorUserId, patientId: pid, date: T.dayStart(), startAt: new Date(Date.now() + 3600e3), status: 'booked', tokenNo: 78 });
+    const late = ok(await ctx.doc('POST', '/api/queue/running-late', { minutes: 30 }));
+    if (later.startAt.getTime() < T.addDays(T.dayStart(), 1).getTime()) assert.ok(late.told >= 1, 'told');
+    assert.equal((await ctx.doc('POST', '/api/queue/running-late', { minutes: 30 })).body?.error?.code, 'ALREADY_TOLD');
+    assert.equal((await ctx.doc('POST', '/api/queue/running-late', { minutes: 7 })).status, 400);
+    await M.Appointment.updateOne({ _id: later._id }, { status: 'cancelled' });
+  });
+
   server.close();
   await conn.dropDatabase();
   console.log(`\nAll ${passed} API checks passed. Test database dropped.`);

@@ -10,6 +10,8 @@ import '../doctor/common_d10.dart';
 import '../../widgets/i18n.dart';
 import '../../widgets/fee_actions.dart';
 import '../../widgets/visit_status.dart';
+import 'walkin_sheet.dart';
+import '../../widgets/call_next.dart';
 
 /// Design: Staff-Today.dc.html — "Today" (front desk).
 class StaffTodayScreen extends StatefulWidget {
@@ -391,10 +393,57 @@ class _StaffTodayScreenState extends State<StaffTodayScreen> with LiveData {
               ],
             ),
           ),
+          // "Call next" (a clinic setting): the next waiting patient is told it's their turn.
+          if (isLive && data!['callNext'] != false && data!.list('items').any((a) => a['status'] == 'waiting'))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: MpButton('Call next patient', kind: MpBtn.tonal, height: 44, icon: I.bell, onTap: () async {
+                if (await callNextPatient(context) && mounted) reload(quiet: true);
+              }),
+            ),
+          // A doctor is delayed: the patients still to come today are told.
+          if (isLive && data!.list('items').any((a) => a['status'] == 'booked' || a['status'] == 'confirmed'))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: MpButton('Doctor running late', kind: MpBtn.secondary, height: 44, icon: I.clock, onTap: _runningLate),
+            ),
           for (var i = 0; i < _apptRows.length; i++) _apptRow(context, i),
         ],
       ),
     );
+  }
+
+  Future<void> _runningLate() async {
+    // The doctors with patients still to come today.
+    final docs = <String, String>{};
+    for (final a in data!.list('items')) {
+      if (a['status'] != 'booked' && a['status'] != 'confirmed') continue;
+      final d = a.obj('doctor');
+      if (d.str('id').isNotEmpty) docs[d.str('id')] = d.str('name', 'Doctor');
+    }
+    if (docs.isEmpty) return;
+    var id = docs.keys.first;
+    if (docs.length > 1) {
+      final pick = await openSheet<String>(
+        context,
+        (c) => MpSheet(
+          title: 'Which doctor is running late?',
+          showClose: true,
+          child: Column(children: [
+            for (final e in docs.entries)
+              Tap(
+                onTap: () => Navigator.pop(c, e.key),
+                radius: 12,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                child: Row(children: [Expanded(child: Text(e.value, style: tx(16, w: w600))), const Ico(I.chevronRight, size: 18, color: MP.ink3)]),
+              ),
+          ]),
+        ),
+      );
+      if (pick == null || !mounted) return;
+      id = pick;
+    }
+    if (mounted) await tellRunningLate(context, doctorId: id);
   }
 
   Widget _apptRow(BuildContext context, int i) {
@@ -568,7 +617,15 @@ class _ActionTile extends StatelessWidget {
     return SizedBox(
       height: 84,
       child: Tap(
-        onTap: () => Nav.go(context, a.$3, args: a.$2 == 'Register walk-in' ? const {'walkIn': true} : null),
+        // Walk-in: find a patient the clinic has first (the regulars), else register a new one.
+        onTap: () async {
+          if (a.$2 == 'Register walk-in' && isLive) {
+            final added = await openSheet<bool>(context, (_) => const WalkInSheet());
+            if (added == true) LiveBus.changed();
+            return;
+          }
+          Nav.go(context, a.$3, args: a.$2 == 'Register walk-in' ? const {'walkIn': true} : null);
+        },
         radius: 12,
         color: MP.white,
         border: MP.line,

@@ -54,6 +54,8 @@ const appointmentSchema = new Schema(
     status: enumOf(E.APPOINTMENT_STATUSES, { default: 'booked' }),
     confirmedAt: Date,
     arrivedAt: Date, // check-in; drives "Waiting 22 min"
+    calledAt: Date, // "Call next": the patient was told it's their turn (again: the latest call)
+    callCount: Number,
     checkedInBy: ref('User'),
     consultStartedAt: Date,
     completedAt: Date,

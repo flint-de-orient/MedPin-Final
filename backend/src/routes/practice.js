@@ -51,7 +51,8 @@ r.get('/practice', async (req, res) => {
 });
 
 r.patch('/practice', ownerOnly, async (req, res) => {
-  const body = pick(req.body, ['name', 'tagline', 'registrationNo', 'patientCallNumber', 'foodLogReviewCadence']);
+  const body = pick(req.body, ['name', 'tagline', 'registrationNo', 'patientCallNumber', 'foodLogReviewCadence', 'callNext']);
+  if (body.callNext !== undefined) body.callNext = body.callNext !== false;
   if (body.name !== undefined && String(body.name).trim().length < 2) throw badRequest('Enter the clinic name', 'NAME_REQUIRED');
   for (const k of ['name', 'tagline', 'registrationNo']) if (typeof body[k] === 'string') body[k] = body[k].trim().slice(0, 120);
   const practice = await M.Practice.findByIdAndUpdate(req.practiceId, body, { new: true, runValidators: true });

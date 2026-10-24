@@ -13,6 +13,8 @@ const practiceSchema = new Schema(
     logoIsDark: Boolean, // "Dark background detected — we'll print a light version"
     patientCallNumber: anyPhone, // Profile: clinic number patients call
     foodLogReviewCadence: enumOf(E.FOOD_LOG_REVIEW_CADENCES, { default: 'every_3_days' }),
+    // "Call next" in the queue (the patient is told it's their turn); the owner can turn it off.
+    callNext: { type: Boolean, default: true },
     ownerUserId: ref('User', true),
   },
   baseOptions,

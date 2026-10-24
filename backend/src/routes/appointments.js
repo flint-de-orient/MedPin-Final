@@ -605,12 +605,93 @@ r.get('/queue', async (req, res) => {
   res.json({
     updatedAt: new Date(),
     hasDesk,
+    callNext: (await M.Practice.findById(req.practiceId, 'callNext'))?.callNext !== false,
     stats: {
       all: appts.length, notArrived: count('booked') + count('confirmed'), waiting: count('waiting'), inConsultation: count('in_consultation'),
       completed: count('completed'), missed: count('missed'), avgWaitMin: waitTimes.length ? Math.round(usualWait) : null,
     },
     items,
   });
+});
+
+// ── "Call next" (a clinic setting, on unless the owner turned it off) ──
+/** Tells the patient it's their turn, and marks the visit "called". */
+async function callPatient(req, appt) {
+  const practice = await M.Practice.findById(req.practiceId, 'callNext');
+  if (practice?.callNext === false) throw conflict('"Call next" is turned off for this clinic', 'CALL_NEXT_OFF');
+  const now = new Date();
+  await M.Appointment.updateOne({ _id: appt._id }, { calledAt: now, $inc: { callCount: 1 } });
+  const [patient, doctor, loc] = await Promise.all([
+    M.Patient.findById(appt.patientId, 'userId name'),
+    M.User.findById(appt.doctorId, 'name'),
+    M.Location.findById(appt.locationId, 'name shortName'),
+  ]);
+  if (patient?.userId) {
+    await notify([patient.userId], {
+      forPatientId: patient._id, type: 'your_turn', practiceId: req.practiceId,
+      title: "It's your turn", body: `Please go in to see ${doctor?.name || 'the doctor'}${appt.tokenNo ? ` · token ${String(appt.tokenNo).padStart(2, '0')}` : ''}`,
+      screen: 'Patient-DoctorDetail', params: { appointmentId: appt._id, doctorId: appt.doctorId },
+    }).catch((err) => console.warn('[call next]', err.message));
+  }
+  await S.visitsChanged(appt);
+  return { id: appt._id, token: appt.tokenNo, patient: patient?.name || null, hasApp: Boolean(patient?.userId), calledAt: now, place: loc?.shortName || loc?.name || null };
+}
+
+// The next patient waiting (by visit time, then arrival): for the doctor asking, or the one
+// chosen; at the desk's branches. Several doctors with patients waiting: the desk chooses.
+r.post('/queue/call-next', async (req, res) => {
+  const doctorId = req.body.doctorId || (req.member.role === 'doctor' ? String(req.user._id) : undefined);
+  const q = { practiceId: req.practiceId, date: T.dayStart(), status: 'waiting', ...listScope(req, { locationId: req.body.locationId, doctorId }) };
+  const waiting = await M.Appointment.find(q).sort({ startAt: 1, arrivedAt: 1, tokenNo: 1 }).populate('doctorId', 'name');
+  if (!waiting.length) throw conflict('Nobody is waiting', 'NOBODY_WAITING');
+  const doctors = [...new Map(waiting.map((a) => [String(a.doctorId?._id), a.doctorId])).values()];
+  if (!doctorId && doctors.length > 1) {
+    throw conflict('Choose the doctor', 'CHOOSE_DOCTOR', { choices: doctors.map((d) => ({ doctorId: d._id, doctorName: d.name, waiting: waiting.filter((a) => String(a.doctorId?._id) === String(d._id)).length })) });
+  }
+  // The one already called and not yet in: called again only on purpose (POST /appointments/:id/call).
+  const next = waiting.find((a) => !a.calledAt) || waiting[0];
+  res.json(await callPatient(req, next));
+});
+
+// "Doctor running late": every patient still to come today (booked, not arrived, visit not
+// more than 15 minutes past) is told, in the app and on WhatsApp. Once per 20 minutes.
+r.post('/queue/running-late', async (req, res) => {
+  const minutes = Number(req.body.minutes);
+  if (![15, 30, 45, 60, 90].includes(minutes)) throw badRequest('Choose how late: 15, 30, 45, 60 or 90 minutes', 'BAD_MINUTES');
+  const doctorId = req.body.doctorId || (req.member.role === 'doctor' ? String(req.user._id) : undefined);
+  if (!doctorId) throw badRequest('Choose the doctor', 'DOCTOR_REQUIRED');
+  const scope = listScope(req, { locationId: req.body.locationId, doctorId });
+  const key = `late:${doctorId}:${req.body.locationId || 'all'}:${Math.floor(Date.now() / (20 * 60e3))}`;
+  try {
+    await M.ReminderLog.create({ key });
+  } catch (err) {
+    if (err.code === 11000) throw conflict('Patients were told a few minutes ago', 'ALREADY_TOLD');
+    throw err;
+  }
+  const appts = await M.Appointment.find({
+    practiceId: req.practiceId, date: T.dayStart(), status: { $in: ['booked', 'confirmed'] }, startAt: { $gte: new Date(Date.now() - 15 * 60e3) }, ...scope,
+  }).populate('patientId', 'userId name');
+  const doctor = await M.User.findById(doctorId, 'name');
+  let told = 0;
+  for (const a of appts) {
+    if (!a.patientId?.userId) continue;
+    await notify([a.patientId.userId], {
+      forPatientId: a.patientId._id, type: 'running_late', practiceId: req.practiceId, whatsapp: true,
+      title: `${doctor?.name || 'Your doctor'} is running about ${minutes} minutes late`,
+      body: `Your visit at ${T.fmtTime(T.minuteOfDay(a.startAt))} may start later. You can come a little later.`,
+      screen: 'Patient-DoctorDetail', params: { appointmentId: a._id, doctorId },
+    }).catch((err) => console.warn('[running late]', err.message));
+    told += 1;
+  }
+  res.json({ told, withoutApp: appts.length - told });
+});
+
+// Call (again) one patient: they didn't hear, or the desk calls a particular one.
+r.post('/appointments/:id/call', async (req, res) => {
+  const appt = await S.getAppointment(req.params.id, req.practiceId);
+  assertCovers(req, appt, { booking: true });
+  if (appt.status !== 'waiting') throw conflict('Only a patient who is waiting can be called', 'NOT_WAITING');
+  res.json(await callPatient(req, appt));
 });
 
 // Staff-Today: the front desk's day.
@@ -632,6 +713,7 @@ r.get('/staff/today', async (req, res) => {
   const refunds = await M.Payment.find(refundQ).sort({ paidAt: 1 }).limit(50).populate('patientId', 'name phone').populate('appointmentId', 'startAt status');
   res.json({
     date: today,
+    callNext: (await M.Practice.findById(req.practiceId, 'callNext'))?.callNext !== false,
     refundsDue: refunds.map((p) => ({
       paymentId: p._id, amount: p.amount, method: p.method || null, patient: p.patientId && { id: p.patientId._id, name: p.patientId.name, phone: p.patientId.phone },
       visitAt: p.appointmentId?.startAt || null, visitStatus: p.appointmentId?.status || null, reason: p.refundReason || null,

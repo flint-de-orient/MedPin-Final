@@ -9,6 +9,7 @@ import '../../widgets/mp.dart';
 import 'common_d1.dart';
 import 'queue_select.dart';
 import '../../widgets/i18n.dart';
+import '../../widgets/call_next.dart';
 import '../../widgets/fee_actions.dart';
 import '../../widgets/visit_status.dart';
 import '../../data/session.dart';
@@ -96,7 +97,11 @@ class _Q {
     final mins = m['consultMin'] is num ? (m['consultMin'] as num).round() : null;
     final time = switch (kind) {
       _Kind.consult => [if (at('consultStartedAt').isNotEmpty) 'Started ${at('consultStartedAt')}', if (mins != null) '$mins min'].join(' · '),
-      _Kind.waiting => m['waitingMin'] is num ? 'Waiting ${(m['waitingMin'] as num).round()} min' : 'Waiting',
+      _Kind.waiting => [
+          // Called ("Call next"): when, so nobody is called twice by mistake.
+          if (F.date(m['calledAt']) != null) 'Called ${F.time(F.date(m['calledAt'])!)}',
+          m['waitingMin'] is num ? 'Waiting ${(m['waitingMin'] as num).round()} min' : 'Waiting',
+        ].join(' · '),
       _Kind.done => [if (at('completedAt').isNotEmpty) 'Done ${at('completedAt')}' else 'Done', if (mins != null) '$mins min'].join(' · '),
       _Kind.missed => at('startAt').isEmpty ? 'Missed' : 'Missed · booked for ${at('startAt')}',
       _Kind.booked => at('startAt').isEmpty ? 'Walk-in' : 'Booked for ${at('startAt')}',
@@ -423,10 +428,22 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
   /// No front desk at this clinic (GET /api/queue hasDesk): the doctor checks patients in here.
   bool get _noDesk => data != null && _queue['hasDesk'] == false;
 
+  /// "Call next" is on for this clinic (a setting; the queue says so).
+  bool get _callNextOn => data != null && _queue['callNext'] != false;
+
+  bool _called(_Q r) => _queue.list('items').any((m) => m.str('id') == r.id && m['calledAt'] != null);
+
+  /// Tells the next waiting patient (or [r]) it's their turn.
+  /// Tells the next waiting patient (or [r]) it's their turn.
+  Future<void> _call([_Q? r]) async {
+    if (await callNextPatient(context, appointmentId: r?.id, locationId: _locId) && mounted) reload(quiet: true);
+  }
+
   List<Widget> _deskActions(_Q r) {
     final fee = r.fee;
     Widget link(String text, VoidCallback onTap) => Tap(onTap: onTap, radius: 6, child: Text(text, style: tx(14, w: w600, c: MP.primary)));
     return [
+      if (_callNextOn && r.kind == _Kind.waiting && r.id != null) link(tr(context, _called(r) ? 'Call again' : 'Call in'), () => _call(r)),
       if (_noDesk && r.kind == _Kind.booked && r.id != null) link(tr(context, 'Check in'), () => _checkIn(r)),
       if (fee != null && fee.due && Session.I.can('fees') && r.kind != _Kind.missed)
         link(tr(context, 'Collect ₹#1').replaceFirst('#1', '${fee.amount}'), () async {
@@ -708,6 +725,16 @@ class _QueueListScreenState extends State<QueueListScreen> with LiveData {
             children: [
               Expanded(child: Text(g.title.toUpperCase(), style: label)),
               Text(g.count, style: tx(12, w: w700, c: MP.ink3, em: 0.06, tab: true)),
+              // The waiting patients: "Call next" tells the next one it's their turn.
+              // Not arrived yet: tell them the doctor is running late.
+              if (g.title == 'Not arrived yet' && g.rows.isNotEmpty && isLive) ...[
+                const Gap(10),
+                MpButton.small('Running late', kind: MpBtn.secondary, expand: false, onTap: () => tellRunningLate(context, locationId: _locId)),
+              ],
+              if (g.title == 'Waiting' && g.rows.isNotEmpty && _callNextOn && isLive) ...[
+                const Gap(10),
+                MpButton.small('Call next', expand: false, onTap: () => _call()),
+              ],
             ],
           ),
         ),

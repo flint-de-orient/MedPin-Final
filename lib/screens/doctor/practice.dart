@@ -141,7 +141,7 @@ class _PracticeScreenState extends State<PracticeScreen> with LiveData {
       body: VGap(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         gap: 16,
-        children: [_masthead(context), _readiness(context), _summaryTiles(context), _cadenceCard()],
+        children: [_masthead(context), _readiness(context), _summaryTiles(context), _cadenceCard(), if (isLive && data != null) _callNextCard()],
       ),
     );
   }
@@ -325,6 +325,41 @@ class _PracticeScreenState extends State<PracticeScreen> with LiveData {
   }
 
   // ── Food-log review cadence ───────────────────────────────────────────────
+
+  /// "Call next" in the queue (on unless the owner turns it off): the patient is told it's their turn.
+  Widget _callNextCard() {
+    final on = _practice['callNext'] != false;
+    final owner = data!['isOwner'] == true || data!['role'] == 'practice_manager';
+    return MpCard(
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('"Call next" in the queue', style: tx(17, w: w700, h: 1.25)),
+                const Gap(4),
+                Text("The desk or doctor taps it and the next patient's phone says it's their turn.", style: tx(14, c: MP.ink2, h: 1.4)),
+              ],
+            ),
+          ),
+          const Gap(12),
+          MpSwitch(
+            value: on,
+            label: '"Call next" in the queue',
+            onChanged: !owner
+                ? null
+                : (v) async {
+                    final ok = await runAction(context, () => Api.I.patch('/api/practice', {'callNext': v}));
+                    if (ok == null || !mounted) return;
+                    toast(context, v ? '"Call next" is on' : '"Call next" is off');
+                    reload(quiet: true);
+                  },
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _cadenceCard() {
     return MpCard(
