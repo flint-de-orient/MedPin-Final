@@ -242,7 +242,11 @@ r.post('/alerts/:id/resolve', need('manageAlerts'), async (req, res) => {
   if (!a.acknowledged?.at) a.acknowledged = { by: req.user._id, at: new Date() };
   applyNote(a, req);
   await a.save();
-  if (a.conversationId) await M.Conversation.updateOne({ _id: a.conversationId }, { isUrgent: false });
+  if (a.conversationId) {
+    await M.Conversation.updateOne({ _id: a.conversationId }, { isUrgent: false });
+    // The emergency in this chat has been dealt with: no longer "Needs attention" anywhere.
+    await require('../services/care').settleChat(a.conversationId).catch((err) => console.warn('[settle chat]', err.message));
+  }
   // Everyone told about it (doctors, assistants, the desk): read now, so every bell's red dot
   // clears at once. The desk who had it gets a quiet "Resolved by Dr. Sen" (no buzz).
   const told = (await M.Notification.distinct('userId', alertNotes(a))).map(String);

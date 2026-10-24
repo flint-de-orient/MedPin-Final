@@ -206,6 +206,23 @@ async function noteSender({ practiceId, patientId, locationId, doctorId, by }, c
  *
  * @param ctx {practiceId, patientId, locationId?, doctorId?, by?} — an appointment works too
  */
+/**
+ * The clinic has dealt with this patient chat (the doctor reviewed MedPin AI's answer, someone
+ * marked it Handled, the emergency was resolved): it no longer "Needs attention" — for everyone.
+ * Every clinic screen that lists chats (the desk's Patients, the doctor's Messages and Care)
+ * refreshes at once, not on its next 30-second refresh.
+ */
+async function settleChat(conversationId) {
+  const convo = await M.Conversation.findById(conversationId, 'practiceId participants triage');
+  if (!convo) return;
+  if (convo.triage === 'needs_attention') await M.Conversation.updateOne({ _id: convo._id, triage: 'needs_attention' }, { $unset: { triage: 1 } });
+  const staffIds = convo.practiceId
+    ? await M.Member.find({ practiceId: convo.practiceId, status: 'active', role: { $in: Object.keys(M.ROLE_PERMISSIONS).filter((r) => M.ROLE_PERMISSIONS[r].chats) } }).distinct('userId')
+    : [];
+  const ids = [...new Set([...staffIds.map(String), ...convo.participants.filter((p) => p.role !== 'patient').map((p) => String(p.userId))])];
+  await signal(ids, { type: 'chat_changed', conversationId: convo._id });
+}
+
 async function chatNote(ctx, text, event, extraMeta = {}) {
   const practiceId = idOf(ctx?.practiceId);
   const patientId = idOf(ctx?.patientId);
@@ -694,6 +711,6 @@ async function adherence(patient, days = 30, acc) {
   };
 }
 
-module.exports = {
+module.exports = { settleChat,
   openNow, CARE_ROLES, markDelivered, addParticipants,
   paymentRequestNote, chatNote, shortName, doseMinute, MEALS, raiseAlert, checkReading, readingFindings, patientAdvice, careConversation, ensureParticipant, postMessage, messageDeleted, markRead, ensureDoses, adherence, effectiveStatus };

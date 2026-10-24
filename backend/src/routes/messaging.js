@@ -342,7 +342,15 @@ threads.post('/:id/handled', async (req, res) => {
   if (!me) throw forbidden('Only the clinic can mark this chat');
   const handled = req.body.handled !== false;
   await M.Conversation.updateOne({ _id: convo._id }, handled ? { handledAt: new Date(), handledBy: req.user._id } : { $unset: { handledAt: 1, handledBy: 1 } });
-  if (handled) await markRead(convo, req.user._id);
+  if (handled) {
+    await markRead(convo, req.user._id);
+    await require('../services/care').settleChat(convo._id).catch((err) => console.warn('[settle chat]', err.message));
+  } else {
+    // Opened again: something is still to do, for the whole clinic to see.
+    await M.Conversation.updateOne({ _id: convo._id }, { $set: { triage: 'needs_attention' } });
+    const staffIds = await M.Member.find({ practiceId: convo.practiceId, status: 'active' }).distinct('userId');
+    await signal(staffIds, { type: 'chat_changed', conversationId: convo._id });
+  }
   res.json({ ok: true, handled });
 });
 
@@ -585,6 +593,11 @@ inbox.post('/reviews/:id/reviewed', need('ai'), async (req, res) => {
   review.status = 'reviewed';
   review.reviewed = { by: req.user._id, at: new Date() };
   await review.save();
+  // The doctor checked MedPin AI's answer: unless another answer in this chat still waits for
+  // them, the chat is settled for the desk too.
+  if (review.conversationId && !(await M.ChatReview.exists({ conversationId: review.conversationId, status: 'needs_review' }))) {
+    await require('../services/care').settleChat(review.conversationId).catch((err) => console.warn('[settle chat]', err.message));
+  }
   res.json(review);
 });
 

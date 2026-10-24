@@ -2271,9 +2271,10 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       assert.equal(await aiCount(), before + 1, 'one reply for the burst');
       // The clinic answers while the AI waits: the AI stays out.
       const b2 = await aiCount();
+      process.env.AI_GATHER_MS = '1000'; // time for the desk's reply to land first, however slow the machine
       ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'Can I come today?' }), 201);
       ok(await ctx.desk('POST', `/api/conversations/${convo}/messages`, { text: 'Yes, at 5 PM.' }), 201);
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((r) => setTimeout(r, 1500));
       assert.equal(await aiCount(), b2, 'no AI reply after the clinic replied');
       process.env.AI_GATHER_MS = '0';
       await M.Conversation.updateOne({ _id: convo }, { $unset: { aiPausedAt: 1, staffViewingAt: 1 } });
@@ -2997,6 +2998,32 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
       env.pharmacyOrdering = true;
     }
     assert.equal(ok(await ctx.pat('GET', '/api/auth/session')).features.pharmacyOrdering, true);
+  });
+
+  await step('"Needs attention" settled by the doctor is settled for the desk too: review checked, Handled, emergency resolved; Open again brings it back', async () => {
+    const convo = ctx.convoId;
+    const triage = async () => (await M.Conversation.findById(convo, 'triage')).triage || null;
+    const deskSees = async () => ok(await ctx.desk('GET', '/api/inbox?type=care')).items.find((x) => String(x.id) === String(convo))?.triage || null;
+    // MedPin AI passed a clinical question to the doctor; the doctor marks its answer reviewed.
+    await M.ChatReview.updateMany({ conversationId: convo }, { status: 'reviewed' }); // earlier checks' reviews
+    await M.Conversation.updateOne({ _id: convo }, { triage: 'needs_attention' });
+    const msg = await M.Message.findOne({ conversationId: convo }).sort({ createdAt: -1 });
+    const review = await M.ChatReview.create({ practiceId: ctx.practiceId, patientId: ctx.patientId, conversationId: convo, messageId: msg._id, reason: 'dosage_question', title: 'Two tablets?', excerpt: 'Dr. Sen will confirm.', urgency: 'low' });
+    assert.equal(await deskSees(), 'needs_attention');
+    ok(await ctx.doc('POST', `/api/inbox/reviews/${review._id}/reviewed`));
+    assert.equal(await triage(), null);
+    assert.equal(await deskSees(), null, 'the desk no longer sees it');
+    // The doctor marks it Handled; then Open again.
+    await M.Conversation.updateOne({ _id: convo }, { triage: 'needs_attention' });
+    ok(await ctx.doc('POST', `/api/conversations/${convo}/handled`, {}));
+    assert.equal(await deskSees(), null);
+    ok(await ctx.doc('POST', `/api/conversations/${convo}/handled`, { handled: false }));
+    assert.equal(await deskSees(), 'needs_attention', 'opened again: back for everyone');
+    // An emergency in the chat resolved by the doctor.
+    const alert = await M.Alert.create({ practiceId: ctx.practiceId, patientId: ctx.patientId, severity: 'emergency', kind: 'urgent_chat', detail: 'Chest pain', conversationId: convo, status: 'open' });
+    ok(await ctx.doc('POST', `/api/alerts/${alert._id}/resolve`, {}));
+    assert.equal(await deskSees(), null);
+    await M.Conversation.updateOne({ _id: convo }, { $unset: { triage: 1, handledAt: 1, handledBy: 1 } });
   });
 
   server.close();
