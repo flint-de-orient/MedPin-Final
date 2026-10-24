@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'p1_sheets.dart';
 import '../../widgets/i18n.dart';
@@ -111,12 +112,13 @@ class P1 {
         spec: '',
         tag: 'Refill soon',
         title: '${r.str('name')} runs out ${days <= 0 ? 'today' : days == 1 ? 'tomorrow' : 'in $days days'}',
-        sub: '${r.numOr('tabletsLeft').toInt()} tablets left',
-        cta: 'Order a refill',
+        sub: Session.I.pharmacyOrdering ? '${r.numOr('tabletsLeft').toInt()} tablets left' : '${r.numOr('tabletsLeft').toInt()} tablets left · buy a refill from your chemist',
+        // No partner pharmacy: the medicines (stock, the list to show the chemist), not a cart.
+        cta: Session.I.pharmacyOrdering ? 'Order a refill' : 'See medicines',
         icon: I.pill,
         image: 'assets/images/hero_refill.jpg',
         stem: 'Patient-Medicines',
-        args: {'courseId': r['courseId']},
+        args: Session.I.pharmacyOrdering ? {'courseId': r['courseId']} : null,
       ));
     }
     final score = d.obj('healthScore');

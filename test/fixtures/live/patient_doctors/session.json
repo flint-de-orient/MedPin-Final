@@ -8,5 +8,8 @@
   },
   "memberships": [],
   "patientId": "6ac8d0e273298218d8b8408e",
-  "landing": "Main"
+  "landing": "Main",
+  "features": {
+    "pharmacyOrdering": true
+  }
 }

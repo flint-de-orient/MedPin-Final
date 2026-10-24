@@ -11,6 +11,7 @@
 //   daily summary       20:00 IST to doctors with "Daily summary" on
 const { liveDevices } = require('../lib/devicetokens');
 const M = require('../models');
+const env = require('../config/env');
 const T = require('../lib/time');
 const { notify } = require('./notify');
 const { ensureDoses } = require('./care');
@@ -191,7 +192,10 @@ async function lowStock(now) {
     await once(`stock:${c._id}:${day}`, () =>
       notify([p.userId], { forPatientId: p._id,
         type: 'low_stock', title: daysLeft <= 0 ? `${c.name} has run out` : `${c.name} runs out in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
-        body: `${c.stockUnits} left · ${doseText(c.dose)}. Reorder now so you don't miss doses.`, screen: 'Patient-Medicines', params: { courseId: c._id },
+        body: env.pharmacyOrdering
+          ? `${c.stockUnits} left · ${doseText(c.dose)}. Reorder now so you don't miss doses.`
+          : `${c.stockUnits} left · ${doseText(c.dose)}. Buy a refill from your chemist so you don't miss doses.`,
+        screen: 'Patient-Medicines', params: { courseId: c._id },
       }),
     );
   }

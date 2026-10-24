@@ -133,6 +133,10 @@ const env = {
     payoutAccountNumber: v('RAZORPAYX_ACCOUNT_NUMBER'),
   },
   googleMapsKey: v('GOOGLE_MAPS_API_KEY'),
+  // Ordering medicines from a partner pharmacy in the patient app (cart, delivery / pickup).
+  // Off until MedPin has a pharmacy partner: patients buy from any chemist with their
+  // prescription or medicine list. PHARMACY_ORDERING=on turns it on.
+  pharmacyOrdering: v('PHARMACY_ORDERING', 'off') === 'on',
   support: {
     email: v('SUPPORT_EMAIL'),
     phone: v('SUPPORT_PHONE'),

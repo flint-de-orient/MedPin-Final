@@ -336,7 +336,10 @@ r.get('/home', async (req, res) => {
     recordId: newReport.recordId, testName: newReport.testName, abnormalCount: newReport.abnormalCount || 0,
     abnormal: newReport.values.filter((v) => v.flag !== 'normal').map((v) => v.analyte),
     abnormalDirection: newReport.values.some((v) => v.flag === 'high' || v.flag === 'critical') ? 'high' : 'low' });
-  if (refills[0]) slides.push({ kind: 'refill', title: `${refills[0].name} runs out in ${refills[0].daysLeft} days`, sub: `${refills[0].tabletsLeft} tablets left`, screen: 'Med-Cart' });
+  if (refills[0]) {
+    const order = require('../config/env').pharmacyOrdering;
+    slides.push({ kind: 'refill', title: `${refills[0].name} runs out in ${refills[0].daysLeft} days`, sub: order ? `${refills[0].tabletsLeft} tablets left` : `${refills[0].tabletsLeft} tablets left · buy a refill from your chemist`, screen: order ? 'Med-Cart' : 'Patient-Medicines', order });
+  }
   if (p.healthScore?.value != null) slides.push({ kind: 'score', title: `Health score ${p.healthScore.value}`, sub: p.healthScore.weeklyDelta ? `${p.healthScore.weeklyDelta > 0 ? '+' : ''}${p.healthScore.weeklyDelta} this week` : '', screen: 'Patient-Home' });
   const unread = await M.Conversation.aggregate([{ $match: { patientId: p._id } }, { $unwind: '$participants' }, { $match: { 'participants.userId': req.user._id } }, { $group: { _id: null, n: { $sum: '$participants.unreadCount' } } }]);
 
@@ -1744,6 +1747,14 @@ async function cartView(cart, patient) {
     patientAddress: patient.addresses.find((a) => a.isDefault) || patient.addresses[0] || null,
   };
 }
+
+// Medicine ordering is off on this server (no pharmacy partner yet): the cart and new orders
+// are refused with a clear reason; past orders stay readable.
+const pharmacyOn = (_req, _res, next) => (require('../config/env').pharmacyOrdering ? next()
+  : next(Object.assign(conflict("Ordering medicines in MedPin isn't available yet. Buy them from any chemist with your prescription or medicine list.", 'PHARMACY_OFF'))));
+r.use(['/cart', '/pharmacies'], pharmacyOn);
+r.post('/orders', pharmacyOn);
+r.post('/orders/:id/pay', pharmacyOn);
 
 r.get('/cart', async (req, res) => res.json(await cartView(await cartOf(req.patient._id), req.patient)));
 

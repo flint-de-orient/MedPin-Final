@@ -21,5 +21,8 @@
     ],
     "patientId": null,
     "landing": "Doctor-Dashboard"
+  },
+  "features": {
+    "pharmacyOrdering": true
   }
 }

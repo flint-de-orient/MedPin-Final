@@ -7,6 +7,7 @@ const env = require('../src/config/env');
 
 env.mongo.dbName = `${env.mongo.dbName}_api_test`;
 env.port = 0;
+env.pharmacyOrdering = true; // the pharmacy checks; one check turns it off
 // MedPin AI answers at once in tests (no wait for a burst of messages).
 process.env.AI_GATHER_MS = '0';
 // Tests never send real SMS: force dev OTP mode even when MSG91 keys are set.
@@ -2979,6 +2980,23 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     await care.chatNote({ practiceId: convo.practiceId, patientId: convo.patientId }, 'Payment received.', 'fee_paid');
     assert.equal((await M.Conversation.findById(ctx.convoId)).triage, 'needs_attention');
     await M.Conversation.updateOne({ _id: ctx.convoId }, { $unset: { triage: 1 } });
+  });
+
+  await step('medicine ordering off (no pharmacy partner): the app is told, the cart and new orders refused, refill reminders say buy from a chemist', async () => {
+    const env = require('../src/config/env');
+    env.pharmacyOrdering = false;
+    try {
+      const s = ok(await ctx.pat('GET', '/api/auth/session'));
+      assert.equal(s.features.pharmacyOrdering, false);
+      const cart = await ctx.pat('GET', '/api/patient/cart');
+      assert.deepEqual([cart.status, cart.body.error.code], [409, 'PHARMACY_OFF']);
+      assert.equal((await ctx.pat('POST', '/api/patient/orders', {})).status, 409);
+      assert.equal((await ctx.pat('GET', '/api/patient/pharmacies/quotes')).status, 409);
+      ok(await ctx.pat('GET', '/api/patient/orders'));
+    } finally {
+      env.pharmacyOrdering = true;
+    }
+    assert.equal(ok(await ctx.pat('GET', '/api/auth/session')).features.pharmacyOrdering, true);
   });
 
   server.close();

@@ -1,21 +1,24 @@
 {
- "user": {
-  "id": "6ac8cfc20fd26bd4a0327bf1",
-  "name": "Tania Ghosh",
-  "phone": "9749681391",
-  "language": "en",
-  "appLock": true
- },
- "memberships": [
-  {
-   "id": "6ac8cfc20fd26bd4a0327bfe",
-   "practiceId": "6ac8cfc20fd26bd4a0327bf5",
-   "practiceName": "City Care Clinic",
-   "role": "front_desk",
-   "isOwner": false,
-   "status": "active"
+  "user": {
+    "id": "6ac8cfc20fd26bd4a0327bf1",
+    "name": "Tania Ghosh",
+    "phone": "9749681391",
+    "language": "en",
+    "appLock": true
+  },
+  "memberships": [
+    {
+      "id": "6ac8cfc20fd26bd4a0327bfe",
+      "practiceId": "6ac8cfc20fd26bd4a0327bf5",
+      "practiceName": "City Care Clinic",
+      "role": "front_desk",
+      "isOwner": false,
+      "status": "active"
+    }
+  ],
+  "patientId": null,
+  "landing": "Staff-Today",
+  "features": {
+    "pharmacyOrdering": true
   }
- ],
- "patientId": null,
- "landing": "Staff-Today"
 }

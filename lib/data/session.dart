@@ -155,6 +155,10 @@ class Session extends ChangeNotifier {
   }
   String? get patientId => account?['patientId'] as String?;
 
+  /// Ordering medicines from a partner pharmacy (cart, delivery / pickup): off on a server
+  /// with no pharmacy partner — patients buy from any chemist with their prescription.
+  bool get pharmacyOrdering => (account?['features'] as Map?)?['pharmacyOrdering'] == true;
+
   /// The first screen for this account: Doctor-Dashboard, Staff-Today, Main or Auth-Welcome
   /// (for staff, the role they have in the clinic chosen with [usePractice]).
   String get landing {

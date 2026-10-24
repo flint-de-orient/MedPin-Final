@@ -105,6 +105,8 @@ async function accountSummary(user) {
     activePracticeId: first?.practiceId?._id || null,
     patientId: patient?._id || null,
     landing,
+    // What this MedPin server offers (the app hides what's off).
+    features: { pharmacyOrdering: require('../config/env').pharmacyOrdering },
   };
 }
 

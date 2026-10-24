@@ -4,6 +4,7 @@ import '../../data/api.dart';
 import '../../data/downloads.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/session.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'common_p3.dart';
@@ -140,12 +141,15 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
   /// Live dose overrides while a Taken / Skip request is on its way (id → status).
   final _pending = <String, String>{};
 
+  /// Ordering medicines in the app (a partner pharmacy): off on a server without one.
+  bool get _order => !isLive || Session.I.pharmacyOrdering;
+
   @override
   Future<Object?> fetch() async {
     final r = await Future.wait([
       Api.I.get('/api/patient/medicines'),
       Api.I.get('/api/patient/doses'),
-      Api.I.get('/api/patient/cart'),
+      _order ? Api.I.get('/api/patient/cart') : Future.value(const <String, dynamic>{'items': [], 'count': 0}),
       Api.I.get('/api/patient/orders'),
     ]);
     final out = {'meds': r[0], 'doses': r[1], 'cart': r[2], 'orders': r[3]};
@@ -159,7 +163,7 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
 
   void _openCourseArg(Map<String, dynamic> d) {
     final want = _openedArg ? null : Nav.args<Map>(context)?['courseId'];
-    if (want == null) return;
+    if (want == null || !_order) return;
     _openedArg = true;
     final meds = (d['meds'] as Map).cast<String, dynamic>();
     final hit = meds.list('items').where((c) => c.str('id') == '$want').toList();
@@ -252,6 +256,8 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
 
   Future<void> _onMore(int i) async {
     final d = data!;
+    // Without ordering (and no past orders) the Orders row isn't shown: the rows after it move up.
+    if (!_showOrders && i >= 1) i += 1;
     switch (i) {
       case 0:
         final saved = await openSheet<bool>(context, (_) => _ReminderSheet(times: _medsData.obj('reminderTimes'), slots: _usedSlots, bedAt: _medsData.str('bedAt', '22:30'), bedtime: _courses.any((c) => c.str('foodRelation') == 'bedtime')));
@@ -277,6 +283,9 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
       if (_courses.any((c) => c.obj('dose').numOr(s) > 0)) s,
   ];
 
+  /// Orders: while ordering is on, or there are past orders to see.
+  bool get _showOrders => _order || (data?.list('orders').isNotEmpty ?? false);
+
   List<(String, String, String)> get _liveMore {
     final times = _medsData.obj('reminderTimes');
     final slots = _usedSlots.isEmpty ? const ['morning', 'night'] : _usedSlots;
@@ -286,7 +295,7 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
     final past = _medsData.numOr('pastCount').toInt();
     return [
       ('Meal times', [for (final s in slots) '${const {'morning': 'Breakfast', 'afternoon': 'Lunch', 'night': 'Dinner'}[s]} ${p3Clock(times.str(s, const {'morning': '08:00', 'afternoon': '13:30', 'night': '20:30'}[s]!))}'].join(' · '), ''),
-      ('Orders', last == null ? 'No orders yet' : '${orders.length} · last ${last.str('status').replaceAll('_', ' ')}${lastAt != null ? ' · ${F.dayMonth(lastAt)}' : ''}', ''),
+      if (_showOrders) ('Orders', last == null ? 'No orders yet' : '${orders.length} · last ${last.str('status').replaceAll('_', ' ')}${lastAt != null ? ' · ${F.dayMonth(lastAt)}' : ''}', ''),
       ('Past medicines', past == 0 ? 'None yet' : '$past completed ${past == 1 ? 'course' : 'courses'}', ''),
       ('Share medicine list', 'PDF for a new doctor or pharmacy', ''),
     ];
@@ -391,8 +400,10 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
                       ],
                     ),
                   ),
-                  const Gap(12),
-                  _CartButton(count: inCart, onTap: () => Nav.go(context, 'Med-Cart')),
+                  if (_order) ...[
+                    const Gap(12),
+                    _CartButton(count: inCart, onTap: () => Nav.go(context, 'Med-Cart')),
+                  ],
                 ],
               ),
             ),
@@ -658,6 +669,21 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
             ),
           ),
           const Gap(12),
+          // No partner pharmacy: the list to show (or send) the chemist instead of a cart.
+          if (!_order)
+            P2Box(
+              onTap: () => _onMore(_liveMore.length - 1),
+              height: 44,
+              radius: 12,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              color: MP.white,
+              shadow: MPShadow.hairline,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [Text('Share list', style: tx(14, w: w700, c: MP.primary))],
+              ),
+            )
+          else
           P2Box(
             onTap: () async {
               if (c != null && _cartByCourse[c.str('id')] == null && !await _addCourseToCart(c)) return;
@@ -703,7 +729,9 @@ class _PatientMedicinesScreenState extends State<PatientMedicinesScreen> with Li
             _MedCard(
               meds[i],
               inCart: meds[i].inCart,
-              onCart: meds[i].inCart == null
+              onCart: !_order
+                  ? null
+                  : meds[i].inCart == null
                   ? () async {
                       if (await _addCourseToCart(courses[i]) && mounted) reload(quiet: true);
                     }
@@ -884,7 +912,8 @@ class _CartButton extends StatelessWidget {
 class _MedCard extends StatelessWidget {
   final _Med m;
   final int? inCart;
-  final VoidCallback onCart;
+  /// null: no ordering on this server (no Add to cart).
+  final VoidCallback? onCart;
 
   /// Live: "Update stock" and tapping the medicine (edit / stop).
   final VoidCallback? onStock;
@@ -995,6 +1024,7 @@ class _MedCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onCart != null) ...[
               const Gap(12),
               Expanded(
                 flex: 6,
@@ -1021,6 +1051,7 @@ class _MedCard extends StatelessWidget {
                   ),
                 ),
               ),
+              ],
             ],
           ),
         ],

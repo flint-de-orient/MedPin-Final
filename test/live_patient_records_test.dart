@@ -196,6 +196,20 @@ void main() {
     await _tearDown(t);
   });
 
+  testWidgets('Patient-Medicines without a partner pharmacy: no cart or Add to cart; Share list instead of Reorder', (t) async {
+    _serve();
+    Session.I.account = {...Session.I.account!, 'features': {'pharmacyOrdering': false}};
+    await _pump(t, const PatientMedicinesScreen(), stem: 'Patient-Medicines');
+    expect(find.text('Metformin 500 mg'), findsWidgets);
+    expect(find.text('Add to cart'), findsNothing);
+    expect(find.textContaining('In cart'), findsNothing);
+    expect(find.text('Reorder'), findsNothing);
+    expect(find.text('Share list'), findsOneWidget);
+    expect(_calls.any((c) => c.$2.startsWith('/api/patient/cart')), isFalse, reason: 'the cart is not asked for');
+    expect(t.takeException(), isNull);
+    await _tearDown(t);
+  });
+
   testWidgets('Patient-Medicines shows doses, medicines and safety; Taken posts the dose', (t) async {
     _serve();
     await _pump(t, const PatientMedicinesScreen(), stem: 'Patient-Medicines');
