@@ -91,6 +91,9 @@ r.use('/exports', need('exports'));
 r.get('/billing', async (req, res) => {
   const B = require('../services/billing');
   await B.ensurePlans();
+  // A plan link paid without the webhook reaching MedPin: found with Razorpay and applied.
+  const before = await M.Subscription.findOne({ practiceId: req.practiceId });
+  if (before && (before.status === 'past_due' || before.planLinkAt > T.addDays(new Date(), -10))) await B.reconcilePlanLinks(before).catch(() => 0);
   // The month (or trial) ended without a payment: shown as Payment due straight away.
   const sub = await B.refreshStatus(await M.Subscription.findOne({ practiceId: req.practiceId }));
   const plans = await M.Plan.find({ active: true }).sort({ priceMonthly: 1 });
@@ -121,7 +124,26 @@ r.get('/billing', async (req, res) => {
   });
 });
 
-// Pay for the next month (the plan is due, or ends within 7 days): a payment link to open.
+// In the app: Razorpay Checkout for the next month ({renew: true}) or an upgrade ({planKey}).
+r.post('/billing/checkout', ownerOnly, async (req, res) => {
+  const sub = await M.Subscription.findOne({ practiceId: req.practiceId });
+  res.json(await require('../services/checkout').planStart({ sub, planKey: req.body.planKey, renew: req.body.renew === true, user: req.user }));
+});
+
+r.post('/billing/checkout/confirm', ownerOnly, async (req, res) => {
+  const sub = await M.Subscription.findOne({ practiceId: req.practiceId });
+  const { orderId, paymentId, signature } = req.body;
+  res.json(await require('../services/checkout').planConfirm({ sub, orderId, paymentId, signature }));
+});
+
+// "Check payment": a plan paid by link that doesn't show yet is looked up with Razorpay now.
+r.post('/billing/check-payment', ownerOnly, async (req, res) => {
+  const sub = await M.Subscription.findOne({ practiceId: req.practiceId });
+  const applied = await require('../services/billing').reconcilePlanLinks(sub, { force: true });
+  res.json({ applied, subscription: await M.Subscription.findOne({ practiceId: req.practiceId }) });
+});
+
+// Pay for the next month by link (the plan is due, or ends within 7 days): a payment link to open.
 r.post('/billing/renew', ownerOnly, async (req, res) => {
   const B = require('../services/billing');
   const sub = await B.refreshStatus(await M.Subscription.findOne({ practiceId: req.practiceId }));
@@ -152,10 +174,9 @@ r.post('/billing/switch', ownerOnly, async (req, res) => {
   if (upgrade && sub.status !== 'trialing' && !pay.configured() && env.isProd) {
     throw Object.assign(conflict('Online payment is not set up yet, so the plan cannot be upgraded. Contact MedPin support.', 'PAYMENTS_OFF'), { status: 503 });
   }
-  // A paid upgrade starts once paid: the doctor gets a payment link to open.
+  // A paid upgrade starts once paid, in the app (POST /billing/checkout {planKey}).
   if (upgrade && sub.status !== 'trialing' && pay.configured()) {
-    const checkoutUrl = await pay.planLink(sub, plan, req.user);
-    return res.json({ ...sub.toJSON(), checkoutUrl, awaitingPayment: true });
+    return res.json({ ...sub.toJSON(), awaitingPayment: true, payPlanKey: plan.key, amount: plan.priceMonthly });
   }
   sub.pendingPlanKey = plan.key;
   sub.pendingFrom = sub.currentPeriodEnd || new Date();

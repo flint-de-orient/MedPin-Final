@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
+import '../../data/checkout.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
@@ -164,8 +165,14 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
     }
     final res = await runAction(context, () => Api.I.post('/api/billing/switch', {'planKey': key}), busy: _busy);
     if (res is! Map || !mounted) return;
+    if (res['awaitingPayment'] == true) {
+      // A bigger plan starts once paid: Razorpay Checkout in the app (UPI, card, net banking).
+      final paid = await Checkout.payPlan(context, planKey: '${res['payPlanKey'] ?? key}');
+      if (paid && mounted) toast(context, trf(context, 'You are on the {plan} plan now', {'plan': plan}));
+      if (mounted) reload(quiet: true);
+      return;
+    }
     if (res['checkoutUrl'] is String) {
-      // Paid upgrade: the plan changes once the payment goes through.
       await D9Open.url(context, res['checkoutUrl'], failed: "Couldn't open the payment page");
       if (mounted) toast(context, 'Your plan changes to $plan as soon as the payment is done');
       return;
@@ -181,10 +188,22 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
       toast(context, 'Paid · your plan is renewed');
       return;
     }
-    final res = await runAction(context, () => Api.I.post('/api/billing/renew', const {}), busy: _busy);
+    // In the app (Razorpay Checkout): the plan moves on as soon as Razorpay confirms it.
+    _busy.value = true;
+    try {
+      final paid = await Checkout.payPlan(context, renew: true);
+      if (paid && mounted) toast(context, 'Paid · your plan is renewed');
+    } finally {
+      _busy.value = false;
+    }
+    if (mounted) reload(quiet: true);
+  }
+
+  /// Paid by a link (or the app closed during payment) but still shows due: ask Razorpay now.
+  Future<void> _checkPayment() async {
+    final res = await runAction(context, () => Api.I.post('/api/billing/check-payment', const {}), busy: _busy);
     if (res is! Map || !mounted) return;
-    await D9Open.url(context, res['checkoutUrl'], failed: "Couldn't open the payment page");
-    if (mounted) toast(context, 'Your plan is renewed as soon as the payment is done');
+    toast(context, (res['applied'] as num? ?? 0) > 0 ? 'Payment found · your plan is renewed' : 'No payment found yet. If money was taken, it shows here within 15 minutes.');
     reload(quiet: true);
   }
 
@@ -208,12 +227,13 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
               : trf(context, 'Pay {amount} now and the next month of the {plan} plan starts on {date}.', {'amount': amount, 'plan': plan, 'date': _date(r['from'])}),
           style: tx(14, c: MP.ink2, h: 1.45),
         ),
-        if (_canManage)
+        if (_canManage) ...[
           ValueListenableBuilder<bool>(
             valueListenable: _busy,
             builder: (_, busy, _) => MpButton(trf(context, 'Pay {amount}', {'amount': amount}), onTap: busy ? null : _renew),
-          )
-        else
+          ),
+          if (isLive) Center(child: D9Link('Already paid? Check payment', h: null, onTap: _checkPayment)),
+        ] else
           Text('Ask the clinic owner to pay.', style: tx(14, w: w600, c: MP.ink2, h: 1.45)),
       ],
     );

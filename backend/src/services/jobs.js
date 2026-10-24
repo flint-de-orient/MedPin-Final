@@ -496,7 +496,11 @@ async function tick() {
     ['scores', () => healthScores(now)], ['noShows', () => noShows(now)],
     ['payouts', () => payouts(now)],
     // A clinic's MedPin month (or trial) ended unpaid: Payment due, the owner told once.
-    ['billing', () => (quarter(now) ? require('./billing').remindDue(now) : null)],
+    ['billing', async () => {
+      if (!quarter(now)) return;
+      await require('./billing').reconcileAll(now); // plan links paid without a webhook
+      await require('./billing').remindDue(now);
+    }],
   ]) {
     try {
       await job();

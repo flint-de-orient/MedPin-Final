@@ -38,10 +38,25 @@ class Checkout {
   /// How it went: paid; the patient chose [laterLabel] ("Pay at the clinic"); closed or
   /// failed (nothing charged); or charged but not confirmed yet (the server checks it —
   /// never treated as "pay at the clinic", so nobody is asked to pay twice).
-  static Future<PayOutcome> payOutcome(BuildContext context, {required String kind, required String id, String? laterLabel, bool optional = false}) async {
+  static Future<PayOutcome> payOutcome(BuildContext context, {required String kind, required String id, String? laterLabel, bool optional = false}) =>
+      _run(context, startPath: '/api/patient/checkout', confirmPath: '/api/patient/checkout/confirm', body: {'kind': kind, 'id': id}, laterLabel: laterLabel, optional: optional);
+
+  /// The clinic's MedPin plan, paid in the app (Plan & billing): the next month ([renew]) or
+  /// an upgrade to [planKey] now. POST /api/billing/checkout, then …/checkout/confirm.
+  static Future<bool> payPlan(BuildContext context, {String? planKey, bool renew = false}) async =>
+      await _run(context, startPath: '/api/billing/checkout', confirmPath: '/api/billing/checkout/confirm', body: {if (planKey != null) 'planKey': planKey, 'renew': renew}) == PayOutcome.paid;
+
+  static Future<PayOutcome> _run(
+    BuildContext context, {
+    required String startPath,
+    required String confirmPath,
+    required Map<String, Object?> body,
+    String? laterLabel,
+    bool optional = false,
+  }) async {
     Object? start;
     try {
-      start = await Api.I.post('/api/patient/checkout', {'kind': kind, 'id': id});
+      start = await Api.I.post(startPath, body);
     } on ApiException catch (e) {
       const skip = {'ONLINE_PAY_OFF', 'NOT_PENDING', 'NOTHING_DUE', 'PAYMENTS_OFF'};
       if (context.mounted && !(optional && skip.contains(e.code))) toast(context, e.message);
@@ -71,9 +86,8 @@ class Checkout {
     Map? done;
     for (var i = 0; i < 3 && done == null; i++) {
       try {
-        final res = await Api.I.post('/api/patient/checkout/confirm', {
-          'kind': kind,
-          'id': id,
+        final res = await Api.I.post(confirmPath, {
+          ...body,
           'orderId': r.orderId,
           if (r.paymentId != null) 'paymentId': r.paymentId,
           if (r.signature != null) 'signature': r.signature,

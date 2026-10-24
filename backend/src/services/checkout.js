@@ -153,6 +153,12 @@ async function onWebhook(event, payload) {
   const notes = [payment.notes, order.notes].find((n) => n && !Array.isArray(n) && n.kind) || {};
   // 1. By the Razorpay order MedPin made (in-app Checkout).
   if (orderId) {
+    const sub = await M.Subscription.findOne({ 'checkout.orderId': orderId });
+    if (sub) {
+      await pay.planPaid(sub._id, sub.checkout.planKey, paymentId, { renew: Boolean(sub.checkout.renew) });
+      await M.Subscription.updateOne({ _id: sub._id, 'checkout.orderId': orderId }, { $unset: { checkout: 1 } });
+      return true;
+    }
     const fee = await M.Payment.findOne({ razorpayOrderId: orderId }, '_id');
     if (fee) return Boolean(await pay.feePaid(fee._id, paymentId, { amountPaise })) || true;
     const med = await M.Order.findOne({ 'pay.razorpayOrderId': orderId }, '_id');
@@ -161,12 +167,90 @@ async function onWebhook(event, payload) {
   // 2. By the notes (payment links carry them; handled by payment_link.paid too — same payment, once).
   if (notes.kind === 'fee' && /^[a-f\d]{24}$/i.test(notes.paymentId || '')) await pay.feePaid(notes.paymentId, paymentId, { amountPaise });
   else if (notes.kind === 'order' && /^[a-f\d]{24}$/i.test(notes.orderId || '')) await pay.orderPaid(notes.orderId, paymentId, { amountPaise });
+  else if (notes.kind === 'plan' && /^[a-f\d]{24}$/i.test(notes.subscriptionId || '')) await pay.planPaid(notes.subscriptionId, notes.planKey, paymentId, { renew: notes.renew === '1' });
   else return false;
   return true;
 }
 
+// ── A clinic's MedPin plan (Plan & billing), paid in the app ──
+
+/** What a plan payment buys: the next month (renew) or an upgrade now. Throws when not payable. */
+async function planSubject(sub, planKey, renew) {
+  const B = require('./billing');
+  if (!sub) throw notFound('Subscription');
+  await B.refreshStatus(sub);
+  if (renew) {
+    const next = await B.renewal(sub);
+    if (!next?.canPay) throw conflict('Your plan is paid for now. You can pay for the next month from 7 days before it ends.', 'NOT_DUE_YET');
+    const plan = await M.Plan.findOne({ key: next.planKey, active: true });
+    if (!plan) throw badRequest('Choose a plan');
+    return { plan, renew: true };
+  }
+  const plan = await M.Plan.findOne({ key: planKey, active: true });
+  if (!plan) throw badRequest('Choose a plan');
+  if (plan.key === sub.planKey) throw conflict('You are already on this plan');
+  if (!((plan.priceMonthly || 0) > (sub.price || 0))) throw conflict('A smaller plan starts from your next month: no payment now', 'NO_PAYMENT_NEEDED');
+  const seats = await M.Member.countDocuments({ practiceId: sub.practiceId, status: 'active' });
+  if (seats > plan.seats) throw conflict(`Your team has ${seats} people, so ${seats - plan.seats} would need to be removed first`, 'TOO_MANY_SEATS');
+  return { plan, renew: false };
+}
+
+/** Starts the in-app payment for a plan: a Razorpay Order, or a test one without keys (dev only). */
+async function planStart({ sub, planKey, renew, user }) {
+  const s = await planSubject(sub, planKey, renew);
+  const amount = s.plan.priceMonthly;
+  const base = {
+    kind: 'plan', id: s.plan.key, renew: s.renew, amount, currency: 'INR',
+    title: `MedPin ${s.plan.name} plan`, detail: s.renew ? 'The next month' : '1 month, starting today',
+    prefill: { name: user.name, contact: user.phone ? `+91${user.phone}` : undefined },
+  };
+  if (!pay.configured()) {
+    if (env.isProd) throw Object.assign(conflict('Online payment is not set up yet. Contact MedPin support to renew.', 'PAYMENTS_OFF'), { status: 503 });
+    const orderId = `order_test_plan_${sub._id}`;
+    sub.checkout = { orderId, planKey: s.plan.key, renew: s.renew, amount, startedAt: new Date() };
+    await sub.save();
+    return { ...base, test: true, orderId };
+  }
+  // The same unpaid order again (tried before, same plan and amount).
+  const c = sub.checkout;
+  let orderId = c?.orderId && c.planKey === s.plan.key && Boolean(c.renew) === s.renew && c.amount === amount && !String(c.orderId).startsWith('order_test') ? c.orderId : null;
+  if (!orderId) {
+    const resp = await fetchImpl('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: { authorization: auth(), 'content-type': 'application/json' },
+      body: JSON.stringify({
+        amount: Math.round(amount * 100), currency: 'INR', receipt: `plan_${String(sub._id).slice(-12)}`,
+        notes: { kind: 'plan', subscriptionId: String(sub._id), planKey: s.plan.key, ...(s.renew ? { renew: '1' } : {}) },
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const d = await resp.json().catch(() => ({}));
+    if (!resp.ok || !d.id) throw Object.assign(conflict(d.error?.description || 'Couldn’t start the payment. Please try again.', 'CHECKOUT_FAILED'), { status: 502 });
+    orderId = d.id;
+    sub.checkout = { orderId, planKey: s.plan.key, renew: s.renew, amount, startedAt: new Date() };
+    await sub.save();
+  }
+  return { ...base, test: false, keyId: env.razorpay.keyId, orderId };
+}
+
+/** Checks Checkout's signed result and moves the plan on (once; the webhook may have done it). */
+async function planConfirm({ sub, orderId, paymentId, signature }) {
+  const c = sub?.checkout;
+  if (!c?.orderId || c.orderId !== orderId) throw badRequest('This payment is for a different order', 'ORDER_MISMATCH');
+  if (!pay.configured()) {
+    if (env.isProd) throw Object.assign(conflict('Online payment is not set up yet', 'PAYMENTS_OFF'), { status: 503 });
+    paymentId = `pay_test_plan_${String(sub._id).slice(-10)}${Date.now().toString(36)}`;
+  } else {
+    const want = crypto.createHmac('sha256', env.razorpay.keySecret).update(`${orderId}|${paymentId}`).digest('hex');
+    if (!paymentId || !signature || !safeEqual(want, signature)) throw badRequest('This payment could not be verified', 'BAD_SIGNATURE');
+  }
+  await pay.planPaid(sub._id, c.planKey, paymentId, { renew: Boolean(c.renew) });
+  await M.Subscription.updateOne({ _id: sub._id, 'checkout.orderId': orderId }, { $unset: { checkout: 1 } });
+  return { paid: true, paymentId, amount: c.amount };
+}
+
 module.exports = {
-  start, confirm, onWebhook,
+  start, confirm, onWebhook, planStart, planConfirm,
   set fetchImpl(f) { fetchImpl = f; },
   get fetchImpl() { return fetchImpl; },
 };

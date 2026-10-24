@@ -367,6 +367,7 @@ async function refundOrder(order) {
  * month ([renew]: the month after the current one, or from the day it's paid if it lapsed).
  */
 async function planLink(sub, plan, user, { renew = false } = {}) {
+  await M.Subscription.updateOne({ _id: sub._id }, { planLinkAt: new Date() });
   return createLink({
     amount: plan.priceMonthly, description: `MedPin ${plan.name || plan.key} plan · 1 month`,
     customer: { name: user.name, contact: user.phone ? `+91${user.phone}` : undefined },

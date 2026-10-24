@@ -31,6 +31,16 @@ const subscriptionSchema = new Schema(
     pendingPlanKey: enumOf(E.PLAN_KEYS), // switches from the next cycle
     pendingFrom: Date,
     trialEndedAt: Date, // the free trial ran out without a paid month ("Your free trial has ended")
+    // The in-app payment started for a plan (Razorpay Checkout): its order and what it buys.
+    checkout: {
+      orderId: String,
+      planKey: String,
+      renew: Boolean,
+      amount: Number,
+      startedAt: Date,
+      _id: false,
+    },
+    planLinkAt: Date, // a payment link for a plan was made: checked with Razorpay until paid
     razorpayCustomerId: String,
     razorpaySubscriptionId: String,
     cancelledAt: Date,

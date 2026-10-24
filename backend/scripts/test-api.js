@@ -1236,6 +1236,40 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(renewed.status, 'active');
     assert.ok(renewed.currentPeriodEnd - Date.now() > 29 * 864e5, 'a month from today');
     assert.match((await M.Invoice.findOne({ practiceId: ctx.practiceId }).sort({ createdAt: -1 })).number, /^MP-\d{4}-\d{4}$/);
+    // In the app (Checkout, test mode without keys): due again → pay → a new month at once.
+    await M.Subscription.updateOne({ _id: subNow._id }, { status: 'past_due', currentPeriodEnd: new Date(Date.now() - 864e5) });
+    const co = ok(await ctx.doc('POST', '/api/billing/checkout', { renew: true }));
+    assert.deepEqual([co.kind, co.test, co.amount, co.renew], ['plan', true, 2499, true]);
+    assert.equal((await ctx.desk('POST', '/api/billing/checkout', { renew: true })).status, 403, 'owner / manager only');
+    assert.equal((await ctx.doc('POST', '/api/billing/checkout/confirm', { orderId: 'order_other' })).status, 400, 'not another order');
+    const conf = ok(await ctx.doc('POST', '/api/billing/checkout/confirm', { orderId: co.orderId }));
+    assert.equal(conf.paid, true);
+    const afterCo = await M.Subscription.findById(subNow._id);
+    assert.equal(afterCo.status, 'active');
+    assert.ok(afterCo.currentPeriodEnd - Date.now() > 29 * 864e5);
+    assert.equal((await ctx.doc('POST', '/api/billing/checkout', { renew: true })).status, 409, 'paid: not due again');
+    // Paid by a link while the webhook never came: Plan & billing asks Razorpay and applies it once.
+    const env = require('../src/config/env');
+    const B = require('../src/services/billing');
+    const keep = { ...env.razorpay };
+    const keepFetch = B.fetchImpl;
+    await M.Subscription.updateOne({ _id: subNow._id }, { status: 'past_due', currentPeriodEnd: new Date(Date.now() - 864e5) });
+    Object.assign(env.razorpay, { keyId: 'rzp_test_stub', keySecret: 'stub' });
+    B.fetchImpl = async (url) => ({ ok: true, json: async () => (url.endsWith('/payment_links')
+      ? { payment_links: [{ id: 'plink_1', status: 'paid', notes: { kind: 'plan', subscriptionId: String(subNow._id), planKey: 'clinic', renew: '1' }, payments: [{ payment_id: 'pay_linkpaid1', status: 'captured' }] },
+        { id: 'plink_2', status: 'paid', notes: { kind: 'plan', subscriptionId: 'someoneelse', planKey: 'clinic' }, payments: [{ payment_id: 'pay_other', status: 'captured' }] }] }
+      : {}) });
+    try {
+      const shown = ok(await ctx.doc('GET', '/api/billing'));
+      assert.equal(shown.subscription.status, 'active', 'the paid link counts without a webhook');
+      assert.ok(await M.Invoice.exists({ razorpayPaymentId: 'pay_linkpaid1' }));
+      assert.ok(!(await M.Invoice.exists({ razorpayPaymentId: 'pay_other' })), "another clinic's link is not applied");
+      const again = ok(await ctx.doc('POST', '/api/billing/check-payment', {}));
+      assert.equal(again.applied, 0, 'applied once');
+    } finally {
+      Object.assign(env.razorpay, keep);
+      B.fetchImpl = keepFetch;
+    }
     await M.Subscription.replaceOne({ _id: subNow._id }, keepSub);
     for (const format of ['csv', 'xlsx', 'pdf', 'json']) {
       const job = ok(await ctx.doc('POST', '/api/exports', { kind: 'appointment_history', format, filters: { from: '2026-01-01' } }), 201);
