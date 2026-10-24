@@ -71,7 +71,7 @@ async function createSession(user, req) {
 /** What the app needs right after sign-in to pick the landing screen. */
 async function accountSummary(user) {
   const members = await M.Member.find({ userId: user._id, status: { $in: ['active', 'suspended'] } }).populate('practiceId', 'name');
-  const patient = await M.Patient.findOne({ userId: user._id }, 'name');
+  const patient = await M.Patient.findOne({ userId: user._id, primary: { $ne: false } }, 'name');
   const active = members.filter((m) => m.status === 'active');
   // The clinic this person last chose (Profile → Clinic), else the first one.
   const chosen = user.activePracticeId && active.find((m) => String(m.practiceId?._id || m.practiceId) === String(user.activePracticeId));
@@ -126,12 +126,18 @@ async function completeLogin(phone, req) {
   user.lastLoginAt = new Date();
   await user.save();
   // A clinic may already have registered this number as a patient.
-  const patient = await M.Patient.findOne({ phone, userId: { $exists: false } });
+  const patient = await M.Patient.findOne({ phone, primary: { $ne: false }, userId: { $exists: false } });
   if (patient) {
     patient.userId = user._id;
     patient.phoneVerifiedAt = patient.phoneVerifiedAt || new Date();
     await patient.save();
     await M.Conversation.updateMany({ patientId: patient._id, 'participants.userId': { $ne: user._id } }, { $push: { participants: { userId: user._id, role: 'patient' } } });
+    // Family members the clinic registered on this phone join the same app account.
+    const family = await M.Patient.find({ familyOf: patient._id }, '_id');
+    if (family.length) {
+      await M.Patient.updateMany({ familyOf: patient._id }, { userId: user._id });
+      await M.Conversation.updateMany({ patientId: { $in: family.map((f) => f._id) }, 'participants.userId': { $ne: user._id } }, { $push: { participants: { userId: user._id, role: 'patient' } } });
+    }
     if (!user.name) await M.User.updateOne({ _id: user._id }, { name: patient.name });
   }
   return { ...(await createSession(user, req)), ...(await accountSummary(user)) };

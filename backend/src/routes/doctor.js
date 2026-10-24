@@ -436,7 +436,7 @@ r.delete('/doctor/leaves/:id', async (req, res) => {
     }
     const { notify } = require('../services/notify');
     for (const a of still) {
-      await notify([a.patientId.userId], {
+      await notify([a.patientId.userId], { forPatientId: a.patientId._id,
         type: 'doctor_back', practiceId: a.practiceId, title: `${req.user.name || 'Your doctor'} is available after all`,
         body: `Your visit on ${T.dayKey(a.startAt)} at ${T.fmtTime(T.minuteOfDay(a.startAt))} stands.`, screen: 'Patient-DoctorDetail', params: { appointmentId: a._id }, whatsapp: true,
       });

@@ -46,7 +46,7 @@ r.get('/follow-ups', async (req, res) => {
 async function remind(fu, practiceName) {
   const patient = await M.Patient.findById(fu.patientId, 'name phone userId');
   const text = `${practiceName}: your follow-up is due on ${T.dayKey(fu.dueDate)}. Please book a visit in MedPin or reply to this message.`;
-  if (patient.userId) await notify([patient.userId], { type: 'follow_up_reminder', practiceId: fu.practiceId, title: 'Follow-up due', body: text, screen: 'Patient-Doctors' });
+  if (patient.userId) await notify([patient.userId], { forPatientId: patient._id, type: 'follow_up_reminder', practiceId: fu.practiceId, title: 'Follow-up due', body: text, screen: 'Patient-Doctors' });
   else await sendWhatsApp(patient.phone, text);
   fu.remindersSent += 1;
   fu.lastRemindedAt = new Date();

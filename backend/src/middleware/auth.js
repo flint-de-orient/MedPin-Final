@@ -73,10 +73,21 @@ const ownerOnly = (req, _res, next) => {
   return next(forbidden('Only the practice owner can do this', 'OWNER_REQUIRED'));
 };
 
+/**
+ * The patient this request is for: the account's own record, or (X-Patient-Id) one of the
+ * family members on this phone — never anyone else's record. req.holder is the account's own.
+ */
 async function patientOnly(req, _res, next) {
-  const patient = await M.Patient.findOne({ userId: req.user._id });
-  if (!patient) return next(notFound('Patient profile'));
-  req.patient = patient;
+  const holder = await M.Patient.findOne({ userId: req.user._id, primary: { $ne: false } });
+  if (!holder) return next(notFound('Patient profile'));
+  req.holder = holder;
+  req.patient = holder;
+  const wanted = String(req.headers['x-patient-id'] || '');
+  if (wanted && isId(wanted) && wanted !== String(holder._id)) {
+    const member = await M.Patient.findOne({ _id: wanted, familyOf: holder._id });
+    if (!member) return next(notFound('Family member'));
+    req.patient = member;
+  }
   return next();
 }
 

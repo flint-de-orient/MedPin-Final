@@ -86,6 +86,21 @@ class Session extends ChangeNotifier {
   /// The clinic chosen on this phone (Profile → Clinic); kept with the session.
   String? chosenPracticeId;
 
+  /// Patient app: the family profile open on this phone (a child, a parent), or null for the
+  /// account's own. Sent with every patient request (X-Patient-Id); the server checks it is
+  /// one of this phone's family members.
+  String? familyPatientId;
+  String? familyName;
+
+  /// Opens a family profile (null: the account's own). Every screen reloads for that person.
+  Future<void> selectFamily(String? id, {String? name}) async {
+    familyPatientId = id;
+    familyName = id == null ? null : name;
+    await _save();
+    notifyListeners();
+    LiveBus.changed(); // the open screens load that person's data
+  }
+
   /// The clinic staff screens work in: the one chosen here, else the one the
   /// server remembers (activePracticeId), else the first.
   Map<String, dynamic>? get activeMembership {
@@ -163,6 +178,8 @@ class Session extends ChangeNotifier {
       refreshToken = data['refreshToken'] as String?;
       account = (data['account'] as Map?)?.cast<String, dynamic>();
       chosenPracticeId = data['practiceId'] as String?;
+      familyPatientId = data['familyPatientId'] as String?;
+      familyName = data['familyName'] as String?;
       _savedAt = (data['savedAt'] as num?)?.toInt() ?? 0;
     } catch (_) {
       await _clearLocal();
@@ -220,6 +237,8 @@ class Session extends ChangeNotifier {
     };
     pendingPhone = pendingMaskedPhone = pendingDevCode = null;
     chosenPracticeId = null; // the server's activePracticeId is this account's choice
+    familyPatientId = null; // a new sign-in starts on the account's own profile
+    familyName = null;
     restoredAtLaunch = false;
     await _save();
     notifyListeners();
@@ -359,7 +378,7 @@ class Session extends ChangeNotifier {
   Future<void> _save() async {
     final at = DateTime.now().millisecondsSinceEpoch;
     try {
-      await store.write(jsonEncode({'accessToken': accessToken, 'refreshToken': refreshToken, 'account': account, 'practiceId': chosenPracticeId, 'savedAt': at}));
+      await store.write(jsonEncode({'accessToken': accessToken, 'refreshToken': refreshToken, 'account': account, 'practiceId': chosenPracticeId, 'familyPatientId': familyPatientId, 'familyName': familyName, 'savedAt': at}));
       _savedAt = at;
     } catch (e) {
       debugPrint('Session not saved: $e');
@@ -377,6 +396,8 @@ class Session extends ChangeNotifier {
       refreshToken = data['refreshToken'] as String?;
       account = (data['account'] as Map?)?.cast<String, dynamic>();
       chosenPracticeId = data['practiceId'] as String?;
+      familyPatientId = data['familyPatientId'] as String?;
+      familyName = data['familyName'] as String?;
       _savedAt = (data['savedAt'] as num?)?.toInt() ?? 0;
     } catch (_) {
       return false;
@@ -389,6 +410,8 @@ class Session extends ChangeNotifier {
     pendingSignup = null;
     account = null;
     chosenPracticeId = null;
+    familyPatientId = null;
+    familyName = null;
     try {
       await store.clear();
     } catch (_) {}

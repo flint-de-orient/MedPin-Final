@@ -40,8 +40,9 @@ class Api {
   http.Client client = http.Client();
   static const _timeout = Duration(seconds: 25);
 
-  Future<dynamic> get(String path, {Map<String, Object?>? query}) => _send('GET', path, query: query);
-  Future<dynamic> post(String path, [Object? body]) => _send('POST', path, body: body);
+  /// [asPatient]: this one call for that family profile (the alarms sync every profile).
+  Future<dynamic> get(String path, {Map<String, Object?>? query, String? asPatient}) => _send('GET', path, query: query, asPatient: asPatient);
+  Future<dynamic> post(String path, [Object? body, String? asPatient]) => _send('POST', path, body: body, asPatient: asPatient);
   Future<dynamic> patch(String path, [Object? body]) => _send('PATCH', path, body: body);
   Future<dynamic> put(String path, [Object? body]) => _send('PUT', path, body: body);
   Future<dynamic> delete(String path) => _send('DELETE', path);
@@ -59,6 +60,7 @@ class Api {
     final request = http.MultipartRequest(method, _uri(path, null))..headers['accept'] = 'application/json';
     if (session.accessToken != null) request.headers['authorization'] = 'Bearer ${session.accessToken}';
     if (session.practiceId != null) request.headers['x-practice-id'] = session.practiceId!;
+    if (path.startsWith('/api/patient/') && session.familyPatientId != null) request.headers['x-patient-id'] = session.familyPatientId!;
     request.fields.addAll(fields);
     for (final e in files.entries) {
       for (final f in e.value) {
@@ -126,12 +128,15 @@ class Api {
   /// Calls that change nothing others see: sign-in, exports, voice clean-up, AI drafts, typing, devices.
   static final _quietPaths = RegExp(r'^/api/(auth/|exports|me/voice/|me/devices|ai/|.*/typing$|.*/presence|patient/device-sync)');
 
-  Future<dynamic> _send(String method, String path, {Object? body, Map<String, Object?>? query, bool retried = false}) async {
+  Future<dynamic> _send(String method, String path, {Object? body, Map<String, Object?>? query, bool retried = false, String? asPatient}) async {
     final session = Session.I;
     final headers = <String, String>{'accept': 'application/json'};
     if (body != null) headers['content-type'] = 'application/json';
     if (session.accessToken != null) headers['authorization'] = 'Bearer ${session.accessToken}';
     if (session.practiceId != null) headers['x-practice-id'] = session.practiceId!;
+    // The family profile open in the patient app (or the one this call is for).
+    final who = asPatient ?? (path.startsWith('/api/patient/') ? session.familyPatientId : null);
+    if (who != null && who.isNotEmpty) headers['x-patient-id'] = who;
 
     final request = http.Request(method, _uri(path, query))..headers.addAll(headers);
     if (body != null) request.body = jsonEncode(body);
@@ -150,7 +155,7 @@ class Api {
     if (res.statusCode == 401 && !retried && !_noRefresh.hasMatch(path) && session.refreshToken != null) {
       switch (await session.refreshSession()) {
         case RefreshResult.ok:
-          return _send(method, path, body: body, query: query, retried: true);
+          return _send(method, path, body: body, query: query, retried: true, asPatient: asPatient);
         case RefreshResult.signedOut:
           await session.expire();
         case RefreshResult.unavailable:

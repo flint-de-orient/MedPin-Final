@@ -99,13 +99,17 @@ const _pageSize = 30;
 class _StaffPaymentsScreenState extends State<StaffPaymentsScreen> with LiveData {
   int _tab = 0;
   int _limit = _pageSize;
+  int _day = 0; // Day's collections: 0 today, 1 yesterday
   final _busy = ValueNotifier(false);
 
   @override
   Future<Object?> fetch() async {
+    final d = DateTime.now().subtract(Duration(days: _day));
+    final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     final r = await Future.wait([
       Api.I.get('/api/payments', query: {'status': 'pending'}),
       Api.I.get('/api/payments', query: {'status': 'paid'}),
+      Api.I.get('/api/payments/summary', query: {'date': key}).catchError((_) => null),
     ]);
     List<Map<String, dynamic>> rows(Object? x) => [for (final p in (x as List? ?? const [])) if (p is Map) p.cast<String, dynamic>()];
     final paid = rows(r[1]);
@@ -113,6 +117,7 @@ class _StaffPaymentsScreenState extends State<StaffPaymentsScreen> with LiveData
       'pending': rows(r[0]),
       'paid': [for (final p in paid) if (p['refundDue'] != true) p],
       'refunds': [for (final p in paid) if (p['refundDue'] == true) p],
+      'summary': r[2],
     };
   }
 
@@ -160,6 +165,64 @@ class _StaffPaymentsScreenState extends State<StaffPaymentsScreen> with LiveData
   }
 
   String _how(String? method) => tr(context, d3Method(method ?? 'cash'));
+
+  /// "Day's collections": in by method, handed back, the cash the drawer should hold, and
+  /// who took what — for closing the day at the desk.
+  Widget _summary() {
+    final s = data?.obj('summary') ?? const <String, dynamic>{};
+    if (data == null || s.isEmpty) return const SizedBox.shrink();
+    Widget line(String label, String value, {bool strong = false, Color? color}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Expanded(child: Text(label, style: tx(15, w: strong ? w700 : w400, c: color ?? MP.ink))),
+              Text(value, style: tx(15, w: strong ? w700 : w600, c: color ?? MP.ink, tab: true)),
+            ],
+          ),
+        );
+    final back = s.obj('refunds').obj('handedBack');
+    final online = s.obj('refunds').obj('online');
+    return MpCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text("Day's collections", style: tx(18, w: w700))),
+              MpSegmented(
+                options: const ['Today', 'Yesterday'],
+                index: _day,
+                onChanged: (i) {
+                  setState(() => _day = i);
+                  reload();
+                },
+              ),
+            ],
+          ),
+          const Gap(10),
+          for (final m in s.list('byMethod')) line('${_how(m.str('method'))} · ${m.numOr('count').toInt()}', d3Rupees(m.numOr('amount').toInt())),
+          if (s.list('byMethod').isEmpty) Text('Nothing collected yet', style: tx(15, c: MP.ink2)),
+          if (back.numOr('count') > 0) line(tr(context, 'Handed back at the desk'), '− ${d3Rupees(back.numOr('amount').toInt())}', color: MP.red),
+          if (online.numOr('count') > 0) line(tr(context, 'Refunded online'), d3Rupees(online.numOr('amount').toInt()), color: MP.ink2),
+          const Divider(height: 20, color: MP.line),
+          line(tr(context, 'Collected'), d3Rupees(s.obj('collected').numOr('amount').toInt()), strong: true),
+          line(tr(context, 'Cash in the drawer'), d3Rupees(s.numOr('cashInDrawer').toInt()), strong: true, color: MP.primary),
+          if (s.obj('stillToCollect').numOr('count') > 0)
+            line(tr(context, 'Still to collect'), d3Rupees(s.obj('stillToCollect').numOr('amount').toInt()), color: MP.amber),
+          if (s.list('byPerson').length > 1 || s.list('byPerson').any((p) => p['userId'] == null && p.str('name') != 'Paid online')) ...[
+            const Gap(10),
+            Text('BY WHO TOOK IT', style: tx(12, w: w700, c: MP.ink3, em: 0.06)),
+            const Gap(4),
+            for (final p in s.list('byPerson'))
+              line(
+                '${p['userId'] == null ? tr(context, p.str('name')) : p.str('name')} · ${p.numOr('count').toInt()}',
+                [if (p.numOr('cash') > 0) '${tr(context, 'Cash')} ${d3Rupees(p.numOr('cash').toInt())}', if (p.numOr('other') > 0) d3Rupees(p.numOr('other').toInt())].join(' + '),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
 
   /// "Today, 10:30 AM · Salt Lake · Pay at clinic"
   String _dueDetail(_Pay p) => [
@@ -224,6 +287,7 @@ class _StaffPaymentsScreenState extends State<StaffPaymentsScreen> with LiveData
                   _limit = _pageSize;
                 }),
               ),
+              if (_tab == 1) _summary(),
               D3SectionHead(tr(context, _tabs[_tab]), trailing: rows.isEmpty ? null : '${d3Rupees(total)} · ${d3Plural(rows.length, 'patient')}'),
               if (shown.isEmpty)
                 MpCard(child: Text(empty[_tab], style: tx(15, c: MP.ink2, h: 1.4)))

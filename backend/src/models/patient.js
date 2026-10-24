@@ -33,7 +33,13 @@ const patientSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User' }, // set once the patient joins the app
     name: { type: String, required: true, trim: true },
-    phone: { ...phone(true), unique: true },
+    // One record per phone number for the person it belongs to (primary). Family members on
+    // that phone (a child, a parent) have their own record: familyOf the holder, the holder's
+    // phone and app account (so their notices and alarms reach the holder's phone).
+    phone: { ...phone(true) },
+    primary: { type: Boolean, default: true },
+    familyOf: { type: Schema.Types.ObjectId, ref: 'Patient' },
+    relation: { type: String, enum: ['child', 'spouse', 'parent', 'sibling', 'grandparent', 'other'] },
     phoneVerifiedAt: Date,
     dateOfBirth: Date,
     ageYears: { type: Number, min: 0, max: 130 }, // when only age was given
@@ -102,7 +108,10 @@ const patientSchema = new Schema(
   },
   baseOptions,
 );
-patientSchema.index({ userId: 1 }, { unique: true, partialFilterExpression: { userId: { $type: 'objectId' } } });
+// Unique for the holders only (family members share the holder's phone and account).
+patientSchema.index({ phone: 1 }, { unique: true, partialFilterExpression: { primary: true } });
+patientSchema.index({ userId: 1 }, { unique: true, partialFilterExpression: { userId: { $type: 'objectId' }, primary: true } });
+patientSchema.index({ familyOf: 1 });
 patientSchema.index({ name: 'text' });
 patientSchema.index({ geo: '2dsphere' });
 

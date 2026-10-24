@@ -118,7 +118,7 @@ me.post('/export', async (req, res) => {
   const [members, profile, patient] = await Promise.all([
     M.Member.find({ userId: req.user._id }).populate('practiceId', 'name'),
     M.DoctorProfile.findOne({ userId: req.user._id }).lean(),
-    M.Patient.findOne({ userId: req.user._id }).lean(),
+    M.Patient.findOne({ userId: req.user._id, primary: { $ne: false } }).lean(),
   ]);
   const notes = await M.AiMemory.find({ userId: req.user._id }, 'ownerType text kind source createdAt updatedAt').lean();
   const data = {

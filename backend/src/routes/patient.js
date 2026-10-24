@@ -25,14 +25,15 @@ r.use(requireAuth);
 
 // Sign-up for someone with no record yet (a clinic may have created one already).
 r.post('/register', async (req, res) => {
-  if (await M.Patient.exists({ userId: req.user._id })) throw conflict('You already have a profile', 'ALREADY_REGISTERED');
+  if (await M.Patient.exists({ userId: req.user._id, primary: { $ne: false } })) throw conflict('You already have a profile', 'ALREADY_REGISTERED');
   const { name, gender, ageYears, dateOfBirth } = req.body;
   if (!name || !E.GENDERS.includes(gender)) throw badRequest('Enter your name and gender');
   if (req.body.termsAccepted) await M.User.updateOne({ _id: req.user._id }, { termsAcceptedAt: new Date() });
-  const existing = await M.Patient.findOne({ phone: req.user.phone });
+  const existing = await M.Patient.findOne({ phone: req.user.phone, primary: { $ne: false } });
   if (existing) {
     existing.userId = req.user._id;
     await existing.save();
+    await M.Patient.updateMany({ familyOf: existing._id }, { userId: req.user._id }); // their family profiles too
     return res.json(existing);
   }
   const p = await M.Patient.create({ userId: req.user._id, name, gender, ageYears, ageRecordedAt: ageYears != null ? new Date() : undefined, dateOfBirth, phone: req.user.phone, phoneVerifiedAt: req.user.phoneVerifiedAt });
@@ -1978,7 +1979,7 @@ r.post('/urgent', async (req, res) => {
 
 // ── Ask MedPin AI ──
 r.get('/ai/session', async (req, res) => {
-  let s = await M.AiSession.findOne({ userId: req.user._id, ownerType: 'patient' }).sort({ lastAt: -1 });
+  let s = await M.AiSession.findOne({ userId: req.user._id, ownerType: 'patient', patientId: req.patient._id }).sort({ lastAt: -1 });
   if (!s) s = await M.AiSession.create({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id, lastAt: new Date() });
   res.json({ session: s, messages: await M.AiMessage.find({ sessionId: s._id }).sort({ createdAt: 1 }).limit(100) });
 });
@@ -1986,7 +1987,7 @@ r.get('/ai/session', async (req, res) => {
 r.post('/ai/ask', async (req, res) => {
   const text = String(req.body.text || '').trim();
   if (!text) throw badRequest('Ask a question', 'EMPTY_MESSAGE');
-  let s = await M.AiSession.findOne({ userId: req.user._id, ownerType: 'patient' }).sort({ lastAt: -1 });
+  let s = await M.AiSession.findOne({ userId: req.user._id, ownerType: 'patient', patientId: req.patient._id }).sort({ lastAt: -1 });
   if (!s) s = await M.AiSession.create({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id });
   const question = await M.AiMessage.create({ sessionId: s._id, role: 'user', text, inputMode: req.body.inputMode, voiceLanguage: req.body.voiceLanguage });
   const out = await assistant.patientAnswer(s, text, req.patient, { excludeId: question._id }).catch((err) => {
@@ -2021,6 +2022,56 @@ r.delete('/ai/memories', async (req, res) => {
 r.put('/ai/memories/settings', async (req, res) => {
   await memory.setEnabled({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id }, req.body?.enabled !== false);
   res.json(await memory.list({ ownerType: 'patient', userId: req.user._id, patientId: req.patient._id }));
+});
+
+// ── Family profiles (one phone, several people: a child, a parent) ──
+const RELATIONS = ['child', 'spouse', 'parent', 'sibling', 'grandparent', 'other'];
+const familyRow = (p, holder) => ({ id: p._id, name: p.name, gender: p.gender, age: T.ageFrom(p), relation: p.primary === false ? p.relation || 'other' : null, me: String(p._id) === String(holder._id) });
+
+// The profiles on this phone: the account's own first, then the family members.
+r.get('/family', async (req, res) => {
+  const members = await M.Patient.find({ familyOf: req.holder._id }).sort({ createdAt: 1 });
+  res.json({ items: [familyRow(req.holder, req.holder), ...members.map((m) => familyRow(m, req.holder))], activeId: req.patient._id });
+});
+
+// Add a family member (their own record: medicines, visits, reports kept apart).
+r.post('/family', async (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 80);
+  if (name.length < 2) throw badRequest('Enter their name', 'NAME_REQUIRED');
+  if (!E.GENDERS.includes(req.body.gender)) throw badRequest('Choose a gender', 'GENDER_REQUIRED');
+  const ageYears = req.body.ageYears != null && req.body.ageYears !== '' ? Number(req.body.ageYears) : undefined;
+  if (ageYears == null && !req.body.dateOfBirth) throw badRequest('Enter their age', 'AGE_REQUIRED');
+  if (ageYears != null && !(ageYears >= 0 && ageYears <= 120)) throw badRequest('Enter an age from 0 to 120', 'BAD_AGE');
+  const count = await M.Patient.countDocuments({ familyOf: req.holder._id });
+  if (count >= 8) throw conflict('A phone can have up to 8 family members', 'FAMILY_FULL');
+  if (await M.Patient.exists({ familyOf: req.holder._id, name: new RegExp(`^${escapeRegex(name)}$`, 'i') })) throw conflict(`${name} is already in your family`, 'FAMILY_EXISTS');
+  const member = await M.Patient.create({
+    name, gender: req.body.gender, ageYears, ageRecordedAt: ageYears != null ? new Date() : undefined, dateOfBirth: req.body.dateOfBirth || undefined,
+    phone: req.holder.phone, phoneVerifiedAt: req.holder.phoneVerifiedAt, userId: req.holder.userId,
+    primary: false, familyOf: req.holder._id, relation: RELATIONS.includes(req.body.relation) ? req.body.relation : 'other',
+    // Their medicine and reminder settings start as the holder's (meal times, reminders on).
+    settings: req.holder.settings ? { ...(req.holder.settings.toObject?.() || req.holder.settings) } : undefined,
+  });
+  res.status(201).json(familyRow(member, req.holder));
+});
+
+r.patch('/family/:id', async (req, res) => {
+  if (!isId(req.params.id)) throw notFound('Family member');
+  const member = await M.Patient.findOne({ _id: req.params.id, familyOf: req.holder._id });
+  if (!member) throw notFound('Family member');
+  if (req.body.name !== undefined) {
+    const name = String(req.body.name || '').trim().slice(0, 80);
+    if (name.length < 2) throw badRequest('Enter their name', 'NAME_REQUIRED');
+    member.name = name;
+  }
+  if (req.body.relation !== undefined && RELATIONS.includes(req.body.relation)) member.relation = req.body.relation;
+  if (req.body.gender !== undefined && E.GENDERS.includes(req.body.gender)) member.gender = req.body.gender;
+  if (req.body.ageYears !== undefined && Number(req.body.ageYears) >= 0 && Number(req.body.ageYears) <= 120) {
+    member.ageYears = Number(req.body.ageYears);
+    member.ageRecordedAt = new Date();
+  }
+  await member.save();
+  res.json(familyRow(member, req.holder));
 });
 
 // ── Feedback ──

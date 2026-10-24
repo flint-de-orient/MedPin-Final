@@ -99,7 +99,7 @@ async function strayPayment({ kind, payment, order, razorpayPaymentId, amountPai
   const { notify, deskOrDoctors } = require('./notify');
   const patient = row.patientId ? await M.Patient.findById(row.patientId, 'userId name') : null;
   if (patient?.userId) {
-    await notify([patient.userId], {
+    await notify([patient.userId], { forPatientId: patient._id,
       type: 'fee_refunded', practiceId: row.practiceId,
       title: row.status === 'refunded' ? `₹${amount} refunded` : `₹${amount} will be given back`,
       body: row.status === 'refunded'
@@ -192,7 +192,7 @@ async function feeReceipt(p) {
   if (!a) return;
   const how = p.method === 'online' ? 'online' : `at the clinic (${p.method === 'cash' ? 'cash' : p.method === 'upi' ? 'UPI' : p.method})`;
   if (a.patientId?.userId) {
-    await notify([a.patientId.userId], {
+    await notify([a.patientId.userId], { forPatientId: a.patientId._id,
       type: 'fee_paid', practiceId: a.practiceId, title: `Paid ₹${p.amount} ${p.method === 'online' ? 'online' : 'at the clinic'}`,
       body: `Your visit with ${a.doctorId?.name || 'the doctor'} · reference ${p.razorpayPaymentId || String(p._id).slice(-6)}`,
       screen: 'Patient-DoctorDetail', params: { doctorId: a.doctorId?._id || a.doctorId },
@@ -248,7 +248,7 @@ async function orderPaid(orderId, razorpayPaymentId, { amountPaise } = {}) {
   await cancelLink(order.pay?.linkId);
   const patient = await M.Patient.findById(order.patientId, 'userId');
   if (patient?.userId) {
-    await require('./notify').notify([patient.userId], { type: 'order_update', title: `Paid ₹${order.total} for your medicines`, body: 'The pharmacy can see it is paid.', screen: 'Patient-Medicines' }).catch(() => {});
+    await require('./notify').notify([patient.userId], { forPatientId: patient._id, type: 'order_update', title: `Paid ₹${order.total} for your medicines`, body: 'The pharmacy can see it is paid.', screen: 'Patient-Medicines' }).catch(() => {});
   }
   return order;
 }
@@ -333,7 +333,7 @@ async function refundClaimed(payment, { by, handedBack }) {
     );
   }
   if (a?.patientId?.userId) {
-    await require('./notify').notify([a.patientId.userId], {
+    await require('./notify').notify([a.patientId.userId], { forPatientId: a.patientId._id,
       type: 'fee_refunded', practiceId: a.practiceId, title: `₹${payment.amount} refunded`,
       body: payment.method === 'online' && !cashForOnline ? 'Back to how you paid, usually in 5–7 working days.' : 'Handed back at the clinic.',
       screen: 'Patient-Doctors',

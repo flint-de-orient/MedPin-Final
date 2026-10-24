@@ -14,6 +14,7 @@ import '../../widgets/mp.dart';
 import 'common_p2.dart';
 import 'p1_sheets.dart' show P1ReadingSheet;
 import '../../widgets/i18n.dart';
+import 'family.dart';
 
 /// Patient app · Profile tab ("My profile"). Not an artboard in the design
 /// canvas: built from the front-desk Profile pattern (Staff-Profile) and the
@@ -515,6 +516,8 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
               gap: 24,
               children: [
                 _identity(me),
+                // Family on this phone: switch profile, add a family member.
+                if (isLive) const FamilySwitcher(),
                 _ConsentCard(live: data != null, onLinked: () => reload(quiet: true)),
                 if (data != null && (_p['trackedMeasures'] as List? ?? const []).isNotEmpty) _readingsSection(),
                 _section('Health details', [

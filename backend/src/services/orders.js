@@ -74,7 +74,7 @@ async function setStatus(order, status, { by } = {}) {
   if (by !== 'patient') {
     const patient = await M.Patient.findById(order.patientId, 'userId');
     if (patient?.userId) {
-      await notify([patient.userId], { type: 'order_update', title: PATIENT_TEXT[status] || `Order ${LABEL[status]}`, body: order.etaText || undefined, screen: 'Patient-Medicines', params: { orderId: order._id } });
+      await notify([patient.userId], { forPatientId: patient._id, type: 'order_update', title: PATIENT_TEXT[status] || `Order ${LABEL[status]}`, body: order.etaText || undefined, screen: 'Patient-Medicines', params: { orderId: order._id } });
     }
   }
   return order;

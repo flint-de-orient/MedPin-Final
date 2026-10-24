@@ -7,6 +7,12 @@ require('../src/models');
 (async () => {
   await connect();
   console.log(`Connected to ${env.mongo.uri} / ${env.mongo.dbName}`);
+  // Family profiles (2026-10): records from before are each their phone's holder.
+  const P = mongoose.models.Patient;
+  if (P) {
+    const r = await P.collection.updateMany({ primary: { $exists: false }, familyOf: { $exists: false } }, { $set: { primary: true } });
+    if (r.modifiedCount) console.log(`  patients marked as their phone's holder: ${r.modifiedCount}`);
+  }
   const names = Object.keys(mongoose.models).sort();
   for (const name of names) {
     const Model = mongoose.models[name];

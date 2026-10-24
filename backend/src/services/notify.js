@@ -18,6 +18,13 @@ const idOf = (x) => String(x?._id || x);
 async function notify(userIds, n) {
   const ids = [...new Set((userIds || []).filter(Boolean).map(idOf))];
   if (!ids.length) return [];
+  // About a family member on the holder's phone (a child's visit): the notice says who it is
+  // for, and opening it switches the app to that profile.
+  if (n.forPatientId) {
+    const fp = await M.Patient.findById(n.forPatientId, 'name primary').lean();
+    const { forPatientId, ...rest } = n;
+    n = fp && fp.primary === false ? { ...rest, params: { ...(rest.params || {}), forPatientId: String(fp._id), forName: fp.name } } : rest;
+  }
   const channels = ['in_app', ...(n.push === false ? [] : ['push']), ...(n.whatsapp ? ['whatsapp'] : [])];
   // Each person reads it in their app language (Bengali / Hindi: lib/notify_i18n.js);
   // type, screen and params stay the same for everyone.

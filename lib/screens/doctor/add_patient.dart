@@ -255,6 +255,50 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
   String? _otpCode;
   bool _busy = false;
 
+  /// A family member on a phone that already has a record (a child on the mother's phone):
+  /// their own record under the holder (POST /api/patients {asFamily, relation}).
+  bool _asFamily = false;
+  String _relation = 'child';
+
+  /// The number is on MedPin: this person, or someone else in the family using it?
+  Future<String?> _whoIsIt(String? holderName) => openSheet<String>(
+        context,
+        (c) => MpSheet(
+          title: 'This number is on MedPin',
+          subtitle: holderName == null
+              ? 'Is this the same person, or a family member using their phone (a child, a parent)?'
+              : trf(context, 'It belongs to {name}. Is this {name}, or a family member using their phone?', {'name': holderName}),
+          showClose: true,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MpButton(holderName == null ? 'The same person' : trf(context, "It's {name}", {'name': holderName}), onTap: () => Navigator.pop(c, 'same')),
+                const SizedBox(height: 10),
+                MpButton('A family member on this phone', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, 'family')),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Future<String?> _pickRelation() => openSheet<String>(
+        context,
+        (c) => MpSheet(
+          title: 'How are they related?',
+          subtitle: "To the phone's owner",
+          showClose: true,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final r in const [('child', 'Child'), ('parent', 'Parent'), ('spouse', 'Spouse'), ('sibling', 'Brother / sister'), ('grandparent', 'Grandparent'), ('other', 'Other')])
+                MpChip(r.$2, onTap: () => Navigator.pop(c, r.$1)),
+            ]),
+          ),
+        ),
+      );
+
   bool get _verified => _phone.text == _verifiedNumber;
   String get _digits => _phone.text.replaceAll(RegExp(r'\D'), '');
 
@@ -412,6 +456,23 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
       if (look is! Map || !mounted) return;
       if (look['exists'] == true) {
         final p = look['patient'];
+        // Someone else in the family using this phone: a new record of their own (the phone's
+        // owner confirms with the code sent to it).
+        final who = await _whoIsIt(look['linked'] == true && p is Map ? '${p['name']}' : null);
+        if (who == null || !mounted) return;
+        if (who == 'family') {
+          final rel = await _pickRelation();
+          if (rel == null || !mounted) return;
+          final code = await verifyPatientPhone(context, digits);
+          if (code == null || !mounted) return;
+          setState(() {
+            _asFamily = true;
+            _relation = rel;
+            _otpCode = code;
+            _verifiedNumber = _phone.text;
+          });
+          return;
+        }
         if (look['linked'] == true && p is Map) {
           if (_walkIn) {
             final token = await addWalkIn(context, '${p['id']}', reason: _complaint.text);
@@ -510,6 +571,7 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
         // A searched address: its map point (and the patient's geo for distance).
         if (_place != null && _address.text.trim() == _placeLabel) 'place': _place,
         if (_otpCode != null) 'otpCode': _otpCode,
+        if (_asFamily) ...{'asFamily': true, 'relation': _relation},
         if (vitals.isNotEmpty) 'vitals': vitals,
         if (complaint.isNotEmpty) 'complaint': complaint,
       });

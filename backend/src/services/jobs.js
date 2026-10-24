@@ -99,7 +99,7 @@ async function doseReminders(now, since) {
     const names = g.items.map(({ c }) => `${c.name}${c.strength ? ` ${c.strength}` : ''}`);
     const foods = [...new Set(g.items.map(({ c }) => FOOD[c.foodRelation]).filter(Boolean))];
     await once(`dosegroup:${key}`, () =>
-      notify([g.p.userId], {
+      notify([g.p.userId], { forPatientId: g.p._id,
         type: 'dose_reminder',
         title: names.length === 1 ? `Time for ${names[0]}` : `Time for ${names.length} medicines`,
         body: [names.length > 1 ? names.join(', ') : null, SLOT_LABEL[g.slot] && `${SLOT_LABEL[g.slot]} dose`, foods.join(' / ')].filter(Boolean).join(' · '),
@@ -132,7 +132,7 @@ async function visitReminders(now) {
         : T.dayKey(a.startAt) === T.dayKey(now) ? 'today' : 'tomorrow';
       try {
         await once(`visit${hours}:${a._id}`, async () =>
-          notify([p.userId], {
+          notify([p.userId], { forPatientId: p._id,
             type: 'visit_reminder', practiceId: a.practiceId, title: `Your visit is ${label}`, body: await visitText(a),
             screen: 'Patient-DoctorDetail', params: { doctorId: a.doctorId, appointmentId: a._id }, whatsapp: hours === 24,
           }),
@@ -163,7 +163,7 @@ async function followUpReminders(now, { force = false } = {}) {
     if (!p) continue;
     await once(`followup:${f._id}`, async () => {
       if (p.userId && channels.includes('app')) {
-        await notify([p.userId], {
+        await notify([p.userId], { forPatientId: p._id,
           type: 'follow_up_reminder', practiceId: f.practiceId, title: `Follow-up due ${left === 0 ? 'today' : left === 1 ? 'tomorrow' : `in ${left} days`}`,
           body: `${prof?.displayName || 'Your doctor'} asked you to come back on ${T.dayKey(f.dueDate)}. Book a time in the app.`,
           screen: 'Patient-Doctors', whatsapp: channels.includes('whatsapp'),
@@ -189,7 +189,7 @@ async function lowStock(now) {
     const p = await M.Patient.findById(c.patientId, 'userId');
     if (!p?.userId) continue;
     await once(`stock:${c._id}:${day}`, () =>
-      notify([p.userId], {
+      notify([p.userId], { forPatientId: p._id,
         type: 'low_stock', title: daysLeft <= 0 ? `${c.name} has run out` : `${c.name} runs out in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
         body: `${c.stockUnits} left · ${doseText(c.dose)}. Reorder now so you don't miss doses.`, screen: 'Patient-Medicines', params: { courseId: c._id },
       }),
@@ -200,7 +200,7 @@ async function lowStock(now) {
 async function dailyLogReminders(now) {
   const day = T.dayKey(now);
   const minute = T.minuteOfDay(now);
-  for await (const p of M.Patient.find({ userId: { $ne: null }, 'settings.dailyLogReminder': { $ne: false } }, 'userId settings').cursor()) {
+  for await (const p of M.Patient.find({ userId: { $ne: null }, primary: { $ne: false }, 'settings.dailyLogReminder': { $ne: false } }, 'userId settings').cursor()) {
     const at = /^\d{2}:\d{2}$/.test(p.settings?.dailyLogReminderAt || '') ? p.settings.dailyLogReminderAt : '20:00';
     if (minute < T.hhmmToMin(at)) continue;
     const logged = await M.HealthLog.exists({ patientId: p._id, loggedAt: { $gte: T.dayStart(now) } });
@@ -211,7 +211,7 @@ async function dailyLogReminders(now) {
     const phone = (await liveDevices({ userId: p.userId, localAlarms: true, dailyLogAt: at, remindersUntil: { $gte: now } })).length > 0;
     if (phone) continue;
     await once(`log:${p._id}:${day}`, () =>
-      notify([p.userId], { type: 'daily_log_reminder', title: "Log today's meals", body: 'A quick photo or a line is enough. Your care team sees it.', screen: 'Patient-Log' }),
+      notify([p.userId], { forPatientId: p._id, type: 'daily_log_reminder', title: "Log today's meals", body: 'A quick photo or a line is enough. Your care team sees it.', screen: 'Patient-Log' }),
     );
   }
 }

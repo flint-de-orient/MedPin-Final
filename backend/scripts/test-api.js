@@ -51,8 +51,8 @@ const step = async (name, fn) => {
 };
 
 /** Tiny client: api(token)('POST', '/path', body) → { status, body } */
-const api = (token, practiceId) => async (method, path, body, { form } = {}) => {
-  const headers = {};
+const api = (token, practiceId) => async (method, path, body, { form, headers: extra } = {}) => {
+  const headers = { ...(extra || {}) };
   if (token) headers.authorization = `Bearer ${token}`;
   if (practiceId) headers['x-practice-id'] = String(practiceId);
   let payload;
@@ -2623,6 +2623,49 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal((await ctx.doc('PATCH', '/api/practice', { name: ' ' })).status, 400);
     const pr = ok(await ctx.doc('GET', '/api/practice'));
     assert.ok(Array.isArray(pr.branches) && pr.branches.length >= 1, 'checklist items open a branch, not a new one');
+  });
+
+  await step('family on one phone: add, switch, their own data, the desk registers one, notices reach the holder, the clinic links one', async () => {
+    const holder = await M.Patient.findById(ctx.patientId);
+    // The patient adds their son.
+    const son = ok(await ctx.pat('POST', '/api/patient/family', { name: 'Aarav Test', gender: 'male', ageYears: 8, relation: 'child' }), 201);
+    assert.equal((await ctx.pat('POST', '/api/patient/family', { name: 'aarav test', gender: 'male', ageYears: 8 })).status, 409, 'not twice');
+    const fam = ok(await ctx.pat('GET', '/api/patient/family'));
+    assert.deepEqual(fam.items.map((x) => x.me), [true, false]);
+    // Switched to him: his own profile and medicines, not the parent's.
+    const asSon = (method, path, body) => ctx.pat(method, path, body, { headers: { 'x-patient-id': String(son.id) } });
+    const me = ok(await asSon('GET', '/api/patient/me'));
+    assert.equal(me.patient?.name || me.name, 'Aarav Test');
+    ok(await asSon('POST', '/api/patient/medicines', { name: 'Paediatric syrup', dose: { morning: 1 } }), 201);
+    assert.ok(await M.MedicationCourse.exists({ patientId: son.id, name: 'Paediatric syrup' }));
+    assert.ok(!(await M.MedicationCourse.exists({ patientId: holder._id, name: 'Paediatric syrup' })), "kept apart from the parent's");
+    // Someone else's record can't be opened by naming it.
+    const other = await M.Patient.findOne({ _id: { $ne: holder._id }, familyOf: { $exists: false }, primary: { $ne: false } });
+    if (other) assert.equal((await ctx.pat('GET', '/api/patient/me', undefined, { headers: { 'x-patient-id': String(other._id) } })).status, 404);
+    // A notice about him reaches the parent's phone, saying who it is for.
+    const sonDoc = await M.Patient.findById(son.id);
+    assert.equal(String(sonDoc.userId), String(holder.userId), "on the parent's account");
+    await require('../src/services/notify').notify([sonDoc.userId], { forPatientId: sonDoc._id, type: 'test_family', title: 'Family notice test' });
+    const n = await M.Notification.findOne({ type: 'test_family' });
+    assert.equal(n.params?.forName, 'Aarav Test');
+    // The desk registers the daughter on the same phone (the phone owner confirms the code).
+    let otp = await ctx.desk('POST', '/api/patients/phone-otp', { phone: holder.phone });
+    if (otp.status === 429 && otp.body?.error?.details?.retryInSec) {
+      await new Promise((r) => setTimeout(r, (otp.body.error.details.retryInSec + 1) * 1000)); // the resend wait
+      otp = await ctx.desk('POST', '/api/patients/phone-otp', { phone: holder.phone });
+    }
+    const sent = ok(otp);
+    const daughter = ok(await ctx.desk('POST', '/api/patients', { name: 'Diya Test', gender: 'female', ageYears: 5, phone: holder.phone, otpCode: sent.devCode, asFamily: true, relation: 'child' }), 201);
+    const dDoc = await M.Patient.findById(daughter.id);
+    assert.deepEqual([dDoc.primary, String(dDoc.familyOf), dDoc.relation], [false, String(holder._id), 'child']);
+    assert.ok(await M.PatientEnrolment.exists({ patientId: dDoc._id, practiceId: ctx.practiceId, status: 'linked' }));
+    // Without "family member" the number is still the parent's.
+    const again = await ctx.desk('POST', '/api/patients', { name: 'Someone Else', gender: 'female', ageYears: 30, phone: holder.phone, otpCode: '000000' });
+    assert.equal(again.body?.error?.code, 'PATIENT_EXISTS');
+    // A clinic links the son with the code shown in his profile.
+    const code = ok(await asSon('POST', '/api/patient/consent-code'));
+    ok(await ctx.doc2('POST', '/api/patients/link', { phone: holder.phone, consentCode: code.display || code.code }));
+    assert.ok(await M.PatientEnrolment.exists({ patientId: son.id, status: 'linked', practiceId: { $ne: ctx.practiceId } }), 'the son is linked, not his parent');
   });
 
   server.close();

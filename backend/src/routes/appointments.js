@@ -521,7 +521,7 @@ r.post('/appointment-requests/:id/decline', async (req, res) => {
   if (!request) throw conflict('This request was already handled');
   req.body.reason = reason;
   const patient = await M.Patient.findById(request.patientId, 'userId');
-  if (patient?.userId) await notify([patient.userId], { type: 'request_declined', practiceId: req.practiceId, title: 'Your visit request was declined', body: req.body.reason, screen: 'Patient-Doctors' });
+  if (patient?.userId) await notify([patient.userId], { forPatientId: patient._id, type: 'request_declined', practiceId: req.practiceId, title: 'Your visit request was declined', body: req.body.reason, screen: 'Patient-Doctors' });
   res.json(request);
 });
 
@@ -750,6 +750,48 @@ r.get('/payments', async (req, res) => {
   res.json(items);
 });
 
+// Payments → "Day's collections": what came in on a day (by method and by who took it),
+// what was handed back, and the cash that should be in the drawer. The branches (and an
+// assistant's doctors) this person covers, like the Payments list.
+r.get('/payments/summary', need('fees'), async (req, res) => {
+  const day = T.parseDay(req.query.date);
+  const next = T.addDays(day, 1);
+  const scope = { practiceId: req.practiceId };
+  const { locs, docs } = coverage(req);
+  if (locs) scope.locationId = { $in: locs.map((id) => new Types.ObjectId(id)) };
+  if (docs) scope.appointmentId = { $in: await M.Appointment.distinct('_id', { practiceId: req.practiceId, doctorId: { $in: docs.map((id) => new Types.ObjectId(id)) } }) };
+  const [paid, refunded, toCollect] = await Promise.all([
+    // Collected that day (a fee paid then, whatever happened later).
+    M.Payment.find({ ...scope, paidAt: { $gte: day, $lt: next }, method: { $ne: null } }, 'amount method markedPaidBy razorpayPaymentId').populate('markedPaidBy', 'name').lean(),
+    // Given back that day: at the desk (cash out of the drawer) or online.
+    M.Payment.find({ ...scope, status: 'refunded', refundedAt: { $gte: day, $lt: next } }, 'amount method refundId refundedBy').populate('refundedBy', 'name').lean(),
+    M.Payment.find({ ...scope, status: 'pending', createdAt: { $lt: next } }, 'amount').lean(),
+  ]);
+  const sum = (xs) => xs.reduce((s, x) => s + (x.amount || 0), 0);
+  const methods = ['cash', 'upi', 'card', 'net_banking', 'online'];
+  const byMethod = methods.map((m) => ({ method: m, amount: sum(paid.filter((p) => p.method === m)), count: paid.filter((p) => p.method === m).length })).filter((x) => x.count);
+  const people = new Map();
+  for (const p of paid) {
+    const who = p.method === 'online' || p.razorpayPaymentId ? 'online' : String(p.markedPaidBy?._id || 'unknown');
+    const row = people.get(who) || { userId: who === 'online' || who === 'unknown' ? null : who, name: who === 'online' ? 'Paid online' : p.markedPaidBy?.name || 'Not recorded', cash: 0, other: 0, count: 0 };
+    row[p.method === 'cash' ? 'cash' : 'other'] += p.amount || 0;
+    row.count += 1;
+    people.set(who, row);
+  }
+  // A refund handed back at the desk has no Razorpay refund id: that cash left the drawer.
+  const handedBack = refunded.filter((x) => !x.refundId);
+  const cashIn = sum(paid.filter((p) => p.method === 'cash'));
+  res.json({
+    date: day,
+    collected: { amount: sum(paid), count: paid.length },
+    byMethod,
+    byPerson: [...people.values()].sort((a, b) => b.cash + b.other - (a.cash + a.other)),
+    refunds: { handedBack: { amount: sum(handedBack), count: handedBack.length }, online: { amount: sum(refunded) - sum(handedBack), count: refunded.length - handedBack.length } },
+    cashInDrawer: cashIn - sum(handedBack),
+    stillToCollect: { amount: sum(toCollect), count: toCollect.length },
+  });
+});
+
 r.post('/payments/:id/mark-paid', async (req, res) => {
   const found = ownPractice(req, await M.Payment.findById(req.params.id), 'Payment');
   // Taken at the desk: cash, UPI or card. "Online" only ever comes from Razorpay itself
@@ -821,7 +863,7 @@ r.post('/payments/:id/waive', async (req, res) => {
     );
     const patient = await M.Patient.findById(visit.patientId, 'userId');
     if (patient?.userId) {
-      await notify([patient.userId], { type: 'fee_waived', practiceId: req.practiceId, title: 'No fee for your visit', body: `The ₹${p.amount} fee has been waived.`, screen: 'Patient-Doctors' }).catch(() => {});
+      await notify([patient.userId], { forPatientId: patient._id, type: 'fee_waived', practiceId: req.practiceId, title: 'No fee for your visit', body: `The ₹${p.amount} fee has been waived.`, screen: 'Patient-Doctors' }).catch(() => {});
     }
     await S.visitsChanged(visit);
   }
@@ -840,7 +882,7 @@ r.post('/payments/:id/link', async (req, res) => {
   if (patient.userId) {
     // One notice per fee: sending it again replaces the earlier one (no pile of "Pay ₹600").
     await M.Notification.deleteMany({ userId: patient.userId, type: 'payment_link', 'params.paymentId': String(p._id) });
-    await notify([patient.userId], {
+    await notify([patient.userId], { forPatientId: patient._id,
       type: 'payment_link', practiceId: req.practiceId, title: `Pay ₹${p.amount} for your visit`, body: `Tap to pay in the app, or open ${url}`, whatsapp: true,
       ...(conversationId ? { screen: 'Patient-DoctorChat', params: { conversationId, paymentId: String(p._id) } } : { params: { paymentId: String(p._id) } }),
     });

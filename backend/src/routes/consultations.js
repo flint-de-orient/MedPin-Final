@@ -243,7 +243,7 @@ r.post('/prescriptions/:id/send', staff({ perm: 'prescribe' }), async (req, res)
   await rx.save();
   await M.Consultation.updateOne({ prescriptionId: rx._id }, { status: 'sent' });
   const patient = await M.Patient.findById(rx.patientId, 'userId name');
-  if (patient.userId) await notify([patient.userId], { type: 'prescription', practiceId: req.practiceId, title: 'Your prescription is ready', screen: 'Patient-Records', whatsapp: true });
+  if (patient.userId) await notify([patient.userId], { forPatientId: patient._id, type: 'prescription', practiceId: req.practiceId, title: 'Your prescription is ready', screen: 'Patient-Records', whatsapp: true });
   res.json({ ...rx.toJSON(), file: storage.withUrl(rx.file) });
 });
 

@@ -202,7 +202,7 @@ async function book(input) {
   }
   const patient = await M.Patient.findById(patientId, 'userId name');
   if (patient?.userId && !walkIn) {
-    await notify([patient.userId], {
+    await notify([patient.userId], { forPatientId: patient._id,
       type: 'appointment_booked', practiceId,
       title: confirmed ? 'Visit confirmed' : 'Visit booked',
       body: `${T.fmtTime(T.minuteOfDay(startAt))}, ${T.dayKey(startAt)} · Token ${String(appt.tokenNo).padStart(2, '0')}`,
@@ -321,7 +321,7 @@ async function transition(appt, to, { by, cancelledBy, reason } = {}) {
   if (to === 'cancelled') {
     const patient = await M.Patient.findById(appt.patientId, 'userId');
     if (patient?.userId && appt.cancelledBy !== 'patient') {
-      await notify([patient.userId], {
+      await notify([patient.userId], { forPatientId: patient._id,
         type: 'appointment_cancelled', practiceId: appt.practiceId,
         title: 'Visit cancelled', body: reason || 'Please book another time', screen: 'Patient-Doctors', whatsapp: true,
       });

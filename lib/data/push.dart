@@ -178,8 +178,19 @@ class Push {
     // Patients open patient-app screens only, staff only staff screens.
     final isPatient = Session.I.landing == 'Main';
     if (isPatient != (spec.panel == 'patient')) return;
-    final args = {for (final e in data.entries) if (!const {'screen', 'type', 'notificationId', 'practiceId'}.contains(e.key)) e.key: e.value};
+    final args = {for (final e in data.entries) if (!const {'screen', 'type', 'notificationId', 'practiceId', 'forPatientId', 'forName'}.contains(e.key)) e.key: e.value};
     if (isPatient) {
+      // About a family member: their profile opens first (their visit, their medicines).
+      // About the account holder while a family profile is open: back to their own profile.
+      final forId = data['forPatientId']?.toString();
+      final target = forId != null && forId.isNotEmpty ? forId : null;
+      if (target != Session.I.familyPatientId) {
+        Session.I.selectFamily(target, name: data['forName']?.toString()).then((_) {
+          final c = Nav.key.currentContext;
+          if (c != null && c.mounted) Nav.go(c, screen, args: args.isEmpty ? null : args);
+        });
+        return;
+      }
       Nav.go(ctx, screen, args: args.isEmpty ? null : args);
       return;
     }

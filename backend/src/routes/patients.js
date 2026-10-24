@@ -134,7 +134,7 @@ r.get('/patients', async (req, res) => {
 // Add-Patient: does this phone already have a MedPin record?
 r.get('/patients/lookup', async (req, res) => {
   const phone = normalizePhone(req.query.phone);
-  const patient = await M.Patient.findOne({ phone });
+  const patient = await M.Patient.findOne({ phone, primary: { $ne: false } });
   if (!patient) return res.json({ exists: false });
   const linked = await M.PatientEnrolment.exists({ patientId: patient._id, practiceId: req.practiceId, status: 'linked' });
   // Details only once the patient is linked to this practice.
@@ -154,7 +154,7 @@ r.post('/patients', async (req, res) => {
   if (!name || !String(name).trim()) throw badRequest('Enter the patient name', 'NAME_REQUIRED');
   if (!E.GENDERS.includes(gender)) throw badRequest('Choose a gender', 'GENDER_REQUIRED');
   if (ageYears == null && !dateOfBirth) throw badRequest('Enter the age', 'AGE_REQUIRED');
-  if (await M.Patient.exists({ phone })) {
+  if (await M.Patient.exists({ phone, primary: { $ne: false } }) && req.body.asFamily !== true) {
     throw conflict("This number already has a MedPin record. Ask the patient for their consent code.", 'PATIENT_EXISTS');
   }
   // Consent: the patient confirms the number with the code sent to it. Without
@@ -162,9 +162,21 @@ r.post('/patients', async (req, res) => {
   if (!otpCode) throw badRequest("Verify the patient's mobile number with the code sent to it", 'OTP_REQUIRED');
   await checkOtp(phone, 'verify_patient_phone', otpCode);
   const user = await M.User.findOne({ phone });
+  // A family member on a phone that already has a record (a child, a parent): their own record,
+  // under the holder (the phone's owner just confirmed it with the code). Their notices go to
+  // the holder's app, where they show as a family profile.
+  const holder = req.body.asFamily === true ? await M.Patient.findOne({ phone, primary: { $ne: false } }) : null;
+  if (holder) {
+    const sameName = await M.Patient.exists({ familyOf: holder._id, name: new RegExp(`^${escapeRegex(String(name).trim())}$`, 'i') });
+    if (sameName || holder.name.toLowerCase() === String(name).trim().toLowerCase()) {
+      throw conflict(`${String(name).trim()} is already on this phone. Search for them instead.`, 'FAMILY_EXISTS');
+    }
+  }
+  const relation = ['child', 'spouse', 'parent', 'sibling', 'grandparent', 'other'].includes(req.body.relation) ? req.body.relation : 'other';
   const patient = await M.Patient.create({
     name: String(name).trim(), phone, gender, ageYears, ageRecordedAt: ageYears != null ? new Date() : undefined,
-    dateOfBirth, userId: user?._id, phoneVerifiedAt: new Date(),
+    dateOfBirth, userId: holder ? holder.userId : user?._id, phoneVerifiedAt: new Date(),
+    ...(holder ? { primary: false, familyOf: holder._id, relation } : {}),
     addresses: address ? [{
       line: String(address).trim(), isDefault: true,
       ...(place ? { area: place.area || undefined, city: place.city || undefined, pincode: place.pincode || undefined } : {}), ...(point ? { geo: point } : {}),
@@ -188,14 +200,17 @@ r.post('/patients/link', async (req, res) => {
   const phone = normalizePhone(req.body.phone);
   const code = String(req.body.consentCode || '').replace(/\s/g, '');
   if (!/^\d{6}$/.test(code)) throw badRequest('Enter the 6-digit consent code', 'INVALID_CODE');
-  const patient = await M.Patient.findOne({ phone });
-  if (!patient) throw notFound('Patient');
+  // Everyone on this phone: the holder and their family members (the code shown in the app
+  // is for the profile that was open, e.g. a child's).
+  const family = await M.Patient.find({ phone });
+  if (!family.length) throw notFound('Patient');
   // Each try is counted before comparing (atomic): guesses sent at once can't pass 5.
   const consent = await M.ConsentCode.findOneAndUpdate(
-    { patientId: patient._id, usedAt: null, expiresAt: { $gt: new Date() }, wrongTries: { $lt: 5 } },
+    { patientId: { $in: family.map((p) => p._id) }, usedAt: null, expiresAt: { $gt: new Date() }, wrongTries: { $lt: 5 } },
     { $inc: { wrongTries: 1 } },
     { sort: { createdAt: -1 }, new: true },
   );
+  const patient = (consent && family.find((p) => String(p._id) === String(consent.patientId))) || family.find((p) => p.primary !== false) || family[0];
   if (!consent || !safeEqual(consent.codeHash, hmac(`consent:${patient._id}:${code}`))) {
     // Guessing: after 5 tries the code stops working and the patient shows a new one.
     if (consent && consent.wrongTries >= 5) {
@@ -222,7 +237,7 @@ r.post('/patients/link', async (req, res) => {
     );
   }
   const practice = await M.Practice.findById(req.practiceId, 'name');
-  if (patient.userId) await notify([patient.userId], { type: 'record_linked', title: `${practice.name} can now see your record`, body: 'You can change this any time in Profile.', screen: 'Patient-Me' });
+  if (patient.userId) await notify([patient.userId], { forPatientId: patient._id, type: 'record_linked', title: `${practice.name} can now see your record`, body: 'You can change this any time in Profile.', screen: 'Patient-Me' });
   res.json(listRow(patient));
 });
 
@@ -529,7 +544,7 @@ r.post('/lab-results/:id/reviewed', need('labReview'), async (req, res) => {
   if (first) {
     const patient = await M.Patient.findById(result.patientId, 'userId');
     if (patient?.userId) {
-      await notify([patient.userId], {
+      await notify([patient.userId], { forPatientId: patient._id,
         type: 'lab_reviewed', practiceId: req.practiceId, title: result.testName ? `${req.user.name || 'Your doctor'} has seen your ${result.testName} report` : `${req.user.name || 'Your doctor'} has seen your test report`,
         screen: 'Patient-Records', params: { filter: 'tests' },
       }).catch(() => {});
@@ -618,7 +633,7 @@ r.put('/patients/:id/meal-log', async (req, res) => {
     );
   }
   if (on && !was && patient.userId) {
-    await notify([patient.userId], {
+    await notify([patient.userId], { forPatientId: patient._id,
       type: 'meal_log_requested', practiceId: req.practiceId, title: `${req.user.name || 'Your care team'} asked you to log your meals`,
       body: 'A quick photo or a line after each meal is enough. They will review it.', screen: 'Patient-Log',
     });
