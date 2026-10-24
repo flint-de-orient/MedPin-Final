@@ -163,7 +163,7 @@ ${row('Doctor', rx.doctorName || profile?.displayName)}${row('Reg. No.', reg)}${
       res.send(page('Pay for plan', `<h2>MedPin ${plan.name || plan.key} plan</h2><p>1 month</p>${button(plan.priceMonthly)}`));
     });
     app.post('/dev/pay/plan/:subId/:planKey', async (req, res) => {
-      const sub = await pay.planPaid(req.params.subId, req.params.planKey);
+      const sub = await pay.planPaid(req.params.subId, req.params.planKey, undefined, { renew: req.query.renew === '1' });
       if (!sub) return res.status(404).send(page('Not found', '<h2>Payment not found</h2>'));
       if (req.accepts(['html', 'json']) === 'json') return res.json({ ok: true, subscription: sub });
       res.send(page('Paid', '<h2>Paid ✓</h2><p>You can go back to the MedPin app.</p>'));

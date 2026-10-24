@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../../data/format.dart';
 import '../../data/live.dart';
 import '../../widgets/mp.dart';
+import '../../widgets/payment_history.dart';
 import 'common_d6.dart';
 import '../../widgets/i18n.dart';
 
@@ -51,6 +52,7 @@ class _PatientProfileDeskScreenState extends State<PatientProfileDeskScreen> wit
       (I.upload, "Upload report for today's visit", 'Add a test report or prescription', 'Records-Add'),
       (I.calendar, 'Book follow-up', D6Rec.practiceName.isEmpty ? 'Choose a date and time' : D6Rec.practiceName, 'Appointments-Manage'),
       (I.message, 'Message patient', "Opens ${r.first}'s conversation", 'Patient-Thread'),
+      (I.wallet, 'Payments', 'Fees paid and due, with receipts', 'Payments'),
       (
         I.eye,
         'Prescriptions (view only)',
@@ -64,6 +66,10 @@ class _PatientProfileDeskScreenState extends State<PatientProfileDeskScreen> wit
     final v = _visit(r);
     if (stem == 'Patient-Thread') {
       d6MessagePatient(context, r.id);
+      return;
+    }
+    if (stem == 'Payments') {
+      showPatientPayments(context, patientId: r.id, name: r.name);
       return;
     }
     d6Go(context, stem, {if (v != null && v['id'] != null) 'appointmentId': '${v['id']}'});

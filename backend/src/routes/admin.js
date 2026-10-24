@@ -51,7 +51,7 @@ async function handleWebhook({ event, payload }) {
     const notes = link.notes || {};
     const paymentId = payload.payment?.entity?.id;
     const amountPaise = payload.payment?.entity?.amount;
-    if (notes.kind === 'plan') await pay.planPaid(notes.subscriptionId, notes.planKey, paymentId);
+    if (notes.kind === 'plan') await pay.planPaid(notes.subscriptionId, notes.planKey, paymentId, { renew: notes.renew === '1' });
     else if (notes.kind === 'order') await pay.orderPaid(notes.orderId, paymentId, { amountPaise });
     else {
       // Fee links: notes.paymentId (older links: reference_id was the payment id).
@@ -89,7 +89,10 @@ r.use('/exports', need('exports'));
 
 // ── Billing ──
 r.get('/billing', async (req, res) => {
-  const sub = await M.Subscription.findOne({ practiceId: req.practiceId });
+  const B = require('../services/billing');
+  await B.ensurePlans();
+  // The month (or trial) ended without a payment: shown as Payment due straight away.
+  const sub = await B.refreshStatus(await M.Subscription.findOne({ practiceId: req.practiceId }));
   const plans = await M.Plan.find({ active: true }).sort({ priceMonthly: 1 });
   const plan = sub && plans.find((p) => p.key === sub.planKey);
   const periodStart = sub?.currentPeriodStart || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -99,6 +102,7 @@ r.get('/billing', async (req, res) => {
     M.UsageCounter.findOne({ practiceId: req.practiceId, periodStart }),
     M.Invoice.find({ practiceId: req.practiceId }).sort({ issuedAt: -1 }).limit(Number(req.query.invoices) || 3),
   ]);
+  const invoicesTotal = await M.Invoice.countDocuments({ practiceId: req.practiceId });
   res.json({
     subscription: sub,
     plan,
@@ -110,8 +114,26 @@ r.get('/billing', async (req, res) => {
       aiChats: { used: usage?.aiChats || 0, limit: plan?.aiChatsPerMonth },
     },
     invoices: invoices.map((i) => ({ ...i.toJSON(), file: storage.withUrl(i.file) })),
+    invoicesTotal,
+    renewal: await B.renewal(sub),
+    canManage: Boolean(req.member?.isOwner || req.member?.role === 'practice_manager'),
     checkout: require('../services/payments').configured() ? 'razorpay' : env.isProd ? 'not_configured' : 'dev',
   });
+});
+
+// Pay for the next month (the plan is due, or ends within 7 days): a payment link to open.
+r.post('/billing/renew', ownerOnly, async (req, res) => {
+  const B = require('../services/billing');
+  const sub = await B.refreshStatus(await M.Subscription.findOne({ practiceId: req.practiceId }));
+  if (!sub) throw notFound('Subscription');
+  const next = await B.renewal(sub);
+  if (!next?.canPay) throw conflict(`Your plan is paid until ${T.dayKey(sub.currentPeriodEnd)}. You can pay for the next month from 7 days before.`, 'NOT_DUE_YET');
+  const pay = require('../services/payments');
+  if (!pay.configured() && env.isProd) {
+    throw Object.assign(conflict('Online payment is not set up yet. Contact MedPin support to renew.', 'PAYMENTS_OFF'), { status: 503 });
+  }
+  const plan = await M.Plan.findOne({ key: next.planKey });
+  res.json({ checkoutUrl: await pay.planLink(sub, plan, req.user, { renew: true }), amount: plan.priceMonthly, planName: plan.name });
 });
 
 // Changes apply from the next billing cycle.

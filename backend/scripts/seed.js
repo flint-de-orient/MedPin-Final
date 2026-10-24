@@ -12,11 +12,7 @@ const upsertAll = (Model, key, rows) =>
     rows.map((row) => ({ updateOne: { filter: { [key]: row[key] }, update: { $set: row }, upsert: true } })),
   );
 
-const PLANS = [
-  { key: 'starter', name: 'Starter', priceMonthly: 999, seats: 3, activePatients: 150, aiChatsPerMonth: 1000 },
-  { key: 'clinic', name: 'Clinic', priceMonthly: 2499, seats: 8, activePatients: 500, aiChatsPerMonth: 3000 },
-  { key: 'hospital', name: 'Hospital', priceMonthly: 7999, seats: 25, activePatients: 2000, aiChatsPerMonth: 12000 },
-];
+const { PLANS } = require('../src/services/billing');
 
 const SPECIALTIES = [
   ['gp', 'General', 'General physician'],

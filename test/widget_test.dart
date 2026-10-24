@@ -39,10 +39,10 @@ void main() {
     // 96 artboards + the patient Profile tab + Find a doctor + 9 doctor screens
     // added after the design (settings, AI history, lab report, entry options),
     // plus the desk's Payments, the sign-up address step and the doctor's Colleagues.
-    expect(screenRegistry.length, 119);
+    expect(screenRegistry.length, 120);
     expect(screenRegistry.values.where((s) => s.panel == 'doctor').length, 90);
     expect(screenRegistry.values.where((s) => s.panel == 'staff').length, 6);
-    expect(screenRegistry.values.where((s) => s.panel == 'patient').length, 23);
+    expect(screenRegistry.values.where((s) => s.panel == 'patient').length, 24);
     for (final s in screenRegistry.values.where((s) => s.sheet)) {
       expect(screenRegistry.containsKey(s.parent), isTrue, reason: '${s.stem} parent ${s.parent}');
     }

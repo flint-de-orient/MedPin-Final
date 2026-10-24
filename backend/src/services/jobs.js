@@ -491,6 +491,8 @@ async function tick() {
     ['followUps', () => followUpReminders(now)], ['lowStock', () => lowStock(now)], ['dailyLog', () => dailyLogReminders(now)], ['digest', () => dailyDigest(now)],
     ['scores', () => healthScores(now)], ['noShows', () => noShows(now)],
     ['payouts', () => payouts(now)],
+    // A clinic's MedPin month (or trial) ended unpaid: Payment due, the owner told once.
+    ['billing', () => (quarter(now) ? require('./billing').remindDue(now) : null)],
   ]) {
     try {
       await job();

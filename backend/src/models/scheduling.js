@@ -105,6 +105,7 @@ const paymentSchema = new Schema(
     status: enumOf(E.FEE_STATUSES, { default: 'pending' }),
     paidAt: Date,
     markedPaidBy: ref('User'),
+    receiptNo: Number, // the clinic's own running receipt number, given when paid ("R-0042")
     paymentLinkUrl: String,
     paymentLinkSentAt: Date,
     paymentLinkExpiresAt: Date, // a link asked for again before this is the same link, re-sent

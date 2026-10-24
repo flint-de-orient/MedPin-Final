@@ -22,6 +22,9 @@ require('../src/models');
     console.log(`  ${Model.collection.collectionName.padEnd(22)} ${indexes.length} indexes`);
   }
   console.log(`${names.length} collections ready.`);
+  // MedPin's plans for clinics (a server set up without the seed had none); prices already set stay.
+  await require('../src/services/billing').ensurePlans();
+  console.log(`  plans: ${await mongoose.models.Plan.countDocuments({})}`);
   await disconnect();
 })().catch(async (err) => {
   console.error(err.message);

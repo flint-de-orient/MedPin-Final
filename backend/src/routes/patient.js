@@ -861,6 +861,18 @@ r.post('/checkout/confirm', async (req, res) => {
   res.json(await require('../services/checkout').confirm({ kind, id, orderId, paymentId, signature, patient: req.patient }));
 });
 
+// Payments: what this profile paid (and still owes) at every clinic, with receipts.
+r.get('/payments', async (req, res) => {
+  res.json({ items: await require('../services/receiptpdf').historyRows({ patientId: req.patient._id }) });
+});
+
+r.get('/payments/:id/receipt', async (req, res) => {
+  const p = isId(req.params.id) ? await M.Payment.findOne({ _id: req.params.id, patientId: req.patient._id }) : null;
+  if (!p) throw notFound('Payment');
+  if (!['paid', 'refunded'].includes(p.status)) throw conflict('A receipt is given once the fee is paid', 'NOT_PAID');
+  res.json(await require('../services/receiptpdf').receiptFile(p._id));
+});
+
 // "Pay online" for a visit fee still pending (a Razorpay link the app opens).
 r.post('/appointments/:id/pay', async (req, res) => {
   const appt = await M.Appointment.findOne({ _id: req.params.id, patientId: req.patient._id });

@@ -833,6 +833,25 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal((await ctx.desk('POST', `/api/payments/${row.payment.id}/mark-paid`, { method: 'upi' })).status, 409, 'not taken twice');
     const patientUser = (await M.Patient.findById(ctx.patientId)).userId;
     assert.ok(await M.Notification.exists({ userId: patientUser, type: 'fee_paid' }), 'receipt to the patient');
+    // A receipt number (not Razorpay's id) in the chat; the history and the receipt PDF for both sides.
+    const paidRow = await M.Payment.findById(row.payment.id);
+    assert.ok(paidRow.receiptNo > 0, 'receipt number given');
+    const note = await M.Message.findOne({ 'meta.event': 'fee_paid' }).sort({ createdAt: -1 });
+    assert.match(note.text, /receipt R-\d{4}/);
+    assert.doesNotMatch(note.text, /pay_|reference/);
+    const mine = ok(await ctx.pat('GET', '/api/patient/payments'));
+    const h = mine.items.find((i) => i.id === String(paidRow._id));
+    assert.deepEqual([h.status, h.method, h.hasReceipt, h.receiptNo], ['paid', 'cash', true, `R-${String(paidRow.receiptNo).padStart(4, '0')}`]);
+    assert.equal(h.items[0].label, 'Follow-up consultation');
+    const rcpt = ok(await ctx.pat('GET', `/api/patient/payments/${paidRow._id}/receipt`));
+    const pdf = await fetch(rcpt.url);
+    assert.equal(pdf.status, 200);
+    assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString(), '%PDF');
+    const atDesk = ok(await ctx.desk('GET', `/api/payments/history?patientId=${ctx.patientId}`));
+    assert.ok(atDesk.items.some((i) => i.id === String(paidRow._id)));
+    ok(await ctx.desk('GET', `/api/payments/${paidRow._id}/receipt`));
+    const strangerPay = await M.Payment.findOne({ patientId: { $ne: ctx.patientId } });
+    if (strangerPay) assert.equal((await ctx.pat('GET', `/api/patient/payments/${strangerPay._id}/receipt`)).status, 404, "not another patient's");
     // Cancelled after paying at the desk: a refund to hand back, then marked handed back.
     ok(await ctx.desk('POST', `/api/appointments/${appt.id}/cancel`, { reason: 'Clinic closed' }));
     let pay = await M.Payment.findById(row.payment.id);
@@ -1200,6 +1219,23 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     assert.equal(b.usage.seats.used, 3, 'doctor, front desk, lab technician');
     ok(await ctx.doc('POST', '/api/billing/switch', { planKey: 'clinic' }));
     assert.equal((await ctx.desk('POST', '/api/billing/switch', { planKey: 'starter' })).status, 403, 'owner only');
+    // The paid month ends unpaid: Payment due (nothing charged by itself); paying starts a new month.
+    const subNow = await M.Subscription.findOne({ practiceId: ctx.practiceId });
+    const keepSub = subNow.toObject();
+    assert.equal((await ctx.doc('POST', '/api/billing/renew', {})).status, subNow.currentPeriodEnd - Date.now() > 7 * 864e5 ? 409 : 200, 'not due yet');
+    await M.Subscription.updateOne({ _id: subNow._id }, { status: 'active', currentPeriodEnd: new Date(Date.now() - 864e5) });
+    const due = ok(await ctx.doc('GET', '/api/billing'));
+    assert.deepEqual([due.subscription.status, due.renewal.due, due.renewal.canPay, due.plan.name], ['past_due', true, true, 'Clinic']);
+    assert.equal(typeof due.invoicesTotal, 'number');
+    const link = ok(await ctx.doc('POST', '/api/billing/renew', {}));
+    assert.match(link.checkoutUrl, /renew=1/);
+    const paidLink = await fetch(link.checkoutUrl.replace(/^https?:\/\/[^/]+/, base), { method: 'POST', headers: { accept: 'application/json' } });
+    assert.equal(paidLink.status, 200);
+    const renewed = await M.Subscription.findById(subNow._id);
+    assert.equal(renewed.status, 'active');
+    assert.ok(renewed.currentPeriodEnd - Date.now() > 29 * 864e5, 'a month from today');
+    assert.match((await M.Invoice.findOne({ practiceId: ctx.practiceId }).sort({ createdAt: -1 })).number, /^MP-\d{4}-\d{4}$/);
+    await M.Subscription.replaceOne({ _id: subNow._id }, keepSub);
     for (const format of ['csv', 'xlsx', 'pdf', 'json']) {
       const job = ok(await ctx.doc('POST', '/api/exports', { kind: 'appointment_history', format, filters: { from: '2026-01-01' } }), 201);
       assert.equal(job.status, 'done');

@@ -190,18 +190,20 @@ async function feeReceipt(p) {
   const { notify, deskOrDoctors } = require('./notify');
   const a = await M.Appointment.findById(p.appointmentId).populate('patientId', 'userId name').populate('doctorId', 'name');
   if (!a) return;
+  const { ensureReceiptNo, receiptLabel } = require('./receiptpdf');
+  const receipt = receiptLabel(await ensureReceiptNo(p));
   const how = p.method === 'online' ? 'online' : `at the clinic (${p.method === 'cash' ? 'cash' : p.method === 'upi' ? 'UPI' : p.method})`;
   if (a.patientId?.userId) {
     await notify([a.patientId.userId], { forPatientId: a.patientId._id,
       type: 'fee_paid', practiceId: a.practiceId, title: `Paid ₹${p.amount} ${p.method === 'online' ? 'online' : 'at the clinic'}`,
-      body: `Your visit with ${a.doctorId?.name || 'the doctor'} · reference ${p.razorpayPaymentId || String(p._id).slice(-6)}`,
-      screen: 'Patient-DoctorDetail', params: { doctorId: a.doctorId?._id || a.doctorId },
+      body: `Your visit with ${a.doctorId?.name || 'the doctor'} · receipt ${receipt}`,
+      screen: 'Patient-Payments', params: { paymentId: p._id },
     });
   }
   // Signed by who took it at the desk; paid online, by the desk at that branch (or the doctor).
   await require('./care').chatNote(
     { practiceId: a.practiceId, patientId: a.patientId?._id || a.patientId, locationId: a.locationId, doctorId: a.doctorId?._id || a.doctorId, by: p.method === 'online' ? undefined : p.markedPaidBy },
-    `Payment received: ₹${p.amount} ${p.method === 'online' ? 'online' : `at the clinic (${p.method === 'cash' ? 'cash' : p.method === 'upi' ? 'UPI' : p.method})`} · reference ${p.razorpayPaymentId || String(p._id).slice(-6)}.`,
+    `Payment received: ₹${p.amount} ${p.method === 'online' ? 'online' : `at the clinic (${p.method === 'cash' ? 'cash' : p.method === 'upi' ? 'UPI' : p.method})`} · receipt ${receipt}. The receipt is in the app under Payments.`,
     'fee_paid',
   );
   const staff = await deskOrDoctors(a.practiceId, { locationId: a.locationId, doctorId: a.doctorId?._id || a.doctorId });
@@ -360,24 +362,34 @@ async function refundOrder(order) {
   return order;
 }
 
-/** Link to pay for a plan upgrade now (the plan changes when it's paid). */
-async function planLink(sub, plan, user) {
+/**
+ * Link to pay for a plan: an upgrade now (the plan changes when it's paid), or the next
+ * month ([renew]: the month after the current one, or from the day it's paid if it lapsed).
+ */
+async function planLink(sub, plan, user, { renew = false } = {}) {
   return createLink({
     amount: plan.priceMonthly, description: `MedPin ${plan.name || plan.key} plan · 1 month`,
     customer: { name: user.name, contact: user.phone ? `+91${user.phone}` : undefined },
-    notes: { kind: 'plan', subscriptionId: String(sub._id), planKey: plan.key }, devPath: `plan/${sub._id}/${plan.key}`,
+    notes: { kind: 'plan', subscriptionId: String(sub._id), planKey: plan.key, ...(renew ? { renew: '1' } : {}) },
+    devPath: `plan/${sub._id}/${plan.key}${renew ? '?renew=1' : ''}`,
   });
 }
 
-/** A plan upgrade paid: switch now, a month from today, with a paid invoice. */
-async function planPaid(subscriptionId, planKey, razorpayPaymentId) {
+/**
+ * A plan paid, with a paid invoice. An upgrade switches now, for a month from today. The
+ * next month ([renew]) starts when the current month ends (paid early), or today (it lapsed).
+ */
+async function planPaid(subscriptionId, planKey, razorpayPaymentId, { renew = false } = {}) {
   const [sub, plan] = await Promise.all([M.Subscription.findById(subscriptionId), M.Plan.findOne({ key: planKey })]);
   if (!sub || !plan) return null;
   if (razorpayPaymentId && (await M.Invoice.exists({ razorpayPaymentId }))) return sub; // webhook retried
-  const start = new Date();
+  const now = new Date();
+  const early = renew && sub.status !== 'past_due' && sub.status !== 'trialing' && sub.currentPeriodEnd > now;
+  const start = early ? sub.currentPeriodEnd : now;
   Object.assign(sub, { planKey: plan.key, price: plan.priceMonthly, status: 'active', pendingPlanKey: undefined, pendingFrom: undefined, currentPeriodStart: start, currentPeriodEnd: T.addDays(start, 30) });
   await sub.save();
-  await M.Invoice.create({ practiceId: sub.practiceId, issuedAt: start, description: `${plan.key} plan · monthly`, amount: plan.priceMonthly, status: 'paid', paidAt: start, periodStart: start, periodEnd: sub.currentPeriodEnd, razorpayPaymentId });
+  const number = await require('./billing').invoiceNumber(now);
+  await M.Invoice.create({ practiceId: sub.practiceId, number, issuedAt: now, description: `${plan.name || plan.key} plan · ${early || renew ? 'next month' : 'monthly'}`, amount: plan.priceMonthly, status: 'paid', paidAt: now, periodStart: start, periodEnd: sub.currentPeriodEnd, razorpayPaymentId });
   return sub;
 }
 

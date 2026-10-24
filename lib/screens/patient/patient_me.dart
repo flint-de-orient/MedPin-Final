@@ -582,6 +582,15 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                   ),
                   _homeRow(),
                 ]),
+                _card([
+                  _Row(
+                    icon: I.wallet,
+                    title: 'Payments and receipts',
+                    sub: 'Visit fees you paid, with receipts',
+                    trailing: const _Chevron(),
+                    onTap: () => Nav.go(context, 'Patient-Payments'),
+                  ),
+                ]),
                 if (viewers.isNotEmpty)
                   _section(
                     'Who can see my records',

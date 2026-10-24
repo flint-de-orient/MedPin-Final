@@ -160,7 +160,7 @@ void main() {
     expect(find.text('Active'), findsOneWidget);
     expect(find.text('₹2,499 / month', findRichText: true), findsNWidgets(2));
     final renew = _d((b['subscription'] as Map)['currentPeriodEnd']);
-    expect(find.text('Renews $renew'), findsOneWidget);
+    expect(find.text('Paid until $renew'), findsOneWidget);
     expect(find.text('This billing cycle · resets $renew'), findsOneWidget);
     expect(find.text('1,860 of 3,000', findRichText: true), findsOneWidget);
     expect(find.text('5 of 8', findRichText: true), findsOneWidget);

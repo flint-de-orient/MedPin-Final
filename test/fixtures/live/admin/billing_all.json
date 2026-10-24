@@ -1,154 +1,156 @@
 {
- "subscription": {
-  "practiceId": "6ac8bbcee42c9f0836e98561",
-  "planKey": "clinic",
-  "status": "active",
-  "interval": "monthly",
-  "price": 2499,
-  "currentPeriodStart": "2026-09-14T00:00:00.000Z",
-  "currentPeriodEnd": "2026-10-14T00:00:00.000Z",
-  "createdAt": "2026-10-09T10:02:54.957Z",
-  "updatedAt": "2026-10-09T10:02:54.957Z",
-  "id": "6ac8bbcee42c9f0836e9856d"
- },
- "plan": {
-  "key": "clinic",
-  "active": true,
-  "activePatients": 500,
-  "aiChatsPerMonth": 3000,
-  "createdAt": "2026-10-09T10:02:54.715Z",
-  "name": "Clinic",
-  "priceMonthly": 2499,
-  "seats": 8,
-  "updatedAt": "2026-10-09T10:02:54.715Z",
-  "id": "6ac8bbcebfcb2f5a9d64d4e0"
- },
- "plans": [
-  {
-   "key": "starter",
-   "active": true,
-   "activePatients": 150,
-   "aiChatsPerMonth": 1000,
-   "createdAt": "2026-10-09T10:02:54.715Z",
-   "name": "Starter",
-   "priceMonthly": 999,
-   "seats": 3,
-   "updatedAt": "2026-10-09T10:02:54.715Z",
-   "id": "6ac8bbcebfcb2f5a9d64d4df"
+  "subscription": {
+    "practiceId": "6ac8bbcee42c9f0836e98561",
+    "planKey": "clinic",
+    "status": "active",
+    "interval": "monthly",
+    "price": 2499,
+    "currentPeriodStart": "2026-09-14T00:00:00.000Z",
+    "currentPeriodEnd": "2026-10-14T00:00:00.000Z",
+    "createdAt": "2026-10-09T10:02:54.957Z",
+    "updatedAt": "2026-10-09T10:02:54.957Z",
+    "id": "6ac8bbcee42c9f0836e9856d"
   },
-  {
-   "key": "clinic",
-   "active": true,
-   "activePatients": 500,
-   "aiChatsPerMonth": 3000,
-   "createdAt": "2026-10-09T10:02:54.715Z",
-   "name": "Clinic",
-   "priceMonthly": 2499,
-   "seats": 8,
-   "updatedAt": "2026-10-09T10:02:54.715Z",
-   "id": "6ac8bbcebfcb2f5a9d64d4e0"
+  "plan": {
+    "key": "clinic",
+    "active": true,
+    "activePatients": 500,
+    "aiChatsPerMonth": 3000,
+    "createdAt": "2026-10-09T10:02:54.715Z",
+    "name": "Clinic",
+    "priceMonthly": 2499,
+    "seats": 8,
+    "updatedAt": "2026-10-09T10:02:54.715Z",
+    "id": "6ac8bbcebfcb2f5a9d64d4e0"
   },
-  {
-   "key": "hospital",
-   "active": true,
-   "activePatients": 2000,
-   "aiChatsPerMonth": 12000,
-   "createdAt": "2026-10-09T10:02:54.715Z",
-   "name": "Hospital",
-   "priceMonthly": 7999,
-   "seats": 25,
-   "updatedAt": "2026-10-09T10:02:54.715Z",
-   "id": "6ac8bbcebfcb2f5a9d64d4e1"
-  }
- ],
- "usage": {
-  "resetsAt": "2026-10-14T00:00:00.000Z",
-  "seats": {
-   "used": 5,
-   "limit": 8
+  "plans": [
+    {
+      "key": "starter",
+      "active": true,
+      "activePatients": 150,
+      "aiChatsPerMonth": 1000,
+      "createdAt": "2026-10-09T10:02:54.715Z",
+      "name": "Starter",
+      "priceMonthly": 999,
+      "seats": 3,
+      "updatedAt": "2026-10-09T10:02:54.715Z",
+      "id": "6ac8bbcebfcb2f5a9d64d4df"
+    },
+    {
+      "key": "clinic",
+      "active": true,
+      "activePatients": 500,
+      "aiChatsPerMonth": 3000,
+      "createdAt": "2026-10-09T10:02:54.715Z",
+      "name": "Clinic",
+      "priceMonthly": 2499,
+      "seats": 8,
+      "updatedAt": "2026-10-09T10:02:54.715Z",
+      "id": "6ac8bbcebfcb2f5a9d64d4e0"
+    },
+    {
+      "key": "hospital",
+      "active": true,
+      "activePatients": 2000,
+      "aiChatsPerMonth": 12000,
+      "createdAt": "2026-10-09T10:02:54.715Z",
+      "name": "Hospital",
+      "priceMonthly": 7999,
+      "seats": 25,
+      "updatedAt": "2026-10-09T10:02:54.715Z",
+      "id": "6ac8bbcebfcb2f5a9d64d4e1"
+    }
+  ],
+  "usage": {
+    "resetsAt": "2026-10-14T00:00:00.000Z",
+    "seats": {
+      "used": 5,
+      "limit": 8
+    },
+    "activePatients": {
+      "used": 8,
+      "limit": 500
+    },
+    "aiChats": {
+      "used": 1860,
+      "limit": 3000
+    }
   },
-  "activePatients": {
-   "used": 8,
-   "limit": 500
-  },
-  "aiChats": {
-   "used": 1860,
-   "limit": 3000
-  }
- },
- "invoices": [
-  {
-   "practiceId": "6ac8bbcee42c9f0836e98561",
-   "number": "MP-202609-0412",
-   "issuedAt": "2026-09-14T00:00:00.000Z",
-   "description": "Clinic plan · monthly",
-   "amount": 2499,
-   "status": "paid",
-   "paidAt": "2026-09-14T00:00:00.000Z",
-   "createdAt": "2026-10-09T10:02:57.059Z",
-   "updatedAt": "2026-10-09T10:02:57.059Z",
-   "id": "6ac8bbd18adea6a429a73472"
-  },
-  {
-   "practiceId": "6ac8bbcee42c9f0836e98561",
-   "number": "MP-202608-0412",
-   "issuedAt": "2026-08-14T00:00:00.000Z",
-   "description": "Clinic plan · monthly",
-   "amount": 2499,
-   "status": "paid",
-   "paidAt": "2026-08-14T00:00:00.000Z",
-   "createdAt": "2026-10-09T10:02:57.062Z",
-   "updatedAt": "2026-10-09T10:02:57.062Z",
-   "id": "6ac8bbd18adea6a429a73474"
-  },
-  {
-   "practiceId": "6ac8bbcee42c9f0836e98561",
-   "number": "MP-202607-0412",
-   "issuedAt": "2026-07-14T00:00:00.000Z",
-   "description": "Clinic plan · monthly",
-   "amount": 2499,
-   "status": "paid",
-   "paidAt": "2026-07-14T00:00:00.000Z",
-   "createdAt": "2026-10-09T10:02:57.111Z",
-   "updatedAt": "2026-10-09T10:02:57.111Z",
-   "id": "6ac8bbd18adea6a429a73476"
-  },
-  {
-   "practiceId": "6ac8bbcee42c9f0836e98561",
-   "number": "MP-202606-0412",
-   "issuedAt": "2026-06-14T00:00:00.000Z",
-   "description": "Clinic plan · monthly",
-   "amount": 2499,
-   "status": "paid",
-   "paidAt": "2026-06-14T00:00:00.000Z",
-   "createdAt": "2026-10-09T10:02:57.112Z",
-   "updatedAt": "2026-10-09T10:02:57.112Z",
-   "id": "6ac8bbd18adea6a429a73478"
-  },
-  {
-   "practiceId": "6ac8bbcee42c9f0836e98561",
-   "number": "MP-202605-0412",
-   "issuedAt": "2026-05-14T00:00:00.000Z",
-   "description": "Clinic plan · monthly",
-   "amount": 2499,
-   "status": "paid",
-   "paidAt": "2026-05-14T00:00:00.000Z",
-   "createdAt": "2026-10-09T10:02:57.113Z",
-   "updatedAt": "2026-10-09T10:02:57.113Z",
-   "id": "6ac8bbd18adea6a429a7347a"
-  },
-  {
-   "practiceId": "6ac8bbcee42c9f0836e98561",
-   "number": "MP-202604-0412",
-   "issuedAt": "2026-04-14T00:00:00.000Z",
-   "description": "Clinic plan · monthly",
-   "amount": 2499,
-   "status": "paid",
-   "paidAt": "2026-04-14T00:00:00.000Z",
-   "createdAt": "2026-10-09T10:02:57.114Z",
-   "updatedAt": "2026-10-09T10:02:57.114Z",
-   "id": "6ac8bbd18adea6a429a7347c"
-  }
- ],
- "checkout": "not_configured"
+  "invoices": [
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "number": "MP-202609-0412",
+      "issuedAt": "2026-09-14T00:00:00.000Z",
+      "description": "Clinic plan · monthly",
+      "amount": 2499,
+      "status": "paid",
+      "paidAt": "2026-09-14T00:00:00.000Z",
+      "createdAt": "2026-10-09T10:02:57.059Z",
+      "updatedAt": "2026-10-09T10:02:57.059Z",
+      "id": "6ac8bbd18adea6a429a73472"
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "number": "MP-202608-0412",
+      "issuedAt": "2026-08-14T00:00:00.000Z",
+      "description": "Clinic plan · monthly",
+      "amount": 2499,
+      "status": "paid",
+      "paidAt": "2026-08-14T00:00:00.000Z",
+      "createdAt": "2026-10-09T10:02:57.062Z",
+      "updatedAt": "2026-10-09T10:02:57.062Z",
+      "id": "6ac8bbd18adea6a429a73474"
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "number": "MP-202607-0412",
+      "issuedAt": "2026-07-14T00:00:00.000Z",
+      "description": "Clinic plan · monthly",
+      "amount": 2499,
+      "status": "paid",
+      "paidAt": "2026-07-14T00:00:00.000Z",
+      "createdAt": "2026-10-09T10:02:57.111Z",
+      "updatedAt": "2026-10-09T10:02:57.111Z",
+      "id": "6ac8bbd18adea6a429a73476"
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "number": "MP-202606-0412",
+      "issuedAt": "2026-06-14T00:00:00.000Z",
+      "description": "Clinic plan · monthly",
+      "amount": 2499,
+      "status": "paid",
+      "paidAt": "2026-06-14T00:00:00.000Z",
+      "createdAt": "2026-10-09T10:02:57.112Z",
+      "updatedAt": "2026-10-09T10:02:57.112Z",
+      "id": "6ac8bbd18adea6a429a73478"
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "number": "MP-202605-0412",
+      "issuedAt": "2026-05-14T00:00:00.000Z",
+      "description": "Clinic plan · monthly",
+      "amount": 2499,
+      "status": "paid",
+      "paidAt": "2026-05-14T00:00:00.000Z",
+      "createdAt": "2026-10-09T10:02:57.113Z",
+      "updatedAt": "2026-10-09T10:02:57.113Z",
+      "id": "6ac8bbd18adea6a429a7347a"
+    },
+    {
+      "practiceId": "6ac8bbcee42c9f0836e98561",
+      "number": "MP-202604-0412",
+      "issuedAt": "2026-04-14T00:00:00.000Z",
+      "description": "Clinic plan · monthly",
+      "amount": 2499,
+      "status": "paid",
+      "paidAt": "2026-04-14T00:00:00.000Z",
+      "createdAt": "2026-10-09T10:02:57.114Z",
+      "updatedAt": "2026-10-09T10:02:57.114Z",
+      "id": "6ac8bbd18adea6a429a7347c"
+    }
+  ],
+  "checkout": "not_configured",
+  "invoicesTotal": 6,
+  "canManage": true
 }

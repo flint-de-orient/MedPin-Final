@@ -1,5 +1,7 @@
 // GENERATED from design/canvas.json — one entry per design artboard.
 import '../core/nav.dart';
+import '../data/session.dart';
+import '../widgets/payment_history.dart';
 
 import '../screens/auth/auth_login.dart';
 import '../screens/auth/auth_otp.dart';
@@ -140,7 +142,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Home-States': ScreenSpec(stem: 'Home-States', title: 'Home · states', group: 'Clinician · tabs', panel: 'doctor', builder: (_) => const HomeStatesScreen()),
   'Cards-Clinical': ScreenSpec(stem: 'Cards-Clinical', title: 'Cards · queue & clinical', group: 'Dashboard cards', panel: 'doctor', builder: (_) => const CardsClinicalScreen()),
   'Cards-Analytics': ScreenSpec(stem: 'Cards-Analytics', title: 'Cards · analytics', group: 'Dashboard cards', panel: 'doctor', builder: (_) => const CardsAnalyticsScreen()),
-  'Patient-Profile': ScreenSpec(stem: 'Patient-Profile', title: 'Patient profile', group: 'Patient care', panel: 'doctor', builder: (_) => const PatientProfileScreen()),
+  'Patient-Profile': ScreenSpec(stem: 'Patient-Profile', title: 'Patient profile', group: 'Patient care', panel: 'doctor', builder: (_) => Session.I.role == null || Session.I.can('clinical') ? const PatientProfileScreen() : const PatientProfileDeskScreen()),
   'Patient-Profile-Desk': ScreenSpec(stem: 'Patient-Profile-Desk', title: 'Patient profile · front desk', group: 'Patient care', panel: 'doctor', builder: (_) => const PatientProfileDeskScreen()),
   'Consult-Vitals': ScreenSpec(stem: 'Consult-Vitals', title: 'Consult 1 · Vitals', group: 'Patient care', panel: 'doctor', builder: (_) => const ConsultVitalsScreen()),
   'Consult-Diagnosis': ScreenSpec(stem: 'Consult-Diagnosis', title: 'Consult 2 · Diagnosis', group: 'Patient care', panel: 'doctor', builder: (_) => const ConsultDiagnosisScreen()),
@@ -236,6 +238,7 @@ final Map<String, ScreenSpec> screenRegistry = {
   'Patient-Emergency': ScreenSpec(stem: 'Patient-Emergency', title: 'Patient · emergency: choose doctor', group: 'Patient app', panel: 'patient', builder: (_) => const PatientEmergencySheet(), sheet: true, parent: 'Main'),
   'Patient-Chat': ScreenSpec(stem: 'Patient-Chat', title: 'Patient · urgent chat with doctor', group: 'Patient app', panel: 'patient', builder: (_) => const PatientChatScreen()),
   // Not an artboard in the design canvas: the patient app's Profile tab.
+  'Patient-Payments': ScreenSpec(stem: 'Patient-Payments', title: 'Patient · Payments and receipts', group: 'Patient app', panel: 'patient', builder: (_) => const PatientPaymentsScreen()),
   'Patient-Me': ScreenSpec(stem: 'Patient-Me', title: 'Patient · My profile', group: 'Patient app', panel: 'patient', builder: (_) => const PatientMeScreen()),
   'Patient-Doctors': ScreenSpec(stem: 'Patient-Doctors', title: 'Patient · Doctor tab: my doctors', group: 'Patient app · Doctor tab', panel: 'patient', builder: (_) => const PatientDoctorsScreen()),
   'Patient-DoctorDetail': ScreenSpec(stem: 'Patient-DoctorDetail', title: 'Patient · doctor page (Dr. Sen)', group: 'Patient app · Doctor tab', panel: 'patient', builder: (_) => const PatientDoctordetailScreen()),

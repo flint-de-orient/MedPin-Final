@@ -64,7 +64,16 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
     return d == null ? '' : D9Fmt.date(d);
   }
 
-  String get _planName => data == null ? 'Clinic' : _plan.str('name', _sub.str('planKey'));
+  String get _planName {
+    if (data == null) return 'Clinic';
+    final key = _sub.str('planKey');
+    return _plan.str('name', key.isEmpty ? '' : '${key[0].toUpperCase()}${key.substring(1)}');
+  }
+
+  Map<String, dynamic> get _renewal => data == null ? const {} : data!.obj('renewal');
+
+  /// The owner (or manager) pays and switches plans; others see the plan.
+  bool get _canManage => data == null || data!['canManage'] != false;
 
   (String, Color, Color) get _status {
     final s = data == null ? 'active' : _sub.str('status', 'active');
@@ -84,13 +93,18 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
     final pendingKey = _sub.str('pendingPlanKey');
     final pending = data!.list('plans').where((p) => p['key'] == pendingKey).map((p) => p.str('name')).firstOrNull;
     if (end.isEmpty) return '';
-    if (_sub.str('status') == 'cancelled') return 'Ends $end';
-    return pending == null ? 'Renews $end' : 'Renews $end on the $pending plan';
+    return switch (_sub.str('status')) {
+      'cancelled' => 'Ends $end',
+      'past_due' => trf(context, _renewal['trialEnded'] == true ? 'Free trial ended {date}' : 'Paid until {date} · the next month is due', {'date': end}),
+      'trialing' => trf(context, 'Free trial until {date}', {'date': end}),
+      _ => pending == null ? trf(context, 'Paid until {date}', {'date': end}) : trf(context, 'Paid until {date} · then the {plan} plan', {'date': end, 'plan': pending}),
+    };
   }
 
   String get _usageSub {
     if (data == null) return 'This billing cycle · resets 14 Oct 2026';
     final reset = _date(data!.obj('usage')['resetsAt']);
+    if (_sub.str('status') == 'past_due') return 'Since the last month began · resets when the next month is paid';
     return reset.isEmpty ? 'This billing cycle' : 'This billing cycle · resets $reset';
   }
 
@@ -100,7 +114,7 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
     (String, int, int, String, String) m(String label, Map<String, dynamic> x) {
       final used = x.numOr('used').toInt();
       final cap = x.numOr('limit').toInt();
-      return (label, used, cap, F.count(used), x['limit'] == null ? '—' : F.count(cap));
+      return (label, used, cap, F.count(used), x['limit'] == null ? '' : F.count(cap));
     }
 
     return [
@@ -161,6 +175,50 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
     reload(quiet: true);
   }
 
+  /// Pay for the next month (due, or ending within 7 days): the payment page opens.
+  Future<void> _renew() async {
+    if (!isLive) {
+      toast(context, 'Paid · your plan is renewed');
+      return;
+    }
+    final res = await runAction(context, () => Api.I.post('/api/billing/renew', const {}), busy: _busy);
+    if (res is! Map || !mounted) return;
+    await D9Open.url(context, res['checkoutUrl'], failed: "Couldn't open the payment page");
+    if (mounted) toast(context, 'Your plan is renewed as soon as the payment is done');
+    reload(quiet: true);
+  }
+
+  Widget _renewCard() {
+    final r = _renewal;
+    final due = r['due'] == true;
+    final amount = D9Fmt.money(r.numOr('amount'));
+    final plan = r.str('planName', _planName);
+    return D9Card(
+      gap: 12,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(due ? (r['trialEnded'] == true ? 'Your free trial has ended' : 'Payment due') : 'Pay for next month', style: tx(18, w: w700, h: 1.3))),
+            if (due) const MpBadge('Due', bg: MP.amberSoft, fg: MP.amber, weight: w600),
+          ],
+        ),
+        Text(
+          due
+              ? trf(context, 'Pay {amount} for a month of the {plan} plan. It starts the day you pay. Nothing is switched off meanwhile.', {'amount': amount, 'plan': plan})
+              : trf(context, 'Pay {amount} now and the next month of the {plan} plan starts on {date}.', {'amount': amount, 'plan': plan, 'date': _date(r['from'])}),
+          style: tx(14, c: MP.ink2, h: 1.45),
+        ),
+        if (_canManage)
+          ValueListenableBuilder<bool>(
+            valueListenable: _busy,
+            builder: (_, busy, _) => MpButton(trf(context, 'Pay {amount}', {'amount': amount}), onTap: busy ? null : _renew),
+          )
+        else
+          Text('Ask the clinic owner to pay.', style: tx(14, w: w600, c: MP.ink2, h: 1.45)),
+      ],
+    );
+  }
+
   Future<void> _download(String? id) async {
     if (!isLive || id == null) {
       toast(context, 'Invoice downloaded');
@@ -215,6 +273,8 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
             ],
           ),
 
+          if (data != null && _renewal['canPay'] == true) _renewCard(),
+
           // Usage
           D9Card(
             gap: 20,
@@ -233,11 +293,12 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
                   children: [
                     Expanded(child: Text('Billing history', style: tx(20, w: w700, h: 1.25))),
                     const Gap(12),
-                    D9Link(
-                      _allInvoices ? 'Show less' : 'View all',
-                      h: null,
-                      onTap: _toggleInvoices,
-                    ),
+                    if (_allInvoices || data == null || data!.numOr('invoicesTotal') > invoices.length)
+                      D9Link(
+                        _allInvoices ? 'Show less' : 'View all',
+                        h: null,
+                        onTap: _toggleInvoices,
+                      ),
                   ],
                 ),
               ),
@@ -256,7 +317,7 @@ class _BillingScreenState extends State<BillingScreen> with LiveData {
                   child: _PlanRow(
                     (p.$1, p.$2, p.$3, p.$4),
                     current: p.$5 == _currentKey,
-                    onSwitch: () => _switchTo(p.$1, p.$4, p.$5),
+                    onSwitch: _canManage ? () => _switchTo(p.$1, p.$4, p.$5) : null,
                   ),
                 ),
               Container(
@@ -303,14 +364,16 @@ class _Meter extends StatelessWidget {
                   style: tx(14, c: MP.ink2, h: 1.45, tab: true),
                   children: [
                     TextSpan(text: usedText, style: tx(14, w: w600, c: MP.ink, h: 1.45, tab: true)),
-                    TextSpan(text: ' of $capText'),
+                    if (capText.isNotEmpty) TextSpan(text: ' of $capText'),
                   ],
                 ),
               ),
             ],
           ),
-          const Gap(8),
-          MpProgress(pct / 100, height: 6, color: pct >= 90 ? MP.amber : MP.primary),
+          if (capText.isNotEmpty) ...[
+            const Gap(8),
+            MpProgress(pct / 100, height: 6, color: pct >= 90 ? MP.amber : MP.primary),
+          ],
         ],
       ),
     );
@@ -371,7 +434,7 @@ class _InvoiceRow extends StatelessWidget {
 
 class _PlanRow extends StatelessWidget {
   final (String, String, String, String?) plan;
-  final VoidCallback onSwitch;
+  final VoidCallback? onSwitch;
   final bool current;
   const _PlanRow(this.plan, {required this.current, required this.onSwitch});
 
@@ -399,7 +462,7 @@ class _PlanRow extends StatelessWidget {
         const Gap(4),
         Text(features, style: tx(14, c: MP.ink2, h: 1.45, tab: true)),
         if (note != null) ...[const Gap(4), Text(note, style: tx(13, c: MP.ink3, h: 1.4))],
-        if (!current) ...[
+        if (!current && onSwitch != null) ...[
           // gap 4 + margin-top 8
           const Gap(12),
           Semantics(

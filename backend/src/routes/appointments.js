@@ -906,6 +906,22 @@ r.get('/history', async (req, res) => {
 });
 
 // ── Payments (Report-Fees pending list, Mark as paid, payment link) ──
+// A patient's payments (their profile at the desk): every status, with receipts.
+r.get('/payments/history', async (req, res) => {
+  if (!isId(req.query.patientId)) throw badRequest('Choose the patient', 'PATIENT_REQUIRED');
+  const q = { practiceId: req.practiceId, patientId: req.query.patientId };
+  const { locs } = coverage(req);
+  if (locs) q.locationId = { $in: locs.map((id) => new Types.ObjectId(id)) };
+  res.json({ items: await require('../services/receiptpdf').historyRows(q) });
+});
+
+r.get('/payments/:id/receipt', async (req, res) => {
+  if (!isId(req.params.id)) throw notFound('Payment');
+  const p = ownPractice(req, await M.Payment.findById(req.params.id), 'Payment');
+  if (!['paid', 'refunded'].includes(p.status)) throw conflict('A receipt is given once the fee is paid', 'NOT_PAID');
+  res.json(await require('../services/receiptpdf').receiptFile(p._id));
+});
+
 r.get('/payments', async (req, res) => {
   const q = { practiceId: req.practiceId };
   if (req.query.status) q.status = String(req.query.status);

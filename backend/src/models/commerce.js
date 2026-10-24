@@ -30,6 +30,7 @@ const subscriptionSchema = new Schema(
     currentPeriodEnd: Date, // "Renews 14 Oct 2026" / usage "resets 14 Oct 2026"
     pendingPlanKey: enumOf(E.PLAN_KEYS), // switches from the next cycle
     pendingFrom: Date,
+    trialEndedAt: Date, // the free trial ran out without a paid month ("Your free trial has ended")
     razorpayCustomerId: String,
     razorpaySubscriptionId: String,
     cancelledAt: Date,
