@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import 'alarm_sound.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -58,21 +60,60 @@ class LocalNotes {
   /// Medicine alarms that ring like an alarm clock: the alarm sound at alarm
   /// volume (so a phone on silent still rings), over the lock screen.
   /// Profile → "Ring even on silent" (on by default) picks this one.
-  static final dosesRing = AndroidNotificationChannel(
-    'medpin_doses_ring',
-    'Medicine alarms (ring)',
-    description: 'Rings for your medicine even when the phone is on silent',
-    importance: Importance.max,
-    bypassDnd: true,
-    sound: const UriAndroidNotificationSound('content://settings/system/alarm_alert'),
-    audioAttributesUsage: AudioAttributesUsage.alarm,
-  );
+  /// The sound is the patient's choice (Profile › Alarm sound, AlarmSound): one channel per sound.
+  static AndroidNotificationChannel get dosesRing => ringChannel(AlarmSound.current);
+
+  static AndroidNotificationChannel ringChannel(AlarmSound s) => AndroidNotificationChannel(
+        s.channelId,
+        'Medicine alarms (ring)',
+        description: 'Rings for your medicine even when the phone is on silent',
+        importance: Importance.max,
+        bypassDnd: true,
+        sound: s.notificationSound,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+      );
+
+  /// "Test alarm": the real medicine alarm (lock screen, alarm volume) in 5 seconds, ringing
+  /// with [s] — whether or not it is the saved choice yet.
+  Future<void> testAlarm(AlarmSound s, {required String title, String? body}) async {
+    if (!supported) return;
+    await init();
+    final c = ringChannel(s);
+    await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(c);
+    await _plugin.zonedSchedule(
+      id: 899999999,
+      scheduledDate: tz.TZDateTime.now(tz.local).add(const Duration(seconds: 5)),
+      notificationDetails: _details(c),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      title: title,
+      body: body,
+      payload: jsonEncode({'kind': 'ring', 'test': true}),
+    );
+  }
+
+  /// A new alarm sound: its channel is made and the other ringing channels are removed
+  /// (Android keeps a channel's first sound). The alarms are then scheduled again by the caller.
+  Future<void> useAlarmSound(AlarmSound s) async {
+    await AlarmSound.save(s);
+    if (!supported) return;
+    await init();
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
+    final keep = dosesRing.id;
+    try {
+      for (final c in await android.getNotificationChannels() ?? const <AndroidNotificationChannel>[]) {
+        if (c.id.startsWith('medpin_doses_ring') && c.id != keep) await android.deleteNotificationChannel(channelId: c.id);
+      }
+    } catch (_) {}
+    await android.createNotificationChannel(dosesRing);
+  }
 
   bool get supported => !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
 
   Future<void> init() async {
     if (_ready || !supported) return;
     _ready = true;
+    await AlarmSound.load(); // the ringing channel uses the chosen sound
     tzdata.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
     await _plugin.initialize(
@@ -181,7 +222,7 @@ class LocalNotes {
       ];
 
   NotificationDetails _details(AndroidNotificationChannel c, {int? snoozeMin}) => NotificationDetails(
-        android: c.id == dosesRing.id
+        android: c.id.startsWith('medpin_doses_ring')
             ? AndroidNotificationDetails(
                 c.id,
                 c.name,

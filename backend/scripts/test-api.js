@@ -2407,6 +2407,70 @@ const fileForm = (field, buffer, name, type, extra = {}) => {
     await M.Conversation.updateOne({ _id: convo }, { aiEnabled: true });
   });
 
+  await step('chat round 4: typing, mute (urgent still rings), clear for me, edit (15 min, history kept), forward (never into another patient\'s chat), search the whole chat, voice as text', async () => {
+    const convo = ctx.convoId;
+    const patUser = (await M.Patient.findById(ctx.patientId)).userId;
+    // Typing: the clinic sees the patient typing; not their own.
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/typing`, {}));
+    const seen = ok(await ctx.doc('GET', `/api/conversations/${convo}/messages`));
+    assert.equal(seen.typing.length, 1);
+    assert.equal(seen.typing[0].side, 'patient');
+    assert.equal(ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).typing.length, 0, 'not your own');
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/typing`, { typing: false }));
+    assert.equal(ok(await ctx.doc('GET', `/api/conversations/${convo}/messages`)).typing.length, 0, 'stopped');
+    // Mute: the patient gets the clinic's message on the bell, without a buzz.
+    assert.equal((await ctx.pat('POST', `/api/conversations/${convo}/mute`, { for: 'forever' })).status, 400);
+    const mute = ok(await ctx.pat('POST', `/api/conversations/${convo}/mute`, { for: '8h' }));
+    assert.ok(new Date(mute.mutedUntil) > new Date());
+    assert.ok(ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).conversation.mutedUntil);
+    await M.Notification.deleteMany({ userId: patUser, 'params.conversationId': new (require('mongoose').Types.ObjectId)(String(convo)) });
+    ok(await ctx.doc('POST', `/api/conversations/${convo}/messages`, { text: 'Please bring your old reports tomorrow.' }), 201);
+    const quiet = await M.Notification.findOne({ userId: patUser, type: 'message' }).sort({ createdAt: -1 });
+    if (quiet) assert.ok(!quiet.channels.includes('push'), 'muted: no push');
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/mute`, { for: 'off' }));
+    assert.equal(ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).conversation.mutedUntil, null);
+    // Edit: own text message, within 15 minutes; the earlier wording kept; others' refused.
+    const sent = ok(await ctx.pat('POST', `/api/conversations/${convo}/messages`, { text: 'My sugar was 210 today' }), 201).message;
+    const edited = ok(await ctx.pat('PATCH', `/api/conversations/${convo}/messages/${sent.id}`, { text: 'My sugar was 120 today' })).message;
+    assert.equal(edited.text, 'My sugar was 120 today');
+    assert.ok(edited.editedAt);
+    assert.equal((await M.Message.findById(sent.id)).edits[0].text, 'My sugar was 210 today', 'the earlier wording is kept');
+    assert.equal((await ctx.doc('PATCH', `/api/conversations/${convo}/messages/${sent.id}`, { text: 'x' })).status, 403, "not someone else's");
+    await M.Message.collection.updateOne({ _id: new (require('mongoose').Types.ObjectId)(String(sent.id)) }, { $set: { createdAt: new Date(Date.now() - 20 * 60e3) } });
+    assert.equal((await ctx.pat('PATCH', `/api/conversations/${convo}/messages/${sent.id}`, { text: 'again' })).status, 409, 'too late');
+    // Search the whole chat (server), including older messages.
+    const found = ok(await ctx.pat('GET', `/api/conversations/${convo}/search?q=sugar%20was%20120`));
+    assert.ok(found.items.some((x) => String(x.id) === String(sent.id)));
+    assert.equal(ok(await ctx.pat('GET', `/api/conversations/${convo}/search?q=x`)).items.length, 0, 'two letters at least');
+    // Forward: the doctor may send a patient's message to a colleague (direct chat), never into another patient's chat.
+    const deskUser = (await M.Member.findOne({ practiceId: ctx.practiceId, role: 'front_desk', status: 'active' })).userId;
+    const directRes = await ctx.doc('POST', '/api/inbox', { userId: String(deskUser) });
+    assert.ok([200, 201].includes(directRes.status));
+    const direct = directRes.body;
+    const directId = String(direct.id || direct._id);
+    const targets = ok(await ctx.doc('GET', `/api/conversations/${convo}/forward-targets`)).items.map((x) => String(x.id));
+    assert.ok(targets.includes(directId), 'a colleague chat is offered');
+    const otherPatientChat = await M.Conversation.findOne({ type: 'care', patientId: { $ne: ctx.patientId }, 'participants.userId': ctx.doctorUserId });
+    if (otherPatientChat) {
+      assert.ok(!targets.includes(String(otherPatientChat._id)), "another patient's chat is never offered");
+      assert.equal((await ctx.doc('POST', `/api/conversations/${convo}/messages/${sent.id}/forward`, { to: [String(otherPatientChat._id)] })).status, 403);
+    }
+    ok(await ctx.doc('POST', `/api/conversations/${convo}/messages/${sent.id}/forward`, { to: [directId] }), 201);
+    const fwd = await M.Message.findOne({ conversationId: directId }).sort({ createdAt: -1 });
+    assert.deepEqual([fwd.text, String(fwd.forwardedFrom.messageId)], ['My sugar was 120 today', String(sent.id)]);
+    // Clear chat: hidden for the patient only; the doctor still has everything.
+    ok(await ctx.pat('POST', `/api/conversations/${convo}/clear`, {}));
+    assert.equal(ok(await ctx.pat('GET', `/api/conversations/${convo}/messages`)).items.length, 0, 'cleared for me');
+    assert.ok(ok(await ctx.doc('GET', `/api/conversations/${convo}/messages`)).items.length > 0, 'the clinic keeps it');
+    assert.equal(ok(await ctx.pat('GET', `/api/conversations/${convo}/search?q=sugar`)).items.length, 0, 'search after clearing');
+    // A voice message as text needs Gemini (AI is off in tests): a clear reason.
+    const voice = await M.Message.create({ conversationId: convo, senderId: patUser, senderType: 'patient', kind: 'voice', voice: { file: { key: 'chat/none.m4a', mimeType: 'audio/mp4', name: 'v.m4a' }, durationSec: 4 } });
+    const tr = await ctx.doc('POST', `/api/conversations/${convo}/messages/${voice._id}/transcribe`, {});
+    assert.equal(tr.status, 503);
+    assert.equal(tr.body.error.code, 'AI_OFF');
+    await M.Conversation.updateOne({ _id: convo }, { $pull: { prefs: { userId: patUser } } });
+  });
+
   await step('money: paid twice is refunded, desk cash vs online, one refund, unpriced orders, webhook by order', async () => {
     const pay = require('../src/services/payments');
     const patient = await M.Patient.findById(ctx.patientId);

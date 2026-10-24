@@ -37,6 +37,9 @@ const conversationSchema = new Schema(
     // The patient asked for a person ("Talk to the clinic"): MedPin AI stays out until the clinic replies.
     humanRequestedAt: Date,
     pinnedMessageId: ref('Message'),
+    // Each person's own settings for this chat: notifications muted until, and "Clear chat"
+    // (messages before it are hidden for them only — the record itself is kept).
+    prefs: [{ userId: { type: Schema.Types.ObjectId, ref: 'User' }, mutedUntil: Date, clearedAt: Date, _id: false }],
     // The clinic's inbox: who is looking after this chat, and "Handled" (nothing more to do —
     // undone when the patient writes again).
     assignedTo: ref('User'),
@@ -96,7 +99,8 @@ const messageSchema = new Schema(
     kind: enumOf(E.MESSAGE_KINDS, { default: 'text' }),
     text: { type: String, maxlength: 4000 },
     meta: Schema.Types.Mixed, // e.g. { away: true } for the automatic away reply
-    voice: { file: fileSchema, durationSec: Number },
+    // transcript: the voice message as text (made once, on request, by MedPin AI).
+    voice: { file: fileSchema, durationSec: Number, transcript: String, transcriptAt: Date },
     attachment: fileSchema, // photo / PDF
     recordId: ref('MedicalRecord'), // shared report or prescription card
     prescriptionId: ref('Prescription'),
@@ -107,6 +111,12 @@ const messageSchema = new Schema(
     seenAt: Date,
     hiddenFor: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     deletedForEveryoneAt: Date,
+    // Edited by its sender (within 15 minutes): the earlier wording is kept — a chat with the
+    // clinic is part of the medical record.
+    editedAt: Date,
+    edits: [{ text: String, at: Date, _id: false }],
+    // Forwarded from another chat (the original's chat and message).
+    forwardedFrom: { conversationId: { type: Schema.Types.ObjectId, ref: 'Conversation' }, messageId: { type: Schema.Types.ObjectId, ref: 'Message' }, _id: false },
     ai: aiMetaSchema,
   },
   baseOptions,

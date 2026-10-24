@@ -14,6 +14,7 @@ import '../../widgets/chat_tools.dart';
 import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
 import 'common_d6.dart';
+import '../../widgets/chat_extras.dart';
 import '../../widgets/i18n.dart';
 import 'chat_tools.dart';
 
@@ -66,6 +67,11 @@ const _menuItems = [('Reply', false), ('Pin', false), ('Hide', false), ('Delete 
 class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTickerProviderStateMixin, LiveData {
   // ── Live thread ──
   String? _convId;
+  /// Who else is typing now ("Priya is typing…"), from each 4-second check.
+  Object? _typing;
+  late final _typer = TypingPinger(() => _convId);
+  /// Voice messages turned into text here (id → text).
+  final _transcripts = <String, String>{};
   String? _patientIdArg;
   bool _readSent = false;
   String? _readUpTo;
@@ -121,6 +127,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     // The 4-second check: nothing changed since the last load → keep what's on screen.
     final prev = data;
     final res = ((await Api.I.get('/api/conversations/$_convId/messages', query: {if (_at != null && prev != null) 'since': _at!})) as Map).cast<String, dynamic>();
+    _typing = res['typing'];
     if (res['unchanged'] == true && prev != null) {
       _at = '${res['at']}';
       return prev;
@@ -284,6 +291,15 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
       case 'Hide':
         final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/messages/$id/hide'), busy: _busy);
         if (ok != null && mounted) toast(context, 'Message hidden');
+      case 'Edit':
+        await ChatExtras.edit(context, convId: _convId!, message: m);
+      case 'Forward':
+        await ChatExtras.forward(context, convId: _convId!, messageId: id);
+        return;
+      case 'Show text':
+        final text = await ChatExtras.transcribe(context, convId: _convId!, messageId: id);
+        if (text != null && mounted) setState(() => _transcripts[id] = text);
+        return;
       default:
         final ok = await runAction(context, () => Api.I.delete('/api/conversations/$_convId/messages/$id'), busy: _busy);
         if (ok != null && mounted) toast(context, 'Deleted for everyone');
@@ -303,6 +319,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
     );
     if (ok == null || !mounted) return;
     _reply.clear();
+    _typer.stop();
     setState(() => _replyTo = null);
     await reload(quiet: true);
     _toLatest();
@@ -425,9 +442,20 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
   }
 
   Future<void> _searchLive() async {
-    final id = await searchChat(context, data!.list('items'), sender: _senderName);
-    final c = id == null ? null : _msgKeys[id]?.currentContext;
-    if (c != null && c.mounted) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.3);
+    final id = await ChatExtras.search(context, convId: _convId!);
+    if (id == null || !mounted) return;
+    // An older message: earlier pages are loaded until it is here (a few at most).
+    for (var i = 0; i < 12 && !data!.list('items').any((m) => m.str('id') == id) && !_noOlder; i++) {
+      await _loadOlder();
+      if (!mounted) return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final c = _msgKeys[id]?.currentContext;
+    if (c != null && c.mounted) {
+      Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.3);
+    } else if (mounted) {
+      toast(context, 'That message is no longer in this chat');
+    }
   }
 
   void _toPinnedLive() {
@@ -659,9 +687,12 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
       final by = _byLine(m);
       // A payment link sent in the chat: the same card the patient sees, Paid / not yet.
       final pay = m['payment'] is Map ? Align(alignment: Alignment.centerRight, child: PaymentRequestCard(payment: m.obj('payment'))) : null;
+      final marks = [if (m['forwardedFrom'] != null && m['deleted'] != true) tr(context, 'Forwarded'), if (m['editedAt'] != null && m['deleted'] != true) tr(context, 'Edited')].join(' · ');
+      final voiceText = m['kind'] == 'voice' && m['deleted'] != true ? (_transcripts[id] ?? m.obj('voice').str('transcript')) : '';
+      final mineSide = m['mine'] == true || m['senderType'] == 'doctor' || m['senderType'] == 'staff';
       Widget w = KeyedSubtree(
         key: key,
-        child: by.isEmpty && pay == null
+        child: by.isEmpty && pay == null && marks.isEmpty && voiceText.isEmpty
             ? _liveMessage(m, byId)
             : Column(
                 mainAxisSize: MainAxisSize.min,
@@ -671,7 +702,19 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                     Text(by, textAlign: TextAlign.right, style: tx(12, w: w600, c: MP.ink3, h: 1.35)),
                     const Gap(4),
                   ],
+                  if (marks.isNotEmpty) ...[
+                    Text(marks, textAlign: mineSide ? TextAlign.right : TextAlign.left, style: tx(12, c: MP.ink3, h: 1.35)),
+                    const Gap(2),
+                  ],
                   _liveMessage(m, byId),
+                  if (voiceText.isNotEmpty)
+                    Align(
+                      alignment: mineSide ? Alignment.centerRight : Alignment.centerLeft,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 260),
+                        child: Padding(padding: const EdgeInsets.only(top: 4), child: UserText(voiceText, style: tx(14, c: MP.ink2, h: 1.45))),
+                      ),
+                    ),
                   if (pay != null) pay,
                 ],
               ),
@@ -689,6 +732,8 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
       children.add(w);
     }
     if (items.isEmpty) children.add(Center(child: Text('No messages yet', style: tx(14, c: MP.ink2))));
+    final typing = ChatExtras.typingLine(context, _typing);
+    if (typing != null) children.add(Align(alignment: Alignment.centerLeft, child: Text(typing, style: tx(13, c: MP.ink3, h: 1.4))));
     final menuMsg = byId[_menuFor];
     final mine = menuMsg?['mine'] == true && menuMsg?['deleted'] != true;
     // The menu opens above the newest messages (next to the composer), below older ones.
@@ -723,6 +768,9 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                             // The pinned message: Unpin instead of Pin.
                             it.$1 == 'Pin' && menuMsg.str('id') == '${_conv['pinnedMessageId'] ?? ''}' ? ('Unpin', false) : it,
                         if (menuMsg.str('text').isNotEmpty) ('Copy', false),
+                        if (ChatExtras.canEdit(menuMsg)) ('Edit', false),
+                        if (menuMsg['deleted'] != true && menuMsg['senderType'] != 'ai') ('Forward', false),
+                        if (menuMsg['kind'] == 'voice' && menuMsg.obj('voice').str('transcript').isEmpty && !_transcripts.containsKey(menuMsg.str('id'))) ('Show text', false),
                       ],
                       onAction: (a) => _liveMenuAction(a, menuMsg),
                     ),
@@ -995,9 +1043,9 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
           const Gap(4),
           if (live) MpIconButton(I.search, label: 'Search this chat', color: MP.ink2, onTap: _searchLive),
           // The clinic's inbox: handled, and who looks after this chat.
-          if (live && _isPatientChat && _convId != null)
+          if (live && _convId != null)
             MpIconButton(I.moreV, label: 'This chat', color: MP.ink2, onTap: () async {
-              if (await chatInboxActions(context, conversationId: _convId!, conversation: data?.obj('conversation') ?? const {}) && mounted) reload(quiet: true);
+              if (await chatInboxActions(context, conversationId: _convId!, conversation: data?.obj('conversation') ?? const {}, patientChat: _isPatientChat) && mounted) reload(quiet: true);
             }),
           MpIconButton(
             I.phone,
@@ -1514,6 +1562,7 @@ class _PatientThreadScreenState extends State<PatientThreadScreen> with SingleTi
                     style: tx(16),
                     cursorColor: MP.primary,
                     textInputAction: TextInputAction.send,
+                    onChanged: _typer.changed,
                     onSubmitted: (_) => data != null ? _sendLive() : _send(),
                     decoration: InputDecoration(
                       isCollapsed: true,

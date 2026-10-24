@@ -1324,6 +1324,25 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   @override
   Widget build(BuildContext context) {
     final slides = widget.slides;
+    // One slide: nothing to peek at or swipe to — it lines up with the cards below (20px each
+    // side), and no dots.
+    if (slides.length == 1) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 20),
+        child: SizedBox(
+          height: 212,
+          child: P1HeroSlide(
+            slide: slides.first,
+            imageWidth: 200,
+            stops: const [0.42, 0.64, 0.88],
+            textMaxWidth: 200,
+            background: MP.primary,
+            contentOpacity: 1,
+            onTap: () => P1.openSlide(context, slides.first),
+          ),
+        ),
+      );
+    }
     return Semantics(
       label: 'Highlights, slide ${_page + 1} of ${slides.length}',
       child: Column(

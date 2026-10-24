@@ -463,7 +463,14 @@ async function chatNotice(ids, n, conversationId, { push = true } = {}) {
   if (fresh.length) {
     // An older unread notice for this chat is replaced by the new one (the bell keeps one per chat).
     await M.Notification.deleteMany({ userId: { $in: fresh }, readAt: null, type: n.type, 'params.conversationId': conversationId });
-    await notify(fresh, push ? n : { ...n, push: false });
+    // Who muted this chat gets it quietly (bell, no buzz) — except an urgent message.
+    const urgent = /urgent|emergency/i.test(String(n.type || '')) || n.urgent === true;
+    const convo = urgent || !push ? null : await M.Conversation.findById(conversationId, 'prefs');
+    const muted = new Set((convo?.prefs || []).filter((p) => p.mutedUntil && p.mutedUntil > new Date()).map((p) => String(p.userId)));
+    const loud = fresh.filter((id) => !muted.has(String(id)));
+    const hush = fresh.filter((id) => muted.has(String(id)));
+    if (loud.length) await notify(loud, push ? n : { ...n, push: false });
+    if (hush.length) await notify(hush, { ...n, push: false });
   }
   return ids;
 }

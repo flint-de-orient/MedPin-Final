@@ -1,6 +1,11 @@
 package com.fdo.medpin
 
 import android.content.ContentValues
+import android.content.Intent
+import android.media.AudioAttributes
+import android.media.Ringtone
+import android.media.RingtoneManager
+import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
@@ -20,8 +25,88 @@ class MainActivity : FlutterFragmentActivity() {
     // PDF pages are drawn one at a time, off the UI thread.
     private val pdfWorker = Executors.newSingleThreadExecutor()
 
+    // Profile › Alarm sound: Android's own sound picker, and a short preview at alarm volume.
+    private var soundResult: MethodChannel.Result? = null
+    private var preview: Ringtone? = null
+    private val pickSound = 4711
+
+    private fun stopPreview() {
+        try { preview?.stop() } catch (_: Exception) {}
+        preview = null
+    }
+
+    @Deprecated("Activity results for the ringtone picker")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != pickSound) return
+        val result = soundResult ?: return
+        soundResult = null
+        if (resultCode != RESULT_OK) return result.success(null)
+        @Suppress("DEPRECATION")
+        val uri: Uri? = data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        if (uri == null) return result.success(null)
+        val title = try { RingtoneManager.getRingtone(this, uri)?.getTitle(this) } catch (_: Exception) { null }
+        result.success(mapOf("uri" to uri.toString(), "title" to (title ?: "Sound from this phone")))
+    }
+
+    override fun onPause() {
+        stopPreview()
+        super.onPause()
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // pick {current?} → {uri, title} or null; preview {uri}; stop; title {uri} → name.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "medpin/sound").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "pick" -> {
+                    if (soundResult != null) return@setMethodCallHandler result.error("BUSY", "The sound picker is already open", null)
+                    stopPreview()
+                    val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                        putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM or RingtoneManager.TYPE_RINGTONE)
+                        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                        putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
+                        call.argument<String>("current")?.let { putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(it)) }
+                    }
+                    soundResult = result
+                    try {
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(intent, pickSound)
+                    } catch (e: Exception) {
+                        soundResult = null
+                        result.error("NO_PICKER", "This phone has no sound picker", null)
+                    }
+                }
+                "preview" -> {
+                    stopPreview()
+                    val uri = call.argument<String>("uri") ?: return@setMethodCallHandler result.error("ARGS", "uri is required", null)
+                    try {
+                        val r = RingtoneManager.getRingtone(this, Uri.parse(uri)) ?: return@setMethodCallHandler result.success(false)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            r.audioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+                        }
+                        r.play()
+                        preview = r
+                        // A preview, not the alarm: it stops by itself after a few seconds.
+                        window.decorView.postDelayed({ if (preview === r) stopPreview() }, 6000)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "stop" -> {
+                    stopPreview()
+                    result.success(true)
+                }
+                "title" -> {
+                    val uri = call.argument<String>("uri")
+                    val title = try { if (uri == null) null else RingtoneManager.getRingtone(this, Uri.parse(uri))?.getTitle(this) } catch (_: Exception) { null }
+                    result.success(title)
+                }
+                else -> result.notImplemented()
+            }
+        }
         // Reports and prescriptions shown inside the app: a page of a PDF as a
         // PNG, with Android's own PdfRenderer (no extra library).
         // render {path, page (0-based), width px} → {png, pages, width, height}

@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import '../../data/api.dart';
 import '../../data/format.dart';
 import '../../data/live.dart';
+import '../../data/alarm_sound.dart';
+import '../../data/local_notes.dart';
 import '../../data/med_alarms.dart';
 import 'address_sheet.dart';
 import 'alarm_check.dart';
@@ -326,6 +328,17 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
     if (ok && mounted) MedAlarms.I.sync();
   }
 
+  Future<void> _pickSound() async {
+    final picked = await openSheet<AlarmSound>(context, (_) => const _SoundSheet());
+    await AlarmSound.stopPreview();
+    if (picked == null || !mounted) return;
+    await LocalNotes.I.useAlarmSound(picked);
+    MedAlarms.I.sync(); // every scheduled alarm now rings with it
+    if (!mounted) return;
+    setState(() {});
+    toast(context, trf(context, 'Alarm sound: {name} · your medicine alarms ring with it', {'name': picked.title}));
+  }
+
   /// Left out of battery saving (Android), so alarms ring on time.
   bool? _alarmsOk;
   bool get _visitR => data == null ? _visitReminders : _settings['visitReminders'] != false;
@@ -623,6 +636,15 @@ class _PatientMeScreenState extends State<PatientMeScreen> with LiveData {
                       sub: _ringR ? 'Alarm sound, on the lock screen' : 'A normal notification',
                       trailing: MpSwitch(value: _ringR, onChanged: (v) => _setReminder('alarmRing', v)),
                       onTap: () => _setReminder('alarmRing', !_ringR),
+                    ),
+                  // The sound the medicine alarm rings with (this phone): pick, hear it, test the real alarm.
+                  if (_medR && _ringR && AlarmSound.supported)
+                    _Row(
+                      icon: I.bell,
+                      title: 'Alarm sound',
+                      sub: AlarmSound.current.title,
+                      trailing: const _Action('Change'),
+                      onTap: _pickSound,
                     ),
                   if (_medR)
                     _Row(
@@ -1769,6 +1791,108 @@ class _HelpSheetState extends State<_HelpSheet> {
             builder: (_, busy, __) => MpButton(busy ? 'Sending…' : 'Send message', onTap: busy ? null : _send),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Alarm sound: the phone's alarm, ringtone or notification sound, three MedPin tones, or one
+/// picked from the phone; ▶ plays a few seconds; "Test alarm" rings the real alarm in 5 seconds.
+class _SoundSheet extends StatefulWidget {
+  const _SoundSheet();
+
+  @override
+  State<_SoundSheet> createState() => _SoundSheetState();
+}
+
+class _SoundSheetState extends State<_SoundSheet> {
+  late AlarmSound _sel = AlarmSound.current;
+  AlarmSound? _phone = AlarmSound.current.key == 'phone' ? AlarmSound.current : null;
+  String? _playing;
+
+  @override
+  void dispose() {
+    AlarmSound.stopPreview();
+    super.dispose();
+  }
+
+  Future<void> _play(AlarmSound s) async {
+    if (_playing == s.playUri) {
+      await AlarmSound.stopPreview();
+      if (mounted) setState(() => _playing = null);
+      return;
+    }
+    final ok = await AlarmSound.preview(s);
+    if (!mounted) return;
+    if (!ok) {
+      toast(context, "This sound can't be played on this phone. Choose another.");
+      return;
+    }
+    setState(() => _playing = s.playUri);
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted && _playing == s.playUri) setState(() => _playing = null);
+    });
+  }
+
+  Future<void> _fromPhone() async {
+    try {
+      final s = await AlarmSound.pickFromPhone();
+      if (s != null && mounted) setState(() => _sel = _phone = s);
+    } on PlatformException {
+      if (mounted) toast(context, "This phone can't show its sounds here. Choose one of the sounds above.");
+    }
+  }
+
+  /// The real alarm (lock screen, alarm volume) in 5 seconds, with the sound chosen here.
+  Future<void> _test() async {
+    final title = tr(context, 'Test alarm');
+    final body = tr(context, 'This is how your medicine alarms ring.');
+    await AlarmSound.stopPreview();
+    // Rings with the sound chosen here; the alarms keep the saved one until "Use this sound".
+    await LocalNotes.I.testAlarm(_sel, title: title, body: body);
+    if (!mounted) return;
+    toast(context, 'Test alarm in 5 seconds · lock the phone to hear it as you will');
+  }
+
+  Widget _option(AlarmSound s) {
+    final on = s.key == _sel.key && (s.key != 'phone' || s.uri == _sel.uri);
+    final playing = _playing == s.playUri;
+    return Tap(
+      onTap: () => setState(() => _sel = s),
+      radius: 12,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: Row(
+        children: [
+          MpRadio(value: on),
+          const Gap(12),
+          Expanded(child: s.key == 'phone' ? UserText(s.title, style: tx(15, w: on ? w600 : w400)) : Text(s.title, style: tx(15, w: on ? w600 : w400))),
+          MpIconButton(playing ? I.close : I.play, label: playing ? 'Stop' : 'Play', color: MP.primary, iconSize: 18, onTap: () => _play(s)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MpSheet(
+      title: 'Alarm sound',
+      subtitle: 'Your medicine alarms ring with this on this phone, for everyone on it.',
+      showClose: true,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final s in AlarmSound.builtIn) _option(s),
+            if (_phone != null) _option(_phone!),
+            const Gap(4),
+            Align(alignment: Alignment.centerLeft, child: MpLink('Choose from this phone…', onTap: _fromPhone)),
+            const Gap(16),
+            MpButton('Use this sound', onTap: () => Navigator.pop(context, _sel)),
+            const Gap(8),
+            MpButton('Test alarm', kind: MpBtn.secondary, onTap: _test),
+          ],
+        ),
       ),
     );
   }

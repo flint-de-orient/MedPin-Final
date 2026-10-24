@@ -128,4 +128,29 @@ async function cleanTranscript({ text, alternates = [], purpose = 'note', langua
   return { text: fixed, changed: fixed !== spoken, source };
 }
 
-module.exports = { cleanTranscript, fixNames, distance, sound };
+/**
+ * A chat voice message as text ("Show text"): what was said, in the language and script it
+ * was said in (Bengali in Bengali, Hindi in Devanagari, English), medicine names checked
+ * against the catalog. Needs MedPin AI that hears audio (Gemini); counts as one AI chat.
+ */
+async function transcribeVoice(file, { practiceId } = {}) {
+  const { conflict } = require('../lib/http');
+  if (!ai.enabled()) throw Object.assign(conflict('Turning voice into text needs MedPin AI, which is not set up on this server', 'AI_OFF'), { status: 503 });
+  if (ai.provider() !== 'gemini') throw Object.assign(conflict('Turning voice into text needs the Gemini AI on this server', 'NO_AUDIO_AI'), { status: 503 });
+  const assistant = require('./assistant');
+  if (practiceId && (await assistant.aiLimitReached(practiceId))) throw conflict("This month's MedPin AI chats are used up", 'AI_LIMIT');
+  const buf = await require('./storage').read(file.key);
+  if (!buf) throw conflict('This voice message is no longer available', 'GONE');
+  if (buf.length > 15 * 1024 * 1024) throw conflict('This voice message is too long to turn into text', 'TOO_LONG');
+  const out = await ai.complete({
+    system: 'You transcribe a voice message sent in an Indian clinic chat. Write exactly what is said, in the language and script it is spoken in (Bengali in Bengali script, Hindi in Devanagari, English in English; mixed speech as spoken). Keep medicine names, numbers and units exactly. Do not translate, summarise, add or answer anything. If nothing can be heard, reply with [inaudible].',
+    messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: file.mimeType || 'audio/mp4', data: buf.toString('base64') } }, { type: 'text', text: 'Transcribe this voice message.' }] }],
+    effort: 'low', maxTokens: 4096, vision: true, timeoutMs: 60000,
+  });
+  const text = String(out?.text || '').trim();
+  if (!text) throw Object.assign(conflict("Couldn't turn this voice message into text. Please try again.", 'TRANSCRIBE_FAILED'), { status: 502 });
+  if (practiceId) await assistant.useAiChat(practiceId).catch(() => {});
+  return /[a-z]/i.test(text) ? fixNames(text, await catalogNames()) : text;
+}
+
+module.exports = { cleanTranscript, fixNames, distance, sound, transcribeVoice };

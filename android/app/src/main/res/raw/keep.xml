@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MedPin's alarm tones are chosen at runtime (Profile › Alarm sound): keep them when resources are shrunk. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@raw/medpin_chime,@raw/medpin_bell,@raw/medpin_beeps" />

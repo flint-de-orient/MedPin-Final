@@ -16,6 +16,7 @@ import '../../widgets/chat_tools.dart';
 import '../../widgets/fee_actions.dart';
 import '../../widgets/mp.dart';
 import 'common_p2.dart';
+import '../../widgets/chat_extras.dart';
 import '../../widgets/i18n.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
@@ -72,6 +73,10 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
   List<Map<String, dynamic>> _older = const [];
   bool _loadingOlder = false;
   bool _noOlder = false;
+  /// Someone at the clinic typing now ("Dr. Sen is typing…").
+  Object? _typing;
+  late final _typer = TypingPinger(() => _convId);
+  final _transcripts = <String, String>{};
 
   /// The newest message id shown, to keep your place when a new one arrives while you read older ones.
   String? _newestShown;
@@ -144,6 +149,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
     // The 4-second check: nothing changed since the last load → keep what's on screen.
     final prev = data;
     final res = (await Api.I.get('/api/conversations/$_convId/messages', query: {if (_at != null && prev != null) 'since': _at!}) as Map).cast<String, dynamic>();
+    _typing = res['typing'];
     if (res['unchanged'] == true && prev != null) {
       _at = '${res['at']}';
       return prev;
@@ -237,6 +243,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       final quote = _replyTo;
       if (quote != null) setState(() => _replyTo = null);
       final res = await Api.I.post('/api/conversations/$_convId/messages', {'text': text, 'clientId': id, if (quote != null) 'replyToId': quote.str('id')});
+      _typer.stop();
       if (!mounted) return;
       _at = null; // load in full: our message is new
       await reload(quiet: true);
@@ -307,7 +314,15 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final a in [if (text.isNotEmpty) 'Copy', 'Reply', 'Hide for me', if (mine) 'Delete for everyone'])
+            for (final a in [
+              if (text.isNotEmpty) 'Copy',
+              'Reply',
+              if (ChatExtras.canEdit(m)) 'Edit',
+              if (m.str('senderType') != 'ai') 'Forward',
+              if (m.str('kind') == 'voice' && m.obj('voice').str('transcript').isEmpty && !_transcripts.containsKey(m.str('id'))) 'Show text',
+              'Hide for me',
+              if (mine) 'Delete for everyone',
+            ])
               Tap(
                 onTap: () => Navigator.of(ctx).pop(a),
                 radius: 0,
@@ -335,6 +350,15 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
       case 'Hide for me':
         final ok = await runAction(context, () => Api.I.post('/api/conversations/$_convId/messages/$id/hide'));
         if (ok != null && mounted) toast(context, 'Message hidden');
+      case 'Edit':
+        await ChatExtras.edit(context, convId: _convId!, message: m);
+      case 'Forward':
+        await ChatExtras.forward(context, convId: _convId!, messageId: id);
+        return;
+      case 'Show text':
+        final t = await ChatExtras.transcribe(context, convId: _convId!, messageId: id);
+        if (t != null && mounted) setState(() => _transcripts[id] = t);
+        return;
       default:
         final ok = await runAction(context, () => Api.I.delete('/api/conversations/$_convId/messages/$id'));
         if (ok != null && mounted) toast(context, 'Deleted for everyone');
@@ -381,9 +405,52 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
 
   Future<void> _search() async {
     if (data == null) return p2Missing(context, 'Chat search');
-    final id = await searchChat(context, data!.list('items'), sender: (m) => m.str('senderType') == 'patient' ? 'You' : _sender(m));
-    final c = id == null ? null : _keys[id]?.currentContext;
-    if (c != null && c.mounted) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.3);
+    final id = await ChatExtras.search(context, convId: _convId!);
+    if (id == null || !mounted) return;
+    for (var i = 0; i < 12 && !data!.list('items').any((m) => m.str('id') == id) && !_noOlder; i++) {
+      await _loadOlder();
+      if (!mounted) return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final c = _keys[id]?.currentContext;
+    if (c != null && c.mounted) {
+      Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), curve: Curves.easeOut, alignment: 0.3);
+    } else if (mounted) {
+      toast(context, 'That message is no longer in this chat');
+    }
+  }
+
+  /// This chat: mute its notifications, or clear it on your phones.
+  Future<void> _chatMenu() async {
+    if (data == null) return;
+    final conv = data!.obj('conversation');
+    final muted = F.date(conv['mutedUntil'])?.isAfter(DateTime.now()) == true;
+    final pick = await openSheet<String>(
+      context,
+      (c) => MpSheet(
+        title: 'This chat',
+        showClose: true,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: VGap(gap: 10, children: [
+            MpButton(muted ? 'Notifications muted · change' : 'Mute notifications', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, 'mute')),
+            MpButton('Clear chat', kind: MpBtn.ghost, onTap: () => Navigator.pop(c, 'clear')),
+          ]),
+        ),
+      ),
+    );
+    if (pick == null || !mounted) return;
+    final bool changed;
+    if (pick == 'mute') {
+      changed = await ChatExtras.mute(context, convId: _convId!, mutedUntil: F.date(conv['mutedUntil']));
+    } else {
+      changed = await ChatExtras.clear(context, convId: _convId!);
+    }
+    if (changed && mounted) {
+      _at = null;
+      if (pick == 'clear') _older.clear();
+      reload(quiet: true);
+    }
   }
 
   Future<void> _detail() async {
@@ -505,6 +572,8 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
             ),
           ));
         }
+        final marks = [if (m['forwardedFrom'] != null && m['deleted'] != true) tr(context, 'Forwarded'), if (m['editedAt'] != null && m['deleted'] != true) tr(context, 'Edited')].join(' · ');
+        if (marks.isNotEmpty) out.add(_meta(marks, right: mine));
         out.add(Align(
           key: _keys.putIfAbsent(m.str('id'), GlobalKey.new),
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
@@ -517,6 +586,13 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
                   : _Bubble(text, mine: mine),
           ),
         ));
+        final heard = kind == 'voice' && m['deleted'] != true ? (_transcripts[m.str('id')] ?? m.obj('voice').str('transcript')) : '';
+        if (heard.isNotEmpty) {
+          out.add(Align(
+            alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+            child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 260), child: UserText(heard, style: tx(14, c: MP.ink2, h: 1.45))),
+          ));
+        }
         // Under MedPin AI's latest answer: a person instead.
         if (m.str('senderType') == 'ai' && m == msgs.lastWhere((x) => x.str('senderType') != 'system', orElse: () => m) && !_humanRequested) {
           out.add(Align(
@@ -570,9 +646,13 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
             )
           : _meta('Sending…', right: true));
     }
+    final typing = ChatExtras.typingLine(context, _typing);
     if (_aiTyping) {
       out.add(const Align(alignment: Alignment.centerLeft, child: _Typing()));
       out.add(_meta('MedPin AI is typing…'));
+    } else if (typing != null) {
+      out.add(const Align(alignment: Alignment.centerLeft, child: _Typing()));
+      out.add(_meta(typing));
     } else if (_aiNoAnswer && !_answered) {
       out.add(_meta('The clinic will reply here soon'));
     }
@@ -693,7 +773,10 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
                 radius: 999,
                 fill: MP.bg,
                 action: TextInputAction.send,
-                onChanged: (_) => setState(() {}),
+                onChanged: (v) {
+                  _typer.changed(v);
+                  setState(() {});
+                },
                 onSubmitted: (v) => _send(v, fromField: true),
               ),
             ),
@@ -790,6 +873,7 @@ class _PatientDoctorchatScreenState extends State<PatientDoctorchatScreen> with 
                 ),
                 const Gap(8),
                 MpIconButton(I.search, label: 'Search this chat', onTap: _search),
+                MpIconButton(I.moreV, label: 'This chat', onTap: _chatMenu),
               ],
             ),
           ),

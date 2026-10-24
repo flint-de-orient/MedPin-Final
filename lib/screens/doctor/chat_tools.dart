@@ -1,3 +1,5 @@
+import '../../data/format.dart';
+import '../../widgets/chat_extras.dart';
 import 'package:flutter/material.dart' hide Text;
 
 import '../../data/api.dart';
@@ -98,7 +100,7 @@ class _TemplatesSheetState extends State<_TemplatesSheet> {
 /// The clinic's handling of a patient chat: "Handled" (nothing more to do; it opens again when
 /// the patient writes), and who looks after it (assign to me / a colleague / nobody).
 /// POST /api/conversations/:id/handled, /assign. True when something changed.
-Future<bool> chatInboxActions(BuildContext context, {required String conversationId, required Map<String, dynamic> conversation}) async {
+Future<bool> chatInboxActions(BuildContext context, {required String conversationId, required Map<String, dynamic> conversation, bool patientChat = true}) async {
   final handled = conversation['handledAt'] != null;
   final assigned = conversation['assignedTo'];
   final me = Session.I.user['id'] as String?;
@@ -110,15 +112,22 @@ Future<bool> chatInboxActions(BuildContext context, {required String conversatio
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          MpButton(handled ? 'Open again' : 'Mark as handled', onTap: () => Navigator.pop(c, handled ? 'reopen' : 'handled')),
-          const SizedBox(height: 10),
-          if ('${assigned ?? ''}' != me) MpButton('Take this chat', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, 'me')),
-          if ('${assigned ?? ''}' != me) const SizedBox(height: 10),
-          MpButton('Give to a colleague', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, 'colleague')),
-          if (assigned != null) ...[
+          if (patientChat) ...[
+            MpButton(handled ? 'Open again' : 'Mark as handled', onTap: () => Navigator.pop(c, handled ? 'reopen' : 'handled')),
             const SizedBox(height: 10),
-            MpButton('Nobody in particular', kind: MpBtn.ghost, onTap: () => Navigator.pop(c, 'none')),
+            if ('${assigned ?? ''}' != me) MpButton('Take this chat', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, 'me')),
+            if ('${assigned ?? ''}' != me) const SizedBox(height: 10),
+            MpButton('Give to a colleague', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, 'colleague')),
+            if (assigned != null) ...[
+              const SizedBox(height: 10),
+              MpButton('Nobody in particular', kind: MpBtn.ghost, onTap: () => Navigator.pop(c, 'none')),
+            ],
+            const SizedBox(height: 10),
           ],
+          // Your own: notifications for this chat, and clearing it on your phones.
+          MpButton(F.date(conversation['mutedUntil'])?.isAfter(DateTime.now()) == true ? 'Notifications muted · change' : 'Mute notifications', kind: MpBtn.secondary, onTap: () => Navigator.pop(c, 'mute')),
+          const SizedBox(height: 10),
+          MpButton('Clear chat', kind: MpBtn.ghost, onTap: () => Navigator.pop(c, 'clear')),
         ],
       ),
     ),
@@ -126,6 +135,10 @@ Future<bool> chatInboxActions(BuildContext context, {required String conversatio
   if (pick == null || !context.mounted) return false;
   dynamic res;
   switch (pick) {
+    case 'mute':
+      return ChatExtras.mute(context, convId: conversationId, mutedUntil: F.date(conversation['mutedUntil']));
+    case 'clear':
+      return ChatExtras.clear(context, convId: conversationId);
     case 'handled' || 'reopen':
       res = await runAction(context, () => Api.I.post('/api/conversations/$conversationId/handled', {'handled': pick == 'handled'}));
       if (res != null && context.mounted) toast(context, pick == 'handled' ? tr(context, 'Marked as handled') : tr(context, 'Open again'));

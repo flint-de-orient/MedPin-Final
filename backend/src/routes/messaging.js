@@ -4,7 +4,8 @@ const { Router } = require('express');
 const M = require('../models');
 const T = require('../lib/time');
 const { requireAuth, staff, need, patientInPractice, ownPractice } = require('../middleware/auth');
-const { badRequest, notFound, forbidden, conflict, escapeRegex, paging, isId } = require('../lib/http');
+const { badRequest, notFound, forbidden, conflict, escapeRegex, paging, isId, list } = require('../lib/http');
+const { Types } = require('mongoose');
 const storage = require('../services/storage');
 const { careConversation, ensureParticipant, postMessage, messageDeleted, markRead, CARE_ROLES } = require('../services/care');
 const { signal } = require('../services/notify');
@@ -121,13 +122,15 @@ threads.get('/:id/messages', async (req, res) => {
         if (inThreadNow && inThreadNow.role !== 'patient' && !(convo.staffViewingAt > T.addMinutes(now, -1))) {
           await M.Conversation.updateOne({ _id: convo._id }, { $set: { staffViewingAt: now } }, { timestamps: false });
         }
-        return res.json({ unchanged: true, at: now });
+        return res.json({ unchanged: true, at: now, typing: typingIn(convo, req.user._id) });
       }
     }
   }
   const { limit } = paging(req.query, 100);
   const q = { conversationId: convo._id, hiddenFor: { $ne: req.user._id } };
+  const myPrefs = prefsOf(convo, req.user._id);
   if (req.query.before) q.createdAt = { $lt: new Date(req.query.before) };
+  if (myPrefs.clearedAt) q.createdAt = { ...(q.createdAt || {}), $gt: myPrefs.clearedAt };
   const msgs = (await M.Message.find(q).sort({ createdAt: -1 }).limit(limit).populate('senderId', 'name')).reverse();
   // Someone at the clinic has the thread open: MedPin AI stays quiet meanwhile (one write a minute at most).
   const inThread = convo.participants.find((p) => String(p.userId) === String(req.user._id));
@@ -171,10 +174,14 @@ threads.get('/:id/messages', async (req, res) => {
   const payIds = msgs.filter((m) => m.meta?.event === 'payment_request' && /^[a-f\d]{24}$/i.test(String(m.meta.paymentId || ''))).map((m) => m.meta.paymentId);
   const payOf = new Map((payIds.length ? await M.Payment.find({ _id: { $in: payIds } }, 'amount status method appointmentId') : []).map((p) => [String(p._id), p]));
   res.json({
+    typing: typingIn(convo, req.user._id),
     at: now, // the phone sends it back as ?since= on its next check
     conversation: {
       ...(isPatientView ? patientConvoView(convo) : convo.toJSON()),
       aiPaused: assistant.aiPaused(convo),
+      // This person's own: muted until, cleared at (the clinic's team each have their own).
+      mutedUntil: myPrefs.mutedUntil && myPrefs.mutedUntil > now ? myPrefs.mutedUntil : null,
+      clearedAt: myPrefs.clearedAt || null,
       ...(isPatientView ? {} : { aiStatus: await assistant.aiStatus(convo).catch(() => ({ state: 'on' })) }),
       patient: patient && {
         id: patient._id, name: patient.name, lastSeenAt: lastSeen,
@@ -252,6 +259,7 @@ threads.post('/:id/messages', upload.single('file'), async (req, res) => {
     extra.replyToId = req.body.replyToId;
   }
   const msg = await postMessage(convo, { sender: req.user, senderType, text: text || undefined, kind, isUrgent: req.body.isUrgent === true || req.body.isUrgent === 'true', ...(clientId ? { clientId } : {}), ...extra });
+  typingNow.get(String(convo._id))?.delete(String(req.user._id)); // sent: no longer "typing…"
   // Staff replying pauses the AI in this thread for a while (atomic, like the message itself).
   if (senderType !== 'patient') {
     convo.aiPausedAt = new Date();
@@ -392,6 +400,183 @@ threads.post('/:id/pin', async (req, res) => {
   await M.Conversation.updateOne({ _id: convo._id }, req.body.messageId ? { $set: { pinnedMessageId: req.body.messageId } } : { $unset: { pinnedMessageId: 1 } });
   await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
   res.json({ ok: true, pinnedMessageId: req.body.messageId || null });
+});
+
+// ── Typing, mute, clear, edit, forward, search, transcribe ──
+
+// "Payel is typing…": each phone says so every few seconds while its person types; shown to
+// the others for 6 seconds (kept in memory: it only matters right now).
+const typingNow = new Map(); // conversationId → Map(userId → { at, name })
+function typingIn(convo, viewerId) {
+  const m = typingNow.get(String(convo._id));
+  if (!m) return [];
+  const cutoff = Date.now() - 6000;
+  const out = [];
+  for (const [uid, t] of m) {
+    if (t.at < cutoff) m.delete(uid);
+    else if (uid !== String(viewerId)) out.push({ name: t.name, side: t.side });
+  }
+  if (!m.size) typingNow.delete(String(convo._id));
+  return out;
+}
+
+const prefsOf = (convo, userId) => (convo.prefs || []).find((p) => String(p.userId) === String(userId)) || {};
+async function setPrefs(convo, userId, patch) {
+  const has = (convo.prefs || []).some((p) => String(p.userId) === String(userId));
+  if (has) {
+    const set = Object.fromEntries(Object.entries(patch).map(([k, v]) => [`prefs.$[p].${k}`, v]));
+    await M.Conversation.updateOne({ _id: convo._id }, { $set: set }, { arrayFilters: [{ 'p.userId': new Types.ObjectId(String(userId)) }], timestamps: false });
+  } else {
+    await M.Conversation.updateOne({ _id: convo._id }, { $push: { prefs: { userId, ...patch } } }, { timestamps: false });
+  }
+}
+
+threads.post('/:id/typing', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  const me = convo.participants.find((p) => String(p.userId) === String(req.user._id));
+  const patientSide = me?.role === 'patient';
+  // How the others see the name: the patient sees "Dr. Sen" / "Payel"; the clinic sees the patient's first name.
+  const first = String(req.user.name || '').trim().split(/\s+/);
+  const name = /^dr\.?$/i.test(first[0] || '') ? first.slice(0, 2).join(' ') : first[0] || '';
+  const key = String(convo._id);
+  if (!typingNow.has(key)) typingNow.set(key, new Map());
+  if (req.body.typing === false) typingNow.get(key).delete(String(req.user._id));
+  else typingNow.get(key).set(String(req.user._id), { at: Date.now(), name, side: patientSide ? 'patient' : 'clinic' });
+  res.json({ ok: true });
+});
+
+// Mute: for 8 hours, a week or always ('off' unmutes). Messages still arrive and count as
+// unread; only the buzz stops. Urgent messages still ring.
+threads.post('/:id/mute', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  const span = { '8h': 8 * 3600e3, '1w': 7 * 864e5, always: 100 * 365 * 864e5 }[req.body.for];
+  if (req.body.for !== 'off' && !span) throw badRequest('Choose for how long: 8 hours, a week or always', 'BAD_MUTE');
+  const mutedUntil = req.body.for === 'off' ? null : new Date(Date.now() + span);
+  await setPrefs(convo, req.user._id, { mutedUntil });
+  await signal([req.user._id], { type: 'chat_changed', conversationId: convo._id }); // the person's other phone
+  res.json({ ok: true, mutedUntil });
+});
+
+// Clear chat: everything so far is hidden for this person only (others and the record keep it).
+threads.post('/:id/clear', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  const clearedAt = new Date();
+  await setPrefs(convo, req.user._id, { clearedAt });
+  await M.Conversation.updateOne({ _id: convo._id, 'participants.userId': req.user._id }, { $set: { 'participants.$.unreadCount': 0, 'participants.$.lastReadAt': clearedAt } }, { timestamps: false });
+  await signal([req.user._id], { type: 'chat_changed', conversationId: convo._id });
+  res.json({ ok: true, clearedAt });
+});
+
+// Edit a message just sent (text only, within 15 minutes, by whoever sent it). The earlier
+// wording is kept with it; the others see "Edited".
+const EDIT_MIN = 15;
+threads.patch('/:id/messages/:messageId', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  const msg = isId(req.params.messageId) ? await M.Message.findOne({ _id: req.params.messageId, conversationId: convo._id }) : null;
+  if (!msg) throw notFound('Message');
+  if (String(msg.senderId) !== String(req.user._id)) throw forbidden('You can only edit your own messages');
+  if (msg.deletedForEveryoneAt) throw conflict('This message was deleted', 'DELETED');
+  if (msg.kind !== 'text' || msg.meta?.auto) throw conflict('Only a message you typed can be edited', 'NOT_EDITABLE');
+  if (msg.createdAt < T.addMinutes(new Date(), -EDIT_MIN)) throw conflict(`A message can be edited for ${EDIT_MIN} minutes after it is sent`, 'TOO_LATE');
+  const text = String(req.body.text || '').trim().slice(0, 4000);
+  if (!text) throw badRequest('Type a message', 'EMPTY_MESSAGE');
+  if (text === msg.text) return res.json({ message: messageView(msg, req.user._id) });
+  const now = new Date();
+  await M.Message.updateOne({ _id: msg._id }, { $set: { text, editedAt: now }, $push: { edits: { text: msg.text, at: msg.editedAt || msg.createdAt } } });
+  // The chat list shows the new wording when it is the latest message.
+  const fresh = await M.Message.findById(msg._id);
+  const last = await M.Message.findOne({ conversationId: convo._id, deletedForEveryoneAt: null }, '_id').sort({ createdAt: -1 });
+  if (String(last?._id) === String(msg._id)) await M.Conversation.updateOne({ _id: convo._id }, { $set: { 'lastMessage.text': text.slice(0, 200) } });
+  await signal(convo.participants.map((p) => p.userId), { type: 'chat_changed', conversationId: convo._id });
+  res.json({ message: messageView(fresh, req.user._id) });
+});
+
+/**
+ * Where this person may forward a message of [from] to. A patient's message (their health)
+ * never goes into another patient's chat: the clinic forwards to a colleague (a direct chat),
+ * or within the same patient's chats; a patient forwards between their own chats.
+ */
+async function forwardTargets(req, from) {
+  const mine = await M.Conversation.find({ 'participants.userId': req.user._id, _id: { $ne: from._id } }, 'type practiceId patientId participants lastMessage').sort({ 'lastMessage.at': -1 }).limit(200);
+  const asPatient = from.participants.some((p) => String(p.userId) === String(req.user._id) && p.role === 'patient');
+  return mine.filter((c) => {
+    if (asPatient) return c.type !== 'direct' && String(c.patientId) === String(from.patientId);
+    if (c.type === 'direct') return !from.practiceId || !c.practiceId || String(c.practiceId) === String(from.practiceId);
+    return from.patientId && String(c.patientId) === String(from.patientId);
+  });
+}
+
+threads.get('/:id/forward-targets', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  const targets = await forwardTargets(req, convo);
+  const others = [...new Set(targets.flatMap((c) => c.participants.map((p) => String(p.userId))).filter((id) => id !== String(req.user._id)))];
+  const names = new Map((await M.User.find({ _id: { $in: others } }, 'name')).map((u) => [String(u._id), u.name]));
+  const patients = new Map((await M.Patient.find({ _id: { $in: targets.map((c) => c.patientId).filter(Boolean) } }, 'name')).map((p) => [String(p._id), p.name]));
+  res.json({
+    items: targets.map((c) => ({
+      id: c._id, type: c.type,
+      name: c.type === 'direct'
+        ? c.participants.filter((p) => String(p.userId) !== String(req.user._id)).map((p) => names.get(String(p.userId)) || 'Colleague').join(', ')
+        : `${patients.get(String(c.patientId)) || 'Patient'} · ${c.type === 'nutrition' ? 'nutrition chat' : 'care chat'}`,
+    })),
+  });
+});
+
+threads.post('/:id/messages/:messageId/forward', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  const msg = isId(req.params.messageId) ? await M.Message.findOne({ _id: req.params.messageId, conversationId: convo._id, hiddenFor: { $ne: req.user._id } }) : null;
+  if (!msg || msg.deletedForEveryoneAt) throw notFound('Message');
+  const to = [...new Set(list(req.body.to).filter(isId))].slice(0, 5);
+  if (!to.length) throw badRequest('Choose where to send it', 'NO_TARGET');
+  const allowed = new Set((await forwardTargets(req, convo)).map((c) => String(c._id)));
+  if (to.some((id) => !allowed.has(id))) throw forbidden("A patient's messages can only go to a colleague or the same patient's chats");
+  const me = convo.participants.find((p) => String(p.userId) === String(req.user._id));
+  const sent = [];
+  for (const id of to) {
+    const target = await M.Conversation.findById(id);
+    const role = target.participants.find((p) => String(p.userId) === String(req.user._id))?.role;
+    const senderType = role === 'patient' ? 'patient' : role === 'doctor' ? 'doctor' : role === 'dietician' ? 'dietician' : 'staff';
+    const copy = await postMessage(target, {
+      sender: req.user, senderType, kind: msg.kind, text: msg.text || undefined,
+      ...(msg.attachment?.key ? { attachment: msg.attachment.toObject ? msg.attachment.toObject() : msg.attachment } : {}),
+      ...(msg.voice?.file?.key ? { voice: { file: msg.voice.file.toObject ? msg.voice.file.toObject() : msg.voice.file, durationSec: msg.voice.durationSec, transcript: msg.voice.transcript } } : {}),
+      ...(msg.recordId ? { recordId: msg.recordId } : {}),
+      forwardedFrom: { conversationId: convo._id, messageId: msg._id },
+    });
+    sent.push(String(copy._id));
+  }
+  res.status(201).json({ ok: true, sent: sent.length, asRole: me?.role || null });
+});
+
+// Search the whole chat (not only what is loaded): words in messages, file names, voice transcripts.
+threads.get('/:id/search', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  const text = String(req.query.q || '').trim().slice(0, 80);
+  if (text.length < 2) return res.json({ items: [] });
+  const re = new RegExp(escapeRegex(text), 'i');
+  const myPrefs = prefsOf(convo, req.user._id);
+  const found = await M.Message.find({
+    conversationId: convo._id, deletedForEveryoneAt: null, hiddenFor: { $ne: req.user._id },
+    ...(myPrefs.clearedAt ? { createdAt: { $gt: myPrefs.clearedAt } } : {}),
+    $or: [{ text: re }, { 'attachment.name': re }, { 'voice.transcript': re }],
+  }).sort({ createdAt: -1 }).limit(50).populate('senderId', 'name');
+  res.json({
+    items: found.map((m) => ({
+      id: m._id, createdAt: m.createdAt, senderType: m.senderType, senderName: m.senderId?.name || null, kind: m.kind,
+      text: m.text || (m.attachment?.name ? m.attachment.name : m.voice?.transcript ? `🎤 ${m.voice.transcript}` : ''),
+    })),
+  });
+});
+
+// A voice message as text ("Show text"), made once by MedPin AI and kept with the message.
+threads.post('/:id/messages/:messageId/transcribe', async (req, res) => {
+  const convo = await openConversation(req, req.params.id);
+  const msg = isId(req.params.messageId) ? await M.Message.findOne({ _id: req.params.messageId, conversationId: convo._id }) : null;
+  if (!msg || msg.deletedForEveryoneAt || !msg.voice?.file?.key) throw notFound('Voice message');
+  if (msg.voice.transcript) return res.json({ transcript: msg.voice.transcript });
+  const transcript = await require('../services/transcript').transcribeVoice(msg.voice.file, { practiceId: convo.practiceId });
+  await M.Message.updateOne({ _id: msg._id }, { $set: { 'voice.transcript': transcript, 'voice.transcriptAt': new Date() } }, { timestamps: false });
+  res.json({ transcript });
 });
 
 threads.post('/:id/messages/:messageId/hide', async (req, res) => {
